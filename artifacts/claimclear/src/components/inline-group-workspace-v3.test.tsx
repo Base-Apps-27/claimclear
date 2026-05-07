@@ -1,25 +1,29 @@
-// Task #517 — Queue V3 walk-first wizard parity tests.
+// Task #517 + #521 — Queue V3 walk-first wizard parity tests.
 //
-// Verifies that InlineGroupWorkspaceV3 routes each Phase-4 outlook to
-// the same terminal action surface InvoiceGroupActionSlot mounts in
-// the classic /queue workspace. This is the parity guarantee: V3 is
-// pure chrome — every mutation, query invalidation, and audit-write
-// path is inherited from InvoiceGroupActionSlot.
+// Verifies that InlineGroupWorkspaceV3 swaps its hero per phase
+// (walking → walk-complete → preview → review → submitted) and that
+// the outlook routing still hands off to InvoiceGroupActionSlot for
+// the reattest_only and nothing_to_do branches.
 //
-// Five cases pinned here:
+// Cases:
 //   (a) buildPhaseConfigV3 — has_disputable progresses Walk → Preview
 //       → Review → Submit as the real group state advances
 //   (b) buildPhaseConfigV3 — reattest_only collapses to a 2-step
 //       ladder (Walk → Re-attest)
 //   (c) buildPhaseConfigV3 — nothing_to_do has a single Close step
-//   (d) Render parity: has_disputable mounts the gauntlet, the V3
-//       chrome (leg switcher, hero, pinned footer) is present, and
-//       neither the Re-attest CTA nor the close-out card render
-//   (e) Render parity: reattest_only mounts the Re-attest CTA, the
-//       gauntlet does NOT render, and the V3 chrome stays present
-//   (f) Render parity: nothing_to_do mounts the close-out card and
-//       collapses the chrome (no leg switcher, no SOP hero, no
-//       pinned footer)
+//   (d) Render: has_disputable + walk in progress mounts the SOP walk
+//       hero (no ClaimDetailV2 in the hero, no gauntlet card stacked)
+//   (e) Render: has_disputable + all walked + no preview mounts the
+//       walk-complete hero with the Generate-preview CTA bound to the
+//       gauntlet's mutation
+//   (f) Render: has_disputable + previewGenerated + !draftReviewed
+//       mounts the read-only Preview hero
+//   (g) Render: has_disputable + draftReviewed mounts the editable
+//       Review hero with Submit
+//   (h) Render: reattest_only + all walked mounts the Re-attest CTA;
+//       no SOP walk hero, no submission heroes
+//   (i) Render: nothing_to_do collapses the chrome and mounts the
+//       close-out card
 
 import { test, mock } from "node:test";
 import { strict as assert } from "node:assert";
@@ -37,23 +41,26 @@ const inertMutation = () => ({
 
 mock.module("@workspace/api-client-react", {
   namedExports: {
-    useConfirmUnderstandingReadback: inertMutation,
     useStampPreviewGenerated: inertMutation,
-    useCreatePortalSubmission: inertMutation,
     useSaveInvoiceGroupDraft: inertMutation,
     useRegenerateInvoiceGroupDraft: inertMutation,
     useMarkInvoiceGroupDraftReviewed: inertMutation,
+    useCreatePortalSubmission: inertMutation,
+    useConfirmUnderstandingReadback: inertMutation,
     useCompleteGroupReattest: inertMutation,
     useBulkQueueGroupReattest: inertMutation,
     useMarkAwaitingPayorAgain: inertMutation,
     usePromoteVerdictDrafts: inertMutation,
     useGetInvoiceGroup: (_id: number) => ({ data: capturedGroup, isLoading: false }),
+    useGetClaim: (_id: number) => ({ data: null, isLoading: false }),
+    useListErrorTypes: () => ({ data: [] }),
     getGetInvoiceGroupQueryKey: (id: number) => ["invoice-group", id],
     getGetInvoiceGroupValidTransitionsQueryKey: (id: number) => [
       "invoice-group",
       id,
       "transitions",
     ],
+    getGetClaimQueryKey: (id: number) => ["claim", id],
     getListInvoiceGroupsQueryKey: () => ["invoice-groups"],
     getGetResponsesAwaitingReviewCountQueryKey: () => [
       "responses-awaiting-review-count",
@@ -88,8 +95,8 @@ mock.module("@/lib/role", {
 });
 
 // ClaimDetailV2 is huge and pulls in the whole leg-detail tree. Stub
-// to a marker div so we can assert it's rendered (or not) in each
-// outlook without paying the cost of mounting the real component.
+// to a marker div so we can assert it's only ever rendered in the
+// drawer (never in the hero).
 mock.module("@/components/claim-detail-v2", {
   namedExports: {
     ClaimDetailV2: (props: { claimId: number; embedded?: boolean }) =>
@@ -111,6 +118,15 @@ mock.module("@/components/closure/closure-launcher", {
   },
 });
 
+// SOP player is large. Stub to a marker div so we can assert its
+// presence/absence per phase.
+mock.module("@/components/decision-tree/sop-advance-player", {
+  namedExports: {
+    SopAdvancePlayer: () =>
+      React.createElement("div", { "data-testid": "stub-sop-advance-player" }),
+  },
+});
+
 const React = await import("react");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const { QueryClient, QueryClientProvider } = await import(
@@ -125,8 +141,6 @@ type ClaimResponse = import("@workspace/api-client-react").ClaimResponse;
 type InvoiceGroupDetailResponse =
   import("@workspace/api-client-react").InvoiceGroupDetailResponse;
 
-// Per-test mutable group payload returned by the mocked
-// useGetInvoiceGroup — set right before each render call.
 let capturedGroup: InvoiceGroupDetailResponse | null = null;
 
 void React;
@@ -267,11 +281,11 @@ test("buildPhaseConfigV3 — nothing_to_do is a single Close step", () => {
   assert.equal(cfg.pill.label, "Ready to close");
 });
 
-// ─── (d) Render parity — has_disputable mounts gauntlet ────────────
-test("InlineGroupWorkspaceV3 (has_disputable) — mounts gauntlet, V3 chrome present", () => {
+// ─── (d) Walk in progress mounts the SOP walk hero ─────────────────
+test("InlineGroupWorkspaceV3 (has_disputable, walking) — mounts SOP walk hero, no ClaimDetailV2 in hero, no gauntlet card", () => {
   capturedGroup = group([
-    leg({ id: 1, sopOutcome: "non_issue" }),
-    leg({ id: 2, sopOutcome: "portal_dispute" }),
+    leg({ id: 1, sopOutcome: null }),
+    leg({ id: 2, sopOutcome: null }),
   ]);
   const html = renderHtml(
     React.createElement(InlineGroupWorkspaceV3, { groupId: 99 }),
@@ -279,30 +293,90 @@ test("InlineGroupWorkspaceV3 (has_disputable) — mounts gauntlet, V3 chrome pre
   assert.match(html, /data-outlook="has_disputable"/);
   assert.match(html, /data-collapsed="false"/);
   assert.match(html, /data-testid="v3-leg-switcher"/);
-  assert.match(html, /data-testid="v3-leg-hero"/);
+  assert.match(html, /data-testid="v3-hero-walk"/);
   assert.match(html, /data-testid="v3-pinned-footer"/);
-  // Gauntlet's readback / preview / submit testids are fingerprints
-  // for "the gauntlet mounted". At least one of them must appear.
-  assert.ok(
-    html.includes("generate-preview") ||
-      html.includes("readback-input") ||
-      html.includes("submit-to-portal"),
-    "expected gauntlet to mount for has_disputable",
-  );
-  assert.equal(
-    html.includes("invoice-reattest-only-cta"),
-    false,
-    "Re-attest CTA must not render for has_disputable",
-  );
-  assert.equal(
-    html.includes("invoice-nothing-to-do-closeout"),
-    false,
-    "close-out card must not render for has_disputable",
-  );
+  // The walk-complete / preview / review / submitted heroes must not
+  // appear when we're still walking.
+  assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-review"'), false);
+  // The classic gauntlet card must NOT be stacked under the hero —
+  // its mutations are bound directly into the wizard heroes now.
+  assert.equal(html.includes("readback-input"), false);
+  assert.equal(html.includes("generate-preview"), false);
+  assert.equal(html.includes("submit-to-portal"), false);
+  assert.equal(html.includes("invoice-reattest-only-cta"), false);
+  assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
 });
 
-// ─── (e) Render parity — reattest_only mounts CTA ───────────────────
-test("InlineGroupWorkspaceV3 (reattest_only) — mounts Re-attest CTA, gauntlet absent, chrome present", () => {
+// ─── (e) Walk complete mounts the verdict-summary hero ─────────────
+test("InlineGroupWorkspaceV3 (has_disputable, walk complete) — mounts WalkCompleteHero with Generate preview", () => {
+  capturedGroup = group([
+    leg({ id: 1, sopOutcome: "non_issue" }),
+    leg({ id: 2, sopOutcome: "portal_dispute" }),
+  ]);
+  const html = renderHtml(
+    React.createElement(InlineGroupWorkspaceV3, { groupId: 99 }),
+  );
+  assert.match(html, /data-testid="v3-hero-walk-complete"/);
+  assert.match(html, /data-testid="v3-generate-preview"/);
+  assert.match(html, /data-testid="v3-verdict-1"/);
+  assert.match(html, /data-testid="v3-verdict-2"/);
+  assert.equal(html.includes('data-testid="v3-hero-walk"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
+});
+
+// ─── (f) Preview generated mounts the read-only Preview hero ───────
+test("InlineGroupWorkspaceV3 (has_disputable, previewed) — mounts read-only PreviewDocHero", () => {
+  capturedGroup = group(
+    [
+      leg({ id: 1, sopOutcome: "non_issue" }),
+      leg({ id: 2, sopOutcome: "portal_dispute" }),
+    ],
+    {
+      previewGeneratedAt: "2026-05-07T18:00:00Z",
+      aiBaselineSubject: "Dispute for invoice INV-99",
+      aiBaselineDescriptionHtml: "Body text rendered by the AI baseline.",
+    } as Partial<InvoiceGroupDetailResponse>,
+  );
+  const html = renderHtml(
+    React.createElement(InlineGroupWorkspaceV3, { groupId: 99 }),
+  );
+  assert.match(html, /data-testid="v3-hero-preview"/);
+  assert.match(html, /data-testid="v3-skip-review"/);
+  assert.match(html, /data-testid="v3-enter-review"/);
+  assert.match(html, /Body text rendered by the AI baseline\./);
+  assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-review"'), false);
+});
+
+// ─── (g) Reviewed mounts the editable Review hero with Submit ──────
+test("InlineGroupWorkspaceV3 (has_disputable, reviewed) — mounts editable ReviewEditHero with Submit", () => {
+  capturedGroup = group(
+    [
+      leg({ id: 1, sopOutcome: "non_issue" }),
+      leg({ id: 2, sopOutcome: "portal_dispute" }),
+    ],
+    {
+      previewGeneratedAt: "2026-05-07T18:00:00Z",
+      draftReviewedAt: "2026-05-07T18:30:00Z",
+      draftSubject: "Dispute for invoice INV-99",
+      draftDescriptionHtml: "Reviewed body text.",
+    } as Partial<InvoiceGroupDetailResponse>,
+  );
+  const html = renderHtml(
+    React.createElement(InlineGroupWorkspaceV3, { groupId: 99 }),
+  );
+  assert.match(html, /data-testid="v3-hero-review"/);
+  assert.match(html, /data-testid="v3-draft-subject-input"/);
+  assert.match(html, /data-testid="v3-draft-body-input"/);
+  assert.match(html, /data-testid="v3-mark-reviewed"/);
+  assert.match(html, /data-testid="v3-submit-to-portal"/);
+  assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
+});
+
+// ─── (h) reattest_only mounts CTA, never a submission hero ─────────
+test("InlineGroupWorkspaceV3 (reattest_only) — mounts Re-attest CTA, no submission heroes", () => {
   capturedGroup = group([
     leg({ id: 1, sopOutcome: "non_issue" }),
     leg({ id: 2, sopOutcome: "non_issue" }),
@@ -315,22 +389,18 @@ test("InlineGroupWorkspaceV3 (reattest_only) — mounts Re-attest CTA, gauntlet 
   assert.match(html, /data-outlook="reattest_only"/);
   assert.match(html, /data-collapsed="false"/);
   assert.match(html, /data-testid="v3-leg-switcher"/);
-  assert.match(html, /data-testid="v3-leg-hero"/);
   assert.match(html, /data-testid="v3-pinned-footer"/);
   assert.match(html, /data-testid="invoice-reattest-only-cta"/);
-  assert.equal(
-    html.includes("generate-preview"),
-    false,
-    "gauntlet must not render in reattest_only",
-  );
-  assert.equal(
-    html.includes("invoice-nothing-to-do-closeout"),
-    false,
-    "close-out card must not render in reattest_only",
-  );
+  // No submission-flow heroes for the re-attest path.
+  assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-review"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-submitted"'), false);
+  // No close-out card either.
+  assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
 });
 
-// ─── (f) Render parity — nothing_to_do collapses chrome ────────────
+// ─── (i) nothing_to_do collapses chrome to the close-out card ──────
 test("InlineGroupWorkspaceV3 (nothing_to_do) — mounts close-out card, chrome collapsed", () => {
   capturedGroup = group([
     leg({ id: 1, sopOutcome: "cannot_dispute" }),
@@ -342,29 +412,11 @@ test("InlineGroupWorkspaceV3 (nothing_to_do) — mounts close-out card, chrome c
   assert.match(html, /data-outlook="nothing_to_do"/);
   assert.match(html, /data-collapsed="true"/);
   assert.match(html, /data-testid="invoice-nothing-to-do-closeout"/);
-  assert.equal(
-    html.includes(`data-testid="v3-leg-switcher"`),
-    false,
-    "leg switcher must not render when chrome is collapsed",
-  );
-  assert.equal(
-    html.includes(`data-testid="v3-leg-hero"`),
-    false,
-    "SOP hero must not render when chrome is collapsed",
-  );
-  assert.equal(
-    html.includes(`data-testid="v3-pinned-footer"`),
-    false,
-    "pinned footer must not render when chrome is collapsed",
-  );
-  assert.equal(
-    html.includes("generate-preview"),
-    false,
-    "gauntlet must not render in nothing_to_do",
-  );
-  assert.equal(
-    html.includes("invoice-reattest-only-cta"),
-    false,
-    "Re-attest CTA must not render in nothing_to_do",
-  );
+  assert.equal(html.includes(`data-testid="v3-leg-switcher"`), false);
+  assert.equal(html.includes(`data-testid="v3-pinned-footer"`), false);
+  assert.equal(html.includes('data-testid="v3-hero-walk"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
+  assert.equal(html.includes('data-testid="v3-hero-review"'), false);
+  assert.equal(html.includes("invoice-reattest-only-cta"), false);
 });
