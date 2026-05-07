@@ -4,6 +4,16 @@
 // browser bundle. The DB package re-exports these symbols so existing
 // server-side imports stay valid.
 
+// Re-export the openness predicate (Wave D-PR1, 2026-05-07). Mirrors the
+// `is_open` GENERATED column on `claims` and `invoice_groups`. See
+// `./openness.ts` for the lockstep contract.
+export {
+  OPEN_STATUSES,
+  isClaimOpen,
+  isInvoiceGroupOpen,
+  type OpenStatus,
+} from "./openness";
+
 // Re-export the SOP transcript helper so both the React client (leg-detail
 // "SOP walk transcript" card) and the server (Task #377: dispute write-up
 // prompt) consume one source of truth without duplicating the logic.

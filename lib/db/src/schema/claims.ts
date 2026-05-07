@@ -208,6 +208,15 @@ export const claimsTable = pgTable("claims", {
   attestationNote: text("attestation_note"),
   attestationQueuedAt: timestamp("attestation_queued_at", { withTimezone: true }),
   attestationQueuedBy: text("attestation_queued_by"),
+  // Wave D-PR1 (2026-05-07). GENERATED ALWAYS AS (status IN (…OPEN_STATUSES…))
+  // STORED column, populated by Postgres on every UPDATE that touches `status`.
+  // Do NOT write to this column — drizzle-kit and createInsertSchema know it
+  // is generated and will reject it. Lockstep with `OPEN_STATUSES` in
+  // `lib/leg-state/src/openness.ts` and the `IN (…)` list in migration 0036.
+  // See `docs/architecture/state-wave-d-handoff.md` §6.1 for rationale.
+  isOpen: boolean("is_open").generatedAlwaysAs(
+    sql`status IN ('New','Needs Evidence','Processed','Portal Queued','Generating Email','Ready to Review','Awaiting Response','On Hold')`,
+  ),
   // Marks the single global "tour sample" row used by the in-app guided
   // tour so steps 18 / 20 can land on real detail pages with real
   // anchors. Hidden from every normal list/aggregate query and

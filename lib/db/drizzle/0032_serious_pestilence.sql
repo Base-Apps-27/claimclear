@@ -1,0 +1,2 @@
+ALTER TABLE "invoice_groups" ADD COLUMN "is_open" boolean GENERATED ALWAYS AS (status IN ('New','Needs Evidence','Processed','Portal Queued','Generating Email','Ready to Review','Awaiting Response','On Hold')) STORED;--> statement-breakpoint
+ALTER TABLE "claims" ADD COLUMN "is_open" boolean GENERATED ALWAYS AS (status IN ('New','Needs Evidence','Processed','Portal Queued','Generating Email','Ready to Review','Awaiting Response','On Hold')) STORED;

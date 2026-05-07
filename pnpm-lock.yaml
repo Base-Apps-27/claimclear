@@ -1038,6 +1038,9 @@ importers:
       '@workspace/invoice-state':
         specifier: workspace:*
         version: link:../lib/invoice-state
+      '@workspace/leg-state':
+        specifier: workspace:*
+        version: link:../lib/leg-state
       '@workspace/vocab':
         specifier: workspace:*
         version: link:../lib/vocab

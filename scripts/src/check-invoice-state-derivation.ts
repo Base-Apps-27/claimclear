@@ -22,21 +22,28 @@ import {
   type LegacyClaimShape,
   type LegacyInvoiceGroupShape,
 } from "@workspace/invoice-state";
+import { isClaimOpen, isInvoiceGroupOpen } from "@workspace/leg-state";
 import { isDispositionValidForPhase, type InvoicePhase } from "@workspace/vocab";
 
 interface InvoiceRow extends LegacyInvoiceGroupShape {
   id: number;
   phase: InvoicePhase;
+  isOpen: boolean;
 }
 
 interface ClaimRow extends LegacyClaimShape {
   id: number;
   invoice_group_id: number | null;
   disposition: string;
+  isOpen: boolean;
 }
 
 interface Violation {
-  kind: "phase_mismatch" | "disposition_mismatch" | "invalid_for_phase";
+  kind:
+    | "phase_mismatch"
+    | "disposition_mismatch"
+    | "invalid_for_phase"
+    | "is_open_mismatch";
   rowId: number;
   detail: string;
 }
@@ -51,7 +58,8 @@ async function main(): Promise<void> {
               reattest_completed_at AS "reattestCompletedAt",
               closure_reason AS "closureReason",
               hold_reason AS "holdReason",
-              phase
+              phase,
+              is_open AS "isOpen"
        FROM invoice_groups`,
     )).rows;
 
@@ -65,7 +73,8 @@ async function main(): Promise<void> {
               drop_reason AS "dropReason",
               error_type_id AS "errorTypeId",
               closure_reason AS "closureReason",
-              disposition
+              disposition,
+              is_open AS "isOpen"
        FROM claims`,
     )).rows;
 
@@ -87,6 +96,15 @@ async function main(): Promise<void> {
           kind: "phase_mismatch",
           rowId: g.id,
           detail: `stored=${g.phase} derived=${expected.phase} status=${g.status} outcome=${g.outcome} reattestCompleted=${g.reattestCompletedAt != null}`,
+        });
+      }
+      // Wave D-PR1: GENERATED `is_open` column must match the TS helper.
+      const expectedOpen = isInvoiceGroupOpen({ status: g.status });
+      if (g.isOpen !== expectedOpen) {
+        violations.push({
+          kind: "is_open_mismatch",
+          rowId: g.id,
+          detail: `stored=${g.isOpen} derived=${expectedOpen} status=${g.status} (group)`,
         });
       }
     }
@@ -117,6 +135,16 @@ async function main(): Promise<void> {
           kind: "invalid_for_phase",
           rowId: c.id,
           detail: `stored=${c.disposition} parentPhase=${parent} (not in VALID_DISPOSITIONS_BY_PHASE[${parent}])`,
+        });
+      }
+
+      // Wave D-PR1: GENERATED `is_open` column must match the TS helper.
+      const expectedOpen = isClaimOpen({ status: c.status });
+      if (c.isOpen !== expectedOpen) {
+        violations.push({
+          kind: "is_open_mismatch",
+          rowId: c.id,
+          detail: `stored=${c.isOpen} derived=${expectedOpen} status=${c.status} (claim)`,
         });
       }
     }

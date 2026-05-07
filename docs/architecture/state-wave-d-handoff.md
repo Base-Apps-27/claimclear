@@ -161,17 +161,70 @@ write or leaves it as a deprecated mirror until Wave E.
 
 ### Suggested sequence
 
-1. **D-PR1**: ship the `legIsOpen` helper / `is_open` mirror column (§3.B
-   prerequisite). Do not change any callers yet.
-2. **D-PR2**: rewire `claim-transitions.ts` and the SOP-advance handlers to
-   make `disposition` the source of truth (legacy columns become deprecated
-   mirrors). Add a parity assertion in dev that the two derivations agree.
-3. **D-PR3**: collapse the §3.B residuals onto `legIsOpen`.
-4. **D-PR4**: rewrite `day-complete.ts` SQL builder (§3.C).
-5. **D-PR5**: parity-script for the §3.E aggregates; ship the switch once
-   prod parity is green for one full daily-brief cycle.
+1. **D-PR1**: ship the `is_open` GENERATED column on `claims` AND
+   `invoice_groups` (§3.B prerequisite). Decision recorded in §6.1: chose
+   a Postgres `GENERATED ALWAYS AS … STORED` column over a writer-maintained
+   mirror or a JOIN helper. Includes:
+   - Migration 0036: add `is_open boolean GENERATED ALWAYS AS
+     (status IN (…OPEN_STATUSES…)) STORED` on both tables, plus a
+     partial index `WHERE is_open = true` on each. No backfill needed —
+     stored generated columns are populated by the ALTER TABLE itself,
+     atomically.
+   - `lib/leg-state/src/openness.ts`: pure `isClaimOpen(row)` /
+     `isInvoiceGroupOpen(row)` helpers + the canonical `OPEN_STATUSES`
+     constant. Used by readers in D-PR3 and by the conformance script.
+     The drizzle schema marks the column `.generatedAlwaysAs(…)` so
+     drizzle-kit and `createInsertSchema()` know it's not writeable.
+   - No writer changes. The DB computes `is_open` server-side every
+     time `status` changes; there is no callsite to rewire. The two
+     callsites in `brief-personalization.ts` / `dashboard.ts` that
+     define the legacy `OPEN_STATUSES` arrays are kept in lockstep
+     with the migration's `IN (…)` list and `lib/leg-state`'s constant
+     (three places — call out in the docstring on each).
+   - Conformance script update: `check-invoice-state-derivation.ts`
+     gains a third assertion that the stored `is_open` value matches
+     `isClaimOpen()` / `isInvoiceGroupOpen()` from the TS helper. Run
+     against prod immediately after migration 0036 lands.
+
+2. **D-PR2** (split into 2a + 2b for the cache inversion — see §6.3):
+   - **D-PR2a**: invert `denormalized-cache.ts` first. Today
+     `projectLegStatus` reads `(group.status, sopOutcome, holdReason)`
+     and writes legacy `claim.status`. Add a parallel
+     `projectLegDisposition` path that reads the same inputs and writes
+     `disposition`, then **drop the legacy projection** so disposition
+     becomes the sole canonical write and `status`/`outcome` are derived
+     mirrors written from disposition + a small projector (kept inside
+     this file so the inversion lives in one place). Migration trigger
+     `validate_disposition_against_phase` (from 0034) keeps enforcing
+     the cross-row invariant. Add a parity assertion in dev that the
+     two derivations agree on every write.
+   - **D-PR2b**: rewire `claim-transitions.ts` and the SOP-advance
+     handlers in `routes/claims.ts` + `routes/invoice-groups.ts` to
+     call the disposition writer directly (currently they set
+     `sopOutcome` and the trigger backfills disposition). Legacy
+     columns continue to write only via the cache mirror in D-PR2a;
+     no other writer touches them. After this PR, every legacy-column
+     write in the codebase is gone except the deprecated mirror in
+     `denormalized-cache.ts`.
+
+3. **D-PR3**: collapse the §3.B residuals onto `claims.is_open` /
+   `invoice_groups.is_open`. Pure column substitution at the call sites
+   listed in §3.B; no logic changes.
+
+4. **D-PR4**: rewrite `day-complete.ts` SQL builder (§3.C). Now that
+   disposition is canonical, the matcher sources its sets from
+   `disposition`/`phase` directly.
+
+5. **D-PR5**: ship the §3.E aggregates immediately (no parity window —
+   see §6.2). The PROD conformance audit (3,715 rows, 0 violations,
+   2026-05-07) is the parity proof the original handoff asked for; the
+   aggregates can flip onto the canonical columns in a single PR
+   alongside D-PR4 if convenient.
+
 6. **D-PR6**: drop the `unclassified` fallback in every helper once the
-   prod backfill verification passes (§3.D).
+   prod backfill verification (re-run conformance on a freshly-stamped
+   prod, post-D-PR2b) shows no `unclassified` rows that should have a
+   canonical value.
 
 After D-PR6, Wave E (drop the legacy columns) is unblocked.
 
@@ -203,17 +256,66 @@ Same as Wave C (see continuation #5 §T010):
 
 ---
 
-## 6. Open questions for Wave D
+## 6. Decisions (recorded 2026-05-07)
 
-1. **`is_open` mirror column vs. JOIN helper**: column is faster to read but
-   adds another writer-side invariant to maintain. Helper is purer but adds
-   a JOIN to every list page. Decide before D-PR1.
-2. **Daily-brief aggregate parity window**: how long does prod need to run
-   green on the parity script before D-PR5 can flip the switch? Suggest one
-   full week including a month-end close, since some aggregates only
-   surface end-of-month rollups.
-3. **`denormalized-cache.ts` rewire ordering**: this writer produces the
-   disposition column from the legacy columns. After D-PR2 the legacy
-   columns are derived from disposition, so this file inverts. Plan the
-   inversion explicitly — do not let D-PR2 land before the cache is
-   re-pointed at the new source of truth.
+### 6.1 `is_open` mirror column vs. JOIN helper — DECISION: GENERATED column
+
+Both options on the table had drawbacks (writer-side invariant for the
+mirror, hot-path JOIN for the helper). A third option emerged that
+beats both: a Postgres `GENERATED ALWAYS AS (status IN (…)) STORED`
+column on `claims` and `invoice_groups`. Rationale:
+
+- The §3.B residuals are concentrated on hot read paths (dashboard,
+  daily-brief, expiring-filter, urgent-snapshot, brief-personalization).
+  A JOIN helper would add a join to every one of those — for a column
+  that almost every list page already filters by.
+- A writer-maintained mirror would add an invariant that every
+  `UPDATE claims SET status = …` callsite has to remember to refresh.
+  Easy to miss; conformance script catches it but only after the fact.
+- A `GENERATED ALWAYS AS … STORED` column delegates the invariant to
+  Postgres. Every `UPDATE` that changes `status` atomically updates
+  `is_open`. Indexed exactly like a regular column. Cannot drift.
+- The expression's input list (`OPEN_STATUSES`) is the contract. It
+  appears in three places (the migration, the TS helper in
+  `lib/leg-state/src/openness.ts`, and the legacy arrays in
+  `brief-personalization.ts` / `dashboard.ts`); each carries a
+  lockstep docstring pointing at the others. The conformance script
+  asserts the stored column equals the TS helper's derivation, so any
+  drift fails CI.
+
+### 6.2 Daily-brief aggregate parity window — DECISION: no window
+
+D-PR5 ships the §3.E aggregates immediately, no parity script gating.
+The PROD conformance audit (1,310 groups + 2,405 claims = 3,715 rows;
+0 phase / disposition / phase-validity violations on 2026-05-07) is
+the parity proof the original handoff asked for. Re-run the audit
+once after D-PR2b lands; if it stays green, D-PR5 flips with no
+additional ceremony.
+
+### 6.3 `denormalized-cache.ts` rewire ordering — DECISION: explicit two-stage flip
+
+The denormalized cache today reads `(group.status, sopOutcome,
+holdReason)` and writes both `claims.status` and (via the migration
+trigger) `claims.disposition`. After D-PR2b, the only writer that
+should set `claims.status` is the cache itself, projecting **from
+disposition**. The order of operations therefore is:
+
+1. **D-PR2a** lands first. It inverts the cache: disposition becomes
+   the canonical write (computed from sopOutcome/dropReason/etc. via
+   `deriveDispositionFromLegacy`); `status` becomes a deprecated
+   mirror computed from disposition + a small `dispositionToStatus`
+   projector that lives next to `projectLegStatus` in this file. The
+   trigger `validate_disposition_against_phase` continues to enforce
+   the cross-row invariant.
+2. **Parity assertion in dev**: every write goes through both the new
+   canonical path and the old legacy path; if the two disagree, the
+   write fails loudly. Lift the assertion before D-PR2b ships.
+3. **D-PR2b** then makes `claim-transitions.ts` and the SOP-advance
+   handlers call the disposition writer directly instead of setting
+   `sopOutcome` and relying on the trigger. After this PR, the cache
+   in D-PR2a is the only place where legacy `status`/`outcome` is
+   written.
+
+D-PR2b cannot land before D-PR2a; otherwise the SOP-advance handlers
+would write disposition, the cache would still be reading from the
+legacy columns, and the two derivations would race.

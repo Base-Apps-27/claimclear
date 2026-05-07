@@ -28,6 +28,7 @@
     "@workspace/closure-options": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/invoice-state": "workspace:*",
+    "@workspace/leg-state": "workspace:*",
     "@workspace/vocab": "workspace:*",
     "drizzle-orm": "catalog:"
   },

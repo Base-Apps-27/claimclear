@@ -225,6 +225,13 @@
       "when": 1778113052406,
       "tag": "0031_invoice_phase_and_disposition",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1778127204117,
+      "tag": "0032_serious_pestilence",
+      "breakpoints": true
     }
   ]
 }

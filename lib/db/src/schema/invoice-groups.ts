@@ -1,4 +1,5 @@
 import { pgTable, pgEnum, text, serial, integer, timestamp, numeric, boolean, jsonb, index, uniqueIndex, date } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimStatusEnum, claimOutcomeEnum } from "./claims";
@@ -154,6 +155,14 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   // 0029_tour_sample.sql for the singleton-enforcement partial unique
   // index and the seed.
   isTourSample: boolean("is_tour_sample").notNull().default(false),
+  // Wave D-PR1 (2026-05-07). GENERATED ALWAYS AS (status IN (…OPEN_STATUSES…))
+  // STORED column, populated by Postgres on every UPDATE that touches `status`.
+  // Do NOT write to this column. Lockstep with `OPEN_STATUSES` in
+  // `lib/leg-state/src/openness.ts` and the `IN (…)` list in migration 0036.
+  // See `docs/architecture/state-wave-d-handoff.md` §6.1 for rationale.
+  isOpen: boolean("is_open").generatedAlwaysAs(
+    sql`status IN ('New','Needs Evidence','Processed','Portal Queued','Generating Email','Ready to Review','Awaiting Response','On Hold')`,
+  ),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
