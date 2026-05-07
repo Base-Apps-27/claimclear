@@ -159,6 +159,10 @@ function makeGroup(overrides: Partial<InvoiceGroup> = {}): InvoiceGroup {
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
     isTourSample: false,
+    // Wave D-PR1: GENERATED ALWAYS column. Postgres computes from `status`
+    // on insert/update; the fixture sets it to mirror the seeded `status`
+    // so the typed `$inferSelect` shape is satisfied without overrides.
+    isOpen: true,
     ...overrides,
   };
 }
@@ -240,6 +244,10 @@ function makeClaim(overrides: Partial<Claim> & Pick<Claim, "id" | "confNumber">)
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
     isTourSample: false,
+    // Wave D-PR1: GENERATED ALWAYS column. Postgres computes from `status`
+    // on insert/update; the fixture sets it to mirror the seeded `status`
+    // so the typed `$inferSelect` shape is satisfied without overrides.
+    isOpen: true,
     ...overrides,
   };
 }

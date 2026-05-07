@@ -20,8 +20,6 @@ import { scrubDashboardAmounts, scrubMoneyFieldsArray, canSeeAmounts } from "../
 
 const router: IRouter = Router();
 
-const OPEN_STATUSES = ["New", "Needs Evidence", "Processed", "Portal Queued", "Generating Email", "Ready to Review", "Awaiting Response", "On Hold"] as const;
-
 // Operating rule for both sets below:
 //   A row is "urgent today" iff its filing deadline is `<=` today AND its
 //   status is neither already-submitted nor concluded.
@@ -407,7 +405,10 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const expiredGroups = parseInt(bucketRow?.expiredGroups || "0", 10);
   const deniedLostGroups = parseInt(bucketRow?.deniedLostGroups || "0", 10);
 
-  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
+  // Wave D-PR3: collapsed onto the `invoice_groups.is_open` GENERATED
+  // column (migration 0036). Lockstep with `OPEN_STATUSES` in
+  // `lib/leg-state/src/openness.ts`; conformance audit pins it.
+  const openStatusFilter = eq(invoiceGroupsTable.isOpen, true);
 
   // Wave C reader switch (Task #517): the actionable group set is now
   // read off `invoice_groups.phase` — the canonical filing-state column

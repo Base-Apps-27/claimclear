@@ -17,7 +17,6 @@ import { isOutlookConnected } from "../lib/outlook";
 import { sendEmailWithContext, recordDailyBriefAttempt, persistDailyBriefRow } from "../lib/email-send";
 import { getConnectorHealth } from "../lib/connector-health";
 import {
-  OPEN_STATUSES,
   getYesterdayActivity,
   getNeedsYouToday,
   getWeeklyDigest,
@@ -344,7 +343,10 @@ function renderOperatorBody(needs: NeedsYouToday, weeklyDigest: WeeklyDigest | n
 }
 
 async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promise<AdminMetrics> {
-  const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(claimsTable.status, s)));
+  // Wave D-PR3: collapsed onto the `claims.is_open` GENERATED column
+  // (migration 0036). Lockstep with `OPEN_STATUSES` in
+  // `lib/leg-state/src/openness.ts`; conformance audit pins it.
+  const openStatusFilter = eq(claimsTable.isOpen, true);
   // For the deadline list specifically, narrow to the same "next action is on
   // us" subset the dashboard uses. Claims in "Awaiting Response" / "On Hold"
   // are open, but we can't actually file them today, so listing them in the

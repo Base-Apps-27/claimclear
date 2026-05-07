@@ -8,22 +8,6 @@ import {
 } from "@workspace/db";
 import { and, eq, or, gte, lt, inArray, sql, desc, isNotNull } from "drizzle-orm";
 
-// Every claim_status value that means "the leg is still open" — used to
-// build the daily brief's per-leg counts. "Processed" is open (worktree
-// done but invoice not yet packaged). "Generating Email" was a
-// pre-existing omission corrected here so the brief no longer drops
-// in-flight legs that happen to be in that intermediate state.
-export const OPEN_STATUSES = [
-  "New",
-  "Needs Evidence",
-  "Processed",
-  "Portal Queued",
-  "Generating Email",
-  "Ready to Review",
-  "Awaiting Response",
-  "On Hold",
-] as const;
-
 export interface YesterdayActivity {
   claimsCreated: number;
   draftsSubmitted: number;
@@ -118,15 +102,12 @@ const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 export async function getNeedsYouToday(userEmail: string, now: Date): Promise<NeedsYouToday> {
   const since = new Date(now.getTime() - FOURTEEN_DAYS_MS);
-  // Wave C residual (§3.B): kept on legacy `claims.status` because there is
-  // no clean `disposition` equivalent for this 8-status set. The set excludes
-  // `MAS Eligible` (which lives in `awaiting_reattestation` phase with
-  // dispositions `attest_*` — all NOT in the `final_*` closed set), so
-  // `disposition NOT IN (final_*)` would over-include those legs and start
-  // surfacing in-attestation work in the operator's "recently touched open"
-  // section. Same residual class as `routes/daily-brief.ts` open-claim
-  // filter; switch in Wave D once a per-claim closed/open mirror lands.
-  const openFilter = or(...OPEN_STATUSES.map((s) => eq(claimsTable.status, s)));
+  // Wave D-PR3: collapsed onto the `claims.is_open` GENERATED column
+  // (migration 0036). The column's `status IN (…)` list is locked in
+  // lockstep with `OPEN_STATUSES` in `lib/leg-state/src/openness.ts`
+  // and the `scripts/src/check-invoice-state-derivation.ts` conformance
+  // audit asserts equality on every prod row.
+  const openFilter = eq(claimsTable.isOpen, true);
 
   // Recently touched claims (open) — distinct claim ids the user touched in last 14 days
   const touchedRows = await db
