@@ -50,12 +50,15 @@
 
 import { eq, and } from "drizzle-orm";
 import { db, claimsTable, type Claim } from "@workspace/db";
-import type { ClaimDisposition } from "@workspace/vocab";
+import type { ClaimDisposition, InvoicePhase } from "@workspace/vocab";
 import type {
   LegacyDropReason,
   LegacySopOutcome,
 } from "@workspace/invoice-state";
 import type { DbExecutor } from "../claim-transitions";
+import { getGroupMacroPhase, type MacroPhase } from "../macro-phase";
+
+type ClaimStatus = Claim["status"];
 
 /**
  * Inverse of the §3.D fallback table in `derive-disposition.ts`.
@@ -116,6 +119,140 @@ export function sopOutcomeToDisposition(sopOutcome: string): ClaimDisposition {
     default:
       throw new Error(`sopOutcomeToDisposition: unknown sop_outcome "${sopOutcome}"`);
   }
+}
+
+/**
+ * All `claim_status` enum values that can validly be mirrored from a
+ * parent group onto a leg. Excludes leg-only values (`Processed`) and
+ * group-only terminals not part of the standard rollup (`Expired`,
+ * `Withdrawn`). When a group's status falls outside this set the
+ * projector returns `null` (= preserve leg's existing status).
+ */
+const MIRRORABLE_LEG_STATUSES: ReadonlySet<ClaimStatus> = new Set<ClaimStatus>([
+  "New",
+  "Needs Review",
+  "Needs Evidence",
+  "Portal Queued",
+  "Generating Email",
+  "Ready to Review",
+  "Awaiting Response",
+  "On Hold",
+  "MAS Eligible",
+  "Resolved",
+  "Denied",
+]);
+
+/**
+ * Inverse of the `projectLegStatus` decision table that the Wave-D
+ * cache helper used pre-D-PR2c. Projects a leg's surfaced
+ * `claims.status` from its canonical `disposition` plus the parent
+ * group's macro phase / status. After D-PR2c this is the only writer
+ * for `claims.status` (status becomes a derived projection of
+ * disposition; disposition is the single source of truth).
+ *
+ * Returns `null` to mean "leave the leg's existing status alone":
+ *   • Excluded legs in pre-submit (their closed/withdrawn status set
+ *     by the SOP exclusion path is authoritative).
+ *   • Duplicate legs (their dup-marking status is preserved).
+ *   • Defensive fall-through when the parent's status is outside the
+ *     mirrorable set (e.g. group is `Expired` or `Withdrawn`).
+ *
+ * Sharp edges preserved from `projectLegStatus`:
+ *   1. Per-leg hold (`legHoldReason`) wins over everything. The
+ *      disposition deriver does NOT read `holdReason` (only
+ *      `sopOutcome === 'hold'` maps to `disposition='blocked'`), so
+ *      the per-leg hold endpoint's effect would be lost without an
+ *      explicit override here. Caller passes the leg's current
+ *      `holdReason` via `opts.legHoldReason`.
+ *   2. `disposition='blocked'` (the canonical encoding of
+ *      `sopOutcome='hold'`) projects to `On Hold` regardless of
+ *      parent phase.
+ *   3. Pre-submit exclusion (`disposed_nonissue` / `disposed_withdraw`)
+ *      returns `null` so the SOP exclusion path's stamped status
+ *      (Resolved/Withdrawn) survives.
+ *   4. In-flight collapses to `Awaiting Response` for every leg,
+ *      matching the legacy projector exactly.
+ *
+ * Spec'd against the canonical `parent.phase` column (not the legacy
+ * macro-phase reading) — `getGroupMacroPhase` prefers `phase` and
+ * falls back to `status` for callers that only have the partial
+ * shape during the Wave D transition window.
+ */
+export function dispositionToStatus(
+  disposition: ClaimDisposition,
+  parent: {
+    phase: InvoicePhase | null;
+    status: string;
+    reattestRequired: boolean | null;
+    reattestCompletedAt: Date | string | null;
+  },
+  opts?: { legHoldReason?: string | null },
+): ClaimStatus | null {
+  // Rule 1: per-leg hold wins over everything.
+  if (opts?.legHoldReason != null) return "On Hold";
+
+  // Rule 1b: disposition='blocked' (sopOutcome=hold canonical
+  // encoding) projects to On Hold regardless of parent phase.
+  if (disposition === "blocked") return "On Hold";
+
+  const macro: MacroPhase = getGroupMacroPhase({
+    phase: parent.phase ?? undefined,
+    status: parent.status,
+    reattestRequired: parent.reattestRequired,
+    reattestCompletedAt:
+      parent.reattestCompletedAt instanceof Date
+        ? parent.reattestCompletedAt
+        : parent.reattestCompletedAt != null
+          ? new Date(parent.reattestCompletedAt)
+          : null,
+  });
+
+  switch (macro) {
+    case "pre-submit":
+      // Rule 2a: per-leg projection from disposition.
+      if (disposition === "disposed_portal" || disposition === "disposed_email") {
+        return "Processed";
+      }
+      if (disposition === "disposed_nonissue" || disposition === "disposed_withdraw") {
+        // Excluded leg — preserve the closed/withdrawn status the
+        // exclusion path stamped.
+        return null;
+      }
+      if (disposition === "duplicate") {
+        // Duplicates carry their own preserved status.
+        return null;
+      }
+      // unclassified | classifying — mirror group status (New /
+      // Needs Evidence).
+      return mirrorOrNull(parent.status);
+
+    case "in-flight":
+      // Rule 2b: collapse to a single representative status. Matches
+      // the legacy projector: every leg in an in-flight group
+      // surfaces as Awaiting Response (excluded legs typically don't
+      // reach this phase — exclusion happens pre-submit — but if one
+      // does, the legacy projector projected the same value).
+      return "Awaiting Response";
+
+    case "response-pending":
+    case "mas-action-required":
+    case "awaiting-payout":
+    case "closed":
+      // Rules 2c–2d: mirror the group's status. The disposition
+      // identifies the leg's per-leg verdict / attest state, but the
+      // surfaced status at this point is the group's.
+      return mirrorOrNull(parent.status);
+
+    case "on-hold":
+      // Rule 2e: explicit on-hold group → leg is On Hold too.
+      return "On Hold";
+  }
+}
+
+function mirrorOrNull(groupStatus: string): ClaimStatus | null {
+  return (MIRRORABLE_LEG_STATUSES as ReadonlySet<string>).has(groupStatus)
+    ? (groupStatus as ClaimStatus)
+    : null;
 }
 
 /**

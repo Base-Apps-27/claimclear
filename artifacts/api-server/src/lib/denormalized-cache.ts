@@ -44,40 +44,10 @@ import {
 import type { ClaimDisposition, InvoicePhase } from "@workspace/vocab";
 import type { DbExecutor } from "./claim-transitions";
 import { getMacroPhase, getGroupMacroPhase, type MacroPhase } from "./macro-phase";
+import { dispositionToStatus } from "./leg-state/set-claim-disposition";
 
 type ClaimOutcome = Claim["outcome"];
 type ClaimStatus = Claim["status"];
-
-// All claim_status enum values that can validly be mirrored from a
-// parent group onto a leg. The set excludes `Processed` (legs only;
-// not a valid group status) but otherwise covers the full enum.
-// Used as a runtime guard before the unsafe-looking
-// `group.status as ClaimStatus` cast in the projector below — if
-// upstream introduces a new group status that isn't in this set,
-// projection falls back to the leg's existing status instead of
-// silently coercing an invalid value.
-const MIRRORABLE_LEG_STATUSES: ReadonlySet<ClaimStatus> = new Set<ClaimStatus>([
-  "New",
-  "Needs Review",
-  "Needs Evidence",
-  "Portal Queued",
-  "Generating Email",
-  "Ready to Review",
-  "Awaiting Response",
-  "On Hold",
-  "MAS Eligible",
-  "Resolved",
-  "Denied",
-]);
-
-function asMirroredStatus(
-  groupStatus: string,
-  fallback: ClaimStatus,
-): ClaimStatus {
-  return (MIRRORABLE_LEG_STATUSES as ReadonlySet<string>).has(groupStatus)
-    ? (groupStatus as ClaimStatus)
-    : fallback;
-}
 
 // Map verdict.outcome (Approved | Denied | Partial) → claim_outcome enum.
 function verdictOutcomeToClaimOutcome(verdictOutcome: string): ClaimOutcome {
@@ -85,71 +55,6 @@ function verdictOutcomeToClaimOutcome(verdictOutcome: string): ClaimOutcome {
   if (verdictOutcome === "Approved") return "Approved";
   if (verdictOutcome === "Denied") return "Denied";
   return "Pending";
-}
-
-// Project the next per-leg `claim.status` from the parent group's
-// macro phase plus the leg's own per-leg state (sop_outcome,
-// hold_reason). See `.local/tasks/task-231.md` §A for the full
-// decision table; the rules below mirror it line-for-line.
-//
-// Sentinel return value `null` means "leave the leg's existing
-// status alone" — used for excluded legs in pre-submit (their
-// closed/withdrawn status is already correct) and the defensive
-// fall-through path. Callers should treat null as "no projection".
-function projectLegStatus(
-  leg: { status: ClaimStatus; sopOutcome: string | null; holdReason: string | null },
-  group: { status: string; reattestRequired: boolean | null; reattestCompletedAt: Date | string | null },
-): ClaimStatus | null {
-  // Rule 1: per-leg hold wins over everything. Either an explicit
-  // hold_reason or sop_outcome='hold' marks the leg as held; the
-  // projector preserves this regardless of macro phase.
-  if (leg.holdReason != null || leg.sopOutcome === "hold") {
-    return "On Hold";
-  }
-
-  const phase: MacroPhase = getGroupMacroPhase({
-    status: group.status,
-    reattestRequired: group.reattestRequired,
-    reattestCompletedAt: group.reattestCompletedAt instanceof Date
-      ? group.reattestCompletedAt
-      : group.reattestCompletedAt != null ? new Date(group.reattestCompletedAt) : null,
-  });
-
-  switch (phase) {
-    case "pre-submit":
-      // Rule 2a: per-leg projection from sop_outcome.
-      if (leg.sopOutcome === "portal_dispute" || leg.sopOutcome === "dispute") {
-        return "Processed";
-      }
-      if (leg.sopOutcome === "cannot_dispute" || leg.sopOutcome === "non_issue") {
-        // Excluded leg: the closed/withdrawn status set by the SOP
-        // exclusion path is authoritative — do not overwrite.
-        return null;
-      }
-      // No SOP outcome yet → mirror the group (New|Needs Evidence).
-      return asMirroredStatus(group.status, leg.status);
-
-    case "in-flight":
-      // Rule 2b: collapse to a single representative status. The
-      // task spec confirms this is the intended behaviour for now.
-      return "Awaiting Response";
-
-    case "response-pending":
-      // Rule 2c: mirror group (Ready to Review|Needs Review).
-      return asMirroredStatus(group.status, leg.status);
-
-    case "mas-action-required":
-    case "awaiting-payout":
-    case "closed":
-      // Rule 2d: mirror the group's actual status. The derived
-      // phases all share the closed family of statuses on the
-      // group itself, so mirroring is correct.
-      return asMirroredStatus(group.status, leg.status);
-
-    case "on-hold":
-      // Rule 2e: explicit on-hold group → leg is on hold too.
-      return "On Hold";
-  }
 }
 
 // Adapt a `claims.$inferSelect` row into the LegacyClaimShape that
@@ -249,25 +154,50 @@ export async function refreshClaimDenormalizedCache(
         groupPhaseUpdate = { id: group.id, phase: derivedPhase };
       }
 
-      // Status: existing per-leg projector (legacy mirror).
-      const projected = projectLegStatus(
-        { status: leg.status, sopOutcome: leg.sopOutcome, holdReason: leg.holdReason },
+      // D-PR2c — invert the cache. Compute disposition first from
+      // the legacy inputs (still the source of truth for the cache
+      // helper's recompute path; the writer in
+      // `setClaimDisposition` is the single producer of disposition
+      // on synchronous mutations). Then project status FROM
+      // disposition. After this PR, status is a derived projection
+      // of disposition; the legacy `projectLegStatus` decision table
+      // moved into `dispositionToStatus` and is no longer reachable.
+      //
+      // We stamp `nextStatus` *before* re-deriving disposition so the
+      // deriver's submitted-path tiebreaker (Portal Queued vs other)
+      // sees the projected status — but the projector reads the
+      // same parent we feed the deriver, so the values agree.
+      const preDispositionLegShape: LegacyClaimShape = {
+        ...toLegacyClaimShape(leg),
+        outcome: nextOutcome as LegacyClaimShape["outcome"],
+      };
+      // Provisional disposition from legacy inputs. We use the
+      // current `leg.status` for the submitted-path tiebreaker;
+      // status doesn't drift in the same refresh pass for these
+      // dispositions (Portal Queued only flips via the submission
+      // gauntlet, which calls this helper after the status flip).
+      const provisionalDisposition = deriveDispositionFromLegacy(
+        { ...preDispositionLegShape, status: leg.status as LegacyClaimShape["status"] },
+        derivedPhase,
+      );
+
+      const projected = dispositionToStatus(
+        provisionalDisposition,
         {
+          phase: derivedPhase,
           status: group.status,
           reattestRequired: group.reattestRequired,
           reattestCompletedAt: group.reattestCompletedAt,
         },
+        { legHoldReason: leg.holdReason },
       );
       if (projected != null) nextStatus = projected;
 
-      // Disposition: canonical write. Pass the post-update legacy
-      // shape (with the new status/outcome) so the deriver's
-      // submitted-path tiebreaker sees the right "Portal Queued"
-      // vs other-status signal.
+      // Final disposition write — recompute against the post-projection
+      // status so the deriver's tiebreaker is consistent.
       const postUpdateLegShape: LegacyClaimShape = {
-        ...toLegacyClaimShape(leg),
+        ...preDispositionLegShape,
         status: nextStatus as LegacyClaimShape["status"],
-        outcome: nextOutcome as LegacyClaimShape["outcome"],
       };
       nextDisposition = deriveDispositionFromLegacy(postUpdateLegShape, derivedPhase);
     }
@@ -312,8 +242,11 @@ export async function refreshClaimDenormalizedCache(
   return db.transaction(async (tx) => runInTx(tx as DbExecutor));
 }
 
-// Exported for unit tests. Pure function — no DB access.
-export { projectLegStatus };
+// D-PR2c removed `projectLegStatus`; the inversion lives in
+// `dispositionToStatus` (co-located with `dispositionToLegacy` in
+// `leg-state/set-claim-disposition.ts`). The unit-test suite was
+// rewritten against the new projector — see
+// `__tests__/leg-status-projector.test.ts`.
 
 /**
  * Recompute `invoice_groups.reattest_required` and (Wave D-PR2a)
