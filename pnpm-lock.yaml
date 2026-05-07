@@ -96,6 +96,9 @@ importers:
       '@workspace/integrations-anthropic-ai':
         specifier: workspace:*
         version: link:../../lib/integrations-anthropic-ai
+      '@workspace/invoice-state':
+        specifier: workspace:*
+        version: link:../../lib/invoice-state
       '@workspace/leg-state':
         specifier: workspace:*
         version: link:../../lib/leg-state

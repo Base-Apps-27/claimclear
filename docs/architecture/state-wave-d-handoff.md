@@ -292,30 +292,54 @@ the parity proof the original handoff asked for. Re-run the audit
 once after D-PR2b lands; if it stays green, D-PR5 flips with no
 additional ceremony.
 
-### 6.3 `denormalized-cache.ts` rewire ordering — DECISION: explicit two-stage flip
+### 6.3 `denormalized-cache.ts` rewire ordering — DECISION: three-stage flip
 
 The denormalized cache today reads `(group.status, sopOutcome,
-holdReason)` and writes both `claims.status` and (via the migration
-trigger) `claims.disposition`. After D-PR2b, the only writer that
-should set `claims.status` is the cache itself, projecting **from
-disposition**. The order of operations therefore is:
+holdReason)` and writes both `claims.status` and (via legacy-column
+mirroring) `claims.disposition` was static at backfill values. After
+the full Wave D, the only writer that should set `claims.status` is
+the cache itself, projecting **from disposition**. The order of
+operations is:
 
-1. **D-PR2a** lands first. It inverts the cache: disposition becomes
-   the canonical write (computed from sopOutcome/dropReason/etc. via
-   `deriveDispositionFromLegacy`); `status` becomes a deprecated
-   mirror computed from disposition + a small `dispositionToStatus`
-   projector that lives next to `projectLegStatus` in this file. The
-   trigger `validate_disposition_against_phase` continues to enforce
-   the cross-row invariant.
-2. **Parity assertion in dev**: every write goes through both the new
-   canonical path and the old legacy path; if the two disagree, the
-   write fails loudly. Lift the assertion before D-PR2b ships.
-3. **D-PR2b** then makes `claim-transitions.ts` and the SOP-advance
-   handlers call the disposition writer directly instead of setting
-   `sopOutcome` and relying on the trigger. After this PR, the cache
-   in D-PR2a is the only place where legacy `status`/`outcome` is
-   written.
+1. **D-PR2a — make canonical columns current** (this PR, shipped
+   2026-05-07). The cache helpers also write the canonical columns
+   alongside the legacy mirrors, using the existing pure derivers
+   from `@workspace/invoice-state` (`derivePhaseFromLegacy`,
+   `deriveDispositionFromLegacy`):
+   - `refreshClaimDenormalizedCache` writes `disposition` and (when
+     stale) `parent.phase` in one transaction.
+   - `refreshGroupDerivedFields` writes `phase` and refreshes every
+     child leg's `disposition` against the new phase.
+   - The trigger `claims_disposition_phase_chk` is `DEFERRABLE
+     INITIALLY DEFERRED` and only fires on `claims.disposition` /
+     `claims.invoice_group_id` UPDATEs (NOT on `invoice_groups.phase`
+     changes). This means a group's phase can advance without
+     revalidating sibling legs the helper isn't touching — they get
+     healed lazily on their own next refresh; the trigger never sees
+     their stale pair so nothing fails.
+   - **Discovery**: cache helpers run *outside* the route txns
+     (e.g. `await db.transaction(...)` then `await
+     refreshClaimDenormalizedCache(id)`), so cross-helper consistency
+     cannot rely on the route's tx. This is fine because the trigger
+     is per-claim, not cross-row.
+   - **No `dispositionToStatus` projector and no parity assertion in
+     this PR** — those were premised on inverting the cache (writing
+     status FROM disposition). Inversion deferred to D-PR2c. Until
+     then, both columns are written from the same legacy inputs
+     using the same prod-validated derivers (the conformance audit
+     guarantees parity).
+2. **D-PR2b — single-writer rewire**. Make `claim-transitions.ts`
+   and the SOP-advance handlers call a `setClaimDisposition()` helper
+   directly. After this PR, the SOP path writes disposition first,
+   and the cache reflects the legacy mirror. Status/outcome continue
+   to be written by the cache.
+3. **D-PR2c — invert the cache**. Replace `projectLegStatus` with
+   `dispositionToStatus(disposition, parent)`, making disposition the
+   single source of truth and `status`/`outcome` derived projections.
+   This is when a parity assertion belongs (it'd be no-op in D-PR2a
+   since both paths share inputs).
 
-D-PR2b cannot land before D-PR2a; otherwise the SOP-advance handlers
-would write disposition, the cache would still be reading from the
-legacy columns, and the two derivations would race.
+D-PR2b cannot land before D-PR2a; otherwise the SOP handlers would
+write disposition while the cache still wrote it from stale inputs.
+D-PR2c cannot land before D-PR2b; otherwise the SOP handlers would
+clobber the cache's disposition writes via legacy column mutations.
