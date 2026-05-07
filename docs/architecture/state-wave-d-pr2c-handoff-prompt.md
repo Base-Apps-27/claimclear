@@ -74,7 +74,8 @@ Resolution (kept minimal, no behavior change): the default fixture mapping stays
 - §5 validation gauntlet (`leg-status-projector` + `per-leg-state` + `group-sop-advance` + `set-claim-disposition-parity`): **95/95 green**.
 - Targeted runs on every disposition-touching test file: green (`include-terminal-readback-cycle`, `disputed-legs-resolved`, `group-packaging-readiness`, `submit-flow-gates`).
 - Pre-existing failures from the D-PR2b handoff doc (`duplicate-of-endpoints.test.ts:291`, `list-count-past-deadline-parity.test.ts:254`) reproduce identically and are NOT regressions of this session. Two additional pre-existing failure clusters surfaced under the broader test sweep (object-storage URL validation in `closure-data-foundation.test.ts`; calendar/weekend math in `dates-guardrail.test.ts` / `dashboard-expiring.test.ts`) — both unrelated to disposition and present in `aad41b98`'s parent.
-- Dev DB conformance audit (`scripts/src/check-invoice-state-derivation.ts`): 42 `phase_mismatch` rows, all the `Needs Review stored=response_received derived=triage` drift the fixture overload above documents. Holds steady from the 38 rows reported pre-D-PR2b. PROD audit not run from this session — see follow-up §1.
+- Dev DB conformance audit (`scripts/src/check-invoice-state-derivation.ts`): 42 `phase_mismatch` rows, all the `Needs Review stored=response_received derived=triage` drift the fixture overload above documents. Holds steady from the 38 rows reported pre-D-PR2b.
+- **PROD conformance audit (run post-publish 2026-05-07 against `aad41b98`)**: 3,715 rows scanned (1,310 groups + 2,405 claims), **1 `phase_mismatch` violation**: invoice id=302, `status=Expired stored=triage derived=closed`. Root cause traced via `audit_logs` to the nightly `expired_sweep_cron` firing at 05:00 UTC the same day — see "Known unrewired writer" callout below. NOT a D-PR2b regression (the cron predates Wave D and writes legacy `status` only). D-PR2c is not blocked; the row will heal lazily the next time D-PR2a's cache helpers touch any of its child legs.
 
 ---
 
@@ -124,6 +125,18 @@ Beyond the §3.A-E sharp edges in the Wave-C continuation series and the four D-
 1. **`Needs Review` is overloaded between `triage` and `response_received`.** The macro-phase reader, denormalized cache, and response-matcher all treat `Needs Review` as `response_received`, but `derivePhaseFromLegacy` and `autoExcludeBlankSiblingsOnPromote` treat it as `triage`. D-PR2c's `dispositionToStatus` projector must be specified against the **canonical phase** (the one the trigger validates against), not the macro-phase reading. Concretely: a `Needs Review` group with `phase = 'triage'` should project legs back to `Needs Review` (via the existing "mirror group" rule) regardless of which interpretation the read-side surface uses. The 42 dev-DB `phase_mismatch` rows are the exhaust of this overload; they will heal lazily as D-PR2a's cache helpers touch them.
 2. **Orphan legs keep status / outcome untouched.** D-PR2b's writer skips the canonical `disposition` column for orphan legs; D-PR2c's `dispositionToStatus` must mirror this — an orphan leg has no `parent.phase`, so the projector can't compute a status from disposition. Today `refreshClaimDenormalizedCache` already short-circuits orphan legs (line 198-199 docstring); the inversion should preserve that early-return.
 
+### Known unrewired writer: `expired_sweep_cron`
+
+The 2026-05-07 PROD conformance audit (above) surfaced exactly one drift row, traced to the nightly Expired-sweep cron. The cron writes legacy `group.status = 'Expired'` (and cascades `claim.status = 'Expired'` via `group_cascade:expired_sweep_cron`) without touching the canonical `invoice_groups.phase` column. The deriver maps `status='Expired'` → `phase='closed'`, so any group the cron touches is one cache-helper-refresh away from healing.
+
+This is structurally different from the four D-PR2b call-site groups (those were synchronous user actions in route handlers). The cron is a background sweep that fires once per night against an arbitrary set of rows; rewiring it belongs in D-PR3 or D-PR4 scope when the §3.B residuals catalogue is opened back up. Until then:
+
+- The drift count from the cron will be small (only Expired-eligible groups that no operator action touches between 05:00 UTC and the next refresh).
+- D-PR2c does NOT need to fix the cron — `dispositionToStatus` doesn't read `group.phase` directly for the Expired/closed path; it reads `group.status`, which the cron does write. The projector will produce the right answer for these legs even with the stored phase stale.
+- When the cron eventually rewires (likely D-PR4 alongside `day-complete.ts`), it should call into the same writer convention D-PR2a/2b established: `transitionGroupStatus(...)` with the phase update folded into the same tx, so the canonical column moves with the legacy one.
+
+The D-PR2c implementer should grep `expired_sweep_cron|expiredSweep|sweepExpired` to find the cron entry point and leave a `// TODO(Wave D-PR3/4): rewire to transitionGroupStatus` marker if one isn't already there. Don't fix it inside D-PR2c — scope creep.
+
 ## Sharp edges (still authoritative — see continuation #2 §3.A-E + Wave D §3)
 
 The Wave-C continuation #2 §3.A-E catalogue and Wave D §3.A-E are unchanged by this session. D-PR2c does NOT close any of them — the cache inversion is a §6.3 concern only.
@@ -166,13 +179,24 @@ Dev DB also still has 42 `phase_mismatch` rows (PROD audit was clean as of D-PR2
 
 ---
 
-## Operator follow-up (carried over from this session)
+## Operator follow-up
 
-These are not D-PR2c implementation work but they belong in the very next operator window because the conformance audit and the dev-DB heal trend depend on them:
+Status of the D-PR2b post-merge checklist:
 
-1. **Publish the unpublished Wave D work to PROD.** Last publish was at the end of Wave C; commits `e883c79d` (D-PR1), `1ac4867a` (D-PR2a), and `aad41b98` (D-PR2b) are all unpublished. The conformance script measures PROD's actual data, so it can't verify D-PR2b until the writer is in PROD and exercising the four call sites.
-2. **Run `pnpm --filter @workspace/scripts run check:invoice-state-derivation` against PROD** post-publish. The acceptance bar is unchanged from the 2026-05-07 baseline: 1,310 groups + 2,405 claims = 3,715 rows, **0 violations** across all three assertions. Either order (pre-publish baseline + post-publish re-run, or just post-publish) is safe — D-PR2a was the last write-touching change, so a pre-publish PROD run gives a clean baseline to compare against. The script needs `DATABASE_URL` pointed at PROD when invoked.
+1. ~~**Publish the unpublished Wave D work to PROD.**~~ ✅ **Done 2026-05-07.** Commits `e883c79d` (D-PR1) + `1ac4867a` (D-PR2a) + `aad41b98` (D-PR2b) all live in deployment commit `4ce0708c`.
+2. ~~**Run conformance audit against PROD post-publish.**~~ ✅ **Done 2026-05-07** (see Validation §above). 3,715 rows, 1 `phase_mismatch` (invoice id=302, traced to the `expired_sweep_cron` — see "Known unrewired writer" callout). NOT a D-PR2b regression; row will heal lazily.
 3. **Re-run the dev audit periodically** through the D-PR2c window. The 42 `phase_mismatch` rows are the `Needs Review stored=response_received derived=triage` drift documented above; they should heal lazily as the D-PR2a cache helpers touch them. Treat any *increase* as a regression worth investigating.
+4. **(Optional) Manually heal invoice id=302** to give D-PR2c a clean PROD baseline. One UPDATE: `UPDATE invoice_groups SET phase='closed', closure_reason='expired' WHERE id=302;` (closure_reason is also empty on this row per the deriver's heal defaults). Or just leave it — the next operator that opens the group will trigger the cache-helper refresh that heals it. Recommend leaving it: the drift is documentation evidence that the cron is unrewired and will be useful at D-PR3/4 scoping time.
+
+### How to invoke the PROD audit
+
+The `PROD_DATABASE_URL` Replit secret is wired into the workspace; the dev `DATABASE_URL` points at the dev branch. To run against PROD without disturbing dev:
+
+```bash
+DATABASE_URL="$PROD_DATABASE_URL" pnpm --filter @workspace/scripts run check:invoice-state-derivation
+```
+
+(The script does not write — it's read-only across `invoice_groups` + `claims`.)
 
 ---
 
