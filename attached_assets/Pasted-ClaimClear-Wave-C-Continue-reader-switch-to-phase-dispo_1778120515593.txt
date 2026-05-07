@@ -1,0 +1,74 @@
+ClaimClear Wave C — Continue reader switch to phase / disposition
+You are picking up Wave C of the ClaimClear hierarchical-state-machine refactor. Wave A/B already shipped (invoice_groups.phase + claims.disposition columns are populated and trigger-validated in prod). Wave C is code-only: switch every read path from legacy (status, outcome, sopOutcome, attestationState, dropReason, includedInDispute) columns to the canonical phase / disposition columns. Writers stay status-based (Wave D). Legacy columns stay populated (Wave E drops). Fully reversible by git revert.
+
+User's directive: "Ship it correctly, not fast."
+
+Read these first
+.local/session_plan.md — full status, test-failure classification, sharp edges, recommended next-session path
+docs/architecture/state-hierarchy-v1.md and state-hierarchy-execution-plan.md §6 / Wave C
+lib/db/migrations/0034_invoice_phase_and_disposition.sql — trigger reference
+replit.md — project conventions
+What's already done
+T001 OpenAPI spec + codegen (added phase to InvoiceGroupResponse, disposition to ClaimResponse, deprecated status/outcome/macroPhase)
+T002 SELECT audit (full-row selects already pull phase/disposition through to serializers)
+T003 artifacts/api-server/src/lib/macro-phase.ts — getGroupMacroPhase(group) reads group.phase first; on-hold sourced from legacy status; awaiting-payout from reattestCompletedAt; legacy status fallback retained for write-side callers
+T004 artifacts/claimclear/src/lib/lifecycle-phase.ts — passthrough mirror
+T007 lib/leg-state/src/per-leg-sub-status.ts — accepts disposition?; skips unclassified default to fall through to legacy ladder during Wave C
+T009 artifacts/api-server/src/__tests__/fixtures/state.ts — exports phaseForStatus, dispositionForGroup, STATUS_TO_PHASE, DEFAULT_DISPOSITION_BY_PHASE, makeGroup/makeClaim builders. 10 test fixtures migrated.
+Partial T005 — routes/invoice-groups.ts gates swept to getGroupMacroPhase; routes/portal-submissions.ts ctx swept; claims.ts imports cleaned
+Workspace pnpm -r typecheck passes; invoice-state/vocab/leg-state tests all green (118 tests)
+What's left
+T005 (server, ~14 files): dashboard.ts, response-tracker.ts, responses.ts, daily-brief.ts, search.ts, batch-jobs.ts, system-health.ts, invoice-groups.ts GET handlers, claims.ts GETs, lib/expiring-filter.ts, lib/group-packaging.ts, lib/group-readiness.ts, lib/system-health-rollup.ts, lib/urgent-snapshot.ts, lib/day-complete.ts, lib/email-thread.ts, lib/stuck-submissions.ts
+T006 (frontend, ~25 files): tone.ts (foundation), whats-next-derivation.ts, sop-terminal-routing.ts, sop-transcript.ts, prompt-context-counters.ts, sop-sibling-eligibility.ts, plus pages and components listed in the plan
+T008 training guide rewrite (9 slide components + slides-manifest.json)
+T010 validation gauntlet
+T011 docs (replit.md State model bullet, state-wave-0.5-catalogue.md §8 entry, state-wave-d-handoff-prompt.md)
+Test-failure landscape (api-server: 698 pass / 20 fail)
+11 pre-existing — NOT Wave-C, do not block
+9 closure-data-foundation.test.ts — route requires /objects/... URLs (Task #411) but tests still send https://example.com/.... Pure test-body bug.
+1 dates-guardrail.test.ts — off-by-one date in claimclear/src/lib/celebrations.test.ts:14 (Task #509)
+1 duplicate-of-endpoints.test.ts "rejects after group leaves pre-submit" — likely pre-existing fixture coherence
+3 parity tests (list-count-past-deadline-parity x2, must-file-today-parity) reproduce in isolation; look like a TZ flake in ymdDaysAgo (uses UTC toISOString().slice(0,10) near midnight NY drift). Worth confirming separately, not a Wave-C reader issue.
+9 Wave-C-surfaced fixture incoherence — needs per-test fix
+The deferred trigger validate_disposition_against_phase was being silently bypassed pre-Wave-C because old fixtures set status='Resolved' but left phase='triage' (DB default). Trigger validates unclassified is fine for triage. T009 aligned phase to status, trigger now fires, exposing tests that asserted impossible production states. Recipes:
+
+per-leg-state.test.ts "reclassify when group is in closed phase" — expects actualState='closed', gets 'frozen'. Closed-phase children MUST have terminal final_* dispositions per the trigger → leg sub-status is frozen → leg gate fires before group gate. Fix: change assertion to actualState='frozen' (the leg gate is the correct one post-Wave-C).
+per-leg-state.test.ts MAS reattest tests (2) — seed sets status='Needs Review' then UPDATE reattestRequired=true. Pre-Wave-C the macro deriver promoted such groups to mas-action-required from reattestRequired. Wave-C readers read phase directly. Fix: tests must set phase: 'awaiting_reattestation' on the group either via createSeedGroup({phase: 'awaiting_reattestation', ...}) or via a follow-up UPDATE after the reattestRequired flip.
+group-invoice-rename-rollback.test.ts (2) — same MAS phase pattern.
+Sharp edges (preserve when continuing)
+phase_entered_at is the migration timestamp on every prod row — don't surface as "time entered phase".
+Don't replicate B-PR2's claim.status deriver dependency in readers — read disposition from the column.
+GROUP_SUBMITTED_STUCK_STATUSES Portal Queued asymmetry: post-submit at group level, pre-submit at claim level.
+SSE emit sites can opportunistically populate optional phase? / disposition? fields (free in Wave C).
+Trigger is DEFERRABLE INITIALLY DEFERRED — fires at COMMIT. Each test statement is its own auto-commit, so it fires immediately in tests.
+Closed phase has no non-terminal leg. Only final_reattested and final_no_action are valid for closed-phase children. If a test seeds a closed group, the child claim WILL be frozen — there's no way around it.
+Dashboard aggregates are not all phase-swappable. Many KPIs in dashboard.ts are inherently status-based (e.g. groupBy(claimsTable.status) for status-breakdown charts). Only swap phase-membership predicates, not response-shape aggregates. When in doubt, leave it status-based and add a TODO for Wave D.
+lib/leg-state/src/per-leg-sub-status.ts deliberately skips disposition === 'unclassified' to allow the legacy ladder to fall through during Wave C. Don't change this until Wave D backfills dispositions.
+Files NOT to touch (Wave D/E)
+lib/denormalized-cache.ts
+Write-side route handlers (PATCH/POST that mutate state)
+Cron / batch / bot files
+lib/db/src/schema/*
+Legacy vocab files in lib/vocab/src/{claim-status,outcome,leg-sub-status,...}.ts
+Recommended order
+Fix the 9 Wave-C-surfaced test failures first — small, high-confidence per-test fixes that get the gauntlet to a clean baseline before more reader churn.
+T005 lib/expiring-filter.ts — small file, central; add phase-membership predicates alongside status ones (preserve Portal Queued asymmetry).
+T005 routes/dashboard.ts — biggest file; add GROUP_EXPIRING_*_PHASES companion sets, swap only phase-membership predicates. Re-run parity tests after.
+T005 remaining route/lib files — typecheck-driven sweep.
+T006 frontend — tone.ts first (foundation for components), then derivation libs, then components/pages.
+T008 training guide — standalone, can be parallelized.
+T010 gauntlet — pnpm -r typecheck, pnpm --filter @workspace/db run check-drift, all package tests, A2 ripgrep audits per execution plan §6.
+T011 docs — replit.md State model bullet + catalogue §8 entry + Wave D handoff prompt.
+Validation commands
+pnpm -r typecheck
+pnpm --filter @workspace/db run check-drift
+pnpm --filter @workspace/invoice-state test
+pnpm --filter @workspace/vocab test
+pnpm --filter @workspace/observability test
+pnpm exec tsx --test scripts/src/__tests__/enum-parity.test.ts
+pnpm --filter @workspace/api-server test
+pnpm --filter @workspace/claimclear test
+pnpm --filter @workspace/scripts exec tsx src/check-invoice-state-derivation.ts
+pnpm -r build
+
+Today's checkpoint commit: 581cc8c7. Begin by reading .local/session_plan.md.

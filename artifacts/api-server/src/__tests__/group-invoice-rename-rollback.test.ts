@@ -124,14 +124,21 @@ async function createSeedGroup(opts: {
   invoiceNumber?: string;
   status?: any;
   reattestRequired?: boolean;
+  phase?: any;
 } = {}): Promise<typeof invoiceGroupsTable.$inferSelect> {
   const status = opts.status ?? "Needs Review";
+  const reattestRequired = opts.reattestRequired ?? false;
+  // Wave C: macro-phase is derived from `phase` directly, so a group
+  // marked `reattestRequired:true` must also live in the
+  // `awaiting_reattestation` phase or the route gate (which now
+  // reads `group.phase`) will short-circuit on the wrong macro.
+  const phase = opts.phase ?? (reattestRequired ? "awaiting_reattestation" : phaseForStatus(status));
   const [row] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber: opts.invoiceNumber ?? uniqueInvoiceNumber("G"),
     status,
     outcome: "Pending",
-    reattestRequired: opts.reattestRequired ?? false,
-    phase: phaseForStatus(status),
+    reattestRequired,
+    phase,
   }).returning();
   return row;
 }

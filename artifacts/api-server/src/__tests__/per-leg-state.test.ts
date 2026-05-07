@@ -977,7 +977,10 @@ test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs
   const group = await createSeedGroup({ status: "Needs Review" });
   // Mark the group as needing reattest (would normally be set by the
   // refreshGroupDerivedFields helper after a payor response landed).
-  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+  // Wave C: macro-phase reader pulls `phase` directly. Promote the
+  // group to `awaiting_reattestation` alongside the legacy reattest
+  // flag so getGroupMacroPhase returns "mas-action-required".
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true, phase: "awaiting_reattestation" })
     .where(eq(invoiceGroupsTable.id, group.id));
   // Disputed, submitted leg with an Approved operator verdict.
   const claim = await createSeedClaim({
@@ -1018,7 +1021,10 @@ test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs
 test("POST /invoice-groups/:id/reattest/complete is refused while MAS cancel actions are still open", async () => {
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({ status: "Needs Review" });
-  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+  // Wave C: phase column drives macro-phase derivation; mark the
+  // group as awaiting_reattestation so the route reaches the
+  // cancel-completeness gate (the assertion under test).
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true, phase: "awaiting_reattestation" })
     .where(eq(invoiceGroupsTable.id, group.id));
   const claim = await createSeedClaim({
     invoiceGroupId: group.id,
@@ -1601,7 +1607,12 @@ test("POST /claims/:id/reclassify is refused when group is in closed phase", asy
   try {
     const res = await fetchJson(`/api/claims/${claim.id}/reclassify`, { method: "POST" });
     assert.equal(res.status, 409);
-    assert.equal(res.json.actualState, "closed");
+    // Wave C: closed-phase children must carry terminal final_*
+    // dispositions per the validate_disposition_against_phase trigger,
+    // so the leg sub-status resolves to `frozen` and the leg gate
+    // fires before the group-phase gate. The 409 is still produced;
+    // only the actualState shape changes.
+    assert.equal(res.json.actualState, "frozen");
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
