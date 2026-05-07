@@ -285,3 +285,151 @@ test("duplicate-only reason fires when worktree is otherwise complete", () => {
   assert.match(r.reason, /sibling|duplicate/i);
   assert.equal(r.unresolvedDuplicateLegCount, 1);
 });
+
+// --- Wave C: disposition column drives bucketing ------------------------
+//
+// These tests pin the canonical Wave-C+ read path: when a leg carries a
+// non-default `disposition`, that column — NOT the legacy `sopOutcome`
+// — decides which bucket it lands in. The mapping is fixed by
+// `DISPOSITION_TO_SUB_STATUS` in `lib/leg-state/src/per-leg-sub-status.ts`:
+//
+//   disposed_portal / disposed_email     → processed (dispute)
+//   disposed_withdraw / disposed_nonissue → excluded
+//   blocked                              → held
+//   anything else (awaiting_review, verdict_*, attest_*, …) → unprocessed
+//
+// Legacy fields are intentionally cleared (sopOutcome: null) on the
+// fixtures below so the test fails if the helper accidentally falls
+// through to the legacy ladder.
+
+test("disposed_portal / disposed_email count as processed (dispute)", () => {
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      leg({ disposition: "disposed_portal", sopOutcome: null }),
+      leg({ disposition: "disposed_email", sopOutcome: null }),
+    ],
+  );
+  assert.equal(r.ready, true);
+  assert.equal(r.processedLegCount, 2);
+  assert.equal(r.excludedLegCount, 0);
+  assert.equal(r.heldLegCount, 0);
+  assert.equal(r.unprocessedLegCount, 0);
+});
+
+test("disposed_withdraw / disposed_nonissue count as excluded", () => {
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      leg({ disposition: "disposed_withdraw", sopOutcome: null }),
+      leg({ disposition: "disposed_nonissue", sopOutcome: null }),
+    ],
+  );
+  assert.equal(r.ready, false);
+  assert.match(r.reason, /contestable/i);
+  assert.equal(r.processedLegCount, 0);
+  assert.equal(r.excludedLegCount, 2);
+});
+
+test("disposition='blocked' counts as held (mirror of legacy sopOutcome='hold')", () => {
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      leg({ disposition: "blocked", sopOutcome: null }),
+      leg({ disposition: "disposed_portal", sopOutcome: null }),
+    ],
+  );
+  // Held leg rides along; the dispute leg satisfies Gate 4.
+  assert.equal(r.ready, true);
+  assert.equal(r.heldLegCount, 1);
+  assert.equal(r.processedLegCount, 1);
+  assert.equal(r.unprocessedLegCount, 0);
+});
+
+test("non-terminal dispositions count as unprocessed (still owe worktree review)", () => {
+  for (const d of [
+    "awaiting_review",
+    "verdict_drafted",
+    "verdict_approved",
+    "verdict_denied",
+    "verdict_partial",
+    "attest_pending",
+    "classifying",
+  ]) {
+    const r = computeGroupReadiness(
+      { status: "Needs Evidence" },
+      [
+        leg({ disposition: d, sopOutcome: null }),
+        leg({ disposition: "disposed_portal", sopOutcome: null }),
+      ],
+    );
+    assert.equal(r.ready, false, `disposition=${d} should still be unprocessed`);
+    assert.match(r.reason, /worktree/i);
+    assert.equal(r.unprocessedLegCount, 1, `disposition=${d}`);
+  }
+});
+
+test("disposition='unclassified' falls through to the legacy ladder", () => {
+  // The default disposition value is 'unclassified'; in that case the
+  // helper must read sopOutcome instead so in-flight rows whose writer
+  // hasn't synced disposition yet still bucket correctly.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      leg({ disposition: "unclassified", sopOutcome: "portal_dispute" }),
+      leg({ disposition: "unclassified", sopOutcome: "cannot_dispute" }),
+    ],
+  );
+  assert.equal(r.ready, true);
+  assert.equal(r.processedLegCount, 1);
+  assert.equal(r.excludedLegCount, 1);
+});
+
+test("disposition takes precedence over a divergent legacy sopOutcome", () => {
+  // If both columns are populated and they disagree, the canonical
+  // disposition column wins. This shouldn't happen in production (the
+  // 0034/0035 trigger keeps them in sync) but pinning the precedence
+  // here means a future drift bug shows up here, not in a hot path.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      // disposition says dispute, legacy says exclude → dispute wins
+      leg({ disposition: "disposed_portal", sopOutcome: "cannot_dispute" }),
+      // disposition says exclude, legacy says dispute → exclude wins
+      leg({ disposition: "disposed_nonissue", sopOutcome: "portal_dispute" }),
+    ],
+  );
+  assert.equal(r.processedLegCount, 1);
+  assert.equal(r.excludedLegCount, 1);
+});
+
+test("duplicate primary resolution honours disposition", () => {
+  // Primary's terminal disposition should resolve its sibling's gate
+  // contribution exactly the same way a terminal sopOutcome does.
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { disposition: "disposed_portal", sopOutcome: null }),
+      legWithId(2, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(r.ready, true);
+  assert.equal(r.duplicateLegCount, 1);
+  assert.equal(r.unresolvedDuplicateLegCount, 0);
+});
+
+test("duplicate primary mid-walk via disposition still blocks the gate", () => {
+  const r = computeGroupReadiness(
+    { status: "Needs Evidence" },
+    [
+      legWithId(1, { disposition: "awaiting_review", sopOutcome: null }),
+      legWithId(2, { disposition: "disposed_portal", sopOutcome: null }),
+      legWithId(3, { duplicateOfClaimId: 1 }),
+    ],
+  );
+  assert.equal(r.ready, false);
+  // Primary's awaiting_review trips Gate 3 first.
+  assert.match(r.reason, /worktree/i);
+  assert.equal(r.unprocessedLegCount, 1, "duplicate must NOT be counted as unprocessed");
+  assert.equal(r.unresolvedDuplicateLegCount, 1);
+});
