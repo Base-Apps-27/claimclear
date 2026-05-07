@@ -31,7 +31,11 @@ mock.module("wouter", {
 });
 
 mock.module("@/hooks/use-toast", {
-  namedExports: { useToast: () => ({ toast: () => {} }) },
+  namedExports: {
+    useToast: () => ({ toast: () => {} }),
+    toast: () => ({ id: "0", dismiss: () => {}, update: () => {} }),
+    successToast: () => ({ id: "0", dismiss: () => {}, update: () => {} }),
+  },
 });
 
 interface MutationCall {
