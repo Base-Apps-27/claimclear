@@ -4,13 +4,29 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface CronRunResult {
-  // status defaults to "ok". Use "degraded" for partial failures worth
-  // surfacing without alerting, "failed" when the cron callee handles
-  // its own errors and returns a structured failure outcome. A thrown
-  // error also becomes status="failed".
+  // Producer-facing vocabulary (kept for backwards compatibility with
+  // the existing call sites in system-health-rollup.ts and
+  // batch-processor.ts that build `{status: "ok"|"degraded"}` shapes).
+  // The recorder maps this onto the canonical 3-value run-state
+  // {running | completed | failed} written to `cron_runs.status`:
+  //   ok        → completed
+  //   degraded  → failed   (surfaces as a failure in the health rollup;
+  //                         partial-success metadata stays in `message`)
+  //   failed    → failed
+  // A thrown error from the job also becomes status="failed".
+  //
+  // Wave D-PR6 / state-fingerprint §G: this collapse drops the
+  // `cron_drift` violation count to zero by removing the legacy
+  // "ok"/"degraded" string mismatch against the {running|completed|
+  // failed} contract. Existing rows are normalised in migration 0039.
   status?: "ok" | "degraded" | "failed";
   message?: string;
   metadata?: Record<string, unknown>;
+}
+
+function mapResultStatus(s: CronRunResult["status"]): "completed" | "failed" {
+  if (s === "failed" || s === "degraded") return "failed";
+  return "completed";
 }
 
 export async function recordCronRun(
@@ -35,7 +51,7 @@ export async function recordCronRun(
         await db
           .update(cronRunsTable)
           .set({
-            status: result?.status ?? "ok",
+            status: mapResultStatus(result?.status),
             finishedAt: new Date(),
             message: result?.message ?? null,
             metadata: result?.metadata ?? null,

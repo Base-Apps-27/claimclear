@@ -353,7 +353,7 @@ test("POST /claim-evidence/closure attaches an evidence row with closureScope + 
         body: {
           claimId: seed.id,
           evidenceTypeName: "Trip card",
-          imageUrl: "https://example.com/uploads/trip-card.png",
+          imageUrl: "/objects/uploads/trip-card.png",
           notes: "Captured at closure time",
           closureScope: "closure",
           closureReasonAtAttach: "cannot_dispute",
@@ -395,7 +395,7 @@ test("POST /claim-evidence/closure works for an invoiceGroupId target", async ()
         body: {
           invoiceGroupId: seed.id,
           evidenceTypeName: "Group screenshot",
-          imageUrl: "https://example.com/uploads/group-screenshot.png",
+          imageUrl: "/objects/uploads/group-screenshot.png",
           closureScope: "closure",
           closureReasonAtAttach: "non_issue",
         },
@@ -452,7 +452,7 @@ test("POST /claim-evidence/closure rejects an unknown closureScope", async () =>
         body: {
           claimId: seed.id,
           evidenceTypeName: "Bad scope",
-          imageUrl: "https://example.com/uploads/bad-scope.png",
+          imageUrl: "/objects/uploads/bad-scope.png",
           closureScope: "bogus",
         },
       },
@@ -474,7 +474,7 @@ test("POST /claim-evidence/closure rejects an unknown closureReasonAtAttach", as
         body: {
           claimId: seed.id,
           evidenceTypeName: "Bad reason",
-          imageUrl: "https://example.com/uploads/bad-reason.png",
+          imageUrl: "/objects/uploads/bad-reason.png",
           closureReasonAtAttach: "made_up_reason",
         },
       },
@@ -494,7 +494,7 @@ test("POST /claim-evidence/closure 404s when the parent claim does not exist", a
       body: {
         claimId: 999_999_999,
         evidenceTypeName: "Ghost",
-        imageUrl: "https://example.com/uploads/ghost.png",
+        imageUrl: "/objects/uploads/ghost.png",
         closureScope: "closure",
       },
     },

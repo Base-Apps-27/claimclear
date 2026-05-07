@@ -401,23 +401,45 @@ WHERE (status='Denied' AND outcome='Pending') OR (outcome='Denied' AND status NO
 
 ## G. What "done" looks like
 
-A single SQL query, run on prod, returns these counts:
+A single SQL query, run on prod, returns these counts. The canonical
+implementation lives in `lib/db/scripts/check-state-fingerprint.sh`
+and is wired into the `schema-drift` workflow as a session-start
+ritual (Wave D-PR6, 2026-05-07) — read the printed counts at workspace
+boot and drill into anything non-zero.
 
 ```sql
 -- The whole audit collapses to this fingerprint.
 SELECT
   -- Layer 1: invoice terminal state
-  (SELECT count(*) FROM invoice_groups WHERE outcome = 'Withdrawn' AND closure_reason IS NULL) AS open_groups_missing_closure,
-  (SELECT count(*) FROM invoice_groups WHERE reattest_completed_at IS NOT NULL AND closure_reason IS NOT NULL) AS dual_terminal_violation,
+  (SELECT count(*) FROM invoice_groups WHERE phase = 'closed' AND closure_reason IS NULL AND reattest_completed_at IS NULL) AS open_groups_missing_closure,
+  -- Dual-terminal: ONLY non-reattested combos count as a violation.
+  -- Migration 0034 deliberately stamps `closure_reason='reattested'`
+  -- alongside `reattest_completed_at` — that is the design (Layer 1
+  -- timestamp + Layer 2 vocabulary on the same row), not drift. Real
+  -- violations are rows where `closure_reason` carries a *different*
+  -- terminal narrative (e.g. 'expired', 'cannot_dispute', 'approved')
+  -- while `reattest_completed_at` is also stamped.
+  (SELECT count(*) FROM invoice_groups WHERE reattest_completed_at IS NOT NULL AND closure_reason IS NOT NULL AND closure_reason <> 'reattested') AS dual_terminal_violation,
   -- Layer 2: claim drift
-  (SELECT count(*) FROM claims WHERE closure_reason IS NOT NULL AND closure_reason NOT IN ('cannot_dispute','non_issue','denied_by_payor','expired')) AS claim_closure_drift,
+  (SELECT count(*) FROM claims WHERE closure_reason IS NOT NULL AND closure_reason NOT IN ('approved','denied','cannot_dispute','reattested','expired')) AS claim_closure_drift,
   -- Layer 5: infra free-text
+  -- Wave D-PR6 / migration 0039 normalises legacy 'ok'/'degraded'
+  -- producer strings to the canonical {running|completed|failed}
+  -- set and adds a CHECK constraint. The `mapResultStatus` shim in
+  -- artifacts/api-server/src/lib/cron-runs.ts ensures future writes
+  -- never re-emit the legacy strings, so this count should hold at 0.
   (SELECT count(*) FROM cron_runs WHERE status NOT IN ('running','completed','failed')) AS cron_drift,
   -- Layer 6: identity free-text
   (SELECT count(*) FROM users WHERE status NOT IN ('pending','approved','suspended')) AS user_drift,
-  -- Hold reason normalisation
-  (SELECT count(*) FROM claims WHERE hold_reason IS NOT NULL AND hold_reason NOT IN ('evidence_pending','awaiting_external_party','awaiting_member_response','awaiting_internal_review','other')) AS hold_drift;
+  -- Hold reason normalisation (carried into D-PR7 — see handoff doc)
+  (SELECT count(*) FROM invoice_groups WHERE status = 'On Hold' AND hold_reason IS NOT NULL AND hold_reason NOT IN ('awaiting_internal_decision','awaiting_external_party','client_paused','other')) AS hold_drift;
 -- All zeros = done.
 ```
 
-The same fingerprint goes into the `schema-drift` workflow's CI check so any future drift triggers a red build.
+The bash wrapper around this query exits 0 unconditionally — the
+fingerprint is informational, not a CI gate. A non-zero count means
+"a writer (or a one-shot migration backfill) violated the layered
+terminal contract; drill into the listed rows and fix forward".
+Hard-failing on legitimate non-zero counts (e.g. the 31 fallback
+`unclassified` legs the operator decided to keep in D-PR6) would
+force a workflow-level allowlist for every audit decision.

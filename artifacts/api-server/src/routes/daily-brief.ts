@@ -644,12 +644,18 @@ async function safeGetNeedsYouToday(
   }
 }
 
-// Retro-downgrade the prior daily_brief cron_run from "ok" → "degraded"
-// if the bounce-spike thresholds are tripped. Called by the dedicated
-// daily_brief_bounce_recheck cron and opportunistically at the start of
-// the next brief. Keyed by metadata.briefRunId (jsonb @>) with a
-// sentAt-window fallback for legacy rows; 7-day backstop guards against
-// ancient rows. Failures are logged and swallowed.
+// Retro-downgrade the prior daily_brief cron_run from `completed` →
+// `failed` if the bounce-spike thresholds are tripped. (Vocabulary
+// changed in D-PR5 turnkey Cron Option B — migration 0039 collapsed
+// the old `ok`/`degraded` strings into the canonical
+// `{running|completed|failed}` set. The `evaluateBounceDowngrade`
+// pure helper still speaks the legacy semantic `ok`/`degraded` so its
+// callers stay readable; we translate at the cron_runs row boundary.)
+// Called by the dedicated daily_brief_bounce_recheck cron and
+// opportunistically at the start of the next brief. Keyed by
+// metadata.briefRunId (jsonb @>) with a sentAt-window fallback for
+// legacy rows; 7-day backstop guards against ancient rows. Failures
+// are logged and swallowed.
 export async function recheckPreviousRunBounces(): Promise<{ runId: number; downgrade: "ok" | "degraded" } | null> {
   try {
     const [prevRun] = await db
@@ -665,10 +671,11 @@ export async function recheckPreviousRunBounces(): Promise<{ runId: number; down
       .orderBy(desc(cronRunsTable.startedAt))
       .limit(1);
     if (!prevRun) return null;
-    // Already-degraded / failed runs don't need re-downgrading.
-    if (prevRun.status !== "ok") return null;
-    // Defensive 7-day backstop: if the most recent ok run is older than
-    // a week, treat it as not-our-problem.
+    // Already-failed runs don't need re-downgrading. Post-Option B the
+    // only "successful" terminal status is `completed` (was `ok`).
+    if (prevRun.status !== "completed") return null;
+    // Defensive 7-day backstop: if the most recent completed run is
+    // older than a week, treat it as not-our-problem.
     const ageMs = Date.now() - prevRun.startedAt.getTime();
     if (ageMs > 7 * 24 * 60 * 60 * 1000) return null;
     // The recheck window has to have elapsed before bounces could have
@@ -731,7 +738,10 @@ export async function recheckPreviousRunBounces(): Promise<{ runId: number; down
       const note = `Bounce spike: ${bounceCount} of ${attemptedEmails.size} recipients bounced within ${Math.round(BOUNCE_RECHECK_WINDOW_MS / 60000)}m of send`;
       await db.update(cronRunsTable)
         .set({
-          status: "degraded",
+          // Cron Option B collapse: `degraded` rolls up into `failed`
+          // when persisting to cron_runs. The `downgrade` signal above
+          // is kept semantic so the writer call sites read clearly.
+          status: "failed",
           message: prevRun.message ? `${prevRun.message} | ${note}` : note,
         })
         .where(eq(cronRunsTable.id, prevRun.id));

@@ -46,7 +46,11 @@ test("recheckPreviousRunBounces: downgrades a prior ok run when bounces exceed t
     .insert(cronRunsTable)
     .values({
       jobName: "daily_brief",
-      status: "ok",
+      // D-PR5 turnkey: cron Option B collapse — `ok` was rewritten to
+      // `completed` by migration 0039 and the writer shim now blocks
+      // legacy literals at INSERT via a CHECK constraint. Tests must
+      // use the new vocabulary. See lib/db/migrations/0039_cron_runs_state_collapse.sql.
+      status: "completed",
       message: "Sent 3 personalized briefs.",
       startedAt,
       finishedAt: new Date(startedAt.getTime() + 5_000),
@@ -91,7 +95,11 @@ test("recheckPreviousRunBounces: downgrades a prior ok run when bounces exceed t
     .select({ status: cronRunsTable.status, message: cronRunsTable.message })
     .from(cronRunsTable)
     .where(eq(cronRunsTable.id, run!.id));
-  assert.equal(refreshed!.status, "degraded");
+  // Cron Option B (migration 0039): the bounce downgrade now persists
+  // as `failed` instead of the legacy `degraded` string. The
+  // `result.downgrade` semantic value above stays "degraded" because
+  // it represents the evaluator's verdict, not the row vocabulary.
+  assert.equal(refreshed!.status, "failed");
   assert.match(refreshed!.message ?? "", /Bounce spike/);
   assert.match(refreshed!.message ?? "", /2 of 3/);
 });
@@ -103,7 +111,8 @@ test("recheckPreviousRunBounces: 7-day backstop returns null for an ancient ok r
     .insert(cronRunsTable)
     .values({
       jobName: "daily_brief",
-      status: "ok",
+      // Same Cron Option B fix as the spike-threshold case above.
+      status: "completed",
       message: "Sent ancient brief.",
       startedAt: eightDaysAgo,
       finishedAt: new Date(eightDaysAgo.getTime() + 5_000),
@@ -123,7 +132,7 @@ test("recheckPreviousRunBounces: 7-day backstop returns null for an ancient ok r
     .select({ status: cronRunsTable.status })
     .from(cronRunsTable)
     .where(eq(cronRunsTable.id, run!.id));
-  assert.equal(refreshed!.status, "ok", "ancient run must remain ok (7-day backstop)");
+  assert.equal(refreshed!.status, "completed", "ancient run must remain completed (7-day backstop)");
   if (result) {
     assert.notEqual(result.runId, run!.id, "ancient run must not be the downgraded one");
   }

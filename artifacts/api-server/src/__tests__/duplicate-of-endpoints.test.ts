@@ -102,9 +102,33 @@ async function seedGroup(opts: {
   legs: Array<{ confSuffix: string; sopOutcome?: string | null; includedInDispute?: boolean }>;
 }): Promise<Seed> {
   const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const status = opts.status ?? "Needs Evidence";
+  // Wave D-PR5: `phase` is the canonical macro-phase column read by the
+  // duplicate-of pre-submit gate (`getGroupMacroPhase` prefers `phase`
+  // over `status`). A direct insert leaves it at the schema default
+  // 'triage', so post-pre-submit fixtures must advance the phase that
+  // matches their status — otherwise the endpoint sees 'pre-submit'
+  // and skips the 409 the test is asserting.
+  //
+  // The phase mutation has to happen AFTER the claim inserts: the
+  // `validate_disposition_against_phase` trigger fires on claim
+  // INSERT/UPDATE OF disposition (not on group writes), and the
+  // claim default disposition `unclassified` is only valid under
+  // phase='triage'. We therefore insert the group at the default
+  // phase, insert the claims (trigger passes), then advance the
+  // group's phase. Subsequent operations exercised by these tests
+  // (duplicate-of POST/DELETE) touch `duplicate_of_claim_id`, never
+  // `disposition`, so the trigger stays quiet on the post-stamp
+  // group's children.
+  const targetPhase: "triage" | "submitted" | "closed" =
+    status === "Portal Queued" || status === "Awaiting Response"
+      ? "submitted"
+      : status === "Resolved" || status === "Denied"
+        ? "closed"
+        : "triage";
   const [group] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber: `DUP-${tag}`,
-    status: (opts.status ?? "Needs Evidence") as "Needs Evidence",
+    status: status as "Needs Evidence",
   }).returning({ id: invoiceGroupsTable.id });
 
   const claimIds: number[] = [];
@@ -117,6 +141,12 @@ async function seedGroup(opts: {
       includedInDispute: leg.includedInDispute ?? true,
     }).returning({ id: claimsTable.id });
     claimIds.push(c.id);
+  }
+  if (targetPhase !== "triage") {
+    await db
+      .update(invoiceGroupsTable)
+      .set({ phase: targetPhase })
+      .where(eq(invoiceGroupsTable.id, group.id));
   }
   return { groupId: group.id, claimIds };
 }

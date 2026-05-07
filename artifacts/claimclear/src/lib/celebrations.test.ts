@@ -11,7 +11,11 @@ import { celebrationCopy } from "./celebrations";
 
 test("day-complete copy uses the standard variant outside Friday afternoon", () => {
   // Wednesday at noon — never the Friday-afternoon variant.
-  const wed = new Date("2026-05-06T12:00:00Z");
+  // Use the local-components constructor (matches the Friday fixtures
+  // below) so the dates-guardrail lint stays clean: literal
+  // `new Date("YYYY-MM-DD…")` strings are flagged because they parse
+  // as UTC and shift the calendar day in negative-UTC zones.
+  const wed = new Date(2026, 4, 6, 12, 0, 0);
   const copy = celebrationCopy({ kind: "day-complete", dateLabel: "May 5", now: wed });
   assert.equal(copy.title, "Day complete");
   assert.match(copy.description, /Great work — all invoices for May 5/);

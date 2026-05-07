@@ -145,10 +145,23 @@ interface SeedGroupOpts {
 
 async function seedGroup(opts: SeedGroupOpts): Promise<number> {
   const invoiceNumber = `${TAG}-G-${opts.label}`;
+  // Wave D-PR5: the `?expiring=stuck` SQL filter pivots on
+  // `invoice_groups.phase = 'submitted'` rather than the legacy status
+  // membership. A direct insert leaves `phase` at the schema default
+  // 'triage', so a Portal Queued fixture would never satisfy the
+  // stuck-phase predicate and the parity assertion (`pastStuck` must
+  // appear in `?expiring=stuck`) would fail. Advance the phase that
+  // matches the seeded status so the fixture lives in the same lane
+  // the production writer would have placed it. This test seeds
+  // childless groups, so the disposition-vs-phase trigger never
+  // fires and a direct phase write is safe.
+  const phase: "triage" | "submitted" =
+    opts.status === "Portal Queued" ? "submitted" : "triage";
   const [group] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber,
     clientNumber: TAG,
     status: opts.status,
+    phase,
     outcome: "Pending",
     totalAmount: "100.00",
     serviceDate: opts.serviceDate,

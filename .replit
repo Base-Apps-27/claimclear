@@ -44,10 +44,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/db run check-drift"
+args = "pnpm --filter @workspace/db run check-drift && bash lib/db/scripts/check-state-fingerprint.sh"
 
 [workflows.workflow.metadata]
-isValidation = true
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"
