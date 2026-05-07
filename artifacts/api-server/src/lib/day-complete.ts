@@ -104,6 +104,22 @@ export async function isDayConcluded(
   // belongs to. We deliberately reference the CTE's own (status,
   // outcome) columns rather than the underlying table so the alias
   // survives PostgreSQL's name resolution.
+  //
+  // Wave C reader-switch note (Task #517): the in-flight + concluded
+  // sets here overlap with the actionable set in non-trivial ways —
+  // `Generating Email` lives in BOTH (it's "in-flight" from this
+  // matcher's POV because the operator clicked "package", but it's
+  // also "still on the filing clock" from the dashboard's POV). The
+  // clean phase translation is therefore NOT a single phase membership
+  // check; it would need to encode the same operator-intent residual
+  // (`status IN ('Portal Queued','Generating Email','Awaiting Response')`)
+  // as a `phase + status` predicate. Since this matcher is a low-
+  // traffic admin probe and the writer trigger keeps `status`/`outcome`
+  // synced with `phase`, we leave the legacy column reads in place
+  // pending Wave D's writer rewire (which will introduce a `submitted_via`
+  // claim column so the residual `status` check can be deleted across
+  // the codebase in one pass). See §3.B of the Wave C continuation
+  // handoff for the full residual-status rationale.
   const result = await withExecute(ex).execute(sql`
     WITH groups_for_day AS (
       SELECT

@@ -1,9 +1,8 @@
-import { and, eq, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { claimsTable, invoiceGroupsTable } from "@workspace/db";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
   CLAIM_SUBMITTED_STUCK_STATUSES,
-  GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
 } from "../routes/dashboard";
 import { SOON_DAYS, URGENT_DAYS } from "./risk-config";
@@ -61,6 +60,22 @@ function effectiveDeadlineSql(dateExpr: SQL): SQL {
 }
 
 function claimStatusCondition(mode: ExpiringMode): SQL {
+  // Wave C reader-switch (claim level): claims do not have their own
+  // `phase` column — phase lives on the parent invoice group. The
+  // claim-level "actionable" set deliberately differs from the group
+  // set: a Portal-Queued or Processed claim under a submitted parent
+  // still has its own filing clock running (the dispute hasn't landed
+  // a confirmation), so they remain in the actionable set.
+  // CLAIM_EXPIRING_ACTIONABLE_STATUSES is exactly the per-claim
+  // mirror of "parent phase ∈ {triage, ready_to_submit}", which is
+  // why the §3.B note in the Wave C continuation handoff calls out
+  // that the simpler `phase IN (...)` predicate would be a clean
+  // replacement at the CLAIM level. We keep the per-claim `status`
+  // filter here for now: it avoids a parent-table subquery in the
+  // hot list path and stays semantically equivalent to the new
+  // phase-based predicate. Wave D will swap this to a `submitted_via`
+  // (or equivalent) claim column and read disposition + parent phase
+  // directly. See docs/architecture/state-wave-c-continuation-handoff-prompt.md §3.B.
   const set = mode === "stuck"
     ? CLAIM_SUBMITTED_STUCK_STATUSES
     : CLAIM_EXPIRING_ACTIONABLE_STATUSES;
@@ -68,12 +83,49 @@ function claimStatusCondition(mode: ExpiringMode): SQL {
   return or(...parts) as SQL;
 }
 
-function groupStatusCondition(mode: ExpiringMode): SQL {
-  const set = mode === "stuck"
-    ? GROUP_SUBMITTED_STUCK_STATUSES
-    : GROUP_EXPIRING_ACTIONABLE_STATUSES;
-  const parts = set.map((s) => eq(invoiceGroupsTable.status, s));
-  return or(...parts) as SQL;
+function groupPhaseCondition(mode: ExpiringMode): SQL {
+  if (mode === "stuck") {
+    // GROUP_SUBMITTED_STUCK_STATUSES = ["Portal Queued"]. Per the
+    // production deriver (`lib/invoice-state/src/derive-phase.ts`)
+    // Portal Queued lives in `ready_to_submit`, so the phase-based
+    // predicate is `phase = ready_to_submit AND status = "Portal Queued"`.
+    // We keep the residual `status` check here because Portal Queued
+    // is the only `ready_to_submit` member that represents a
+    // post-submit (filed-but-unconfirmed) row from the office's POV.
+    // Wave D will introduce a proper `submitted_via` claim column so
+    // this residual check can be deleted. See §3.B of the Wave C
+    // continuation handoff for the full rationale.
+    return and(
+      eq(invoiceGroupsTable.phase, "ready_to_submit"),
+      ...GROUP_SUBMITTED_STUCK_STATUSES.map((s) => eq(invoiceGroupsTable.status, s)),
+    ) as SQL;
+  }
+
+  // Group-level "actionable, on-clock" — phase is necessary but not
+  // sufficient. Per the production deriver, both `Portal Queued` and
+  // `Generating Email` map to `ready_to_submit`, but only the latter is
+  // pre-submit from the office's POV (Portal Queued = filed via the
+  // portal, awaiting payor confirmation; the filing clock is satisfied
+  // at submission). So we read `phase` as the primary signal then
+  // exclude the Portal-Queued sub-set explicitly. This preserves the
+  // legacy GROUP_EXPIRING_ACTIONABLE_STATUSES = { New, Needs Evidence,
+  // On Hold, Generating Email } membership exactly, which the
+  // dashboard-vs-queue-vs-snapshot parity contract (Task #352, locked
+  // by must-file-today-parity.test.ts) depends on.
+  //
+  // The `status != "Portal Queued"` is the residual status dependency
+  // Wave C cannot eliminate. Wave D's writer rewire will introduce a
+  // proper `submitted_via` claim column (or equivalent group-level
+  // signal) and at THAT point the predicate becomes pure phase — the
+  // residual check should then be deleted. See §3.B of the Wave C
+  // continuation handoff and docs/architecture/state-hierarchy-v1.md.
+  return or(
+    eq(invoiceGroupsTable.phase, "triage"),
+    and(
+      eq(invoiceGroupsTable.phase, "ready_to_submit"),
+      ne(invoiceGroupsTable.status, "Portal Queued"),
+    ),
+  ) as SQL;
 }
 
 // `soon` is the strictly-future band (1..SOON_DAYS); today/overdue
@@ -120,7 +172,7 @@ export function buildInvoiceGroupExpiringCondition(mode: ExpiringMode): SQL {
   const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
   const deadline = effectiveDeadlineSql(dateExpr);
   const conds: SQL[] = [
-    groupStatusCondition(mode),
+    groupPhaseCondition(mode),
     isNotNull(invoiceGroupsTable.serviceDate) as SQL,
   ];
   if (exactlyTodayFor(mode)) {

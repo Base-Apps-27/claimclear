@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNull } from "drizzle-orm";
+import { eq, ne, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable, stateEventsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -409,8 +409,25 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
 
   const openStatusFilter = or(...OPEN_STATUSES.map(s => eq(invoiceGroupsTable.status, s)));
 
+  // Wave C reader switch (Task #517): the actionable group set is now
+  // read off `invoice_groups.phase` — the canonical filing-state column
+  // maintained by `derivePhase` on every write path. The residual
+  // `status != "Portal Queued"` exclusion is unavoidable today: per the
+  // production deriver (`lib/invoice-state/src/derive-phase.ts`) both
+  // `Generating Email` and `Portal Queued` map to `ready_to_submit`,
+  // but only the former is pre-submit from the office's POV. Wave D's
+  // writer rewire will introduce a proper `submitted_via` claim column
+  // (or equivalent) and at THAT point the residual check disappears.
+  // The membership of this predicate matches GROUP_EXPIRING_ACTIONABLE_STATUSES
+  // exactly so the dashboard-vs-queue-vs-snapshot parity contract
+  // (Task #352, must-file-today-parity.test.ts) is preserved.
+  // See docs/architecture/state-wave-c-continuation-handoff-prompt.md §3.B.
   const expiringStatusFilter = or(
-    ...GROUP_EXPIRING_ACTIONABLE_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
+    eq(invoiceGroupsTable.phase, "triage"),
+    and(
+      eq(invoiceGroupsTable.phase, "ready_to_submit"),
+      ne(invoiceGroupsTable.status, "Portal Queued"),
+    ),
   );
 
   const openGroupsWithDates = await db
@@ -464,8 +481,16 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // needs a chase rather than a fresh filing. Surfaced alongside
   // `urgentCount` so the dashboard never reads "0 to file today"
   // while the same data renders TODAY-style badges in lower tiers.
-  const stuckStatusFilter = or(
-    ...GROUP_SUBMITTED_STUCK_STATUSES.map(s => eq(invoiceGroupsTable.status, s)),
+  // Wave C reader switch (Task #517): same phase-anchored predicate
+  // shape as the actionable filter above. `Portal Queued` lives in
+  // `ready_to_submit` per the deriver, so the stuck-after-submission
+  // tier is exactly `phase = ready_to_submit AND status = "Portal Queued"`.
+  // Wave D will let us drop the residual status check once the
+  // `submitted_via` writer is in place. Membership matches
+  // GROUP_SUBMITTED_STUCK_STATUSES exactly.
+  const stuckStatusFilter = and(
+    eq(invoiceGroupsTable.phase, "ready_to_submit"),
+    or(...GROUP_SUBMITTED_STUCK_STATUSES.map(s => eq(invoiceGroupsTable.status, s))),
   );
   const stuckGroupsWithDates = await db
     .select({

@@ -7,10 +7,9 @@
 // + {ET-anchored urgency}. The route handlers and the snapshot cron
 // both call into it so they cannot drift.
 
-import { inArray, isNotNull, and, sql } from "drizzle-orm";
+import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 import { db, invoiceGroupsTable } from "@workspace/db";
 import { isUrgentDeadline, serverTodayKey } from "./dates";
-import { GROUP_EXPIRING_ACTIONABLE_STATUSES } from "../routes/dashboard";
 import { emitStateEvent } from "./state-events";
 import { logger } from "./logger";
 
@@ -49,7 +48,25 @@ async function loadActionableRows(): Promise<ActionableRow[]> {
     .from(invoiceGroupsTable)
     .where(
       and(
-        inArray(invoiceGroupsTable.status, [...GROUP_EXPIRING_ACTIONABLE_STATUSES]),
+        // Wave C reader switch (Task #517): the actionable set is now
+        // anchored on `invoice_groups.phase`, the canonical filing-state
+        // column maintained by `derivePhase` on every write path. The
+        // residual `status != "Portal Queued"` exclusion preserves the
+        // pre-submit-only semantics today; per the production deriver
+        // (`lib/invoice-state/src/derive-phase.ts`) both `Generating
+        // Email` and `Portal Queued` map to `ready_to_submit`, but only
+        // the former is on the filing clock from the office's POV.
+        // Membership matches GROUP_EXPIRING_ACTIONABLE_STATUSES exactly,
+        // which the must-file-today-parity contract test locks. Wave D
+        // will introduce a `submitted_via` claim column (or equivalent)
+        // so this residual status check can be deleted then.
+        or(
+          eq(invoiceGroupsTable.phase, "triage"),
+          and(
+            eq(invoiceGroupsTable.phase, "ready_to_submit"),
+            ne(invoiceGroupsTable.status, "Portal Queued"),
+          ),
+        ),
         isNotNull(invoiceGroupsTable.serviceDate),
       ),
     );

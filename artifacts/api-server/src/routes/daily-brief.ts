@@ -350,6 +350,18 @@ async function gatherAdminMetrics(yesterdayStart: Date, todayStart: Date): Promi
   // are open, but we can't actually file them today, so listing them in the
   // expiring worklist just adds noise. Open count and yesterday-activity
   // metrics still use the full open set.
+  // Wave C reader switch (Task #517): claim-level filter — claims do
+  // not have their own `phase` column (phase lives on the parent
+  // invoice group), and `claims.disposition` does not by itself encode
+  // whether the parent has been submitted (a `disposed_portal` claim
+  // can sit under either a pre-submit `ready_to_submit` group or a
+  // `submitted` group). The status set IS the per-claim mirror of
+  // "parent phase ∈ {triage, ready_to_submit}". Switching to a
+  // disposition + parent-phase JOIN here adds a hot-path subquery
+  // without changing semantics, so we keep the per-claim status
+  // filter for now. Wave D will introduce a `submitted_via` (or
+  // equivalent) claim column so this can become a single-column read.
+  // See docs/architecture/state-wave-c-continuation-handoff-prompt.md §3.B.
   const expiringStatusFilter = or(
     ...CLAIM_EXPIRING_ACTIONABLE_STATUSES.map(s => eq(claimsTable.status, s)),
   );

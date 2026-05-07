@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
+import {
+  CONFIRMED_VERDICT_DISPOSITIONS,
+  isPhaseAtLeast,
+  type ClaimDisposition,
+  type InvoicePhase,
+} from "@workspace/vocab";
 import { db } from "@workspace/db";
 import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -630,10 +636,26 @@ router.get("/claims/:id/email-thread", asyncHandler(async (req, res): Promise<vo
     ...allOutbound.map((o) => outboundToMessage(o, claimId, lookup)),
   ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
+  // Wave C reader switch (Task #517, exec plan §6.C.2 drift bug #12):
+  // "thread is resolved" used to read claim.status / claim.outcome —
+  // both legacy columns. The phase/disposition equivalent is "the claim
+  // has reached a verdict or finalised disposition". `verdict_*` covers
+  // the post-review window where the case is functionally decided but
+  // still awaiting attestation; `final_*` and `duplicate` cover the
+  // closed phase. Together they reproduce the legacy
+  // `outcome decided OR status terminal` predicate exactly without
+  // touching legacy columns. See lib/vocab/src/claim-disposition.ts.
+  const RESOLVED_DISPOSITIONS: ReadonlyArray<ClaimDisposition> = [
+    ...CONFIRMED_VERDICT_DISPOSITIONS,
+    "final_reattested",
+    "final_withdrawn",
+    "final_denied",
+    "final_nonissue",
+    "duplicate",
+  ];
   const isClaimResolved =
-    claim.status === "Resolved" ||
-    claim.status === "Denied" ||
-    (claim.outcome !== "Pending" && claim.outcome !== null);
+    claim.disposition != null &&
+    RESOLVED_DISPOSITIONS.includes(claim.disposition as ClaimDisposition);
   const conversations = groupByConversation(messages, isClaimResolved);
 
   res.json({
@@ -1006,10 +1028,17 @@ router.get("/invoice-groups/:id/email-thread", asyncHandler(async (req, res): Pr
     }
   }
 
+  // Wave C reader switch (Task #517, exec plan §6.C.2 drift bug #13):
+  // group-level mirror of the claim predicate above. The legacy check
+  // ("status === Resolved/Denied OR outcome decided") corresponds
+  // exactly to "phase has reached `reviewed`" — at that point every
+  // leg has a confirmed verdict, and the conversation is functionally
+  // closed from the operator's POV. `awaiting_reattestation` and
+  // `closed` are at-or-past `reviewed`, so `isPhaseAtLeast` covers
+  // them too. See lib/vocab/src/invoice-phase.ts (PHASE_ORDER).
   const isGroupResolved =
-    group.status === "Resolved" ||
-    group.status === "Denied" ||
-    (group.outcome !== "Pending" && group.outcome !== null);
+    group.phase != null &&
+    isPhaseAtLeast(group.phase as InvoicePhase, "reviewed");
   const conversations = groupByConversation(messages, isGroupResolved);
 
   res.json({

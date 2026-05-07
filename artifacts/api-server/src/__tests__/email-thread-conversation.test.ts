@@ -104,6 +104,35 @@ async function fetchJson<T = unknown>(
 }
 
 let claimSeq = 0;
+// Wave C reader switch (Task #517): the response-tracker email-thread
+// route now reads `claims.disposition` to decide whether a thread is
+// "resolved" (drift bug #12). Test fixtures that previously only set
+// `status`/`outcome` must also seed a disposition so the new reader
+// returns the same answer the legacy reader did. We derive it from the
+// (status, outcome) tuple here so existing callers don't need updating.
+// Trigger `validate_disposition_against_phase` is permissive when
+// invoice_group_id IS NULL (these fixtures have no parent group), so
+// any valid enum value is accepted.
+function dispositionFromStatusOutcome(
+  status: string,
+  outcome: string,
+): "unclassified" | "disposed_portal" | "final_reattested" | "final_denied" | "final_withdrawn" | "final_nonissue" {
+  if (status === "Resolved") {
+    if (outcome === "Approved") return "final_reattested";
+    if (outcome === "Denied") return "final_denied";
+    if (outcome === "Withdrawn") return "final_withdrawn";
+    if (outcome === "Non-Issue") return "final_nonissue";
+    return "final_reattested";
+  }
+  if (status === "Denied") return "final_denied";
+  // Pre-submit / in-flight / awaiting-response statuses: the claim has
+  // no verdict and no closure yet. `disposed_portal` is the canonical
+  // "filed at the payor, awaiting their reply" disposition.
+  if (status === "Awaiting Response" || status === "Needs Review") {
+    return "disposed_portal";
+  }
+  return "unclassified";
+}
 async function createSeedClaim(opts: {
   refNumber?: string | null;
   status?: "New" | "Needs Review" | "Awaiting Response" | "Resolved" | "Denied";
@@ -111,11 +140,14 @@ async function createSeedClaim(opts: {
 } = {}): Promise<typeof claimsTable.$inferSelect> {
   claimSeq += 1;
   const confNumber = `T140-${Date.now()}-${claimSeq}-${Math.floor(Math.random() * 1e6)}`;
+  const status = opts.status ?? "Awaiting Response";
+  const outcome = opts.outcome ?? "Pending";
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     refNumber: opts.refNumber ?? null,
-    status: opts.status ?? "Awaiting Response",
-    outcome: opts.outcome ?? "Pending",
+    status,
+    outcome,
+    disposition: dispositionFromStatusOutcome(status, outcome),
   }).returning();
   return row;
 }
