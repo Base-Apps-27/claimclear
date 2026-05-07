@@ -58,7 +58,7 @@ import { StatusPill } from "@/components/cohesion";
 import { RefNumber } from "@/components/ref-number";
 import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
-import { legSubStatusLabel as glossarySubStatusLabel } from "@workspace/vocab";
+import { legSubStatusLabel as glossarySubStatusLabel, legSubStatusDisplayLabel } from "@workspace/vocab";
 import {
   isOfflineReattestNoteValid,
   canSubmitOfflineReattest,
@@ -1138,7 +1138,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         </div>
                       )}
                       <div className="col-span-2">
-                        <StatusPill tone={legSubStatusTone(sub)}>{legSubStatusLabel(sub)}</StatusPill>
+                        <StatusPill tone={legSubStatusTone(sub)}>{legSubStatusDisplayLabel(sub, r)}</StatusPill>
                       </div>
                       <div className={`${isClerk ? "col-span-3" : "col-span-2"} flex items-center justify-end gap-1.5`}>
                         <Link
