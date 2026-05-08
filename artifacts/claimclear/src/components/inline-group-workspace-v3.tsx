@@ -273,6 +273,8 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   // get stuck in review mode after a Mark-reviewed succeeds.
   const [reviewMode, setReviewMode] = useState(false);
 
+  const qc = useQueryClient();
+  const { toast } = useToast();
   const { data: group, isLoading } = useGetInvoiceGroup(groupId);
 
   const detail: DetailGroup | null = useMemo(
@@ -433,6 +435,32 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   let hero: React.ReactNode = null;
   let footerPrimary: React.ReactNode = null;
 
+  // V4 Q1 — owns the Generate-preview mutation at the parent level so
+  // the primary CTA can render inside the global pinned footer
+  // (alongside the gauntlet row + ready-to-draft pill) instead of
+  // floating right-aligned in the hero. Keeps WalkCompleteHero
+  // presentational.
+  const stampPreview = useStampPreviewGenerated();
+  const walkBuckets = useMemo(() => summarizeInclusion(rides), [rides]);
+  function onGeneratePreview() {
+    stampPreview.mutate(
+      { id: groupId },
+      {
+        onSuccess: () => {
+          successToast({ title: "__VERB__", description: "Submission preview generated" });
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Preview generation failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   if (!collapseToTerminator) {
     if (outlook === "has_disputable") {
       if (submitted) {
@@ -465,9 +493,23 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
           <WalkCompleteHero
             detail={detail}
             rides={rides}
-            groupId={groupId}
             onJumpToLeg={(id) => setActiveLegId(id)}
           />
+        );
+        footerPrimary = (
+          <Button
+            onClick={onGeneratePreview}
+            disabled={stampPreview.isPending || walkBuckets.included === 0}
+            data-testid="v3-generate-preview"
+            size="sm"
+          >
+            {stampPreview.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 mr-1" />
+            )}
+            Generate dispute note
+          </Button>
         );
       } else if (activeLeg) {
         hero = <WalkSopHero leg={activeLeg} />;
@@ -1033,6 +1075,15 @@ function WizardInvoiceHeaderStrip({
           {formatCurrency(detail.totalAmount)}
         </HideForClerk>
       </span>
+      {detail.payorEmail && (
+        <span
+          className="cc-meta text-[11px]"
+          data-testid="v3-invoice-strip-payor"
+          title={`Payor · ${detail.payorEmail}`}
+        >
+          → <span className="font-medium">{detail.payorEmail}</span>
+        </span>
+      )}
       <span className="cc-pill cc-pill-muted">
         {buckets.total} walked · {buckets.included} disputable · {buckets.filtered} filtered
       </span>
@@ -1139,43 +1190,18 @@ function collectAttachmentRows(rides: ClaimResponse[]): {
 function WalkCompleteHero({
   detail,
   rides,
-  groupId,
   onJumpToLeg,
 }: {
   detail: DetailGroup;
   rides: ClaimResponse[];
-  groupId: number;
   onJumpToLeg: (id: number) => void;
 }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const stampPreview = useStampPreviewGenerated();
-
   const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
   // V4 Q2 — "Inputs detail" expander. Default closed (Q1 minimum-
   // density cards). Opening swaps the row to the dense variant that
   // unpacks the SOP walk, evidence chips, op-note, and L1/L2 prompt-
   // layer pill for every leg.
   const [inputsDetail, setInputsDetail] = useState(false);
-
-  function onGenerate() {
-    stampPreview.mutate(
-      { id: groupId },
-      {
-        onSuccess: () => {
-          successToast({ title: "__VERB__", description: "Submission preview generated" });
-          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
-          qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Preview generation failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
 
   return (
     <div data-testid="v3-hero-walk-complete" className="space-y-3">
@@ -1251,22 +1277,9 @@ function WalkCompleteHero({
         </div>
       </div>
 
-      {/* Generate CTA — right-aligned, hero-internal (parent gauntlet
-          footer doesn't carry a primary at this phase). */}
-      <div className="flex justify-end pt-1">
-        <Button
-          onClick={onGenerate}
-          disabled={stampPreview.isPending || buckets.included === 0}
-          data-testid="v3-generate-preview"
-        >
-          {stampPreview.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-          ) : (
-            <Sparkles className="h-3.5 w-3.5 mr-1" />
-          )}
-          Generate dispute note
-        </Button>
-      </div>
+      {/* Generate CTA lives in the global pinned footer (V4 Q1 parity)
+          alongside the gauntlet steps + ready-to-draft pill — see the
+          parent's `footerPrimary` wiring. Hero stays presentational. */}
     </div>
   );
 }
@@ -1459,14 +1472,13 @@ function ReviewEditHero({
   const isDirectEmail = detail.useDirectEmail === true;
   const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
 
-  // Q4 → Q5 toggle. Default to submit-mode IFF the draft is already
-  // reviewed (operator came back to a queued-but-not-sent invoice);
-  // otherwise start in edit-mode. Flips to submit on Mark reviewed
-  // success.
-  const [submitMode, setSubmitMode] = useState(draftReviewed);
-  useEffect(() => {
-    if (draftReviewed) setSubmitMode(true);
-  }, [draftReviewed]);
+  // Q4 → Q5 toggle. Always start in edit-mode (Q4) so the editable
+  // subject + body inputs and the Mark reviewed CTA stay visible even
+  // when the operator returns to an already-reviewed draft. The
+  // submit-to-portal CTA is rendered alongside Mark reviewed in the
+  // edit footer when draftReviewed=true, and the operator can also
+  // flip explicitly via the toggle.
+  const [submitMode, setSubmitMode] = useState(false);
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
@@ -1877,18 +1889,31 @@ function ReviewEditHero({
             {queueLabel}
           </Button>
         ) : (
-          <Button
-            onClick={onMarkReviewed}
-            disabled={bodyEmpty || markReviewed.isPending || saveDraft.isPending}
-            data-testid="v3-mark-reviewed"
-          >
-            {markReviewed.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+          <>
+            <Button
+              onClick={onMarkReviewed}
+              disabled={bodyEmpty || markReviewed.isPending || saveDraft.isPending}
+              data-testid="v3-mark-reviewed"
+              variant={draftReviewed ? "outline" : "default"}
+            >
+              {markReviewed.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              )}
+              {draftReviewed ? "Re-mark reviewed" : "Mark reviewed & continue"}
+            </Button>
+            {draftReviewed && (
+              <Button
+                onClick={() => setSubmitMode(true)}
+                disabled={bodyEmpty}
+                data-testid="v3-submit-to-portal"
+              >
+                <Send className="h-3.5 w-3.5 mr-1" />
+                {queueLabel}
+              </Button>
             )}
-            Mark reviewed &amp; continue
-          </Button>
+          </>
         )}
       </div>
     </div>
