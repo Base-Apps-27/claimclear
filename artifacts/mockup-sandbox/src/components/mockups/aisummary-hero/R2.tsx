@@ -95,13 +95,13 @@ function TerminalCard() {
 
         {/* Action row — primary = Change answer, secondary = Restart, overflow = Reclassify */}
         <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", borderTop:"1px solid var(--cc-border)", paddingTop:"0.75rem" }}>
-          <button className="cc-btn cc-btn-primary cc-btn-sm" data-testid="walk-change-answer">
+          <button className="cc-btn cc-btn-ghost cc-btn-sm" data-testid="walk-change-answer">
             <ChevronLeft className="w-3.5 h-3.5" /> Change my answer
           </button>
           <button className="cc-btn cc-btn-ghost cc-btn-sm" data-testid="walk-restart">
             <RotateCcw className="w-3.5 h-3.5" /> Restart walk
           </button>
-          <span className="cc-meta text-[11px]" style={{ marginLeft:"auto" }}>Both keep the classification (Driver No-Show)</span>
+          <span className="cc-meta text-[11px]" style={{ marginLeft:"auto" }}>In case you mis-clicked · both keep the classification</span>
         </div>
 
         {/* Footnote — reclassify path */}
