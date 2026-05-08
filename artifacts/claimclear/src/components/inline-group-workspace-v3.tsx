@@ -35,7 +35,13 @@ import {
   Save,
   Edit3,
   Clock,
+  Paperclip,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  Bot,
 } from "lucide-react";
+import { useAuth } from "@workspace/replit-auth-web";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -457,6 +463,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
       } else if (allWalked) {
         hero = (
           <WalkCompleteHero
+            detail={detail}
             rides={rides}
             groupId={groupId}
             onJumpToLeg={(id) => setActiveLegId(id)}
@@ -728,13 +735,17 @@ function inclusionPill(kind: ReturnType<typeof legAiInclusion>): { label: string
 }
 
 /**
- * Shared compact-card row used by all three has_disputable heroes
- * (WalkCompleteHero, PreviewDocHero, ReviewEditHero). The row is the
- * visual anchor that tells the operator at-a-glance which legs feed
- * the AI prompt. `variant`:
+ * Shared compact-card row used by all four has_disputable heroes
+ * (WalkCompleteHero, PreviewDocHero, ReviewEditHero, SubmittedReceipt
+ * Hero). The row is the visual anchor that tells the operator at-a-
+ * glance which legs feed the AI prompt. `variant`:
  *   - "full"  → cards show SOP verdict + inclusion pill (Q1 layout)
  *   - "slim"  → cards drop the SOP verdict line; just leg meta + pill
  *               (Q3/Q4/Q5 layout where the paragraph is the focus)
+ *   - "dense" → V4 Q2 expanded layout. Adds the SOP Q→A trail (from
+ *               `leg.perLegContext`), evidence chips (from
+ *               `leg.evidenceFiles`), op-note (from `leg.evidenceNotes`)
+ *               and a Default L1 / Custom L2 prompt-layer pill.
  */
 function InputsCardsRow({
   rides,
@@ -743,16 +754,39 @@ function InputsCardsRow({
 }: {
   rides: ClaimResponse[];
   onJumpToLeg: (id: number) => void;
-  variant: "full" | "slim";
+  variant: "full" | "slim" | "dense";
 }) {
+  const purpleStyle: React.CSSProperties = {
+    background: "var(--cc-purple-bg)",
+    color: "var(--cc-purple-fg)",
+    borderColor: "var(--cc-purple-bg)",
+  };
   return (
-    <div className="flex flex-wrap gap-2.5" data-testid="v3-inputs-cards">
+    <div
+      className="flex flex-wrap gap-2.5"
+      data-testid="v3-inputs-cards"
+      data-variant={variant}
+    >
       {rides.map((leg, i) => {
         const inclusion = legAiInclusion(leg);
         const verdict = legVerdictLabel(leg);
         const pill = inclusionPill(inclusion);
         const isFiltered = inclusion !== "included";
         const accent = inclusion === "included" ? "var(--cc-green-fg)" : "var(--cc-amber-fg)";
+        const evidenceFiles = (leg.evidenceFiles ?? []) as Array<{
+          url: string;
+          name?: string | null;
+        }>;
+        const opNote = (leg.evidenceNotes ?? "").trim();
+        const ctx = (leg.perLegContext ?? "").trim();
+        const sopLines = ctx
+          ? ctx
+              .split(/\r?\n+/)
+              .map((l) => l.replace(/^[•\-\*]\s*/, "").trim())
+              .filter(Boolean)
+              .slice(0, 6)
+          : [];
+        const hasOverride = ctx.length > 0;
         return (
           <div
             key={leg.id}
@@ -761,7 +795,7 @@ function InputsCardsRow({
             style={{
               flex: "1 1 280px",
               minWidth: 280,
-              maxWidth: 340,
+              maxWidth: variant === "dense" ? 360 : 340,
               borderTop: `3px solid ${accent}`,
               padding: variant === "slim" ? "0.5rem 0.75rem" : "0.625rem 0.75rem",
               display: "flex",
@@ -799,8 +833,101 @@ function InputsCardsRow({
                 </div>
               </>
             )}
-            <div className="flex items-center gap-2 pt-0.5">
+            {variant === "dense" && (
+              <>
+                <div style={{ height: 1, background: "var(--cc-border)", margin: "0.125rem 0" }} />
+                <div className="flex items-center gap-1.5">
+                  <span className="cc-meta text-[10px] uppercase tracking-wider">SOP</span>
+                  <span className={`cc-pill cc-pill-${verdict.tone}`}>{verdict.label}</span>
+                </div>
+                <div className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
+                  SOP walk
+                </div>
+                {sopLines.length > 0 ? (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.2rem",
+                    }}
+                    data-testid={`v3-inputs-sop-trail-${leg.id}`}
+                  >
+                    {sopLines.map((line, k) => (
+                      <li key={k} className="text-[11px] flex items-start gap-1">
+                        <CheckCircle2
+                          className="w-2.5 h-2.5 mt-0.5 flex-shrink-0"
+                          style={{
+                            color: isFiltered
+                              ? "var(--cc-amber-fg)"
+                              : "var(--cc-green-fg)",
+                          }}
+                        />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="cc-meta text-[11px] italic">
+                    No per-leg SOP trail captured.
+                  </div>
+                )}
+                <div className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
+                  Evidence
+                </div>
+                {evidenceFiles.length > 0 ? (
+                  <div
+                    className="flex items-center gap-1 flex-wrap"
+                    data-testid={`v3-inputs-evidence-${leg.id}`}
+                  >
+                    {evidenceFiles.slice(0, 4).map((f, k) => (
+                      <span
+                        key={k}
+                        className="cc-pill cc-pill-muted"
+                        style={{ fontSize: "10px" }}
+                      >
+                        <Paperclip className="w-2.5 h-2.5 inline" />{" "}
+                        {f.name ?? "file"}
+                      </span>
+                    ))}
+                    {evidenceFiles.length > 4 && (
+                      <span className="cc-meta text-[10px]">
+                        +{evidenceFiles.length - 4} more
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="cc-meta text-[11px]">—</div>
+                )}
+                {opNote && (
+                  <>
+                    <div className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
+                      Op note
+                    </div>
+                    <div
+                      className="text-[11px]"
+                      style={{ fontStyle: "italic", lineHeight: 1.4 }}
+                      data-testid={`v3-inputs-opnote-${leg.id}`}
+                    >
+                      &ldquo;{opNote.length > 160 ? `${opNote.slice(0, 160)}…` : opNote}&rdquo;
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+            <div className="flex items-center gap-2 pt-0.5 flex-wrap">
               <span className={`cc-pill cc-pill-${pill.tone}`}>{pill.label}</span>
+              {variant === "dense" && !isFiltered && (
+                <span
+                  className={hasOverride ? "cc-pill" : "cc-pill cc-pill-muted"}
+                  style={hasOverride ? purpleStyle : undefined}
+                  data-testid={`v3-inputs-layer-${leg.id}`}
+                >
+                  {hasOverride ? "Custom L2" : "Default L1"}
+                </span>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -833,11 +960,189 @@ function summarizeInclusion(rides: ClaimResponse[]): { included: number; filtere
   return { included, filtered, total: rides.length };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// V4 Q1–Q5 chrome — unified invoice-header strip + Walk·Preview·Review
+// ·Submit segmented stepper. Renders at the top of every disputable
+// hero so the operator always has the same anchor: which invoice,
+// what's in the prompt, which phase. The pinned footer at the bottom
+// of the wizard owns the gauntlet/helper/pill chrome; this strip owns
+// the at-a-glance phase indicator.
+// ─────────────────────────────────────────────────────────────────────
+type WizardPhase = "walk" | "preview" | "review" | "submit";
+
+function WizardInvoiceHeaderStrip({
+  detail,
+  rides,
+  current,
+  trailingPill,
+  trailingExtra,
+}: {
+  detail: DetailGroup;
+  rides: ClaimResponse[];
+  current: WizardPhase;
+  /** Optional small pill rendered after the bucket-counts pill (e.g. Q4
+   *  "Note edited · unsaved" purple state, or Q5 "Ready to send"). */
+  trailingPill?: {
+    label: string;
+    tone: "amber" | "green" | "blue" | "muted" | "purple";
+    testid?: string;
+  } | null;
+  /** Optional inline meta to the right of the bucket-counts pill (e.g.
+   *  Q5 "→ MAS Trip Inventory · 2 disputed / 1 filtered"). */
+  trailingExtra?: React.ReactNode;
+}) {
+  const buckets = summarizeInclusion(rides);
+  const phases: { key: WizardPhase; label: string }[] = [
+    { key: "walk", label: "Walk" },
+    { key: "preview", label: "Preview" },
+    { key: "review", label: "Review" },
+    { key: "submit", label: "Submit" },
+  ];
+  const order: WizardPhase[] = ["walk", "preview", "review", "submit"];
+  const currentIdx = order.indexOf(current);
+  const purpleStyle: React.CSSProperties = {
+    background: "var(--cc-purple-bg)",
+    color: "var(--cc-purple-fg)",
+    borderColor: "var(--cc-purple-bg)",
+  };
+
+  return (
+    <div
+      data-testid="v3-invoice-header-strip"
+      data-phase={current}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        padding: "0.5rem 0.75rem",
+        background: "var(--cc-card)",
+        border: "1px solid var(--cc-border)",
+        borderRadius: "var(--cc-radius)",
+        flexWrap: "wrap",
+      }}
+    >
+      <RefNumber
+        value={detail.invoiceNumber}
+        variant="inline"
+        className="font-semibold"
+      />
+      <span className="cc-meta text-[11px]">
+        {detail.rideCount} ride{detail.rideCount === 1 ? "" : "s"}
+        <HideForClerk>
+          {" · "}
+          {formatCurrency(detail.totalAmount)}
+        </HideForClerk>
+      </span>
+      <span className="cc-pill cc-pill-muted">
+        {buckets.total} walked · {buckets.included} disputable · {buckets.filtered} filtered
+      </span>
+      {trailingPill && (
+        <span
+          className={`cc-pill ${
+            trailingPill.tone === "purple"
+              ? ""
+              : `cc-pill-${trailingPill.tone}`
+          }`}
+          style={trailingPill.tone === "purple" ? purpleStyle : undefined}
+          data-testid={trailingPill.testid ?? "v3-invoice-strip-pill"}
+        >
+          {trailingPill.label}
+        </span>
+      )}
+      {trailingExtra}
+      <div
+        className="cc-segmented"
+        style={{ marginLeft: "auto" }}
+        role="tablist"
+        aria-label="Wizard phase"
+        data-testid="v3-wizard-stepper"
+      >
+        {phases.map((p, i) => {
+          const isActive = p.key === current;
+          const isDone = i < currentIdx;
+          return (
+            <button
+              key={p.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-disabled
+              disabled
+              className={isActive ? "is-active" : ""}
+              data-phase={p.key}
+              data-state={isActive ? "active" : isDone ? "done" : "pending"}
+              data-testid={`v3-wizard-step-${p.key}`}
+              style={isDone ? { opacity: 0.85 } : undefined}
+            >
+              {isDone && (
+                <CheckCircle2 className="w-2.5 h-2.5 inline mr-1" />
+              )}
+              {p.label}
+              {isDone && " ✓"}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Aggregate evidence file refs across rides for the Q5 attachments rail.
+// Mirrors the bot worker's `collectGroupEvidenceUrls` selection rule:
+// only legs included in the dispute contribute attachments. Filtered
+// legs (non-contestable, excluded, on hold, sibling duplicates) are
+// counted into `filteredCount` so the rail can surface "Leg N
+// attachments excluded (filtered)" without omitting them silently.
+// ─────────────────────────────────────────────────────────────────────
+type LegEvidenceRow = {
+  legNumber: number;
+  conf: string;
+  name: string;
+  url: string;
+  size?: number | null;
+};
+
+function collectAttachmentRows(rides: ClaimResponse[]): {
+  rows: LegEvidenceRow[];
+  filteredCount: number;
+} {
+  const rows: LegEvidenceRow[] = [];
+  let filteredCount = 0;
+  rides.forEach((leg, i) => {
+    const inclusion = legAiInclusion(leg);
+    const files = (leg.evidenceFiles ?? []) as Array<{
+      url: string;
+      name?: string | null;
+      size?: number | null;
+    }>;
+    if (inclusion !== "included") {
+      if (files.length > 0) filteredCount += files.length;
+      return;
+    }
+    files.forEach((f) => {
+      const fallback = f.url
+        ? f.url.split("/").pop() ?? f.url
+        : "(unnamed file)";
+      rows.push({
+        legNumber: i + 1,
+        conf: leg.confNumber ?? `leg-${leg.id}`,
+        name: f.name ?? fallback,
+        url: f.url,
+        size: f.size ?? null,
+      });
+    });
+  });
+  return { rows, filteredCount };
+}
+
 function WalkCompleteHero({
+  detail,
   rides,
   groupId,
   onJumpToLeg,
 }: {
+  detail: DetailGroup;
   rides: ClaimResponse[];
   groupId: number;
   onJumpToLeg: (id: number) => void;
@@ -847,6 +1152,11 @@ function WalkCompleteHero({
   const stampPreview = useStampPreviewGenerated();
 
   const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
+  // V4 Q2 — "Inputs detail" expander. Default closed (Q1 minimum-
+  // density cards). Opening swaps the row to the dense variant that
+  // unpacks the SOP walk, evidence chips, op-note, and L1/L2 prompt-
+  // layer pill for every leg.
+  const [inputsDetail, setInputsDetail] = useState(false);
 
   function onGenerate() {
     stampPreview.mutate(
@@ -869,16 +1179,41 @@ function WalkCompleteHero({
 
   return (
     <div data-testid="v3-hero-walk-complete" className="space-y-3">
-      {/* Strip — one-line summary the operator sees first */}
+      {/* V4 unified header — invoice meta · bucket counts · stepper */}
+      <WizardInvoiceHeaderStrip
+        detail={detail}
+        rides={rides}
+        current="walk"
+      />
+
+      {/* Strip — one-line summary the operator sees first, plus the
+          Q2 expander that toggles the dense per-leg unpack. */}
       <div className="flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-700" />
         <span className="font-semibold text-sm">AI inputs · what the prompt will see</span>
-        <span className="cc-pill cc-pill-muted ml-auto">
-          {buckets.total} walked · {buckets.included} disputable · {buckets.filtered} filtered
-        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setInputsDetail((v) => !v)}
+          data-testid="v3-inputs-detail-toggle"
+          aria-expanded={inputsDetail}
+          aria-controls="v3-inputs-cards"
+          className="ml-auto h-7 px-2 text-xs"
+        >
+          {inputsDetail ? (
+            <ChevronDown className="h-3.5 w-3.5 mr-1" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 mr-1" />
+          )}
+          Inputs detail
+        </Button>
       </div>
 
-      <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="full" />
+      <InputsCardsRow
+        rides={rides}
+        onJumpToLeg={onJumpToLeg}
+        variant={inputsDetail ? "dense" : "full"}
+      />
 
       {/* Paragraph slot — empty pre-generate */}
       <div>
@@ -986,6 +1321,13 @@ function PreviewDocHero({
 
   return (
     <div data-testid="v3-hero-preview" className="space-y-3">
+      {/* V4 unified header — invoice meta · bucket counts · stepper */}
+      <WizardInvoiceHeaderStrip
+        detail={detail}
+        rides={rides}
+        current="preview"
+      />
+
       {/* Strip — what fed the prompt */}
       <div className="flex items-center gap-2">
         <Sparkles className="w-4 h-4 text-blue-700" />
@@ -1228,12 +1570,39 @@ function ReviewEditHero({
 
   const queueLabel = isDirectEmail ? "Queue email" : "Queue for Portal";
 
+  // V4 Q5 — current operator for the "Signing as" footer line. Pulled
+  // from `useAuth()` (the same hook the rest of the workspace uses for
+  // presence + last-actor checks). When the session hasn't hydrated we
+  // fall back to a neutral label so the strip never renders empty.
+  const { user } = useAuth();
+  const operatorLabel =
+    (user as { displayName?: string | null; email?: string | null } | null)?.displayName?.trim() ||
+    user?.email ||
+    "operator";
+  const attachments = useMemo(() => collectAttachmentRows(rides), [rides]);
+
   return (
     <div
       data-testid="v3-hero-review"
       data-submit-mode={submitMode ? "true" : "false"}
       className="space-y-3"
     >
+      {/* V4 unified header — invoice meta · bucket counts · stepper.
+          Q4 surfaces the dirty state inline as a purple "Note edited"
+          pill so the operator never loses sight of the unsaved diff. */}
+      <WizardInvoiceHeaderStrip
+        detail={detail}
+        rides={rides}
+        current={submitMode ? "submit" : "review"}
+        trailingPill={
+          dirty && !submitMode
+            ? { label: "Note edited · unsaved", tone: "purple", testid: "v3-strip-edited-pill" }
+            : submitMode
+              ? { label: "Ready to send", tone: "green" }
+              : null
+        }
+      />
+
       {/* Strip — phase indicator + mode swap affordance */}
       <div className="flex items-center gap-2">
         {submitMode ? (
@@ -1256,7 +1625,11 @@ function ReviewEditHero({
 
       <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
 
-      {/* Body — editable in Q4, locked in Q5 */}
+      {/* Body — editable in Q4, locked in Q5. The Q5 layout splits into
+          a two-column grid: locked paragraph on the left, attachments
+          rail aggregated from the included legs' `evidenceFiles` on
+          the right. Mirrors what `collectGroupEvidenceUrls` will pack
+          into the portal POST so the operator can audit the bundle. */}
       {submitMode ? (
         <div>
           <div className="flex items-center gap-2 mb-1.5">
@@ -1280,19 +1653,100 @@ function ReviewEditHero({
             </Button>
           </div>
           <div
-            className="text-sm whitespace-pre-wrap leading-relaxed max-h-[360px] overflow-auto"
             style={{
-              border: "1px solid var(--cc-border)",
-              borderRadius: "var(--cc-radius)",
-              background: "var(--cc-card)",
-              padding: "1rem 1.125rem",
+              display: "grid",
+              gridTemplateColumns:
+                attachments.rows.length > 0 || attachments.filteredCount > 0
+                  ? "minmax(0, 1fr) 280px"
+                  : "minmax(0, 1fr)",
+              gap: "0.75rem",
+              alignItems: "start",
             }}
-            data-testid="v3-locked-body"
           >
-            {body || (
-              <span className="text-muted-foreground italic">
-                No body — go back and regenerate before queueing.
-              </span>
+            <div
+              className="text-sm whitespace-pre-wrap leading-relaxed max-h-[360px] overflow-auto"
+              style={{
+                border: "1px solid var(--cc-border)",
+                borderRadius: "var(--cc-radius)",
+                background: "var(--cc-card)",
+                padding: "1rem 1.125rem",
+              }}
+              data-testid="v3-locked-body"
+            >
+              {body || (
+                <span className="text-muted-foreground italic">
+                  No body — go back and regenerate before queueing.
+                </span>
+              )}
+            </div>
+            {(attachments.rows.length > 0 || attachments.filteredCount > 0) && (
+              <aside
+                data-testid="v3-attachments-rail"
+                style={{
+                  border: "1px solid var(--cc-border)",
+                  borderRadius: "var(--cc-radius)",
+                  background: "var(--cc-card)",
+                  padding: "0.75rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
+                    Attachments · in this submission
+                  </span>
+                </div>
+                {attachments.rows.length === 0 ? (
+                  <div className="cc-meta text-[11px] italic">
+                    No included-leg attachments. The portal post will be
+                    text-only.
+                  </div>
+                ) : (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.35rem",
+                    }}
+                  >
+                    {attachments.rows.map((row, k) => (
+                      <li
+                        key={`${row.legNumber}-${k}-${row.url}`}
+                        data-testid={`v3-attachment-row-${row.legNumber}-${k}`}
+                        className="flex items-start gap-1.5 text-[11px] leading-snug"
+                      >
+                        <Paperclip className="w-3 h-3 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{row.name}</div>
+                          <div className="cc-meta text-[10px]">
+                            Leg {row.legNumber} · {row.conf}
+                            {typeof row.size === "number" && row.size > 0 && (
+                              <> · {Math.max(1, Math.round(row.size / 1024))} KB</>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {attachments.filteredCount > 0 && (
+                  <div
+                    className="cc-pill cc-pill-amber"
+                    style={{ alignSelf: "flex-start", fontSize: "10px" }}
+                    data-testid="v3-attachments-filtered-pill"
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5 inline mr-1" />
+                    {attachments.filteredCount} attached file
+                    {attachments.filteredCount === 1 ? "" : "s"} excluded
+                    (filtered legs)
+                  </div>
+                )}
+              </aside>
             )}
           </div>
           <p className="cc-meta text-xs mt-2">
@@ -1300,6 +1754,18 @@ function ReviewEditHero({
             included leg{buckets.included === 1 ? "" : "s"} above and{" "}
             {isDirectEmail ? "sends the dispute email" : "submits to the MAS portal"}.
           </p>
+          {/* V4 Q5 — operator attribution. The portal submission is
+              actor-typed "operator", so the footer line names the
+              human who authored it for the audit trail. */}
+          <div
+            className="cc-meta text-[11px] mt-2 flex items-center gap-1.5"
+            data-testid="v3-signing-as"
+          >
+            <Bot className="w-3 h-3" />
+            Signing as <span className="font-semibold">{operatorLabel}</span>
+            <span aria-hidden="true">·</span>
+            <span>{formatDateTime(new Date().toISOString())}</span>
+          </div>
         </div>
       ) : (
         <Card>
@@ -1369,9 +1835,24 @@ function ReviewEditHero({
                 rows={12}
                 placeholder="Body the dispute will send. Edit freely; Mark reviewed to lock and queue."
                 data-testid="v3-draft-body-input"
+                data-edited={dirty ? "true" : "false"}
+                style={
+                  dirty
+                    ? {
+                        borderLeft: "3px solid var(--cc-purple-fg)",
+                        background:
+                          "color-mix(in srgb, var(--cc-purple-bg) 30%, var(--cc-card))",
+                      }
+                    : undefined
+                }
               />
               {dirty && (
-                <p className="text-xs text-amber-700">
+                <p
+                  className="text-xs flex items-center gap-1"
+                  style={{ color: "var(--cc-purple-fg)" }}
+                  data-testid="v3-dirty-helper"
+                >
+                  <Edit3 className="w-3 h-3" />
                   Unsaved edits — Save draft to persist (Mark reviewed saves automatically).
                 </p>
               )}
@@ -1488,6 +1969,14 @@ function SubmittedReceiptHero({
 
   return (
     <div data-testid="v3-hero-submitted" className="space-y-3">
+      {/* V4 unified header — all four steps complete; Submit is the
+          active terminal state, the prior three render as done ✓. */}
+      <WizardInvoiceHeaderStrip
+        detail={detail}
+        rides={rides}
+        current="submit"
+        trailingPill={{ label: "Submitted", tone: "blue" }}
+      />
       <Card>
         <CardContent className="pt-4 flex items-center gap-3">
           <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
