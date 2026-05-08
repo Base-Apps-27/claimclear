@@ -25,6 +25,7 @@ import {
 import { recheckPreviousRunBounces } from "./routes/daily-brief";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 import { sweepExpiredGroups } from "./lib/expired-sweep";
+import { refreshClaimDenormalizedCache } from "./lib/denormalized-cache";
 
 // Cap on how long a cron-triggered worker run blocks its cron lane. On
 // timeout the cron row is recorded as degraded and the worker continues in
@@ -194,6 +195,12 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
               'system (backfill)'
             )
           `);
+          // Audit 2026-05-08 v2 §A.1 — the raw-SQL UPDATE above
+          // bypasses `transitionClaimStatus` (which would have called
+          // refreshClaimDenormalizedCache for us). Without this call,
+          // the healed leg's canonical `disposition` column would
+          // remain stale until the next mutation. Idempotent and safe.
+          await refreshClaimDenormalizedCache(row.claim_id);
         });
       }
       logger.info({
