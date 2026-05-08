@@ -33,15 +33,7 @@ import type {
   SopRewindImpactResponse,
 } from "@workspace/api-client-react";
 import { RewindConfirmDialog } from "@/components/decision-tree/rewind-confirm-dialog";
-import { ReclassifyConfirmDialog } from "@/components/decision-tree/sop-advance-player";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { markLocalAction } from "@/hooks/use-local-action-mark";
+import { ReclassifyConfirmDialog } from "@/components/decision-tree/reclassify-confirm-dialog";
 import { buildLegResolvedIndex, outcomeRole, deriveLegSubStatus } from "@workspace/leg-state";
 import {
   CheckCircle2,
@@ -92,11 +84,19 @@ import {
   type ClosureReasonKey,
 } from "@/components/closure/closure-options";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
-import { useToast, successToast } from "@/hooks/use-toast";
+import { useToast, successToast, toast } from "@/hooks/use-toast";
 import {
   deriveInvoiceDisputeOutlook,
   type InvoiceDisputeOutlook,
@@ -321,8 +321,19 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   const legParam = Number.parseInt(get("leg"), 10);
   const urlLegId: number | null =
     Number.isFinite(legParam) && legParam > 0 ? legParam : null;
+  // R3 — when the operator picks "Open walk" from a card's kebab on
+  // WalkCompleteHero, we want to drop them back into the SOP player
+  // for that leg even though `allWalked` is still true. This is a
+  // transient "force the walk view for this leg" intent that resets
+  // the moment they switch legs via the top-strip leg tabs.
+  const [forceWalkLegId, setForceWalkLegId] = useState<number | null>(null);
   const setActiveLegId = (id: number | null) => {
+    setForceWalkLegId(null);
     set({ leg: id == null ? null : String(id) }, false);
+  };
+  const openWalkForLeg = (id: number) => {
+    setForceWalkLegId(id);
+    set({ leg: String(id) }, false);
   };
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -562,12 +573,26 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
             onEnterReview={() => setReviewMode(true)}
           />
         );
+      } else if (
+        allWalked &&
+        forceWalkLegId != null &&
+        activeLeg?.id === forceWalkLegId
+      ) {
+        // R3 — operator hit "Open walk" on a card's kebab while every
+        // leg was walked. Bypass WalkCompleteHero and re-enter the SOP
+        // player (or Classify hero) for the chosen leg.
+        hero = activeLegNeedsClassification ? (
+          <ClassifyHero leg={activeLeg} />
+        ) : (
+          <WalkSopHero leg={activeLeg} />
+        );
       } else if (allWalked) {
         hero = (
           <WalkCompleteHero
             detail={detail}
             rides={rides}
             onJumpToLeg={(id) => setActiveLegId(id)}
+            onOpenWalk={(id) => openWalkForLeg(id)}
           />
         );
         footerPrimary = (
@@ -1213,13 +1238,15 @@ function inclusionPill(kind: ReturnType<typeof legAiInclusion>): { label: string
  *               `leg.evidenceFiles`), op-note (from `leg.evidenceNotes`)
  *               and a Default L1 / Custom L2 prompt-layer pill.
  */
-function InputsCardsRow({
+export function InputsCardsRow({
   rides,
   onJumpToLeg,
+  onOpenWalk,
   variant,
 }: {
   rides: ClaimResponse[];
   onJumpToLeg: (id: number) => void;
+  onOpenWalk?: (id: number) => void;
   variant: "full" | "slim" | "dense";
 }) {
   const purpleStyle: React.CSSProperties = {
@@ -1227,6 +1254,7 @@ function InputsCardsRow({
     color: "var(--cc-purple-fg)",
     borderColor: "var(--cc-purple-bg)",
   };
+
   return (
     <div
       className="flex flex-wrap gap-2.5"
@@ -1840,10 +1868,12 @@ function WalkCompleteHero({
   detail,
   rides,
   onJumpToLeg,
+  onOpenWalk,
 }: {
   detail: DetailGroup;
   rides: ClaimResponse[];
   onJumpToLeg: (id: number) => void;
+  onOpenWalk?: (id: number) => void;
 }) {
   const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
   // V4 Q2 — "Inputs detail" expander. Default closed (Q1 minimum-
@@ -1887,6 +1917,7 @@ function WalkCompleteHero({
       <InputsCardsRow
         rides={rides}
         onJumpToLeg={onJumpToLeg}
+        onOpenWalk={onOpenWalk}
         variant={inputsDetail ? "dense" : "full"}
       />
 

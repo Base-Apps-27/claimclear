@@ -103,6 +103,15 @@ mock.module("@workspace/api-client-react", {
     useBulkQueueGroupReattest: inertMutation,
     useMarkAwaitingPayorAgain: inertMutation,
     usePromoteVerdictDrafts: inertMutation,
+    useSopRestartLeg: inertMutation,
+    useReclassifyLeg: inertMutation,
+    useGetSopRewindImpact: () => ({ data: null, isLoading: false, error: null }),
+    getGetSopRewindImpactQueryKey: (id: number, params: unknown) => [
+      "sop-rewind-impact",
+      id,
+      params,
+    ],
+    getListClaimEvidenceQueryKey: (id: number) => ["claim", id, "evidence"],
     useGetInvoiceGroup: (_id: number) => ({
       data: capturedGroup,
       isLoading: false,
