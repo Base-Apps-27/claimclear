@@ -11,6 +11,8 @@ import {
   getGetInvoiceGroupQueryKey,
   getGetClaimQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
+  useGetResponsesAwaitingReviewHiddenCounts,
+  getGetResponsesAwaitingReviewHiddenCountsQueryKey,
   useRecordLegVerdict,
   useClearLegVerdictDraft,
   useGetInvoiceGroupEmailThread,
@@ -369,6 +371,9 @@ export default function ResponsesAwaitingReview() {
         </p>
       </div>
 
+      <HiddenItemsStrip />
+
+
       {groups.length > 0 && (
         <div className="flex items-center justify-end gap-2">
           <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
@@ -404,6 +409,122 @@ export default function ResponsesAwaitingReview() {
         onSelect={selectGroup}
         onAfterVerdict={onAfterVerdict}
       />
+    </div>
+  );
+}
+
+/**
+ * Task #546 — "what's hidden from this view" summary strip.
+ *
+ * The Responses Awaiting Review inbox silently filters out groups that
+ * don't satisfy every criterion (no error type, "wait for payor again"
+ * suppression active, every response demoted to acknowledgment/abstain).
+ * Without this strip an operator can't tell "nothing to do" apart from
+ * "things are hiding". The chips give per-bucket counts that link to
+ * exactly those groups; when every bucket is zero the strip collapses
+ * to a single quiet line so the absence of items is itself reassuring.
+ *
+ * Counts come from `GET /responses/awaiting-review/hidden-counts`,
+ * which is invalidated on the same SSE pulse the inbox uses (see
+ * `useInvoiceGroupsListEvents`).
+ */
+function HiddenItemsStrip() {
+  const { data, isLoading } = useGetResponsesAwaitingReviewHiddenCounts({
+    query: { queryKey: getGetResponsesAwaitingReviewHiddenCountsQueryKey() },
+  });
+
+  if (isLoading || !data) {
+    return <Skeleton className="h-9 w-full max-w-xl" data-testid="hidden-items-strip-loading" />;
+  }
+
+  const { unclassified, awaitingPayorAgain, acknowledgmentOnly } = data;
+  const totalHidden = unclassified + awaitingPayorAgain + acknowledgmentOnly;
+
+  if (totalHidden === 0) {
+    return (
+      <div
+        className="text-xs text-muted-foreground italic"
+        data-testid="hidden-items-strip-empty"
+      >
+        Nothing hidden from this view.
+      </div>
+    );
+  }
+
+  // Click-through destinations reuse existing list pages with precise
+  // filters so the chip count and the resulting page list always agree.
+  const chips: Array<{
+    key: string;
+    count: number;
+    label: string;
+    tooltip: string;
+    href: string;
+    toneClass: string;
+  }> = [];
+
+  if (unclassified > 0) {
+    chips.push({
+      key: "unclassified",
+      count: unclassified,
+      label: `${unclassified} unclassified — needs an error type`,
+      tooltip:
+        "These groups have a payor response but no Error Type yet, so the inbox can't show them. Click through to the classification view to assign one.",
+      // `inboxHiddenBucket=unclassified` runs the exact same SQL on the
+      // list endpoint that the count endpoint uses, so the chip count
+      // and the destination list can never disagree.
+      href: "/invoice-groups?inboxHiddenBucket=unclassified",
+      toneClass: "bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900",
+    });
+  }
+  if (awaitingPayorAgain > 0) {
+    chips.push({
+      key: "awaitingPayorAgain",
+      count: awaitingPayorAgain,
+      label: `${awaitingPayorAgain} waiting for payor again`,
+      tooltip:
+        "Operator clicked \"I replied — wait for payor again\" and no newer reply has arrived. The inbox suppresses these until a fresh response lands.",
+      href: "/invoice-groups?inboxHiddenBucket=awaitingPayorAgain",
+      toneClass: "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-900",
+    });
+  }
+  if (acknowledgmentOnly > 0) {
+    chips.push({
+      key: "acknowledgmentOnly",
+      count: acknowledgmentOnly,
+      label:
+        acknowledgmentOnly === 1
+          ? "1 has only acknowledgment/abstain responses"
+          : `${acknowledgmentOnly} have only acknowledgment/abstain responses`,
+      tooltip:
+        "Every response on file has been (re)classified as acknowledgment or abstain, so there's no verdict to take. The inbox hides these because there's nothing reviewable.",
+      href: "/invoice-groups?inboxHiddenBucket=acknowledgmentOnly",
+      toneClass: "bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-800",
+    });
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 flex-wrap rounded-md border border-dashed bg-muted/30 px-3 py-2"
+      data-testid="hidden-items-strip"
+    >
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+        <Eye className="h-3.5 w-3.5" />
+        Hidden from this view
+      </span>
+      {chips.map((chip) => (
+        <Tooltip key={chip.key}>
+          <TooltipTrigger asChild>
+            <Link
+              href={chip.href}
+              className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${chip.toneClass}`}
+              data-testid={`hidden-items-chip-${chip.key}`}
+            >
+              {chip.label}
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">{chip.tooltip}</TooltipContent>
+        </Tooltip>
+      ))}
     </div>
   );
 }

@@ -2431,6 +2431,26 @@ entry.
   masActionCount: number;
 }
 
+export interface ResponsesAwaitingReviewHiddenCountsResponse {
+  /** Groups that satisfy the response-pending base criteria but
+have no error type assigned. Click target: the classification
+queue (filtered list of `__unassigned__` response-pending
+groups).
+ */
+  unclassified: number;
+  /** Groups suppressed by the operator's "I replied — wait for
+payor again" flip (no newer response since the stamp).
+Excludes groups already counted under `unclassified`.
+ */
+  awaitingPayorAgain: number;
+  /** Groups whose every portal_response has been (re)classified
+as `acknowledgment` / `abstain`, leaving nothing reviewable.
+Excludes groups already counted under `unclassified` or
+`awaitingPayorAgain`.
+ */
+  acknowledgmentOnly: number;
+}
+
 export type AiCalibrationResponsePerOutcomeAgreement = {
   Approved: number;
   Denied: number;
@@ -4339,6 +4359,23 @@ sifting through historical groups.
    */
   errorTypeAssigned?: boolean;
   /**
+ * Restrict the result set to exactly one of the
+"hidden from the Responses Awaiting Review inbox" buckets.
+The predicate is shared with
+`/responses/awaiting-review/hidden-counts` so the chip count
+and this list can never disagree by construction.
+
+* `unclassified` — response-pending base cohort with no
+  error type assigned and at least one response on file.
+* `awaitingPayorAgain` — classified, base cohort, currently
+  suppressed by the "wait for payor again" flip.
+* `acknowledgmentOnly` — classified, base cohort, has
+  responses but every one is acknowledgment / abstain
+  (and not currently suppressed by `awaitingPayorAgain`).
+
+ */
+  inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
+  /**
    * Filter groups created on or after this date (ISO 8601)
    */
   createdFrom?: string;
@@ -4423,6 +4460,15 @@ export type ListInvoiceGroupsErrorDetails =
 export const ListInvoiceGroupsErrorDetails = {
   empty: "empty",
   present: "present",
+} as const;
+
+export type ListInvoiceGroupsInboxHiddenBucket =
+  (typeof ListInvoiceGroupsInboxHiddenBucket)[keyof typeof ListInvoiceGroupsInboxHiddenBucket];
+
+export const ListInvoiceGroupsInboxHiddenBucket = {
+  unclassified: "unclassified",
+  awaitingPayorAgain: "awaitingPayorAgain",
+  acknowledgmentOnly: "acknowledgmentOnly",
 } as const;
 
 export type ListInvoiceGroupsExpiring =

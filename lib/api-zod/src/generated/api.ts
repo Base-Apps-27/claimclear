@@ -107,6 +107,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.",
     ),
+  inboxHiddenBucket: zod
+    .enum(["unclassified", "awaitingPayorAgain", "acknowledgmentOnly"])
+    .optional()
+    .describe(
+      'Restrict the result set to exactly one of the\n\"hidden from the Responses Awaiting Review inbox\" buckets.\nThe predicate is shared with\n`\/responses\/awaiting-review\/hidden-counts` so the chip count\nand this list can never disagree by construction.\n\n\* `unclassified` — response-pending base cohort with no\n  error type assigned and at least one response on file.\n\* `awaitingPayorAgain` — classified, base cohort, currently\n  suppressed by the \"wait for payor again\" flip.\n\* `acknowledgmentOnly` — classified, base cohort, has\n  responses but every one is acknowledgment \/ abstain\n  (and not currently suppressed by `awaitingPayorAgain`).\n',
+    ),
   createdFrom: zod.coerce
     .string()
     .optional()
@@ -13560,6 +13566,42 @@ export const GetResponsesAwaitingReviewCountResponse = zod.object({
     .number()
     .describe(
       "Number of invoice groups whose macro phase is\n`mas-action-required` — i.e., per-leg verdicts are confirmed and\nthe operator still owes per-leg cancellations and\/or a group\nre-attestation. Surfaced as the sub-pill on the same nav badge\nso MAS work-in-flight is visible without a separate top-level\nentry.\n",
+    ),
+});
+
+/**
+ * Returns counts for groups that satisfy the base "response-pending"
+criteria (status ∈ {Ready to Review, Needs Review}, no
+re-attestation in flight, no MAS cancel pending) but are excluded
+from the Responses Awaiting Review inbox by exactly one of:
+  * `unclassified` — no error type assigned (would otherwise show)
+  * `awaitingPayorAgain` — operator clicked "I replied — wait
+    for payor again" and no newer response has arrived since
+  * `acknowledgmentOnly` — every response on file has been
+    (re)classified to `acknowledgment` / `abstain` so nothing
+    is reviewable
+Buckets are mutually exclusive, in the order above ("missing
+error type wins" tie-breaker), so each hidden group is counted
+at most once. Drives the "what's hidden" summary strip at the
+top of the inbox.
+
+ * @summary Counts of groups hidden from the Responses Awaiting Review inbox
+ */
+export const GetResponsesAwaitingReviewHiddenCountsResponse = zod.object({
+  unclassified: zod
+    .number()
+    .describe(
+      "Groups that satisfy the response-pending base criteria but\nhave no error type assigned. Click target: the classification\nqueue (filtered list of `__unassigned__` response-pending\ngroups).\n",
+    ),
+  awaitingPayorAgain: zod
+    .number()
+    .describe(
+      'Groups suppressed by the operator\'s \"I replied — wait for\npayor again\" flip (no newer response since the stamp).\nExcludes groups already counted under `unclassified`.\n',
+    ),
+  acknowledgmentOnly: zod
+    .number()
+    .describe(
+      "Groups whose every portal_response has been (re)classified\nas `acknowledgment` \/ `abstain`, leaving nothing reviewable.\nExcludes groups already counted under `unclassified` or\n`awaitingPayorAgain`.\n",
     ),
 });
 

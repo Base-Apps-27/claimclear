@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
 import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
 import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
+import type { ListInvoiceGroupsInboxHiddenBucket } from "./listInvoiceGroupsInboxHiddenBucket";
 import type { ListInvoiceGroupsMacroPhase } from "./listInvoiceGroupsMacroPhase";
 import type { ListInvoiceGroupsMissingServiceDateReason } from "./listInvoiceGroupsMissingServiceDateReason";
 import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
@@ -49,6 +50,23 @@ sifting through historical groups.
    * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
    */
   errorTypeAssigned?: boolean;
+  /**
+ * Restrict the result set to exactly one of the
+"hidden from the Responses Awaiting Review inbox" buckets.
+The predicate is shared with
+`/responses/awaiting-review/hidden-counts` so the chip count
+and this list can never disagree by construction.
+
+* `unclassified` — response-pending base cohort with no
+  error type assigned and at least one response on file.
+* `awaitingPayorAgain` — classified, base cohort, currently
+  suppressed by the "wait for payor again" flip.
+* `acknowledgmentOnly` — classified, base cohort, has
+  responses but every one is acknowledgment / abstain
+  (and not currently suppressed by `awaitingPayorAgain`).
+
+ */
+  inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
   /**
    * Filter groups created on or after this date (ISO 8601)
    */

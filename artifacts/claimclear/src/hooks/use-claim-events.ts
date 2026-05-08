@@ -214,7 +214,17 @@ export function useInvoiceGroupsListEvents() {
     queryClient.invalidateQueries({
       predicate: (query) => {
         const key = query.queryKey;
-        return Array.isArray(key) && typeof key[0] === "string" && key[0].startsWith("/api/invoice-groups");
+        if (!Array.isArray(key) || typeof key[0] !== "string") return false;
+        // Task #546 — the hidden-items strip on the Responses Awaiting
+        // Review page is computed off the same group/response state the
+        // inbox reads, so it must invalidate on the same SSE pulse the
+        // inbox does. Otherwise an operator could classify or "wait for
+        // payor again" a row and watch the chip lag for up to a poll
+        // interval.
+        return (
+          key[0].startsWith("/api/invoice-groups") ||
+          key[0].startsWith("/api/responses/awaiting-review")
+        );
       },
     });
   }, [queryClient]);

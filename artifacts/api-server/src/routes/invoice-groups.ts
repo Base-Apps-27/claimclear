@@ -209,6 +209,17 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     conditions.push(ne(invoiceGroupsTable.errorTypeId, ""));
   }
 
+  // Task #546 — drill-in filter for the "what's hidden from the inbox"
+  // chips on the Responses Awaiting Review page. The bucket SQL is
+  // shared with `/responses/awaiting-review/hidden-counts` so the chip
+  // count and the click-through list can never disagree by construction.
+  const inboxHiddenRaw = typeof query.inboxHiddenBucket === "string"
+    ? query.inboxHiddenBucket
+    : "";
+  if (inboxHiddenRaw === "unclassified" || inboxHiddenRaw === "awaitingPayorAgain" || inboxHiddenRaw === "acknowledgmentOnly") {
+    conditions.push(buildInboxHiddenBucketCondition(inboxHiddenRaw));
+  }
+
   if (errorTypeId && typeof errorTypeId === "string") {
     const parts = errorTypeId.split(",").map(p => p.trim()).filter(Boolean);
     const hasUnassigned = parts.includes("__unassigned__");
@@ -2227,6 +2238,99 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
   res.json({
     count: row?.value ?? 0,
     masActionCount: masRow.count ?? 0,
+  });
+}));
+
+// Task #546 — counts for the "what's hidden from this view" summary
+// strip on /responses-awaiting-review. Surfaces groups that satisfy the
+// base response-pending criteria but are excluded from the inbox by
+// exactly one of three reasons. Buckets are mutually exclusive in the
+// declared order ("missing error type wins" tie-breaker) so a group
+// hidden for two reasons is counted once, never twice.
+//
+// Base predicate mirrors `buildMacroPhaseCondition("response-pending")`
+// MINUS the awaiting-payor-again suppression and the reviewable-
+// response EXISTS guard — those two filters become bucket discriminants
+// here rather than gates.
+type InboxHiddenBucket = "unclassified" | "awaitingPayorAgain" | "acknowledgmentOnly";
+
+function buildInboxHiddenBucketCondition(bucket: InboxHiddenBucket): SQL {
+  const responsePendingStatuses = STATUS_BY_PHASE["response-pending"];
+  const baseCondition = and(
+    inArray(invoiceGroupsTable.status, [...responsePendingStatuses]),
+    isNull(invoiceGroupsTable.reattestCompletedAt),
+    or(
+      isNull(invoiceGroupsTable.reattestRequired),
+      eq(invoiceGroupsTable.reattestRequired, false),
+    )!,
+    sql`not exists (
+      select 1 from claims c
+      where c.invoice_group_id = ${invoiceGroupsTable.id}
+        and c.mas_action_required = 'cancel'
+        and c.mas_action_completed_at is null
+    )`,
+  )!;
+  const isClassified = and(
+    isNotNull(invoiceGroupsTable.errorTypeId),
+    ne(invoiceGroupsTable.errorTypeId, ""),
+  )!;
+  const isUnclassified = or(
+    isNull(invoiceGroupsTable.errorTypeId),
+    eq(invoiceGroupsTable.errorTypeId, ""),
+  )!;
+  const hasAnyResponse = sql`exists (
+    select 1 from portal_responses pr
+    where pr.invoice_group_id = ${invoiceGroupsTable.id}
+  )`;
+  const hasReviewableResponse = sql`exists (
+    select 1 from portal_responses pr
+    where pr.invoice_group_id = ${invoiceGroupsTable.id}
+      and pr."responseType" in (
+        'approval', 'denial', 'partial_approval', 'info_request', 'other'
+      )
+  )`;
+  const suppressedByAwaitingPayor = and(
+    isNotNull(invoiceGroupsTable.awaitingPayorAgainAt),
+    sql`not exists (
+      select 1 from portal_responses pr
+      where pr.invoice_group_id = ${invoiceGroupsTable.id}
+        and pr.received_at > ${invoiceGroupsTable.awaitingPayorAgainAt}
+    )`,
+  )!;
+
+  if (bucket === "unclassified") {
+    return and(baseCondition, isUnclassified, hasAnyResponse)!;
+  }
+  if (bucket === "awaitingPayorAgain") {
+    return and(baseCondition, isClassified, suppressedByAwaitingPayor)!;
+  }
+  return and(
+    baseCondition,
+    isClassified,
+    or(
+      isNull(invoiceGroupsTable.awaitingPayorAgainAt),
+      sql`exists (
+        select 1 from portal_responses pr
+        where pr.invoice_group_id = ${invoiceGroupsTable.id}
+          and pr.received_at > ${invoiceGroupsTable.awaitingPayorAgainAt}
+      )`,
+    )!,
+    hasAnyResponse,
+    sql`not (${hasReviewableResponse})`,
+  )!;
+}
+
+router.get("/responses/awaiting-review/hidden-counts", asyncHandler(async (_req, res): Promise<void> => {
+  const [unclassifiedRow, awaitingRow, ackRow] = await Promise.all([
+    db.select({ value: count() }).from(invoiceGroupsTable).where(buildInboxHiddenBucketCondition("unclassified")),
+    db.select({ value: count() }).from(invoiceGroupsTable).where(buildInboxHiddenBucketCondition("awaitingPayorAgain")),
+    db.select({ value: count() }).from(invoiceGroupsTable).where(buildInboxHiddenBucketCondition("acknowledgmentOnly")),
+  ]);
+
+  res.json({
+    unclassified: unclassifiedRow[0]?.value ?? 0,
+    awaitingPayorAgain: awaitingRow[0]?.value ?? 0,
+    acknowledgmentOnly: ackRow[0]?.value ?? 0,
   });
 }));
 

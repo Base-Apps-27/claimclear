@@ -174,6 +174,7 @@ import type {
   ReplyToInvoiceGroupEmailConversationBody,
   ResponseStats,
   ResponsesAwaitingReviewCountResponse,
+  ResponsesAwaitingReviewHiddenCountsResponse,
   RevertPortalSubmissionDescriptionBody,
   RunExpiredSweep200,
   RunExpiredSweepBody,
@@ -4863,6 +4864,104 @@ export function useGetResponsesAwaitingReviewCount<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetResponsesAwaitingReviewCountQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns counts for groups that satisfy the base "response-pending"
+criteria (status ∈ {Ready to Review, Needs Review}, no
+re-attestation in flight, no MAS cancel pending) but are excluded
+from the Responses Awaiting Review inbox by exactly one of:
+  * `unclassified` — no error type assigned (would otherwise show)
+  * `awaitingPayorAgain` — operator clicked "I replied — wait
+    for payor again" and no newer response has arrived since
+  * `acknowledgmentOnly` — every response on file has been
+    (re)classified to `acknowledgment` / `abstain` so nothing
+    is reviewable
+Buckets are mutually exclusive, in the order above ("missing
+error type wins" tie-breaker), so each hidden group is counted
+at most once. Drives the "what's hidden" summary strip at the
+top of the inbox.
+
+ * @summary Counts of groups hidden from the Responses Awaiting Review inbox
+ */
+export const getGetResponsesAwaitingReviewHiddenCountsUrl = () => {
+  return `/api/responses/awaiting-review/hidden-counts`;
+};
+
+export const getResponsesAwaitingReviewHiddenCounts = async (
+  options?: RequestInit,
+): Promise<ResponsesAwaitingReviewHiddenCountsResponse> => {
+  return customFetch<ResponsesAwaitingReviewHiddenCountsResponse>(
+    getGetResponsesAwaitingReviewHiddenCountsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetResponsesAwaitingReviewHiddenCountsQueryKey = () => {
+  return [`/api/responses/awaiting-review/hidden-counts`] as const;
+};
+
+export const getGetResponsesAwaitingReviewHiddenCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetResponsesAwaitingReviewHiddenCountsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>
+  > = ({ signal }) =>
+    getResponsesAwaitingReviewHiddenCounts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetResponsesAwaitingReviewHiddenCountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>
+>;
+export type GetResponsesAwaitingReviewHiddenCountsQueryError =
+  ErrorType<unknown>;
+
+/**
+ * @summary Counts of groups hidden from the Responses Awaiting Review inbox
+ */
+
+export function useGetResponsesAwaitingReviewHiddenCounts<
+  TData = Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsesAwaitingReviewHiddenCounts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getGetResponsesAwaitingReviewHiddenCountsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

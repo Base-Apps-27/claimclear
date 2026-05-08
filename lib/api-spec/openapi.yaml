@@ -199,6 +199,25 @@ paths:
           description: When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
           schema:
             type: boolean
+        - name: inboxHiddenBucket
+          in: query
+          description: |
+            Restrict the result set to exactly one of the
+            "hidden from the Responses Awaiting Review inbox" buckets.
+            The predicate is shared with
+            `/responses/awaiting-review/hidden-counts` so the chip count
+            and this list can never disagree by construction.
+
+            * `unclassified` — response-pending base cohort with no
+              error type assigned and at least one response on file.
+            * `awaitingPayorAgain` — classified, base cohort, currently
+              suppressed by the "wait for payor again" flip.
+            * `acknowledgmentOnly` — classified, base cohort, has
+              responses but every one is acknowledgment / abstain
+              (and not currently suppressed by `awaitingPayorAgain`).
+          schema:
+            type: string
+            enum: [unclassified, awaitingPayorAgain, acknowledgmentOnly]
         - name: createdFrom
           in: query
           description: Filter groups created on or after this date (ISO 8601)
@@ -1957,6 +1976,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponsesAwaitingReviewCountResponse"
+
+  /responses/awaiting-review/hidden-counts:
+    get:
+      operationId: getResponsesAwaitingReviewHiddenCounts
+      tags: [responses]
+      summary: Counts of groups hidden from the Responses Awaiting Review inbox
+      description: |
+        Returns counts for groups that satisfy the base "response-pending"
+        criteria (status ∈ {Ready to Review, Needs Review}, no
+        re-attestation in flight, no MAS cancel pending) but are excluded
+        from the Responses Awaiting Review inbox by exactly one of:
+          * `unclassified` — no error type assigned (would otherwise show)
+          * `awaitingPayorAgain` — operator clicked "I replied — wait
+            for payor again" and no newer response has arrived since
+          * `acknowledgmentOnly` — every response on file has been
+            (re)classified to `acknowledgment` / `abstain` so nothing
+            is reviewable
+        Buckets are mutually exclusive, in the order above ("missing
+        error type wins" tie-breaker), so each hidden group is counted
+        at most once. Drives the "what's hidden" summary strip at the
+        top of the inbox.
+      responses:
+        "200":
+          description: Hidden-bucket counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsesAwaitingReviewHiddenCountsResponse"
 
   /ai-calibration:
     get:
@@ -7012,6 +7059,31 @@ components:
             re-attestation. Surfaced as the sub-pill on the same nav badge
             so MAS work-in-flight is visible without a separate top-level
             entry.
+
+    ResponsesAwaitingReviewHiddenCountsResponse:
+      type: object
+      required: [unclassified, awaitingPayorAgain, acknowledgmentOnly]
+      properties:
+        unclassified:
+          type: integer
+          description: |
+            Groups that satisfy the response-pending base criteria but
+            have no error type assigned. Click target: the classification
+            queue (filtered list of `__unassigned__` response-pending
+            groups).
+        awaitingPayorAgain:
+          type: integer
+          description: |
+            Groups suppressed by the operator's "I replied — wait for
+            payor again" flip (no newer response since the stamp).
+            Excludes groups already counted under `unclassified`.
+        acknowledgmentOnly:
+          type: integer
+          description: |
+            Groups whose every portal_response has been (re)classified
+            as `acknowledgment` / `abstain`, leaving nothing reviewable.
+            Excludes groups already counted under `unclassified` or
+            `awaitingPayorAgain`.
 
     AiCalibrationResponse:
       type: object
