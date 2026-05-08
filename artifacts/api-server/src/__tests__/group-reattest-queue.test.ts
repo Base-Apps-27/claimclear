@@ -473,6 +473,59 @@ test("Early Re-attest from triage: succeeds when outlook=reattest_only (zero dis
   }
 });
 
+test("Early Re-attest from triage: Non-issue survivor (no errorTypeId, no verdict) is eligible", async () => {
+  // The screenshot case from the May-8 incident: a triage group with
+  // a Non-issue survivor (sopOutcome='non_issue') and a cannot_dispute
+  // dropped leg. The Non-issue leg has no errorTypeId and no verdict
+  // row (it was closed via SOP, not the dispute ladder), so the
+  // standard eligibility filter would have filtered it out and the
+  // operator would have hit a "No eligible legs" 409. Re-attestation
+  // is decoupled from submission/response — survivors must qualify.
+  const group = await seedGroup({ status: "New", phase: "triage", withResponse: false });
+  // Survivor: Non-issue. Insert directly because seedLeg wires a verdict.
+  const [survivor] = await db.insert(claimsTable).values({
+    confNumber: `T-NONISSUE-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+    status: "Awaiting Response",
+    outcome: "Non-Issue",
+    errorTypeId: null,
+    invoiceGroupId: group.id,
+    claimAmount: "100.00",
+    attestationState: "not_required",
+    includedInDispute: false,
+    sopOutcome: "non_issue",
+  }).returning();
+  // Dropped: cannot_dispute. Must NOT end up in eligibleLegs.
+  const [dropped] = await db.insert(claimsTable).values({
+    confNumber: `T-CANTDISP-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+    status: "Awaiting Response",
+    outcome: "Withdrawn",
+    errorTypeId: "et-test",
+    errorTypeName: "Seeded Error",
+    invoiceGroupId: group.id,
+    claimAmount: "40.00",
+    attestationState: "not_required",
+    includedInDispute: true,
+    sopOutcome: "cannot_dispute",
+  }).returning();
+  try {
+    const res = await fetchJson<{ queuedLegIds: number[] }>(
+      `/api/invoice-groups/${group.id}/reattest/queue`,
+      { method: "POST", body: {} },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.deepEqual(res.json.queuedLegIds, [survivor.id],
+      "only the Non-issue survivor should be queued — the cannot_dispute leg is dropped, not re-attested");
+
+    const [refreshedSurvivor] = await db.select().from(claimsTable).where(eq(claimsTable.id, survivor.id));
+    assert.equal(refreshedSurvivor.attestationState, "queued");
+    const [refreshedDropped] = await db.select().from(claimsTable).where(eq(claimsTable.id, dropped.id));
+    assert.equal(refreshedDropped.attestationState, "not_required",
+      "cannot_dispute leg must NOT be flipped to queued");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
 test("returns 409 in Needs Review when no inbound payor response is on file", async () => {
   const group = await seedGroup({ withResponse: false });
   await seedLeg(group.id);

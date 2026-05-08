@@ -3926,28 +3926,69 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
   const now = new Date();
 
   // Find every leg in the group that's eligible for the bulk queue.
-  // Eligibility:
-  //   * outcome is Approved or Partially Approved (the only outcomes
-  //     where attestation is meaningful — matches applyAttestationAction);
-  //   * latest claim_verdict row is `source = 'operator_confirmed'`
-  //     with outcome Approved/Partial (the operator has actually
-  //     committed the verdict, not just left a draft);
-  //   * attestation_state is NOT already `completed` (one-way street;
-  //     applyAttestationAction enforces the same rule) and NOT already
-  //     `queued` (no point re-stamping a row that's already on the
-  //     queue with the prior queued_at/by).
-  const candidateLegs = await db
-    .select()
-    .from(claimsTable)
-    .where(and(
-      eq(claimsTable.invoiceGroupId, id),
-      isNotNull(claimsTable.errorTypeId),
-      inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
-    ));
+  //
+  // Two eligibility regimes — must stay aligned with the survivor
+  // definition in `deriveInvoiceDisputeOutlook` (frontend) so the
+  // operator never sees a CTA that the server then refuses:
+  //
+  //   STANDARD path (response-pending / mas-action-required):
+  //     * errorTypeId IS NOT NULL (the leg is in the dispute set);
+  //     * outcome is Approved or Partially Approved;
+  //     * latest claim_verdict is `source = 'operator_confirmed'`
+  //       with outcome Approved/Partial.
+  //
+  //   EARLY RE-ATTEST path (`isEarlyReattest`):
+  //     The whole point of this entry is that re-attestation is
+  //     DECOUPLED from the dispute-submission flow. The dispute-set
+  //     filter (errorTypeId NOT NULL + operator_confirmed verdict)
+  //     would exclude the very legs that need re-attestation here:
+  //     a Non-issue survivor (sopOutcome='non_issue' /
+  //     disposition='disposed_nonissue') has no errorTypeId and no
+  //     verdict row — it was closed via SOP, not via the dispute
+  //     ladder — yet it still needs a portal re-attestation.
+  //     So accept any leg matching the frontend's survivor predicate:
+  //       * Non-issue (sopOutcome='non_issue' OR disposition in
+  //         disposed_nonissue / final_nonissue), OR
+  //       * Approved-verdict survivor (outcome Approved/Partially
+  //         Approved AND latest claim_verdict operator_confirmed).
+  //     Sibling duplicates and cannot_dispute legs are still excluded
+  //     (they're "dropped", not survivors).
+  //
+  // Both regimes skip legs whose attestation_state is already
+  // `completed` (one-way street; applyAttestationAction enforces the
+  // same rule) or `queued` (no point re-stamping with a stale
+  // queued_at/by).
+  const candidateLegs = isEarlyReattest
+    ? await db
+        .select()
+        .from(claimsTable)
+        .where(eq(claimsTable.invoiceGroupId, id))
+    : await db
+        .select()
+        .from(claimsTable)
+        .where(and(
+          eq(claimsTable.invoiceGroupId, id),
+          isNotNull(claimsTable.errorTypeId),
+          inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        ));
 
   const eligibleLegs: typeof claimsTable.$inferSelect[] = [];
   for (const leg of candidateLegs) {
     if (leg.attestationState === "completed" || leg.attestationState === "queued") continue;
+    if (leg.duplicateOfClaimId != null) continue;
+
+    if (isEarlyReattest) {
+      const isNonIssue = leg.disposition === "disposed_nonissue"
+        || leg.disposition === "final_nonissue"
+        || leg.sopOutcome === "non_issue";
+      if (isNonIssue) {
+        eligibleLegs.push(leg);
+        continue;
+      }
+      // Fall through to the verdict check for Approved-survivor legs.
+    }
+
+    if (leg.outcome !== "Approved" && leg.outcome !== "Partially Approved") continue;
     const [latestVerdict] = await db
       .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
       .from(claimVerdictTable)
@@ -3965,8 +4006,12 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
 
   if (eligibleLegs.length === 0) {
     res.status(409).json({
-      error: "No eligible legs to queue — the group has no Approved/Partial operator-confirmed legs still owing an attestation.",
-      expectedState: "at least one disputed leg with operator_confirmed Approved/Partial verdict and attestation_state in (not_required, pending)",
+      error: isEarlyReattest
+        ? "No eligible survivor legs to queue — the group has no Non-issue or Approved survivor legs still owing a portal re-attestation."
+        : "No eligible legs to queue — the group has no Approved/Partial operator-confirmed legs still owing an attestation.",
+      expectedState: isEarlyReattest
+        ? "at least one survivor leg (Non-issue OR operator_confirmed Approved/Partial) with attestation_state in (not_required, pending)"
+        : "at least one disputed leg with operator_confirmed Approved/Partial verdict and attestation_state in (not_required, pending)",
       actualState: `${candidateLegs.length}-candidate legs, 0 eligible`,
     });
     return;
