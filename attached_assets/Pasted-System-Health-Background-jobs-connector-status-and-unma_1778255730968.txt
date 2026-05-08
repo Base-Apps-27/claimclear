@@ -1,0 +1,124 @@
+System Health
+Background jobs, connector status, and unmatched email bounces. Auto-refreshes every 30 seconds.
+
+System health: failed
+
+cron:portal_batch_sweeper — Sweeper worker run batch_1778252400481_ap55 completed: 14/14 succeeded, 0 failed (14 were due)
+cron:daily_brief — Daily brief: 7 of 7 sent. 2005 open claims, 170 expired.
+cron:daily_brief_bounce_recheck — Daily_brief run #3169 still healthy after recheck
+cron:response_tracker — 15 checked, 15 matched, 0 bounces
+cron:outlook_heartbeat — Outlook healthy (accounting@agapeny.com)
+cron:stuck_submission_reset — No stuck portal submissions found
+Expired Sweep
+Retires invoice groups whose 30-day filing deadline has slipped while still in a pre-submit status (New, Needs Evidence, On Hold, Generating Email). Runs nightly at 1 AM ET; trigger here to catch up immediately.
+Run Expired sweep now
+Scheduled Jobs
+Last 7 days of cron run history
+Job	Schedule	Last Run	Next Run	Status	Message	7d Success
+portal_batch_sweeper	0 8,11,14,18,22 * * 1-5	about 1 hour ago	in about 2 hours	completed	Sweeper worker run batch_1778252400481_ap55 completed: 14/14 succeeded, 0 failed (14 were due)	100% (13/13)
+daily_brief	0 7 * * 1-5	about 5 hours ago	in 3 days	completed	Daily brief: 7 of 7 sent. 2005 open claims, 170 expired.	100% (3/3)
+daily_brief_bounce_recheck	15 7 * * 1-5	about 5 hours ago	in 3 days	completed	Daily_brief run #3169 still healthy after recheck	100% (3/3)
+response_tracker	*/30 8-18 * * 1-5	25 minutes ago	in 5 minutes	completed	15 checked, 15 matched, 0 bounces	100% (59/59)
+outlook_heartbeat	*/15 * * * *	10 minutes ago	in 5 minutes	completed	Outlook healthy (accounting@agapeny.com)	100% (265/265)
+stuck_submission_reset	*/30 * * * *	25 minutes ago	in 5 minutes	completed	No stuck portal submissions found	100% (120/120)
+urgent_snapshot	0 8-20 * * *	about 1 hour ago	in 5 minutes	completed	Urgent snapshot: 99/905 on 2026-05-08	100% (35/35)
+expired_sweep	0 1 * * *	about 11 hours ago	in about 13 hours	completed	Retired 2 invoice groups to Expired (New=2)	100% (2/2)
+Last Daily Brief
+Per-recipient outcome of the most recent daily_brief run — success rows carry the Outlook messageId, failure rows carry the error excerpt.
+completed
+Started about 5 hours ago
+7 / 7 sent
+Daily brief: 7 of 7 sent. 2005 open claims, 170 expired.
+
+Recipient	Variant	Outcome	Detail
+Danny@agapeny.com	admin	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGUIAAA=
+z7ytv7jcb4@privaterelay.appleid.com	admin	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGUGAAA=
+someidy.s@agapeny.com	operator	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGUEAAA=
+daniel.m@agapeny.com	operator	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGUCAAA=
+Grace@agapeny.com	operator	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGUAAAA=
+emil.j@agapeny.com	admin	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGT_AAA=
+nina.r@agapeny.com	operator	sent	AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVGLGT8AAA=
+Connector Status
+External connector health probes
+outlook
+Checked 10 minutes ago
+healthy
+Worker Activity
+On-demand portal worker. Each run launches a fresh browser to process pending submissions and exits when finished.
+Status
+Idle
+Pending due
+3
+Past expected cycle
+0
+Next sweep
+in about 2 hours
+Last successful submission
+Submission #494 · invoice group #494
+Conf # 14938242, 14938241
+about 1 hour ago
+Last failed submission
+No failed submissions recorded.
+No worker runs since the API restarted.
+
+LLM Email Classifier
+Inbound-email classifier verdict mix and Anthropic spend over the last 14 days. Includes the LLM-first cohort only.
+Rows classified
+
+138
+
+AI calls
+
+49
+
+Anthropic spend
+
+$0.00
+
+Tokens (in / out)
+
+63,611 / 4,338
+
+Day	Rows	AI	Phrase	Abstain	Other	Spend
+2026-04-25	0	0	0	0	0	$0.00
+2026-04-26	0	0	0	0	0	$0.00
+2026-04-27	0	0	0	0	0	$0.00
+2026-04-28	0	0	0	0	0	$0.00
+2026-04-29	10	10	0	0	0	$0.00
+2026-04-30	5	1	4	0	0	$0.00
+2026-05-01	7	7	0	0	0	$0.00
+2026-05-02	0	0	0	0	0	$0.00
+2026-05-03	0	0	0	0	0	$0.00
+2026-05-04	5	0	5	0	0	$0.00
+2026-05-05	27	3	24	0	0	$0.00
+2026-05-06	35	24	11	0	0	$0.00
+2026-05-07	29	2	27	0	0	$0.00
+2026-05-08	20	2	18	0	0	$0.00
+Unmatched Email Bounces
+NDR / bounce messages we couldn't link to a claim or invoice group
+Received	Failed Recipient	Subject
+about 5 hours ago	e2eadmin@agapeny.app	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+about 5 hours ago	smokeadmin@agapeny.app	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+about 5 hours ago	dq1777760523617@example.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+about 5 hours ago	e2e-1777768253369@example.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+about 5 hours ago	smoke1777760617492@example.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+about 5 hours ago	ih1777761023878@example.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+about 5 hours ago	gc1777760559167@example.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+about 5 hours ago	tester@agapeny.com	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161884977@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-1-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161844444@test.local	Undeliverable: Agape ClaimClear Daily Brief - 5 open claims, 0 expired
+1 day ago	route-test-2-1778161568105@test.local	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+1 day ago	route-test-1-1778161568105@test.local	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+1 day ago	route-test-2-1778161568105@test.local	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+1 day ago	route-test-1-1778161568105@test.local	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
+1 day ago	route-test-2-1778161568105@test.local	Undeliverable: Agape ClaimClear Daily Brief - 4 open claims, 0 expired
