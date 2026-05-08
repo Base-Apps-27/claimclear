@@ -1,5 +1,6 @@
 // Integration tests for Task #313 (Day-Complete Celebration), updated
-// for Task #495 (every false→true day-completion fires confetti).
+// for Task #495 (every false→true day-completion fires confetti) and
+// Task #538 (the gate is "operator-done", not "fully resolved").
 //
 // Covers:
 //   • The day-completed event is recorded ONCE per `transitionGroup*`
@@ -18,6 +19,13 @@
 //     all wire the day-complete check in the same way (status enters
 //     in-flight, outcome flips to Non-Issue, and the combined status
 //     +outcome closure path).
+//   • The matcher fires the moment the operator clears their plate —
+//     Portal Queued / MAS Eligible / On Hold count as operator-done
+//     even though the system / payor still has work to do — and never
+//     fires while any group is sitting in the Queue page's
+//     engagement-needed lanes (New, Needs Evidence, Generating Email,
+//     Needs Review). See `OPERATOR_ON_QUEUE_STATUSES` in
+//     `lib/day-complete.ts` for the full rule.
 
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
@@ -46,13 +54,13 @@ import {
   getInvoiceGroupDay,
   checkAndEmitDayCompleteForGroup,
 } from "../lib/day-complete";
-// Wave D-PR4: `isDayConcluded` is now a phase-based reader. Raw-INSERT
-// fixtures bypass the writers that normally keep `invoice_groups.phase`
-// in lockstep with the legacy `(status, outcome, ...)` columns, so we
-// call `refreshGroupDerivedFields` to recompute the canonical `phase`
-// from the just-inserted legacy state. Same pattern is applied after
-// every direct writer call below for parity with the cache-helper-driven
-// PROD path.
+// Task #538: `isDayConcluded` reads `invoice_groups.status` + `outcome`
+// directly, so raw-INSERT fixtures don't need any extra phase-resync
+// step. We still call `refreshGroupDerivedFields` after status flips
+// for parity with the PROD cache-helper-driven path (it keeps
+// `invoice_groups.phase` accurate for any other reader that runs later
+// in the test, even though the celebration matcher itself no longer
+// depends on it).
 import { refreshGroupDerivedFields } from "../lib/denormalized-cache";
 
 const ACTOR = { userEmail: "celebration-tester@example.com", userName: "Celebration Tester" };
@@ -213,11 +221,53 @@ test("isDayConcluded: empty day → false (NEVER triggers)", async () => {
   assert.equal(concluded, false);
 });
 
-test("isDayConcluded: respects all three concluded forms (in-flight, closed, Non-Issue)", async () => {
+test("isDayConcluded: respects all three operator-done forms (in-flight, closed, Non-Issue)", async () => {
   const day = nextDay();
   const a = await createGroupOnDay({ day, status: "Awaiting Response" }); // in-flight
   const b = await createGroupOnDay({ day, status: "Resolved", outcome: "Approved" }); // closed
-  const c = await createGroupOnDay({ day, status: "Needs Evidence", outcome: "Non-Issue" }); // outcome-concluded
+  const c = await createGroupOnDay({ day, status: "Needs Evidence", outcome: "Non-Issue" }); // outcome-driven
+  try {
+    assert.equal(await isDayConcluded(day), true);
+  } finally {
+    await cleanupGroup(a.group.id);
+    await cleanupGroup(b.group.id);
+    await cleanupGroup(c.group.id);
+  }
+});
+
+test("isDayConcluded: a day full of engagement-needed statuses NEVER fires", async () => {
+  // Task #538 regression: previously `New`, `Needs Evidence`,
+  // `Generating Email`, `Needs Review` left the day un-concluded
+  // anyway via `phase = triage` / `ready_to_submit`, so this
+  // check held by accident. Pin it explicitly so a future widening of
+  // OPERATOR_ON_QUEUE_STATUSES can't silently start firing confetti
+  // while the operator still has work to do.
+  const day = nextDay();
+  const a = await createGroupOnDay({ day, status: "New" });
+  const b = await createGroupOnDay({ day, status: "Needs Evidence" });
+  const c = await createGroupOnDay({ day, status: "Generating Email" });
+  const d = await createGroupOnDay({ day, status: "Needs Review" });
+  try {
+    assert.equal(await isDayConcluded(day), false);
+  } finally {
+    await cleanupGroup(a.group.id);
+    await cleanupGroup(b.group.id);
+    await cleanupGroup(c.group.id);
+    await cleanupGroup(d.group.id);
+  }
+});
+
+test("isDayConcluded: Portal Queued / MAS Eligible / On Hold count as operator-done", async () => {
+  // Task #538: these are the new lanes that must trigger confetti.
+  // Pre-538 only `Portal Queued` (via `phase=submitted`) and the
+  // closed/in-flight phases counted; `MAS Eligible` and `On Hold`
+  // never fired because the operator's plate was clear but the
+  // payor/system still had work pending. The whole point of this
+  // task is "the operator is done — celebrate."
+  const day = nextDay();
+  const a = await createGroupOnDay({ day, status: "Portal Queued" });
+  const b = await createGroupOnDay({ day, status: "MAS Eligible" });
+  const c = await createGroupOnDay({ day, status: "On Hold" });
   try {
     assert.equal(await isDayConcluded(day), true);
   } finally {
@@ -343,23 +393,20 @@ test("checkAndEmitDayCompleteForGroup: emits only on the false→true edge (prio
     // row outside of transitionGroupStatus).
     const priorConcluded = await isDayConcluded(day);
     assert.equal(priorConcluded, false);
+    // Task #538: a raw status flip to Portal Queued is sufficient
+    // for the celebration matcher — it reads `invoice_groups.status`
+    // directly. We still resync the denormalized phase column for
+    // parity with the PROD cache-helper-driven path so any other
+    // reader in the same test sees a consistent row.
     await db.update(invoiceGroupsTable)
       .set({ status: "Portal Queued" })
       .where(eq(invoiceGroupsTable.id, b.group.id));
-    // Wave D-PR5: a raw status flip is no longer sufficient — the
-    // deriver now requires `claims.submitted_via` to be stamped before
-    // promoting `Portal Queued` from `ready_to_submit` → `submitted`.
-    // PROD writers (`portal-submissions.ts`, `batch-processor.ts`) set
-    // both fields together; this test simulates the same writer-shape
-    // by stamping `submittedVia` on the disputed children before the
-    // phase recompute.
     await db.update(claimsTable)
       .set({ status: "Portal Queued", submittedVia: "portal" })
       .where(and(
         eq(claimsTable.invoiceGroupId, b.group.id),
         eq(claimsTable.includedInDispute, true),
       ));
-    // Wave D-PR4 phase resync — see import comment.
     await refreshGroupDerivedFields(b.group.id);
 
     const dayLookup = await getInvoiceGroupDay(b.group.id);

@@ -1,20 +1,29 @@
-// Day-complete celebration helper (Task #313).
+// Day-complete celebration helper (Task #313, rule re-aligned in Task #538).
 //
 // Decides whether all invoice groups dated for a given calendar day have
-// reached a "concluded" state — i.e., no operator action is left for the day.
+// reached a state where the operator is done with them for the day —
+// "operator-done." This is the inverse of the Queue page's
+// engagement-needed lanes (Classification Inbox + Action Required):
+// the moment a group leaves those lanes — by being queued for the bots
+// (Portal Queued), pushed to re-attest (MAS Eligible / awaiting payor),
+// parked (On Hold), waiting on a payor reply (Awaiting Response), or
+// closed (Resolved / Denied / Expired / outcome-driven Non-Issue or
+// Withdrawn) — the operator has nothing left to do on it today, even
+// if the system or the payor still does.
 //
-// "Concluded" means EITHER:
-//   * the group's status is in the in-flight phase
-//     (Portal Queued, Generating Email, Awaiting Response) — handed off
-//     to the system or the payor; OR
-//   * the group's status is in the closed phase
-//     (Resolved, Denied, Withdrawn) — terminal; OR
-//   * the group's outcome is Non-Issue or Withdrawn — dispute determined
-//     not to need filing.
+// Source-of-truth alignment: the JS `OPERATOR_ON_QUEUE_STATUSES` set
+// and the matching SQL `IN (...)` literal in `isDayConcluded` mirror
+// the status filters the Queue page's engagement-needed default uses
+// (`New`, `Needs Evidence`, `Generating Email` for Action Required, and
+// `Needs Review` for the Classification Inbox via the
+// `?include=needs_classification` payload). If the Queue page widens
+// or narrows what an operator must engage with, this set must move
+// with it so the celebration matcher can never disagree with the lane
+// the operator is actually working out of.
 //
-// A day is concluded when EVERY invoice group whose earliest claim date
-// equals that day satisfies the rule above AND the day has at least one
-// invoice group. An empty day NEVER triggers a celebration.
+// A day is concluded when EVERY invoice group whose service date
+// equals that day satisfies the rule above AND the day has at least
+// one invoice group. An empty day NEVER triggers a celebration.
 //
 // On a successful day-complete detection, we insert a fresh
 // `state_events` row with `event_key=day_completed_celebration` and
@@ -29,6 +38,11 @@
 
 import { sql } from "drizzle-orm";
 import { db, invoiceGroupsTable, stateEventsTable } from "@workspace/db";
+import {
+  OPERATOR_ON_QUEUE_STATUSES,
+  OPERATOR_DONE_OUTCOMES,
+  isInvoiceGroupOperatorDone,
+} from "@workspace/leg-state";
 import { logger } from "./logger";
 import { broadcastSystemEvent } from "./sse";
 import type { DbExecutor } from "./claim-transitions";
@@ -43,39 +57,42 @@ import type { GroupTransitionActor } from "./group-transitions";
 type DbWithExecute = DbExecutor & Pick<typeof db, "execute">;
 const withExecute = (ex: DbExecutor): DbWithExecute => ex as DbWithExecute;
 
-// Wave D-PR5 (2026-05-07): the day-complete matcher now reads pure
-// `invoice_groups.phase` membership. The three legacy status residuals
-// (`Portal Queued`, `Generating Email`, `Resolved`) the previous wave
-// had to OR alongside the phase set are gone:
-//   • `Portal Queued` / `Generating Email` → the writer-rewire stamps
-//     `claims.submitted_via` at every operator click site, and the
-//     deriver promotes any stamped group out of `ready_to_submit`
-//     into `submitted` (one of the post-submit phases).
-//   • `Resolved` (paired with Approved / Partially Approved) → the
-//     closure-aware writer in `transitionGroup{Outcome,
-//     StatusAndOutcome}` stamps `phase='closed'` directly, so the
-//     deriver branch is just a safety net.
-// A group is now concluded iff its `phase` is post-submit OR its
-// `outcome` marks it as never-needed-to-file. The JS predicate
-// (kept exported for tests / direct callers) and the SQL CTE in
-// `isDayConcluded` mirror that rule exactly.
-const CONCLUDED_PHASES = [
-  "submitted",
-  "response_received",
-  "awaiting_reattestation",
-  "closed",
-] as const;
-const CONCLUDED_OUTCOMES = ["Non-Issue", "Withdrawn"] as const;
+// Task #538 (2026-05-08): the day-complete matcher reads invoice
+// `status` directly and asks "is this still on the operator's queue?"
+// instead of "has the system or the payor moved it on?" Pre-538 the
+// gate required `phase` membership in the post-submit / closed buckets,
+// which meant a day where every group was Portal Queued / On Hold /
+// MAS Eligible (i.e. operator's plate fully cleared, system + payor
+// still doing their thing) wouldn't fire — exactly why the celebration
+// fired exactly once in PROD before this rewrite.
+//
+// The vocabulary lives in `@workspace/leg-state/operator-queue` so the
+// Queue page's lane filters and this matcher consume one constant —
+// see that module's lockstep contract for the rule. We re-export
+// `isGroupOperatorDone` here as the API-side name callers already use.
 
-const ALL_CONCLUDED_PHASES = new Set<string>(CONCLUDED_PHASES);
-const ALL_CONCLUDED_OUTCOMES = new Set<string>(CONCLUDED_OUTCOMES);
-
-function isGroupConcluded(g: { phase: string; outcome: string }): boolean {
-  return (
-    ALL_CONCLUDED_PHASES.has(g.phase) ||
-    ALL_CONCLUDED_OUTCOMES.has(g.outcome)
-  );
+// SQL `IN (...)` literals derived from the same const arrays the JS
+// predicate uses, so the JS branch and the CTE in `isDayConcluded`
+// can never drift out of sync. The arrays come from a typed shared
+// constant (string literals, no user input), so quoting via
+// single-quote doubling is sufficient and lets us keep
+// `executeSql`-style parameterization out of the picture (drizzle's
+// `sql` template would expand each value into its own bound param,
+// defeating the readability we want here).
+function toSqlInList(values: readonly string[]): string {
+  return values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", ");
 }
+const OPERATOR_ON_QUEUE_STATUSES_SQL = toSqlInList(OPERATOR_ON_QUEUE_STATUSES);
+const OPERATOR_DONE_OUTCOMES_SQL = toSqlInList(OPERATOR_DONE_OUTCOMES);
+
+/**
+ * Predicate: has this group left the operator's queue?
+ *
+ * Re-exported under the API-side name for callers that already used
+ * `isGroupOperatorDone`. Implementation lives in `@workspace/leg-state`
+ * so the Queue page and this matcher share one source of truth.
+ */
+export const isGroupOperatorDone = isInvoiceGroupOperatorDone;
 
 /**
  * Returns the calendar day a given invoice group belongs to. Returns
@@ -115,25 +132,24 @@ export async function isDayConcluded(
 ): Promise<boolean> {
   const ex: DbExecutor = executor ?? db;
   // Two-step CTE — read every group's stored `service_date` (Task #350)
-  // alongside its canonical `phase` (Wave D-PR4 reader-switch), then
-  // count how many of the rows that map to `day` are NOT in the
-  // concluded set. Reading the canonical column instead of recomputing
-  // MIN(claims.date) per call (Task #356) means the day-complete
-  // matcher and the dashboard "must file today" hero can never
-  // disagree about which day a group belongs to.
+  // alongside `status` and `outcome`, then count how many of the rows
+  // that map to `day` are NOT operator-done. Reading the canonical
+  // service-date column instead of recomputing MIN(claims.date) per
+  // call (Task #356) means the day-complete matcher and the dashboard
+  // "must file today" hero can never disagree about which day a group
+  // belongs to.
   //
-  // Wave D-PR5 collapse: the predicate is pure phase membership +
-  // outcome-driven closure. The three legacy status residuals
-  // (`Portal Queued`, `Generating Email`, `Resolved`) the previous
-  // wave had to OR-in are gone — the writer-rewire and closure-aware
-  // writer promote those groups into the canonical post-submit /
-  // closed phases. See the JS `isGroupConcluded` block above for the
-  // full rationale.
+  // Task #538: predicate is "is the operator done with it?" — i.e.
+  // the group's `status` is NOT one of the engagement-needed Queue
+  // page statuses, OR its `outcome` is one of the never-needed-to-file
+  // outcomes. The status `IN (...)` literal here MUST match the JS
+  // `OPERATOR_ON_QUEUE_STATUSES` set above; both are documented at
+  // the top of this file.
   const result = await withExecute(ex).execute(sql`
     WITH groups_for_day AS (
       SELECT
         ${invoiceGroupsTable.id}      AS group_id,
-        ${invoiceGroupsTable.phase}   AS phase,
+        ${invoiceGroupsTable.status}  AS status,
         ${invoiceGroupsTable.outcome} AS outcome,
         -- service_date is a real DATE column maintained by
         -- recomputeGroupServiceDate on every write path; to_char
@@ -148,13 +164,16 @@ export async function isDayConcluded(
       COUNT(*) FILTER (
         WHERE earliest_date = ${day}
           AND NOT (
-            -- post-submit phases: handed off to system / payor / closed.
-            phase::text IN (
-              'submitted', 'response_received',
-              'awaiting_reattestation', 'closed'
-            )
-            -- outcome-driven closure (Non-Issue at triage, or withdrawn)
-            OR outcome::text IN ('Non-Issue', 'Withdrawn')
+            -- outcome-driven closure (Non-Issue at triage, or withdrawn).
+            -- Literal generated from OPERATOR_DONE_OUTCOMES so the JS
+            -- predicate and this CTE share one source of truth.
+            outcome::text IN (${sql.raw(OPERATOR_DONE_OUTCOMES_SQL)})
+            -- operator-done by status: anything NOT in the
+            -- engagement-needed Queue page lanes (Action Required +
+            -- Classification Inbox). Literal generated from
+            -- OPERATOR_ON_QUEUE_STATUSES so the JS predicate and this
+            -- CTE share one source of truth.
+            OR status::text NOT IN (${sql.raw(OPERATOR_ON_QUEUE_STATUSES_SQL)})
           )
       ) AS unconcluded
     FROM groups_for_day

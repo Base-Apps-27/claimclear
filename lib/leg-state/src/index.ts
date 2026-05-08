@@ -14,6 +14,18 @@ export {
   type OpenStatus,
 } from "./openness";
 
+// Cross-surface "is this invoice group still on the operator's queue?"
+// vocabulary. The Queue page's lane filters and the API's day-complete
+// celebration matcher both consume these constants so the two can never
+// drift. See `./operator-queue.ts` for the lockstep contract.
+export {
+  OPERATOR_ON_QUEUE_STATUSES,
+  OPERATOR_DONE_OUTCOMES,
+  isInvoiceGroupOperatorDone,
+  type OperatorOnQueueStatus,
+  type OperatorDoneOutcome,
+} from "./operator-queue";
+
 // Re-export the SOP transcript helper so both the React client (leg-detail
 // "SOP walk transcript" card) and the server (Task #377: dispute write-up
 // prompt) consume one source of truth without duplicating the logic.
