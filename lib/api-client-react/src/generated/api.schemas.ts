@@ -1925,6 +1925,101 @@ export interface SopAdvanceBody {
 }
 
 /**
+ * Identifies a per-leg rewind action (Task #525). `back-step` pops
+the most recent SOP answer; `jump` pops every answer recorded
+at-or-after the supplied `nodeId`; `restart` clears every
+recorded answer plus walk-tied evidence and returns the leg to
+the tree root.
+
+ */
+export type SopRewindAction =
+  (typeof SopRewindAction)[keyof typeof SopRewindAction];
+
+export const SopRewindAction = {
+  "back-step": "back-step",
+  jump: "jump",
+  restart: "restart",
+} as const;
+
+/**
+ * Read-only impact preview returned by
+`GET /claims/{id}/sop-rewind-impact`. R5 reads this to choose
+between the light and heavy confirm dialogs:
+`draftWillBeDiscarded === true` ⇒ heavy.
+
+ */
+export interface SopRewindImpactResponse {
+  action: SopRewindAction;
+  /** Number of recorded answers that will be removed. */
+  answersToPop: number;
+  /**
+   * The leg's `sopNodeId` after the rewind. `null` when restart targets a tree with no `rootId`.
+   * @nullable
+   */
+  nextSopNodeId: string | null;
+  /**
+   * Snapshot of the verdict that will be cleared if currently terminal.
+   * @nullable
+   */
+  currentSopOutcome: string | null;
+  /** True iff the leg currently carries a terminal verdict that the rewind will null out. */
+  clearsTerminal: boolean;
+  /** Walk-tied `claim_evidence` rows that restart will delete (always 0 for back-step / jump). */
+  evidenceWillBeCleared: number;
+  /** True when the parent invoice group has `previewGeneratedAt` or `draftReviewedAt` set; the heavy confirm dialog must run. */
+  draftWillBeDiscarded: boolean;
+  /** @nullable */
+  previewGeneratedAt?: string | null;
+  /** @nullable */
+  draftReviewedAt?: string | null;
+}
+
+/**
+ * Body for `POST /claims/{id}/sop-back-step` and
+`POST /claims/{id}/sop-restart`. `discardDraft` must be
+`true` when the parent invoice group has a generated draft
+(`previewGeneratedAt` or `draftReviewedAt` set); otherwise the
+endpoint returns 409 carrying the impact preview.
+
+ */
+export interface SopRewindBody {
+  /** Opt-in to clear the parent group's cached AI dispute draft + reviewed stamp. */
+  discardDraft?: boolean;
+}
+
+/**
+ * Body for `POST /claims/{id}/sop-jump`.
+ */
+export interface SopJumpBody {
+  /** Target node id — every answer recorded at-or-after this node will be popped. */
+  nodeId: string;
+  /** Opt-in to clear the parent group's cached AI dispute draft + reviewed stamp. */
+  discardDraft?: boolean;
+}
+
+export type SopRewindDraftConflictResponseCode =
+  (typeof SopRewindDraftConflictResponseCode)[keyof typeof SopRewindDraftConflictResponseCode];
+
+export const SopRewindDraftConflictResponseCode = {
+  draft_discard_required: "draft_discard_required",
+} as const;
+
+/**
+ * Returned with status 409 when a rewind action targets a leg
+whose parent group has a generated draft and the caller did
+not pass `discardDraft: true`. Body carries the same impact
+preview as `GET /claims/{id}/sop-rewind-impact` so the client
+can render the heavy confirm dialog without a second round
+trip.
+
+ */
+export interface SopRewindDraftConflictResponse {
+  code: SopRewindDraftConflictResponseCode;
+  error: string;
+  impact: SopRewindImpactResponse;
+}
+
+/**
  * `operator_draft` (Task #343) records a non-terminal selection
 from the per-leg picker on Responses Awaiting Review. Drafts
 are append-only and the latest draft per leg wins. Drafts
@@ -4704,6 +4799,14 @@ export type GetAiCalibrationParams = {
    * @maximum 365
    */
   windowDays?: number;
+};
+
+export type GetSopRewindImpactParams = {
+  action: SopRewindAction;
+  /**
+   * Target node id — required when `action=jump`.
+   */
+  nodeId?: string;
 };
 
 export type UpgradeReplyDraftBody = {

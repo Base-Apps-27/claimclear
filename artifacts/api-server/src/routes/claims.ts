@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, ne, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, LEG_HOLD_REASONS, LEG_EXCLUSION_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
+import { claimsTable, auditLogsTable, notesTable, errorTypesTable, portalSubmissionsTable, portalResponsesTable, claimVerdictTable, invoiceGroupsTable, claimEvidenceTable, LEG_HOLD_REASONS, LEG_EXCLUSION_REASONS, VERDICT_OUTCOMES } from "@workspace/db";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import { asyncHandler } from "../lib/asyncHandler";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
@@ -1923,6 +1923,419 @@ router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<vo
   emitClaimEvent(id, isTerminal ? "sop_terminal" : "sop_advanced", req);
 
   res.json(updated);
+}));
+
+// ────────────────────────────────────────────────────────────────────────
+// Task #525 — Per-leg SOP rewind & restart.
+//
+// Three mutating endpoints + one read-only impact-preview endpoint let
+// the queue v3 wizard pop the last SOP answer, jump back to a prior
+// node, or wipe a leg's walk while preserving its `errorTypeId`. When
+// the parent invoice group already has a generated dispute draft
+// (`previewGeneratedAt` set) or a reviewed stamp (`draftReviewedAt`
+// set), a rewind requires the explicit `discardDraft: true` flag so
+// the cached subject/body get cleared atomically. Without the flag
+// the server returns 409 carrying the impact preview so the client
+// can render the heavy R5 confirm dialog.
+//
+// Auth + role gating: every mutating endpoint applies `denyClerk` (the
+// per-leg `/sop-advance` predates the role split and runs without it,
+// but rewind is destructive enough to gate consistently with the bulk
+// SOP routes; tests pin the 403 for clerks).
+// ────────────────────────────────────────────────────────────────────────
+
+type RewindAction = "back-step" | "jump" | "restart";
+
+type SopAnswerRow = { nodeId: string; answer: string; ts: string };
+
+function asSopAnswerRows(raw: unknown): SopAnswerRow[] {
+  return Array.isArray(raw) ? (raw as SopAnswerRow[]) : [];
+}
+
+interface RewindPlan {
+  // How many recorded answers will be removed by the action.
+  answersToPop: number;
+  // The leg's nextSopNodeId after the rewind. For back-step / jump
+  // this is the popped row's nodeId (or the slice-from row's nodeId).
+  // For restart it's the tree's rootId.
+  nextSopNodeId: string | null;
+  // Snapshot of the verdict that will be cleared, if currently terminal.
+  currentSopOutcome: string | null;
+  // True iff the leg currently carries a terminal verdict that the
+  // rewind will clear (sopOutcome / dropReason / readyAt all null out).
+  clearsTerminal: boolean;
+  // Restart removes claim_evidence rows tied to the walk. Other actions
+  // leave evidence alone so the operator can re-bind it on the next
+  // pass. This is the count of rows that WILL be deleted (always 0 for
+  // back-step / jump).
+  evidenceWillBeCleared: number;
+}
+
+/** Pure planner: never touches the DB. Caller is responsible for
+ *  loading the leg + tree and validating preconditions. */
+function planRewind(
+  leg: typeof claimsTable.$inferSelect,
+  action: RewindAction,
+  targetNodeId: string | null,
+  tree: SopTree | null,
+  evidenceCount: number,
+): RewindPlan | { error: string; status: 400 | 409 } {
+  const answers = asSopAnswerRows(leg.sopAnswers);
+
+  if (action === "back-step") {
+    if (answers.length === 0) {
+      return { status: 409, error: "Leg has no recorded SOP answers to pop" };
+    }
+    const popped = answers[answers.length - 1];
+    return {
+      answersToPop: 1,
+      nextSopNodeId: popped.nodeId,
+      currentSopOutcome: leg.sopOutcome,
+      clearsTerminal: leg.sopOutcome != null,
+      evidenceWillBeCleared: 0,
+    };
+  }
+
+  if (action === "jump") {
+    if (!targetNodeId) {
+      return { status: 400, error: "nodeId is required for jump" };
+    }
+    if (answers.length === 0) {
+      return { status: 409, error: "Leg has no recorded SOP answers to jump from" };
+    }
+    const idx = answers.findIndex((a) => a.nodeId === targetNodeId);
+    if (idx < 0) {
+      return {
+        status: 409,
+        error: `nodeId "${targetNodeId}" was never visited in this leg's walk`,
+      };
+    }
+    const toPop = answers.length - idx;
+    return {
+      answersToPop: toPop,
+      nextSopNodeId: targetNodeId,
+      currentSopOutcome: leg.sopOutcome,
+      clearsTerminal: leg.sopOutcome != null,
+      evidenceWillBeCleared: 0,
+    };
+  }
+
+  // restart
+  return {
+    answersToPop: answers.length,
+    nextSopNodeId: tree?.rootId ?? null,
+    currentSopOutcome: leg.sopOutcome,
+    clearsTerminal: leg.sopOutcome != null,
+    evidenceWillBeCleared: evidenceCount,
+  };
+}
+
+interface DraftImpact {
+  draftWillBeDiscarded: boolean;
+  previewGeneratedAt: Date | null;
+  draftReviewedAt: Date | null;
+}
+
+function computeDraftImpact(
+  group: typeof invoiceGroupsTable.$inferSelect | null,
+): DraftImpact {
+  if (!group) {
+    return { draftWillBeDiscarded: false, previewGeneratedAt: null, draftReviewedAt: null };
+  }
+  const previewGeneratedAt = group.previewGeneratedAt ?? null;
+  const draftReviewedAt = group.draftReviewedAt ?? null;
+  return {
+    draftWillBeDiscarded: previewGeneratedAt != null || draftReviewedAt != null,
+    previewGeneratedAt,
+    draftReviewedAt,
+  };
+}
+
+async function loadTreeForLeg(leg: typeof claimsTable.$inferSelect): Promise<SopTree | null> {
+  if (!leg.errorTypeId) return null;
+  const [errorType] = await db
+    .select({ decisionTree: errorTypesTable.decisionTree })
+    .from(errorTypesTable)
+    .where(eq(errorTypesTable.id, Number(leg.errorTypeId)));
+  return (errorType?.decisionTree as unknown as SopTree | null) ?? null;
+}
+
+async function countWalkEvidence(claimId: number): Promise<number> {
+  const rows = await db
+    .select({ id: claimEvidenceTable.id })
+    .from(claimEvidenceTable)
+    .where(and(
+      eq(claimEvidenceTable.claimId, claimId),
+      isNotNull(claimEvidenceTable.treeNodeId),
+    ));
+  return rows.length;
+}
+
+// GET /claims/:id/sop-rewind-impact — light read-only preview of what a
+// rewind action would change. Powers R5's light-vs-heavy confirm
+// dialog (heavy ⇔ `draftWillBeDiscarded === true`).
+router.get("/claims/:id/sop-rewind-impact", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const action = String(req.query.action ?? "") as RewindAction;
+  if (action !== "back-step" && action !== "jump" && action !== "restart") {
+    res.status(400).json({ error: "action must be one of: back-step, jump, restart" });
+    return;
+  }
+  const targetNodeId = req.query.nodeId != null ? String(req.query.nodeId) : null;
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+
+  const tree = await loadTreeForLeg(leg);
+  const evidenceCount = action === "restart" ? await countWalkEvidence(id) : 0;
+  const plan = planRewind(leg, action, targetNodeId, tree, evidenceCount);
+  if ("error" in plan) {
+    res.status(plan.status).json({ error: plan.error });
+    return;
+  }
+
+  let draftImpact: DraftImpact = { draftWillBeDiscarded: false, previewGeneratedAt: null, draftReviewedAt: null };
+  if (leg.invoiceGroupId != null) {
+    const [group] = await db
+      .select()
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+    draftImpact = computeDraftImpact(group ?? null);
+  }
+
+  res.json({
+    action,
+    answersToPop: plan.answersToPop,
+    nextSopNodeId: plan.nextSopNodeId,
+    currentSopOutcome: plan.currentSopOutcome,
+    clearsTerminal: plan.clearsTerminal,
+    evidenceWillBeCleared: plan.evidenceWillBeCleared,
+    draftWillBeDiscarded: draftImpact.draftWillBeDiscarded,
+    previewGeneratedAt: draftImpact.previewGeneratedAt,
+    draftReviewedAt: draftImpact.draftReviewedAt,
+  });
+}));
+
+interface RewindExecuteParams {
+  req: Request;
+  res: import("express").Response;
+  legId: number;
+  action: RewindAction;
+  targetNodeId: string | null;
+  discardDraft: boolean;
+}
+
+async function executeRewind(params: RewindExecuteParams): Promise<void> {
+  const { req, res, legId, action, targetNodeId, discardDraft } = params;
+
+  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, legId));
+  if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
+  if (!leg.errorTypeId) {
+    res.status(409).json({
+      error: "Leg has no error type — nothing to rewind",
+      expectedState: "classified",
+      actualState: "unclassified",
+    });
+    return;
+  }
+
+  const tree = await loadTreeForLeg(leg);
+  if (action === "restart" && !tree) {
+    res.status(400).json({ error: "Error type has no decision tree" });
+    return;
+  }
+  const evidenceCount = action === "restart" ? await countWalkEvidence(legId) : 0;
+  const plan = planRewind(leg, action, targetNodeId, tree, evidenceCount);
+  if ("error" in plan) {
+    res.status(plan.status).json({ error: plan.error });
+    return;
+  }
+
+  // Draft-invalidation gate. If the parent group has a generated draft
+  // or a reviewed stamp, the operator must opt in via `discardDraft`.
+  let parentGroup: typeof invoiceGroupsTable.$inferSelect | null = null;
+  if (leg.invoiceGroupId != null) {
+    const [g] = await db
+      .select()
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId));
+    parentGroup = g ?? null;
+  }
+  const draftImpact = computeDraftImpact(parentGroup);
+  if (draftImpact.draftWillBeDiscarded && !discardDraft) {
+    res.status(409).json({
+      code: "draft_discard_required",
+      error: "Parent group has a generated dispute draft. Re-send with discardDraft=true to proceed.",
+      impact: {
+        action,
+        answersToPop: plan.answersToPop,
+        nextSopNodeId: plan.nextSopNodeId,
+        currentSopOutcome: plan.currentSopOutcome,
+        clearsTerminal: plan.clearsTerminal,
+        evidenceWillBeCleared: plan.evidenceWillBeCleared,
+        draftWillBeDiscarded: true,
+        previewGeneratedAt: draftImpact.previewGeneratedAt,
+        draftReviewedAt: draftImpact.draftReviewedAt,
+      },
+    });
+    return;
+  }
+
+  const answers = asSopAnswerRows(leg.sopAnswers);
+  const nextAnswers: SopAnswerRow[] =
+    action === "restart"
+      ? []
+      : action === "back-step"
+        ? answers.slice(0, -1)
+        : answers.slice(0, answers.findIndex((a) => a.nodeId === targetNodeId));
+
+  // Wave D-PR2b clearing path: this route writes legacy mirror columns
+  // to null directly. The cache helper recomputes the canonical
+  // `disposition` from the cleared inputs (back to `classifying`
+  // because `errorTypeId` is preserved). See the doc comment in
+  // `lib/leg-state/set-claim-disposition.ts` ("Clearing paths").
+  const update: Partial<typeof claimsTable.$inferInsert> = {
+    sopAnswers: nextAnswers,
+    sopNodeId: plan.nextSopNodeId,
+    sopOutcome: null,
+    dropReason: null,
+    dropNote: null,
+    droppedAt: null,
+    readyAt: null,
+    // MAS derivation re-runs from the cleared sopOutcome — reset to
+    // null so a popped `cannot_dispute` terminal stops requiring a
+    // MAS cancellation. Mirrors the reclassify route.
+    masActionRequired: null,
+    masActionCompletedAt: null,
+    masActionCompletedBy: null,
+    masActionNote: null,
+  };
+
+  let updated: typeof claimsTable.$inferSelect | null = null;
+  let groupAfterDraftDiscard: typeof invoiceGroupsTable.$inferSelect | null = parentGroup;
+
+  await db.transaction(async (tx) => {
+    const [u] = await tx
+      .update(claimsTable)
+      .set(update)
+      .where(eq(claimsTable.id, legId))
+      .returning();
+    updated = u;
+
+    if (action === "restart") {
+      await tx
+        .delete(claimEvidenceTable)
+        .where(and(
+          eq(claimEvidenceTable.claimId, legId),
+          isNotNull(claimEvidenceTable.treeNodeId),
+        ));
+    }
+
+    if (discardDraft && parentGroup && draftImpact.draftWillBeDiscarded) {
+      const [gAfter] = await tx
+        .update(invoiceGroupsTable)
+        .set({
+          previewGeneratedAt: null,
+          previewGeneratedBy: null,
+          draftSubject: null,
+          draftDescriptionHtml: null,
+          aiBaselineSubject: null,
+          aiBaselineDescriptionHtml: null,
+          draftReviewedAt: null,
+          draftReviewedBy: null,
+        })
+        .where(eq(invoiceGroupsTable.id, parentGroup.id))
+        .returning();
+      groupAfterDraftDiscard = gAfter ?? parentGroup;
+
+      await tx.insert(auditLogsTable).values({
+        invoiceGroupId: parentGroup.id,
+        action: "group_draft_discarded",
+        details: `Dispute draft discarded as part of leg #${legId} ${action}`,
+        metadata: {
+          source: "leg_sop_rewound",
+          claimId: legId,
+          rewindAction: action,
+          previewGeneratedAt: draftImpact.previewGeneratedAt,
+          draftReviewedAt: draftImpact.draftReviewedAt,
+        },
+        userEmail: req.user?.email ?? null,
+        userName: req.user?.displayName ?? null,
+      });
+    }
+
+    await tx.insert(auditLogsTable).values({
+      claimId: legId,
+      invoiceGroupId: leg.invoiceGroupId,
+      action: "leg_sop_rewound",
+      details:
+        action === "restart"
+          ? "SOP walk restarted"
+          : action === "back-step"
+            ? "SOP walk rewound one step"
+            : `SOP walk jumped back to node ${targetNodeId}`,
+      metadata: {
+        kind: action,
+        targetNodeId,
+        answersPopped: plan.answersToPop,
+        clearedSopOutcome: plan.currentSopOutcome,
+        evidenceCleared: plan.evidenceWillBeCleared,
+        draftDiscarded: draftImpact.draftWillBeDiscarded && discardDraft,
+        previousSopNodeId: leg.sopNodeId,
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+  });
+
+  await emitStateEvent({
+    eventKey: "leg.sop_rewound",
+    claimId: legId,
+    invoiceGroupId: leg.invoiceGroupId,
+    actorUserId: req.user?.email ?? null,
+    metadata: {
+      kind: action,
+      targetNodeId,
+      answersPopped: plan.answersToPop,
+      draftDiscarded: draftImpact.draftWillBeDiscarded && discardDraft,
+    },
+  });
+  await refreshClaimDenormalizedCache(legId);
+  if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  emitClaimEvent(legId, "sop_rewound", req);
+
+  void groupAfterDraftDiscard; // explicit no-op — surface var keeps the
+                                // discard branch readable; not returned
+                                // (client refetches the group via SSE).
+  res.json(updated);
+}
+
+router.post("/claims/:id/sop-back-step", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
+  const discardDraft = req.body?.discardDraft === true;
+  await executeRewind({ req, res, legId: id, action: "back-step", targetNodeId: null, discardDraft });
+}));
+
+router.post("/claims/:id/sop-jump", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
+  const nodeId = typeof req.body?.nodeId === "string" ? req.body.nodeId : null;
+  if (!nodeId) { res.status(400).json({ error: "nodeId is required" }); return; }
+  const discardDraft = req.body?.discardDraft === true;
+  await executeRewind({ req, res, legId: id, action: "jump", targetNodeId: nodeId, discardDraft });
+}));
+
+router.post("/claims/:id/sop-restart", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleClaim(id, res)) return;
+  const discardDraft = req.body?.discardDraft === true;
+  await executeRewind({ req, res, legId: id, action: "restart", targetNodeId: null, discardDraft });
 }));
 
 // POST /claims/:id/conclude-leg — operator-driven shortcut that resolves a

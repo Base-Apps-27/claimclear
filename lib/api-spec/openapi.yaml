@@ -2171,6 +2171,167 @@ paths:
               schema:
                 $ref: "#/components/schemas/StateConflictResponse"
 
+  /claims/{id}/sop-rewind-impact:
+    get:
+      operationId: getSopRewindImpact
+      tags: [claims]
+      summary: Read-only impact preview for a per-leg SOP rewind action
+      description: |
+        Task #525. Powers R5's light-vs-heavy confirm dialog by returning,
+        for the requested rewind action, how many answers will be popped,
+        the verdict that will be cleared (if currently terminal), the
+        walk-tied evidence rows that restart will delete, and whether
+        the parent invoice group has a generated dispute draft (or a
+        reviewed stamp) that the rewind will need to discard. No state
+        changes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: action
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/SopRewindAction"
+        - name: nodeId
+          in: query
+          description: Target node id — required when `action=jump`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Impact preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SopRewindImpactResponse"
+        "400":
+          description: Validation error (unknown action, missing nodeId for jump).
+        "409":
+          description: Action cannot be planned (e.g. no answers to pop).
+
+  /claims/{id}/sop-back-step:
+    post:
+      operationId: sopBackStepLeg
+      tags: [claims]
+      summary: Pop the last recorded SOP answer
+      description: |
+        Task #525. Removes the last `sopAnswers` row, resets `sopNodeId`
+        to that row's nodeId, and clears any terminal `sopOutcome` /
+        `dropReason` / `readyAt` that was stamped at the popped step.
+        Returns 409 with `code: "draft_discard_required"` and the
+        impact preview when the parent group has a generated dispute
+        draft and the caller did not pass `discardDraft: true`. Returns
+        409 when the leg has zero recorded answers.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SopRewindBody"
+      responses:
+        "200":
+          description: Updated leg
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation or draft-discard required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StateConflictResponse"
+                  - $ref: "#/components/schemas/SopRewindDraftConflictResponse"
+
+  /claims/{id}/sop-jump:
+    post:
+      operationId: sopJumpLeg
+      tags: [claims]
+      summary: Jump a leg's SOP walk back to a prior node
+      description: |
+        Task #525. Pops every `sopAnswers` row recorded at-or-after
+        `body.nodeId`, resets `sopNodeId` to that node, and clears any
+        terminal `sopOutcome` / `dropReason` / `readyAt` stamped at
+        the popped steps. Same draft-discard contract as
+        `POST /claims/{id}/sop-back-step`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SopJumpBody"
+      responses:
+        "200":
+          description: Updated leg
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation or draft-discard required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StateConflictResponse"
+                  - $ref: "#/components/schemas/SopRewindDraftConflictResponse"
+
+  /claims/{id}/sop-restart:
+    post:
+      operationId: sopRestartLeg
+      tags: [claims]
+      summary: Restart a leg's SOP walk from the tree root
+      description: |
+        Task #525. Clears every recorded answer, the terminal
+        `sopOutcome` / `dropReason` / `readyAt`, resets `sopNodeId` to
+        the tree's `rootId`, and deletes walk-tied `claim_evidence`
+        rows (rows where `treeNodeId IS NOT NULL`). The leg's
+        `errorTypeId` is preserved. Same draft-discard contract as
+        the other rewind endpoints.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SopRewindBody"
+      responses:
+        "200":
+          description: Updated leg
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+        "409":
+          description: Source-state contract violation or draft-discard required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StateConflictResponse"
+                  - $ref: "#/components/schemas/SopRewindDraftConflictResponse"
+
   /claims/{id}/exclude:
     post:
       operationId: excludeLeg
@@ -6363,6 +6524,103 @@ components:
           type: string
         answer:
           type: string
+
+    SopRewindAction:
+      type: string
+      enum: [back-step, jump, restart]
+      description: |
+        Identifies a per-leg rewind action (Task #525). `back-step` pops
+        the most recent SOP answer; `jump` pops every answer recorded
+        at-or-after the supplied `nodeId`; `restart` clears every
+        recorded answer plus walk-tied evidence and returns the leg to
+        the tree root.
+
+    SopRewindImpactResponse:
+      type: object
+      required:
+        - action
+        - answersToPop
+        - nextSopNodeId
+        - currentSopOutcome
+        - clearsTerminal
+        - evidenceWillBeCleared
+        - draftWillBeDiscarded
+      description: |
+        Read-only impact preview returned by
+        `GET /claims/{id}/sop-rewind-impact`. R5 reads this to choose
+        between the light and heavy confirm dialogs:
+        `draftWillBeDiscarded === true` ⇒ heavy.
+      properties:
+        action:
+          $ref: "#/components/schemas/SopRewindAction"
+        answersToPop:
+          type: integer
+          description: Number of recorded answers that will be removed.
+        nextSopNodeId:
+          type: ["string", "null"]
+          description: The leg's `sopNodeId` after the rewind. `null` when restart targets a tree with no `rootId`.
+        currentSopOutcome:
+          type: ["string", "null"]
+          description: Snapshot of the verdict that will be cleared if currently terminal.
+        clearsTerminal:
+          type: boolean
+          description: True iff the leg currently carries a terminal verdict that the rewind will null out.
+        evidenceWillBeCleared:
+          type: integer
+          description: Walk-tied `claim_evidence` rows that restart will delete (always 0 for back-step / jump).
+        draftWillBeDiscarded:
+          type: boolean
+          description: True when the parent invoice group has `previewGeneratedAt` or `draftReviewedAt` set; the heavy confirm dialog must run.
+        previewGeneratedAt:
+          type: ["string", "null"]
+          format: date-time
+        draftReviewedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    SopRewindBody:
+      type: object
+      description: |
+        Body for `POST /claims/{id}/sop-back-step` and
+        `POST /claims/{id}/sop-restart`. `discardDraft` must be
+        `true` when the parent invoice group has a generated draft
+        (`previewGeneratedAt` or `draftReviewedAt` set); otherwise the
+        endpoint returns 409 carrying the impact preview.
+      properties:
+        discardDraft:
+          type: boolean
+          description: Opt-in to clear the parent group's cached AI dispute draft + reviewed stamp.
+
+    SopJumpBody:
+      type: object
+      required: [nodeId]
+      description: Body for `POST /claims/{id}/sop-jump`.
+      properties:
+        nodeId:
+          type: string
+          description: Target node id — every answer recorded at-or-after this node will be popped.
+        discardDraft:
+          type: boolean
+          description: Opt-in to clear the parent group's cached AI dispute draft + reviewed stamp.
+
+    SopRewindDraftConflictResponse:
+      type: object
+      required: [code, error, impact]
+      description: |
+        Returned with status 409 when a rewind action targets a leg
+        whose parent group has a generated draft and the caller did
+        not pass `discardDraft: true`. Body carries the same impact
+        preview as `GET /claims/{id}/sop-rewind-impact` so the client
+        can render the heavy confirm dialog without a second round
+        trip.
+      properties:
+        code:
+          type: string
+          enum: [draft_discard_required]
+        error:
+          type: string
+        impact:
+          $ref: "#/components/schemas/SopRewindImpactResponse"
 
     RecordVerdictBody:
       type: object

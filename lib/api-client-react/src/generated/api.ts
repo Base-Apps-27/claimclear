@@ -108,6 +108,7 @@ import type {
   GetInvoiceGroupEmailThread404,
   GetMyActivitySummaryParams,
   GetMyProcessedTodayParams,
+  GetSopRewindImpactParams,
   GetSystemHealthBouncesParams,
   GetSystemHealthClassifierStatsParams,
   GlobalSearchParams,
@@ -184,6 +185,10 @@ import type {
   SetGroupContextBody,
   SetLegContextBody,
   SopAdvanceBody,
+  SopJumpBody,
+  SopRewindBody,
+  SopRewindDraftConflictResponse,
+  SopRewindImpactResponse,
   StateConflictResponse,
   SuccessResponse,
   SystemHealthRollupResponse,
@@ -5496,6 +5501,418 @@ export const useSopAdvanceLeg = <
   TContext
 > => {
   return useMutation(getSopAdvanceLegMutationOptions(options));
+};
+
+/**
+ * Task #525. Powers R5's light-vs-heavy confirm dialog by returning,
+for the requested rewind action, how many answers will be popped,
+the verdict that will be cleared (if currently terminal), the
+walk-tied evidence rows that restart will delete, and whether
+the parent invoice group has a generated dispute draft (or a
+reviewed stamp) that the rewind will need to discard. No state
+changes.
+
+ * @summary Read-only impact preview for a per-leg SOP rewind action
+ */
+export const getGetSopRewindImpactUrl = (
+  id: number,
+  params: GetSopRewindImpactParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/claims/${id}/sop-rewind-impact?${stringifiedParams}`
+    : `/api/claims/${id}/sop-rewind-impact`;
+};
+
+export const getSopRewindImpact = async (
+  id: number,
+  params: GetSopRewindImpactParams,
+  options?: RequestInit,
+): Promise<SopRewindImpactResponse> => {
+  return customFetch<SopRewindImpactResponse>(
+    getGetSopRewindImpactUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSopRewindImpactQueryKey = (
+  id: number,
+  params?: GetSopRewindImpactParams,
+) => {
+  return [
+    `/api/claims/${id}/sop-rewind-impact`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetSopRewindImpactQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSopRewindImpact>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  params: GetSopRewindImpactParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSopRewindImpact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSopRewindImpactQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSopRewindImpact>>
+  > = ({ signal }) =>
+    getSopRewindImpact(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSopRewindImpact>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSopRewindImpactQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSopRewindImpact>>
+>;
+export type GetSopRewindImpactQueryError = ErrorType<void>;
+
+/**
+ * @summary Read-only impact preview for a per-leg SOP rewind action
+ */
+
+export function useGetSopRewindImpact<
+  TData = Awaited<ReturnType<typeof getSopRewindImpact>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  params: GetSopRewindImpactParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSopRewindImpact>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSopRewindImpactQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Task #525. Removes the last `sopAnswers` row, resets `sopNodeId`
+to that row's nodeId, and clears any terminal `sopOutcome` /
+`dropReason` / `readyAt` that was stamped at the popped step.
+Returns 409 with `code: "draft_discard_required"` and the
+impact preview when the parent group has a generated dispute
+draft and the caller did not pass `discardDraft: true`. Returns
+409 when the leg has zero recorded answers.
+
+ * @summary Pop the last recorded SOP answer
+ */
+export const getSopBackStepLegUrl = (id: number) => {
+  return `/api/claims/${id}/sop-back-step`;
+};
+
+export const sopBackStepLeg = async (
+  id: number,
+  sopRewindBody?: SopRewindBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getSopBackStepLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sopRewindBody),
+  });
+};
+
+export const getSopBackStepLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopBackStepLeg>>,
+    TError,
+    { id: number; data: BodyType<SopRewindBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sopBackStepLeg>>,
+  TError,
+  { id: number; data: BodyType<SopRewindBody> },
+  TContext
+> => {
+  const mutationKey = ["sopBackStepLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sopBackStepLeg>>,
+    { id: number; data: BodyType<SopRewindBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sopBackStepLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SopBackStepLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sopBackStepLeg>>
+>;
+export type SopBackStepLegMutationBody = BodyType<SopRewindBody>;
+export type SopBackStepLegMutationError = ErrorType<
+  StateConflictResponse | SopRewindDraftConflictResponse
+>;
+
+/**
+ * @summary Pop the last recorded SOP answer
+ */
+export const useSopBackStepLeg = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopBackStepLeg>>,
+    TError,
+    { id: number; data: BodyType<SopRewindBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sopBackStepLeg>>,
+  TError,
+  { id: number; data: BodyType<SopRewindBody> },
+  TContext
+> => {
+  return useMutation(getSopBackStepLegMutationOptions(options));
+};
+
+/**
+ * Task #525. Pops every `sopAnswers` row recorded at-or-after
+`body.nodeId`, resets `sopNodeId` to that node, and clears any
+terminal `sopOutcome` / `dropReason` / `readyAt` stamped at
+the popped steps. Same draft-discard contract as
+`POST /claims/{id}/sop-back-step`.
+
+ * @summary Jump a leg's SOP walk back to a prior node
+ */
+export const getSopJumpLegUrl = (id: number) => {
+  return `/api/claims/${id}/sop-jump`;
+};
+
+export const sopJumpLeg = async (
+  id: number,
+  sopJumpBody: SopJumpBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getSopJumpLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sopJumpBody),
+  });
+};
+
+export const getSopJumpLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopJumpLeg>>,
+    TError,
+    { id: number; data: BodyType<SopJumpBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sopJumpLeg>>,
+  TError,
+  { id: number; data: BodyType<SopJumpBody> },
+  TContext
+> => {
+  const mutationKey = ["sopJumpLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sopJumpLeg>>,
+    { id: number; data: BodyType<SopJumpBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sopJumpLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SopJumpLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sopJumpLeg>>
+>;
+export type SopJumpLegMutationBody = BodyType<SopJumpBody>;
+export type SopJumpLegMutationError = ErrorType<
+  StateConflictResponse | SopRewindDraftConflictResponse
+>;
+
+/**
+ * @summary Jump a leg's SOP walk back to a prior node
+ */
+export const useSopJumpLeg = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopJumpLeg>>,
+    TError,
+    { id: number; data: BodyType<SopJumpBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sopJumpLeg>>,
+  TError,
+  { id: number; data: BodyType<SopJumpBody> },
+  TContext
+> => {
+  return useMutation(getSopJumpLegMutationOptions(options));
+};
+
+/**
+ * Task #525. Clears every recorded answer, the terminal
+`sopOutcome` / `dropReason` / `readyAt`, resets `sopNodeId` to
+the tree's `rootId`, and deletes walk-tied `claim_evidence`
+rows (rows where `treeNodeId IS NOT NULL`). The leg's
+`errorTypeId` is preserved. Same draft-discard contract as
+the other rewind endpoints.
+
+ * @summary Restart a leg's SOP walk from the tree root
+ */
+export const getSopRestartLegUrl = (id: number) => {
+  return `/api/claims/${id}/sop-restart`;
+};
+
+export const sopRestartLeg = async (
+  id: number,
+  sopRewindBody?: SopRewindBody,
+  options?: RequestInit,
+): Promise<ClaimResponse> => {
+  return customFetch<ClaimResponse>(getSopRestartLegUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sopRewindBody),
+  });
+};
+
+export const getSopRestartLegMutationOptions = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopRestartLeg>>,
+    TError,
+    { id: number; data: BodyType<SopRewindBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sopRestartLeg>>,
+  TError,
+  { id: number; data: BodyType<SopRewindBody> },
+  TContext
+> => {
+  const mutationKey = ["sopRestartLeg"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sopRestartLeg>>,
+    { id: number; data: BodyType<SopRewindBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sopRestartLeg(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SopRestartLegMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sopRestartLeg>>
+>;
+export type SopRestartLegMutationBody = BodyType<SopRewindBody>;
+export type SopRestartLegMutationError = ErrorType<
+  StateConflictResponse | SopRewindDraftConflictResponse
+>;
+
+/**
+ * @summary Restart a leg's SOP walk from the tree root
+ */
+export const useSopRestartLeg = <
+  TError = ErrorType<StateConflictResponse | SopRewindDraftConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sopRestartLeg>>,
+    TError,
+    { id: number; data: BodyType<SopRewindBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sopRestartLeg>>,
+  TError,
+  { id: number; data: BodyType<SopRewindBody> },
+  TContext
+> => {
+  return useMutation(getSopRestartLegMutationOptions(options));
 };
 
 /**
