@@ -33,12 +33,20 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { toast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import {
   ChevronRight,
+  ChevronLeft,
   HelpCircle,
   CheckCircle2,
   Loader2,
@@ -50,6 +58,8 @@ import {
   FlaskConical,
   Undo2,
   RotateCcw,
+  Layers,
+  AlertTriangle,
 } from "lucide-react";
 import {
   terminalKindForLeg,
@@ -70,12 +80,22 @@ import {
   useListClaimEvidence,
   getListClaimEvidenceQueryKey,
   useGroupSopAdvance,
+  useSopBackStepLeg,
+  useSopJumpLeg,
+  useSopRestartLeg,
+  useReclassifyLeg,
+  getGetSopRewindImpactQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimEvidenceResponse,
   ClaimResponse,
   BulkSopAdvanceResponse,
+  SopRewindAction,
+  SopRewindImpactResponse,
 } from "@workspace/api-client-react";
+import {
+  RewindConfirmDialog,
+} from "./rewind-confirm-dialog";
 import {
   ALLOWED_EVIDENCE_TYPES,
   MAX_EVIDENCE_SIZE,
@@ -92,6 +112,9 @@ interface SopAnswerRow {
 interface LegLite extends TerminalLeg {
   errorTypeId?: string | null;
   sopAnswers?: unknown;
+  /** Optional ref label for rewind dialog headers (e.g. "CLM-12" or
+   *  the leg's confirmation number). */
+  confNumber?: string | null;
 }
 
 /** Optional in-memory state for preview mode. Lets a host (e.g. a
@@ -123,6 +146,16 @@ interface BaseProps {
    *  `currentNode.appliesPerInvoice === true` AND this is `> 0` AND the
    *  current leg has an invoiceGroupId. Live mode only. */
   bulkSiblingCount?: number;
+  /** Task #526 R2 — when provided, the player's demoted "Reclassify"
+   *  CTAs (action strip + closed-terminal footnote) delegate to the
+   *  parent's existing reclassify flow (e.g. claim-detail-v2's
+   *  ReclassifyDialog). The player will NOT mount its own confirm
+   *  dialog or fire the reclassify mutation in that case — keeping
+   *  the existing route-driven wiring unchanged so only placement /
+   *  visual demotion changes. When omitted (e.g. inline group
+   *  workspace mounts the player without a parent dialog), the
+   *  player falls back to its built-in inline confirm. */
+  onRequestReclassify?: () => void;
 }
 
 interface LiveProps extends BaseProps {
@@ -215,7 +248,7 @@ function synthesizePreviewLeg(state: {
 }
 
 export function SopAdvancePlayer(props: Props) {
-  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt, bulkSiblingCount = 0 } = props;
+  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt, bulkSiblingCount = 0, onRequestReclassify } = props;
   const isPreview = props.mode === "preview";
   const qc = useQueryClient();
   const disabled = !!disabledReason;
@@ -633,6 +666,183 @@ export function SopAdvancePlayer(props: Props) {
     [bulkAdvanceMutation, currentNode, isPreview, leg.invoiceGroupId, persistEvidenceForCurrentNode, toast],
   );
 
+  // ─────────────────────────────────────────────────────────────────
+  // Task #526 — Player rewind UI (R1 + R2 + R5).
+  // ─────────────────────────────────────────────────────────────────
+
+  const legRefLabel = !isPreview
+    ? leg.confNumber || `CLM-${leg.id}`
+    : null;
+
+  type PendingRewind =
+    | { action: SopRewindAction; nodeId?: string | null }
+    | null;
+  const [rewindPending, setRewindPending] = useState<PendingRewind>(null);
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
+
+  const invalidateAfterRewind = useCallback(() => {
+    if (isPreview) return;
+    qc.invalidateQueries({ queryKey: ["claim", leg.id] });
+    qc.invalidateQueries({ queryKey: ["claims"] });
+    qc.invalidateQueries({
+      queryKey: getListClaimEvidenceQueryKey(leg.id),
+    });
+    qc.invalidateQueries({
+      queryKey: getGetSopRewindImpactQueryKey(leg.id),
+    });
+    if (leg.invoiceGroupId != null) {
+      qc.invalidateQueries({
+        queryKey: ["invoice-group", leg.invoiceGroupId],
+      });
+      qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+    }
+  }, [isPreview, leg.id, leg.invoiceGroupId, qc]);
+
+  function handleRewindError(err: unknown) {
+    const e = err as { status?: number; message?: string };
+    toast({
+      title: "Could not rewind the SOP walk",
+      description: e?.message || "Please try again.",
+      variant: "destructive",
+    });
+  }
+
+  function handleRewindSuccess(verb: string) {
+    // Drop ALL local pending evidence — once the server has popped /
+    // restarted the walk, anything captured below the new current node
+    // belongs to a node we no longer occupy. Clearing the entire map
+    // keeps the next walk starting clean (matches Task #526 R1/R2
+    // expectation: "fresh walk starts clean").
+    setPendingByReq({});
+    markLocalAction(`claim:${leg.id}`);
+    invalidateAfterRewind();
+    successToast({ title: "__VERB__", description: verb });
+    setRewindPending(null);
+    onAdvanced?.({ isTerminal: false, sopOutcome: null });
+  }
+
+  // Rewind mutations declared without global onSuccess/onError so each
+  // call site (handleRewindConfirm, handleQuickBack) is the SOLE owner
+  // of its callbacks. TanStack Query runs both global and per-call
+  // callbacks, so global handlers here would double-fire toasts /
+  // invalidations and — critically — would run the destructive error
+  // toast on the 409-then-confirm flow before the heavy dialog opens.
+  const backStepMutation = useSopBackStepLeg<Error>();
+  const jumpMutation = useSopJumpLeg<Error>();
+  const restartMutation = useSopRestartLeg<Error>();
+  const reclassifyMutation = useReclassifyLeg<Error>({
+    mutation: {
+      onSuccess: () => {
+        markLocalAction(`claim:${leg.id}`);
+        invalidateAfterRewind();
+        successToast({
+          title: "__VERB__",
+          description: "Leg reclassified — pick an error type to start over",
+        });
+        setReclassifyOpen(false);
+        onAdvanced?.({ isTerminal: false, sopOutcome: null });
+      },
+      onError: handleRewindError,
+    },
+  });
+
+  const anyRewindPending =
+    backStepMutation.isPending ||
+    jumpMutation.isPending ||
+    restartMutation.isPending;
+
+  const openRewindDialog = useCallback(
+    (action: SopRewindAction, nodeId?: string | null) => {
+      if (isPreview || disabled || anyRewindPending) return;
+      setRewindPending({ action, nodeId: nodeId ?? null });
+    },
+    [isPreview, disabled, anyRewindPending],
+  );
+
+  const closeRewindDialog = useCallback(() => {
+    if (anyRewindPending) return;
+    setRewindPending(null);
+  }, [anyRewindPending]);
+
+  const handleRewindConfirm = useCallback(
+    ({ impact }: { impact: SopRewindImpactResponse }) => {
+      if (!rewindPending) return;
+      const discardDraft = impact.draftWillBeDiscarded;
+      const data = { discardDraft };
+      switch (rewindPending.action) {
+        case "back-step":
+          backStepMutation.mutate(
+            { id: leg.id, data },
+            {
+              onSuccess: () =>
+                handleRewindSuccess("Walk stepped back one answer"),
+              onError: handleRewindError,
+            },
+          );
+          return;
+        case "restart":
+          restartMutation.mutate(
+            { id: leg.id, data },
+            {
+              onSuccess: () =>
+                handleRewindSuccess("Walk restarted from the top"),
+              onError: handleRewindError,
+            },
+          );
+          return;
+        case "jump":
+          if (!rewindPending.nodeId) return;
+          jumpMutation.mutate(
+            {
+              id: leg.id,
+              data: { nodeId: rewindPending.nodeId, discardDraft },
+            },
+            {
+              onSuccess: () =>
+                handleRewindSuccess("Walk rewound to selected step"),
+              onError: handleRewindError,
+            },
+          );
+          return;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      rewindPending,
+      backStepMutation,
+      jumpMutation,
+      restartMutation,
+      leg.id,
+    ],
+  );
+
+  // Quick Back: when at a non-terminal step, fire the mutation directly
+  // with discardDraft:false. If the server returns 409 (a draft exists
+  // and would be discarded), open the heavy dialog so the operator can
+  // confirm.
+  const handleQuickBack = useCallback(() => {
+    if (isPreview || disabled || anyRewindPending) return;
+    if (answers.length === 0) return;
+    backStepMutation.mutate(
+      { id: leg.id, data: { discardDraft: false } },
+      {
+        onSuccess: () => handleRewindSuccess("Walk stepped back one answer"),
+        onError: (err: unknown) => {
+          const e = err as { status?: number };
+          if (e?.status === 409) {
+            // Surface the heavy dialog; it will refetch the impact
+            // (cache is invalidated above on success, no-op here) and
+            // render the discard-draft callout.
+            setRewindPending({ action: "back-step", nodeId: null });
+            return;
+          }
+          handleRewindError(err);
+        },
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreview, disabled, anyRewindPending, answers.length, backStepMutation, leg.id]);
+
   // Required-evidence gate for the current node. The operator cannot
   // advance until every required req has real content (image or notes).
   // Pending uploads still in flight count as "not yet satisfied" — we
@@ -772,7 +982,9 @@ export function SopAdvancePlayer(props: Props) {
     return (
       <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
         <PreviewModeBadge />
-        {previewAnswers.length > 0 && <SopBreadcrumb tree={tree} answers={previewAnswers} />}
+        {previewAnswers.length > 0 && (
+          <SopBreadcrumb tree={tree} answers={previewAnswers} />
+        )}
         <PreviewOutcomeCard
           outcomeType={previewSopOutcome as OutcomeType}
           onUndo={handlePreviewUndo}
@@ -783,9 +995,12 @@ export function SopAdvancePlayer(props: Props) {
   }
 
   // Terminal dispatch (live mode) — single switch on outcomeRole-derived
-  // terminal kind. Closed/Hold/Duplicate keep their dedicated terminal
-  // screens; Include renders an inline "Ready" confirmation alongside
-  // the same `PerLegContextEditor` that runs during the walk.
+  // terminal kind. Closed terminals adopt the R2 verdict-card layout
+  // with per-step "Rewind to here" buttons and the demoted Reclassify
+  // footnote. Hold/Duplicate keep their dedicated terminal screens
+  // (Hold has its own Resume affordance; Duplicate is a sibling marker
+  // not a walk verdict). Include renders an inline "Ready" confirmation
+  // alongside the same `PerLegContextEditor` that runs during the walk.
   const terminalKind = terminalKindForLeg(leg);
   if (terminalKind !== "none" && terminalKind !== "include") {
     const terminalLeg: TerminalLeg = {
@@ -799,22 +1014,37 @@ export function SopAdvancePlayer(props: Props) {
     };
     return (
       <div className="space-y-3 min-w-0">
-        {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
         {terminalKind === "closed" && (
-          <ClosedTerminal
-            leg={terminalLeg}
+          <ClosedTerminalRewindCard
             tree={tree}
-            disabledReason={disabledReason}
-            onAdvanced={onAdvanced}
+            answers={answers}
+            sopOutcome={leg.sopOutcome ?? null}
+            disabled={disabled}
+            onChangeAnswer={() => openRewindDialog("back-step")}
+            onRestart={() => openRewindDialog("restart")}
+            onJumpTo={(nodeId) => openRewindDialog("jump", nodeId)}
+            onReclassify={onRequestReclassify ?? (() => setReclassifyOpen(true))}
+            anyPending={anyRewindPending || reclassifyMutation.isPending}
           />
         )}
         {terminalKind === "hold" && (
-          <HoldTerminal
-            leg={terminalLeg}
-            tree={tree}
-            disabledReason={disabledReason}
-            onAdvanced={onAdvanced}
-          />
+          <>
+            {answers.length > 0 && (
+              <LiveBreadcrumb
+                tree={tree}
+                answers={answers}
+                onChipClick={(nodeId) => openRewindDialog("jump", nodeId)}
+                disabled={disabled || anyRewindPending}
+                currentNodeId={null}
+              />
+            )}
+            <HoldTerminal
+              leg={terminalLeg}
+              tree={tree}
+              disabledReason={disabledReason}
+              onAdvanced={onAdvanced}
+            />
+          </>
         )}
         {terminalKind === "duplicate" && (
           <DuplicateTerminal
@@ -822,6 +1052,30 @@ export function SopAdvancePlayer(props: Props) {
             tree={tree}
             disabledReason={disabledReason}
             onAdvanced={onAdvanced}
+          />
+        )}
+        {!isPreview && rewindPending && (
+          <RewindConfirmDialog
+            open={!!rewindPending}
+            onOpenChange={(next) => !next && closeRewindDialog()}
+            legId={leg.id}
+            legRef={legRefLabel}
+            action={rewindPending.action}
+            nodeId={rewindPending.nodeId ?? undefined}
+            currentVerdictLabel={leg.sopOutcome ?? null}
+            onConfirm={handleRewindConfirm}
+            isPending={anyRewindPending}
+          />
+        )}
+        {!isPreview && !onRequestReclassify && reclassifyOpen && (
+          <ReclassifyConfirmDialog
+            open={reclassifyOpen}
+            onOpenChange={(next) =>
+              !reclassifyMutation.isPending && setReclassifyOpen(next)
+            }
+            legRef={legRefLabel}
+            isPending={reclassifyMutation.isPending}
+            onConfirm={() => reclassifyMutation.mutate({ id: leg.id })}
           />
         )}
       </div>
@@ -925,7 +1179,18 @@ export function SopAdvancePlayer(props: Props) {
         )}
       </div>
 
-      {answers.length > 0 && <SopBreadcrumb tree={tree} answers={answers} />}
+      {answers.length > 0 &&
+        (isPreview ? (
+          <SopBreadcrumb tree={tree} answers={answers} />
+        ) : (
+          <LiveBreadcrumb
+            tree={tree}
+            answers={answers}
+            onChipClick={(nodeId) => openRewindDialog("jump", nodeId)}
+            disabled={disabled || anyRewindPending}
+            currentNodeId={currentNode?.id ?? null}
+          />
+        ))}
 
       {showSiblingPrompt && siblingPrompt && (
         <SiblingDuplicatePrompt
@@ -1095,6 +1360,81 @@ export function SopAdvancePlayer(props: Props) {
           perLegContext={leg.perLegContext ?? null}
           disabled={disabled}
           disabledReason={disabledReason}
+        />
+      )}
+
+      {!isPreview && (
+        <div
+          className="flex items-center justify-between gap-2 pt-1"
+          data-testid="sop-action-strip"
+        >
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={handleQuickBack}
+              disabled={
+                disabled || answers.length === 0 || anyRewindPending
+              }
+              data-testid="sop-action-back"
+            >
+              {backStepMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ChevronLeft className="h-3 w-3" />
+              )}
+              Back
+            </Button>
+            <span
+              className="text-[11px] text-muted-foreground"
+              data-testid="sop-action-back-helper"
+            >
+              Pops the last answer
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs gap-1 text-muted-foreground"
+            onClick={() =>
+              onRequestReclassify
+                ? onRequestReclassify()
+                : setReclassifyOpen(true)
+            }
+            disabled={disabled || reclassifyMutation.isPending}
+            data-testid="sop-action-reclassify"
+          >
+            <Layers className="h-3 w-3" />
+            Reclassify
+          </Button>
+        </div>
+      )}
+
+      {!isPreview && rewindPending && (
+        <RewindConfirmDialog
+          open={!!rewindPending}
+          onOpenChange={(next) => !next && closeRewindDialog()}
+          legId={leg.id}
+          legRef={legRefLabel}
+          action={rewindPending.action}
+          nodeId={rewindPending.nodeId ?? undefined}
+          currentVerdictLabel={leg.sopOutcome ?? null}
+          onConfirm={handleRewindConfirm}
+          isPending={anyRewindPending}
+        />
+      )}
+      {!isPreview && !onRequestReclassify && reclassifyOpen && (
+        <ReclassifyConfirmDialog
+          open={reclassifyOpen}
+          onOpenChange={(next) =>
+            !reclassifyMutation.isPending && setReclassifyOpen(next)
+          }
+          legRef={legRefLabel}
+          isPending={reclassifyMutation.isPending}
+          onConfirm={() => reclassifyMutation.mutate({ id: leg.id })}
         />
       )}
     </div>
@@ -1348,5 +1688,343 @@ function SopBreadcrumb({ tree, answers }: { tree: DecisionTree; answers: SopAnsw
       })}
       {answers.length > 0 && <CheckCircle2 className="h-3 w-3 text-green-600 ml-1" />}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #526 — Live (clickable) breadcrumb. Used in live mode only;
+// preview keeps the read-only `SopBreadcrumb`. Clicking a chip opens
+// the shared rewind confirm dialog with action="jump" + nodeId.
+// ─────────────────────────────────────────────────────────────────────
+
+function LiveBreadcrumb({
+  tree,
+  answers,
+  onChipClick,
+  disabled,
+  currentNodeId,
+}: {
+  tree: DecisionTree;
+  answers: SopAnswerRow[];
+  onChipClick: (nodeId: string) => void;
+  disabled?: boolean;
+  /** Active question the operator is parked on (mid-walk). Rendered as
+   *  a non-clickable highlighted chip at the tail of the strip so the
+   *  operator can see "you are here" relative to the answered chips.
+   *  Pass null at terminals — the verdict card already owns the
+   *  "current step" affordance there. */
+  currentNodeId?: string | null;
+}) {
+  const currentNode = currentNodeId
+    ? tree.nodes.find((n) => n.id === currentNodeId)
+    : null;
+  // The "current node" chip is suppressed if the operator is parked on
+  // a node they've already answered (rewinds re-park you on the
+  // answered node — duplicate display is noise, not signal).
+  const showCurrent =
+    !!currentNode && !answers.some((a) => a.nodeId === currentNode.id);
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1.5 text-[11px]"
+      data-testid="sop-breadcrumb-live"
+    >
+      {answers.map((a, i) => {
+        const node = tree.nodes.find((n) => n.id === a.nodeId);
+        return (
+          <React.Fragment key={`${a.nodeId}-${i}`}>
+            <button
+              type="button"
+              onClick={() => onChipClick(a.nodeId)}
+              disabled={!!disabled}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border bg-muted/50 hover:bg-muted hover:border-blue-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors group"
+              data-testid={`sop-breadcrumb-chip-${a.nodeId}`}
+              title={`Rewind to: ${node?.question ?? a.nodeId}`}
+            >
+              <span className="font-mono text-[10px] text-muted-foreground">
+                Q{i + 1}
+              </span>
+              <span className="text-muted-foreground truncate max-w-[120px]">
+                {node?.question ?? a.nodeId}
+              </span>
+              <span className="text-muted-foreground">→</span>
+              <Badge
+                variant="secondary"
+                className="h-4 px-1 text-[10px] font-medium"
+              >
+                {a.answer}
+              </Badge>
+              <RotateCcw className="h-2.5 w-2.5 opacity-0 group-hover:opacity-60" />
+            </button>
+            {(i < answers.length - 1 || showCurrent) && (
+              <ChevronRight className="h-3 w-3 opacity-50" />
+            )}
+          </React.Fragment>
+        );
+      })}
+      {showCurrent && currentNode && (
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50 dark:bg-blue-950/30 ring-1 ring-blue-300"
+          data-testid={`sop-breadcrumb-current-${currentNode.id}`}
+          aria-current="step"
+          title={`Current question: ${currentNode.question}`}
+        >
+          <span className="font-mono text-[10px] text-blue-700 dark:text-blue-300">
+            Q{answers.length + 1}
+          </span>
+          <span className="text-blue-800 dark:text-blue-200 truncate max-w-[140px]">
+            {currentNode.question}
+          </span>
+          <span className="text-[10px] text-blue-700 dark:text-blue-300 italic">
+            you are here
+          </span>
+        </span>
+      )}
+      {answers.length > 0 && !showCurrent && (
+        <CheckCircle2 className="h-3 w-3 text-green-600 ml-1" />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #526 R2 — Closed-terminal verdict layout with per-step
+// "Rewind to here" buttons and a footer of Change-my-answer /
+// Restart-walk plus a demoted Reclassify footnote.
+// ─────────────────────────────────────────────────────────────────────
+
+function ClosedTerminalRewindCard({
+  tree,
+  answers,
+  sopOutcome,
+  disabled,
+  onChangeAnswer,
+  onRestart,
+  onJumpTo,
+  onReclassify,
+  anyPending,
+}: {
+  tree: DecisionTree;
+  answers: SopAnswerRow[];
+  sopOutcome: string | null;
+  disabled?: boolean;
+  onChangeAnswer: () => void;
+  onRestart: () => void;
+  onJumpTo: (nodeId: string) => void;
+  onReclassify: () => void;
+  anyPending: boolean;
+}) {
+  const outcomeType = (sopOutcome ?? "cannot_dispute") as OutcomeType;
+  const colors = OUTCOME_COLORS[outcomeType] ?? OUTCOME_COLORS.cannot_dispute;
+  const label = OUTCOME_LABELS[outcomeType] ?? outcomeType;
+  const interactionDisabled = !!disabled || anyPending;
+
+  return (
+    <Card
+      className={`${colors.bg} border ${colors.border}`}
+      data-testid="sop-terminal-card"
+      data-outcome={outcomeType}
+    >
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <CheckCircle2
+            className={`h-5 w-5 mt-0.5 ${colors.text} shrink-0`}
+          />
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <p
+                className={`text-base font-semibold ${colors.text}`}
+                data-testid="sop-terminal-verdict-label"
+              >
+                {label}
+              </p>
+              <Badge
+                variant="secondary"
+                className="h-5 px-1.5 text-[10px] font-medium"
+                data-testid="sop-terminal-answer-count"
+              >
+                {answers.length} answer{answers.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The walk reached a terminal verdict based on your answers
+              below. You can rewind to any step or change your last
+              answer.
+            </p>
+          </div>
+        </div>
+
+        {answers.length > 0 && (
+          <div
+            className="rounded-md border bg-background/60"
+            data-testid="sop-terminal-answers"
+          >
+            <div className="px-3 py-1.5 border-b text-[11px] uppercase tracking-wider text-muted-foreground">
+              Your answers
+            </div>
+            <ol className="divide-y">
+              {answers.map((a, i) => {
+                const node = tree.nodes.find((n) => n.id === a.nodeId);
+                const isTriggering = i === answers.length - 1;
+                return (
+                  <li
+                    key={`${a.nodeId}-${i}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs ${
+                      isTriggering ? "bg-amber-50/60 dark:bg-amber-950/20" : ""
+                    }`}
+                    data-testid={`sop-terminal-answer-${i}`}
+                    data-triggering={isTriggering ? "true" : undefined}
+                  >
+                    <span className="text-muted-foreground tabular-nums w-5 shrink-0">
+                      {i + 1}.
+                    </span>
+                    <span className="flex-1 min-w-0 truncate">
+                      {node?.question ?? a.nodeId}
+                    </span>
+                    {isTriggering && (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1 text-[9px] font-medium shrink-0 border-amber-400 text-amber-800 dark:text-amber-200"
+                        data-testid="sop-terminal-triggering-pill"
+                      >
+                        Triggered verdict
+                      </Badge>
+                    )}
+                    <Badge
+                      variant="secondary"
+                      className="h-4 px-1 text-[10px] font-medium shrink-0"
+                    >
+                      {a.answer}
+                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px] gap-1"
+                      onClick={() => onJumpTo(a.nodeId)}
+                      disabled={interactionDisabled}
+                      data-testid={`sop-terminal-rewind-to-${a.nodeId}`}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Rewind to here
+                    </Button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            onClick={onChangeAnswer}
+            disabled={interactionDisabled || answers.length === 0}
+            className="gap-1.5 h-8 text-xs"
+            data-testid="sop-terminal-change-answer"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Change my answer
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onRestart}
+            disabled={interactionDisabled}
+            className="gap-1.5 h-8 text-xs"
+            data-testid="sop-terminal-restart"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Restart walk
+          </Button>
+        </div>
+
+        <p
+          className="text-[11px] text-muted-foreground pt-1 border-t"
+          data-testid="sop-terminal-reclassify-footnote"
+        >
+          Wrong error type altogether?{" "}
+          <button
+            type="button"
+            className="underline decoration-dotted hover:text-foreground disabled:opacity-60"
+            onClick={onReclassify}
+            disabled={interactionDisabled}
+            data-testid="sop-terminal-reclassify"
+          >
+            Reclassify the leg
+          </button>{" "}
+          to pick a different decision tree.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #526 — Inline reclassify confirm. Reclassify is destructive
+// (clears walk state + outcome) so we still confirm; we just show it
+// as a single concise dialog rather than the heavier rewind dialog.
+// ─────────────────────────────────────────────────────────────────────
+
+function ReclassifyConfirmDialog({
+  open,
+  onOpenChange,
+  legRef,
+  isPending,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  legRef: string | null;
+  isPending: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="reclassify-confirm-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Layers className="h-4 w-4 text-amber-600" />
+            Reclassify {legRef ?? "this leg"}?
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <div className="flex gap-2.5 p-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900">
+            <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-900 dark:text-amber-100">
+              This clears the current SOP walk and verdict. You'll
+              choose a different error type and start the walk over.
+            </p>
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+            data-testid="reclassify-confirm-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={onConfirm}
+            disabled={isPending}
+            data-testid="reclassify-confirm-go"
+          >
+            {isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+            ) : (
+              <Layers className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Reclassify
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1357,6 +1357,13 @@ export function ClaimDetailV2({
                       : null
                   }
                   bulkSiblingCount={bulkSiblingCount}
+                  // Task #526 — let the player's demoted Reclassify CTA
+                  // re-use this page's existing reclassify dialog +
+                  // mutation. The player only changes placement /
+                  // visual demotion; the route-driven flow itself
+                  // (`POST /api/claims/:id/reclassify` via
+                  // `useReclassifyLeg`) stays exactly where it was.
+                  onRequestReclassify={() => setReclassifyOpen(true)}
                   siblingPrompt={
                     siblingPromptCandidate
                       ? {

@@ -40,9 +40,22 @@ setGlobal("HTMLTextAreaElement", w.HTMLTextAreaElement);
 setGlobal("Element", w.Element);
 setGlobal("Node", w.Node);
 setGlobal("Event", w.Event);
+setGlobal("CustomEvent", w.CustomEvent);
 setGlobal("MouseEvent", w.MouseEvent);
 setGlobal("KeyboardEvent", w.KeyboardEvent);
+setGlobal("FocusEvent", w.FocusEvent);
+setGlobal("InputEvent", w.InputEvent);
+setGlobal("PointerEvent", w.PointerEvent);
+setGlobal("NodeFilter", w.NodeFilter);
 setGlobal("getComputedStyle", w.getComputedStyle.bind(w));
+// Radix UI primitives (Dialog/Popover/etc.) read these globals at
+// effect-mount time. Forward jsdom's implementations so portal-based
+// components don't crash with "MutationObserver is not defined".
+setGlobal(
+  "MutationObserver",
+  (w as unknown as { MutationObserver: unknown }).MutationObserver,
+);
+setGlobal("DocumentFragment", w.DocumentFragment);
 setGlobal("requestAnimationFrame", (cb: FrameRequestCallback) =>
   setTimeout(() => cb(performance.now()), 0) as unknown as number);
 setGlobal("cancelAnimationFrame", (id: number) =>
