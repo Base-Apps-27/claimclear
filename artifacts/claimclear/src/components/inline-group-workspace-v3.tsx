@@ -10,9 +10,13 @@ import {
   useRegenerateInvoiceGroupDraft,
   useMarkInvoiceGroupDraftReviewed,
   useCreatePortalSubmission,
+  useBulkQueueGroupReattest,
+  usePromoteVerdictDrafts,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetClaimQueryKey,
+  getListInvoiceGroupsQueryKey,
+  getGetResponsesAwaitingReviewCountQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
@@ -61,6 +65,11 @@ import {
 import { RefNumber } from "@/components/ref-number";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
+import { useClosureLauncher } from "@/components/closure/closure-launcher";
+import {
+  CLOSURE_REASON_BANNER,
+  type ClosureReasonKey,
+} from "@/components/closure/closure-options";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import { useUrlParams } from "@/lib/use-url-params";
@@ -654,25 +663,32 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
           terminator and renders here. */}
       {outlook !== "has_disputable" && (
         <>
-          {/* V4 Q6/Q7 graduation — cards-row preamble for off-ramps.
-              Anchors the operator on which legs they're acting on
-              before the existing reattest / close CTA renders below.
-              Wiring stays in InvoiceGroupActionSlot so the modal flows
-              don't fork. */}
+          {/* V4 Q6/Q7 graduation — full off-ramp hero with header strip,
+              cards-row preamble, and an inline action strip that wires
+              directly to the existing reattest / closure mutations.
+              When the inline strip is mounted, we DO NOT also render
+              InvoiceGroupActionSlot below (it would render a second,
+              redundant CTA card). For the in-progress reattest_only
+              walk, the slot still owns the action surface. */}
           {((outlook === "reattest_only" && allWalked) ||
-            outlook === "nothing_to_do") && (
+            outlook === "nothing_to_do") ? (
             <OffRampInputsHero
+              detail={detail}
+              groupId={groupId}
               rides={rides}
               outlook={outlook}
+              survivors={survivors}
+              dropped={dropped}
               onJumpToLeg={(id) => setActiveLegId(id)}
             />
+          ) : (
+            <InvoiceGroupActionSlot
+              group={detail}
+              groupId={groupId}
+              bare
+              onJumpToLeg={(claimId) => setActiveLegId(claimId)}
+            />
           )}
-          <InvoiceGroupActionSlot
-            group={detail}
-            groupId={groupId}
-            bare
-            onJumpToLeg={(claimId) => setActiveLegId(claimId)}
-          />
         </>
       )}
 
@@ -1395,17 +1411,23 @@ function summarizeInclusion(rides: ClaimResponse[]): { included: number; filtere
 // the at-a-glance phase indicator.
 // ─────────────────────────────────────────────────────────────────────
 type WizardPhase = "walk" | "preview" | "review" | "submit";
+type OffRampPhase = "reattest" | "close";
 
 function WizardInvoiceHeaderStrip({
   detail,
   rides,
   current,
+  offRampCurrent,
   trailingPill,
   trailingExtra,
 }: {
   detail: DetailGroup;
   rides: ClaimResponse[];
-  current: WizardPhase;
+  current?: WizardPhase;
+  /** When set, the segmented stepper renders a single-pill mode for an
+   *  off-ramp outlook (V4 Q6 / Q7) instead of the four-step Walk →
+   *  Preview → Review → Submit ladder. Mutually exclusive with `current`. */
+  offRampCurrent?: OffRampPhase;
   /** Optional small pill rendered after the bucket-counts pill (e.g. Q4
    *  "Note edited · unsaved" purple state, or Q5 "Ready to send"). */
   trailingPill?: {
@@ -1425,7 +1447,14 @@ function WizardInvoiceHeaderStrip({
     { key: "submit", label: "Submit" },
   ];
   const order: WizardPhase[] = ["walk", "preview", "review", "submit"];
-  const currentIdx = order.indexOf(current);
+  const currentIdx = current ? order.indexOf(current) : -1;
+  // V4 Q6 / Q7 — for off-ramp outlooks the four-step ladder collapses to a
+  // single pill ("Re-attest" or "Close") so the chrome reads correctly for
+  // a path that doesn't run Preview / Review / Submit.
+  const offRampPhases: { key: OffRampPhase; label: string }[] = [
+    { key: "reattest", label: "Re-attest" },
+    { key: "close", label: "Close" },
+  ];
   const purpleStyle: React.CSSProperties = {
     background: "var(--cc-purple-bg)",
     color: "var(--cc-purple-fg)",
@@ -1491,32 +1520,52 @@ function WizardInvoiceHeaderStrip({
         role="tablist"
         aria-label="Wizard phase"
         data-testid="v3-wizard-stepper"
+        data-mode={offRampCurrent ? "off-ramp" : "dispute"}
       >
-        {phases.map((p, i) => {
-          const isActive = p.key === current;
-          const isDone = i < currentIdx;
-          return (
-            <button
-              key={p.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-disabled
-              disabled
-              className={isActive ? "is-active" : ""}
-              data-phase={p.key}
-              data-state={isActive ? "active" : isDone ? "done" : "pending"}
-              data-testid={`v3-wizard-step-${p.key}`}
-              style={isDone ? { opacity: 0.85 } : undefined}
-            >
-              {isDone && (
-                <CheckCircle2 className="w-2.5 h-2.5 inline mr-1" />
-              )}
-              {p.label}
-              {isDone && " ✓"}
-            </button>
-          );
-        })}
+        {offRampCurrent
+          ? offRampPhases
+              .filter((p) => p.key === offRampCurrent)
+              .map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  aria-selected
+                  aria-disabled
+                  disabled
+                  className="is-active"
+                  data-phase={p.key}
+                  data-state="active"
+                  data-testid={`v3-wizard-step-${p.key}`}
+                >
+                  {p.label}
+                </button>
+              ))
+          : phases.map((p, i) => {
+              const isActive = p.key === current;
+              const isDone = i < currentIdx;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-disabled
+                  disabled
+                  className={isActive ? "is-active" : ""}
+                  data-phase={p.key}
+                  data-state={isActive ? "active" : isDone ? "done" : "pending"}
+                  data-testid={`v3-wizard-step-${p.key}`}
+                  style={isDone ? { opacity: 0.85 } : undefined}
+                >
+                  {isDone && (
+                    <CheckCircle2 className="w-2.5 h-2.5 inline mr-1" />
+                  )}
+                  {p.label}
+                  {isDone && " ✓"}
+                </button>
+              );
+            })}
       </div>
     </div>
   );
@@ -2306,20 +2355,37 @@ function ReviewEditHero({
 
 // ─────────────────────────────────────────────────────────────────────
 // Off-ramp inputs hero (V4 Q6 + Q7)
-// Cards-row preamble for the reattest_only and nothing_to_do outlooks.
-// Mirrors the inputs-summary card visual the dispute path uses, so
-// every walk-complete state — dispute, reattest, close — opens with
-// the same anchor: "here's what you walked, here's what happens next."
-// The action machinery (ReattestModal / closure launcher) lives in
-// the existing InvoiceGroupActionSlot below, so wiring is unchanged.
+// Mirrors the dispute-path heroes: WizardInvoiceHeaderStrip on top
+// (in single-pill mode — "Re-attest" or "Close"), the inputs cards-row
+// preamble, then an inline action strip that fires the off-ramp
+// mutation directly. No standalone InvoiceGroupActionSlot underneath.
+//
+// Q6 (reattest_only, allWalked): survivor / dropped summary, optional
+// queue note, "Queue re-attest for N legs" button. Promotes verdict
+// drafts then bulk-queues the group atomically — same wiring the
+// existing reattest modal's queue path uses.
+//
+// Q7 (nothing_to_do): closure-reason <select> (cannot_dispute /
+// non_issue / denied_by_payor) + "Close invoice" button that opens
+// the structured closure intake via useClosureLauncher with the
+// chosen reason pre-applied. If the group is already closed, render
+// a passive "Closed · X" pill in place of the action.
 // ─────────────────────────────────────────────────────────────────────
 function OffRampInputsHero({
+  detail,
+  groupId,
   rides,
   outlook,
+  survivors,
+  dropped,
   onJumpToLeg,
 }: {
+  detail: DetailGroup;
+  groupId: number;
   rides: ClaimResponse[];
   outlook: InvoiceDisputeOutlook;
+  survivors: ClaimResponse[];
+  dropped: ClaimResponse[];
   onJumpToLeg: (id: number) => void;
 }) {
   const isReattest = outlook === "reattest_only";
@@ -2328,27 +2394,253 @@ function OffRampInputsHero({
       data-testid={isReattest ? "v3-hero-reattest" : "v3-hero-close"}
       className="space-y-3"
     >
-      <div className="flex items-center gap-2">
-        {isReattest ? (
-          <ShieldCheck className="w-4 h-4 text-blue-700" />
-        ) : (
-          <Archive className="w-4 h-4 text-amber-700" />
-        )}
-        <span className="font-semibold text-sm">
-          {isReattest
-            ? "No disputable legs — survivors owe re-attestation"
-            : "Nothing to dispute, nothing to re-attest"}
-        </span>
-        <span className="cc-pill cc-pill-muted ml-auto">
-          {rides.length} leg{rides.length === 1 ? "" : "s"} walked
-        </span>
-      </div>
+      <WizardInvoiceHeaderStrip
+        detail={detail}
+        rides={rides}
+        offRampCurrent={isReattest ? "reattest" : "close"}
+      />
       <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
-      <p className="cc-meta text-xs px-1">
-        {isReattest
-          ? "No portal note will be drafted. Use the action below to queue the survivors for re-attestation; non-contestable legs will be cancelled."
-          : "Use the action below to close this invoice out for the audit trail. No portal post, no re-attest queued."}
-      </p>
+      {isReattest ? (
+        <OffRampReattestStrip
+          groupId={groupId}
+          survivors={survivors}
+          dropped={dropped}
+        />
+      ) : (
+        <OffRampCloseStrip
+          group={detail}
+          groupId={groupId}
+          dropped={dropped}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// V4 Q6 — inline reattest action strip.
+// Replaces the launch-modal-then-pick flow for the simple "queue all
+// survivors" case: one button, one optional note, fires the same
+// promote-drafts + bulk-queue-reattest sequence the modal's queue
+// path uses, with identical query invalidations and toast wording.
+// ─────────────────────────────────────────────────────────────────────
+function OffRampReattestStrip({
+  groupId,
+  survivors,
+  dropped,
+}: {
+  groupId: number;
+  survivors: ClaimResponse[];
+  dropped: ClaimResponse[];
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const promoteDrafts = usePromoteVerdictDrafts();
+  const bulkQueueReattest = useBulkQueueGroupReattest();
+  const [showNote, setShowNote] = useState(false);
+  const [note, setNote] = useState("");
+
+  const survivorCount = survivors.length;
+  const droppedCount = dropped.length;
+  const busy = promoteDrafts.isPending || bulkQueueReattest.isPending;
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+    qc.invalidateQueries({
+      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
+    });
+    qc.invalidateQueries({
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+    });
+  };
+
+  async function onQueue() {
+    try {
+      await promoteDrafts.mutateAsync({ id: groupId });
+      const trimmed = note.trim();
+      await bulkQueueReattest.mutateAsync({
+        id: groupId,
+        data: trimmed ? { note: trimmed } : {},
+      });
+      invalidate();
+      successToast({
+        title: "__VERB__",
+        description: `Queued ${survivorCount} leg${survivorCount === 1 ? "" : "s"} for re-attestation.`,
+      });
+      setNote("");
+      setShowNote(false);
+    } catch (e) {
+      toast({
+        title: "Queue re-attest failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <div
+      className="rounded-md border-2 border-blue-200 bg-blue-50/50 p-3 space-y-2"
+      data-testid="v3-offramp-reattest-strip"
+    >
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-blue-700 flex-shrink-0" />
+        <span className="text-xs text-blue-900/90 flex-1 min-w-0">
+          {survivorCount} leg{survivorCount === 1 ? "" : "s"} need
+          re-attestation in the portal.
+          {droppedCount > 0 ? (
+            <>
+              {" "}
+              {droppedCount} non-contestable leg
+              {droppedCount === 1 ? "" : "s"} will be cancelled.
+            </>
+          ) : null}
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          type="button"
+          onClick={() => setShowNote((v) => !v)}
+          data-testid="v3-offramp-note-toggle"
+          className="h-7 px-2 text-xs"
+        >
+          <FileText className="h-3.5 w-3.5 mr-1" />
+          {showNote ? "Hide note" : "Add note"}
+        </Button>
+        <Button
+          size="sm"
+          onClick={onQueue}
+          disabled={busy || survivorCount === 0}
+          data-testid="v3-offramp-queue-reattest"
+        >
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+          ) : (
+            <Send className="h-3.5 w-3.5 mr-1" />
+          )}
+          Queue re-attest for {survivorCount} leg
+          {survivorCount === 1 ? "" : "s"}
+        </Button>
+      </div>
+      {showNote && (
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Optional note for the queued re-attestation tasks…"
+          rows={3}
+          className="text-xs"
+          data-testid="v3-offramp-note-input"
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// V4 Q7 — inline close-out action strip.
+// Replaces the standalone "Mark as closed" card. Operator picks the
+// closure reason from a 3-way <select> (cannot_dispute / non_issue /
+// denied_by_payor — the keys of CLOSURE_REASON_BANNER), then clicks
+// "Close invoice" to open the structured closure intake with that
+// reason pre-applied. Already-closed groups render a passive pill.
+// ─────────────────────────────────────────────────────────────────────
+function OffRampCloseStrip({
+  group,
+  groupId,
+  dropped,
+}: {
+  group: DetailGroup;
+  groupId: number;
+  dropped: ClaimResponse[];
+}) {
+  const qc = useQueryClient();
+  const { open: openClosure, dialog } = useClosureLauncher();
+  const [reason, setReason] = useState<ClosureReasonKey>("cannot_dispute");
+  const droppedCount = dropped.length;
+
+  const alreadyClosed =
+    !!group.outcome &&
+    // vocab-allow-next-line — comparing against API enum value, not a label.
+    (group.outcome === "Withdrawn" || group.outcome === "Non-Issue");
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+    qc.invalidateQueries({
+      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
+    });
+    qc.invalidateQueries({
+      queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
+    });
+  };
+
+  return (
+    <div
+      className="rounded-md border-2 border-amber-200 bg-amber-50/50 p-3 space-y-2"
+      data-testid="v3-offramp-close-strip"
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <Archive className="h-4 w-4 text-amber-700 flex-shrink-0" />
+        <span className="text-xs text-amber-900/90 flex-1 min-w-[12rem]">
+          {droppedCount > 0 ? (
+            <>
+              {droppedCount} leg{droppedCount === 1 ? "" : "s"} closed as
+              non-contestable / sibling-duplicate, with no survivors to
+              re-attest.
+            </>
+          ) : (
+            <>No legs remain to dispute or re-attest.</>
+          )}{" "}
+          Close the invoice out for the audit trail.
+        </span>
+        {alreadyClosed ? (
+          <span
+            className="cc-pill cc-pill-muted"
+            data-testid="v3-offramp-already-closed"
+          >
+            Closed · {group.outcome}
+          </span>
+        ) : (
+          <>
+            <label className="text-xs text-amber-900/80 flex items-center gap-1.5">
+              <span>Reason</span>
+              <select
+                value={reason}
+                onChange={(e) =>
+                  setReason(e.target.value as ClosureReasonKey)
+                }
+                className="h-7 rounded-md border border-amber-300 bg-white px-2 text-xs"
+                data-testid="v3-offramp-reason-select"
+              >
+                {(Object.keys(CLOSURE_REASON_BANNER) as ClosureReasonKey[]).map(
+                  (key) => (
+                    <option key={key} value={key}>
+                      {CLOSURE_REASON_BANNER[key].label}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                openClosure({
+                  target: { kind: "group", id: groupId },
+                  reason,
+                  onSuccess: invalidate,
+                })
+              }
+              data-testid="v3-offramp-close-invoice"
+            >
+              <Archive className="h-3.5 w-3.5 mr-1" />
+              Close invoice
+            </Button>
+          </>
+        )}
+      </div>
+      {dialog}
     </div>
   );
 }

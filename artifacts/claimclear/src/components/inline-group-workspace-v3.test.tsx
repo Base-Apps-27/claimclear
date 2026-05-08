@@ -309,6 +309,8 @@ test("InlineGroupWorkspaceV3 (has_disputable, walking) — mounts SOP walk hero,
   assert.equal(html.includes("submit-to-portal"), false);
   assert.equal(html.includes("invoice-reattest-only-cta"), false);
   assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
+  assert.equal(html.includes('data-testid="v3-offramp-reattest-strip"'), false);
+  assert.equal(html.includes('data-testid="v3-offramp-close-strip"'), false);
 });
 
 // ─── (e) Walk complete mounts the verdict-summary hero ─────────────
@@ -392,14 +394,23 @@ test("InlineGroupWorkspaceV3 (reattest_only) — mounts Re-attest CTA, no submis
   assert.match(html, /data-collapsed="false"/);
   assert.match(html, /data-testid="v3-leg-switcher"/);
   assert.match(html, /data-testid="v3-pinned-footer"/);
-  assert.match(html, /data-testid="invoice-reattest-only-cta"/);
+  // V4 Q6 — inline reattest strip replaces the standalone CTA card.
+  assert.match(html, /data-testid="v3-hero-reattest"/);
+  assert.match(html, /data-testid="v3-offramp-reattest-strip"/);
+  assert.match(html, /data-testid="v3-offramp-queue-reattest"/);
+  assert.match(html, /data-testid="v3-offramp-note-toggle"/);
+  // The off-ramp single-pill stepper renders for reattest.
+  assert.match(html, /data-testid="v3-wizard-step-reattest"/);
+  // The standalone slot's CTA card and the legacy close-out card
+  // must NOT be mounted alongside the inline strip.
+  assert.equal(html.includes("invoice-reattest-only-cta"), false);
+  assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
   // No submission-flow heroes for the re-attest path.
   assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
   assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
   assert.equal(html.includes('data-testid="v3-hero-review"'), false);
   assert.equal(html.includes('data-testid="v3-hero-submitted"'), false);
-  // No close-out card either.
-  assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
+  assert.equal(html.includes('data-testid="v3-offramp-close-strip"'), false);
 });
 
 // ─── (j) needs_classification mounts the Classify hero (R4) ───────
@@ -453,12 +464,21 @@ test("InlineGroupWorkspaceV3 (nothing_to_do) — mounts close-out card, chrome c
   );
   assert.match(html, /data-outlook="nothing_to_do"/);
   assert.match(html, /data-collapsed="true"/);
-  assert.match(html, /data-testid="invoice-nothing-to-do-closeout"/);
+  // V4 Q7 — inline close strip replaces the standalone close-out card.
+  assert.match(html, /data-testid="v3-hero-close"/);
+  assert.match(html, /data-testid="v3-offramp-close-strip"/);
+  assert.match(html, /data-testid="v3-offramp-reason-select"/);
+  assert.match(html, /data-testid="v3-offramp-close-invoice"/);
+  // The off-ramp single-pill stepper renders for close.
+  assert.match(html, /data-testid="v3-wizard-step-close"/);
+  // The legacy close-out card and the reattest CTA must NOT be mounted.
+  assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
+  assert.equal(html.includes("invoice-reattest-only-cta"), false);
   assert.equal(html.includes(`data-testid="v3-leg-switcher"`), false);
   assert.equal(html.includes(`data-testid="v3-pinned-footer"`), false);
   assert.equal(html.includes('data-testid="v3-hero-walk"'), false);
   assert.equal(html.includes('data-testid="v3-hero-walk-complete"'), false);
   assert.equal(html.includes('data-testid="v3-hero-preview"'), false);
   assert.equal(html.includes('data-testid="v3-hero-review"'), false);
-  assert.equal(html.includes("invoice-reattest-only-cta"), false);
+  assert.equal(html.includes('data-testid="v3-offramp-reattest-strip"'), false);
 });
