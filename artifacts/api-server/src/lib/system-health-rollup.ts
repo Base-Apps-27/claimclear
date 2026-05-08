@@ -13,7 +13,12 @@ export interface ConnectorRow {
 export interface CronRunRow {
   jobName: string;
   startedAt: Date;
-  status: string;            // "ok" | "running" | "degraded" | "failed"
+  // Canonical run-state values written to `cron_runs.status` by
+  // `recordCronRun`: "running" | "completed" | "failed". The legacy
+  // producer-side "ok"/"degraded" values are still accepted so existing
+  // test fixtures and any in-flight rows from before the canonical
+  // collapse keep type-checking and rolling up correctly.
+  status: "running" | "completed" | "failed" | "ok" | "degraded";
   message: string | null;
 }
 
@@ -145,8 +150,16 @@ export function computeRollup(input: RollupInput): RollupOutput {
       continue;
     }
 
+    // `cron_runs.status` is canonically {running | completed | failed}
+    // (collapsed from the producer-side "ok"/"degraded" vocabulary by
+    // `recordCronRun`). Both "completed" and the legacy "ok" indicate a
+    // successful run; "running" is healthy unless promoted to degraded
+    // below by the stuck-run check; "degraded" is only emitted by legacy
+    // rows and we preserve that mapping for back-compat. Anything else —
+    // including the canonical "failed" — surfaces as a failure.
     let status: ComponentStatus =
-      last.status === "ok" ? "ok"
+      last.status === "completed" ? "ok"
+      : last.status === "ok" ? "ok"
       : last.status === "degraded" ? "degraded"
       : last.status === "running" ? "ok"   // promoted to degraded below if stuck
       : "failed";

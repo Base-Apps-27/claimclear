@@ -18,7 +18,7 @@ import {
   getRecentWorkerRuns,
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
-import { computeRollup } from "../lib/system-health-rollup";
+import { computeRollup, type CronRunRow } from "../lib/system-health-rollup";
 import { safeRunServiceDateDriftCheck } from "../lib/group-service-date";
 import { getBootTime } from "../lib/boot-time";
 import { enumerateExpectedFiresSinceBoot } from "../lib/cron-fire-enumeration";
@@ -389,9 +389,20 @@ router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(a
     .orderBy(desc(cronRunsTable.startedAt))
     .limit(500);
 
-  const lastRunByJob = new Map<string, typeof recentRuns[number]>();
+  // The DB column is typed as `string`, but `recordCronRun` only ever
+  // writes the canonical {running | completed | failed} values (legacy
+  // "ok"/"degraded" rows from before the collapse may also exist). Narrow
+  // here so the rollup's stricter `CronRunRow.status` union holds.
+  const lastRunByJob = new Map<string, CronRunRow>();
   for (const r of recentRuns) {
-    if (!lastRunByJob.has(r.jobName)) lastRunByJob.set(r.jobName, r);
+    if (!lastRunByJob.has(r.jobName)) {
+      lastRunByJob.set(r.jobName, {
+        jobName: r.jobName,
+        startedAt: r.startedAt,
+        status: r.status as CronRunRow["status"],
+        message: r.message,
+      });
+    }
   }
 
   // Server boot time gates the missed-tick math: any expected fire that
