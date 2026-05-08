@@ -1189,24 +1189,10 @@ export default function Queue({ variant = "classic" }: QueueProps = {}) {
     ? allGroups.find(g => g.id === selectedWorkflowId) || null
     : null;
 
-  // Auto-select when there's exactly one row in the current tab and nothing
-  // explicit in the URL. Tab changes blow the URL group, so this re-runs on
-  // tab change and lands on the only candidate immediately. We deliberately
-  // don't auto-select once the user has cleared a selection within the same
-  // tab — that's tracked by URL state, so any click survives a re-render.
-  // Filtered candidates so we don't auto-jump to a row that's hidden by
-  // `?expiring=` and leave the operator looking at a phantom workspace.
-  useEffect(() => {
-    if (selectedWorkflowId != null) return;
-    const candidates =
-      activeTab === "actionable" ? actionableGroups
-      : activeTab === "portal-queued" ? portalQueuedSorted
-      : onHoldSorted;
-    if (candidates.length === 1) {
-      setSelectedWorkflowId(candidates[0].id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, actionableGroups.length, portalQueuedSorted.length, onHoldSorted.length]);
+  // No auto-selection on the queue page. The operator decides which invoice
+  // to open by clicking a row — even when only one candidate exists. Selection
+  // is still URL-driven, so a deep link with `?group=<id>` opens that row;
+  // bare `/queue` lands in the empty state.
 
   useEffect(() => {
     if (!successMessage) return;
