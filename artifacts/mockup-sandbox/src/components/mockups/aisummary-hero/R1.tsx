@@ -1,4 +1,4 @@
-import { ChevronLeft, MoreVertical, RotateCcw, Layers, X } from "lucide-react";
+import { ChevronLeft, Layers, X } from "lucide-react";
 import {
   HeaderStrip,
   ClassificationStrip,
@@ -29,9 +29,10 @@ export default function R1() {
           <div style={{ padding: "0 1.25rem" }}>
             <Annotation tone="blue">
               <strong>Where the affordances live.</strong>{" "}
-              The walk player gains a left-side <em>Back</em> button (pops one answer), a breadcrumb of
-              answered steps that operators can hover to preview, and a small overflow menu in the
-              header for the heavier <em>Restart walk</em> and <em>Reclassify</em> escapes.
+              The walk player gains a left-side <em>Back</em> button (pops one answer) and a
+              breadcrumb of answered steps that operators can click to jump back. The heavier
+              <em> Reclassify</em> escape lives on the far right of the same action strip, away
+              from <em>Back</em> so it can't be hit by accident.
             </Annotation>
           </div>
 
@@ -63,24 +64,15 @@ function PlayerCard() {
     <div style={{ flex:1, padding:"0 1.25rem" }}>
       <div style={{ background:"var(--cc-card)", border:"1px solid var(--cc-border)", borderRadius:"var(--cc-radius)", padding:"1rem 1.25rem", display:"flex", flexDirection:"column", gap:"0.875rem" }}>
 
-        {/* Header row: title + overflow menu (where Restart/Reclassify live) */}
+        {/* Header row */}
         <div className="flex items-center gap-2">
           <Icons.Sparkles className="w-4 h-4" style={{ color:"var(--cc-blue-fg)" }} />
           <span className="font-semibold text-sm">SOP walk · Time at Facility</span>
           <span className="cc-meta text-[11px]" style={{ marginLeft:"0.5rem" }}>4 answers recorded</span>
-          <button className="cc-btn cc-btn-ghost cc-btn-sm" style={{ marginLeft:"auto" }} aria-label="More walk actions">
-            <MoreVertical className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Hovering overflow menu (rendered open for the mockup) */}
-        <div style={{ alignSelf:"flex-end", marginTop:-8, marginRight:4, width:240, background:"var(--cc-card)", border:"1px solid var(--cc-border)", borderRadius:"var(--cc-radius)", boxShadow:"0 6px 20px rgba(15,23,42,0.10)", padding:"0.25rem", display:"flex", flexDirection:"column" }}>
-          <MenuItem icon={<RotateCcw className="w-3.5 h-3.5" />} label="Restart walk" hint="Keep classification, clear all answers" />
-          <MenuItem icon={<Layers className="w-3.5 h-3.5" />} label="Reclassify…" hint="Change the error type entirely" tone="amber" />
         </div>
 
         {/* Breadcrumb of prior answers */}
-        <div className="flex items-center gap-1.5" style={{ flexWrap:"wrap", marginTop:-8 }}>
+        <div className="flex items-center gap-1.5" style={{ flexWrap:"wrap" }}>
           <span className="cc-meta text-[10px] uppercase tracking-wider mr-1">Walked</span>
           <Crumb n={1} q="Rider on dialysis or appointment time?" a="Yes — appointment" />
           <Sep />
@@ -101,30 +93,18 @@ function PlayerCard() {
           </div>
         </div>
 
-        {/* Action strip: Back is the new affordance */}
+        {/* Action strip: Back on the left, Reclassify on the far right (separated to prevent mis-clicks) */}
         <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", borderTop:"1px solid var(--cc-border)", paddingTop:"0.75rem" }}>
           <button className="cc-btn cc-btn-ghost cc-btn-sm" data-testid="walk-back">
             <ChevronLeft className="w-3.5 h-3.5" /> Back
           </button>
           <span className="cc-meta text-[11px]">Pops the last answer · returns to question 4</span>
-          <span className="cc-meta text-[11px]" style={{ marginLeft:"auto" }}>
-            <kbd style={{ fontFamily:"inherit", border:"1px solid var(--cc-border)", borderRadius:4, padding:"0 4px", fontSize:10 }}>←</kbd> shortcut
-          </span>
+          <button className="cc-btn cc-btn-ghost cc-btn-sm" style={{ marginLeft:"auto", color:"var(--cc-amber-fg)" }} data-testid="walk-reclassify">
+            <Layers className="w-3.5 h-3.5" /> Reclassify…
+          </button>
         </div>
       </div>
     </div>
-  );
-}
-
-function MenuItem({ icon, label, hint, tone }: { icon: React.ReactNode; label: string; hint: string; tone?: "amber" }) {
-  return (
-    <button style={{ display:"flex", alignItems:"flex-start", gap:"0.5rem", padding:"0.4rem 0.5rem", textAlign:"left", borderRadius:6, background:"transparent", border:"none", cursor:"pointer" }}>
-      <span style={{ marginTop:2, color: tone === "amber" ? "var(--cc-amber-fg)" : "var(--cc-fg)" }}>{icon}</span>
-      <span style={{ display:"flex", flexDirection:"column" }}>
-        <span className="text-[12px] font-semibold">{label}</span>
-        <span className="cc-meta text-[10px]">{hint}</span>
-      </span>
-    </button>
   );
 }
 
