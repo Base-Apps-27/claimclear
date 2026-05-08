@@ -375,13 +375,25 @@ function buildMissingServiceDateCondition(
   return baseNull;
 }
 
-const STATUS_BY_PHASE = {
-  "pre-submit": ["New", "Needs Evidence"],
-  "in-flight": ["Portal Queued", "Generating Email", "Awaiting Response"],
-  "response-pending": ["Ready to Review", "Needs Review"],
-  "closed": ["Resolved", "Denied"],
-  "on-hold": ["On Hold"],
-} as const satisfies Record<string, ReadonlyArray<typeof claimStatusEnum.enumValues[number]>>;
+// Audit 2026-05-08 / Fix #4 (canonical macro-phase boundary, Option A):
+// PHASES_BY_MACRO replaces the legacy STATUS_BY_PHASE map. The list-tab
+// filter now reads off `invoice_groups.phase` so the cohort matches what
+// every detail-page reader (`getGroupMacroPhase(group)`) bucketed the
+// row as. Concretely this moves "Portal Queued" and "Generating Email"
+// rows OUT of the in-flight tab and INTO pre-submit — that's the boundary
+// the canonical PHASE_TO_MACRO mapping in `lib/macro-phase.ts` enforces
+// and the boundary every dashboard tile + detail page already used.
+//
+// `on-hold` is still sourced from legacy status: the phase column treats
+// hold as a flag and backfills hold-suspended rows to `triage`. The
+// canonical reader (`getGroupLifecyclePhaseFromGroup`) does the same
+// short-circuit, so this stays in lockstep.
+const PHASES_BY_MACRO = {
+  "pre-submit": ["triage", "ready_to_submit"],
+  "in-flight": ["submitted"],
+  "response-pending": ["response_received", "reviewed"],
+  "closed": ["closed"],
+} as const;
 
 function buildMacroPhaseCondition(phase: string): SQL | undefined {
   if (phase === "mas-action-required") {
@@ -401,12 +413,15 @@ function buildMacroPhaseCondition(phase: string): SQL | undefined {
   if (phase === "awaiting-payout") {
     return isNotNull(invoiceGroupsTable.reattestCompletedAt);
   }
-  if (phase in STATUS_BY_PHASE) {
-    const statuses = STATUS_BY_PHASE[phase as keyof typeof STATUS_BY_PHASE];
-    const statusCondition = inArray(invoiceGroupsTable.status, [...statuses]);
+  if (phase === "on-hold") {
+    return eq(invoiceGroupsTable.status, "On Hold");
+  }
+  if (phase in PHASES_BY_MACRO) {
+    const phases = PHASES_BY_MACRO[phase as keyof typeof PHASES_BY_MACRO];
+    const phaseCondition = inArray(invoiceGroupsTable.phase, [...phases]);
     if (phase === "response-pending") {
       return and(
-        statusCondition,
+        phaseCondition,
         isNull(invoiceGroupsTable.reattestCompletedAt),
         or(
           isNull(invoiceGroupsTable.reattestRequired),
@@ -450,7 +465,7 @@ function buildMacroPhaseCondition(phase: string): SQL | undefined {
         )!,
       );
     }
-    return statusCondition;
+    return phaseCondition;
   }
   return undefined;
 }
@@ -2255,9 +2270,10 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
 type InboxHiddenBucket = "unclassified" | "awaitingPayorAgain" | "acknowledgmentOnly";
 
 function buildInboxHiddenBucketCondition(bucket: InboxHiddenBucket): SQL {
-  const responsePendingStatuses = STATUS_BY_PHASE["response-pending"];
+  // Audit 2026-05-08 / Fix #4: mirror canonical macro-phase boundary.
+  const responsePendingPhases = PHASES_BY_MACRO["response-pending"];
   const baseCondition = and(
-    inArray(invoiceGroupsTable.status, [...responsePendingStatuses]),
+    inArray(invoiceGroupsTable.phase, [...responsePendingPhases]),
     isNull(invoiceGroupsTable.reattestCompletedAt),
     or(
       isNull(invoiceGroupsTable.reattestRequired),

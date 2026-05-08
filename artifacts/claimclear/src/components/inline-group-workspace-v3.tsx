@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getGroupLifecyclePhaseFromGroup } from "@/lib/lifecycle-phase";
 import {
   useGetInvoiceGroup,
   useGetClaim,
@@ -588,9 +589,15 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   // covered here — those still flow through HoldTerminal inside the
   // SOP player. We also skip the hold hero post-submission so the
   // receipt stays the source of truth.
+  // Audit 2026-05-08 / Fix #6: gate hold via canonical lifecycle phase
+  // instead of legacy status string. `getGroupLifecyclePhaseFromGroup`
+  // applies the same short-circuit (status === "On Hold" → "on-hold")
+  // today, but going through the canonical helper means this stays
+  // correct if hold ever moves off the legacy status enum onto a flag
+  // (see Wave D notes in lib/macro-phase.ts).
   const groupHoldActive =
     !submitted &&
-    (detail.status === "On Hold" ||
+    (getGroupLifecyclePhaseFromGroup(detail) === "on-hold" ||
       ((detail as InvoiceGroupDetailResponse & { holdReason?: string | null }).holdReason ?? null) != null);
   const legHoldActive =
     !submitted &&

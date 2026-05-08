@@ -1453,6 +1453,8 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
     id: claimsTable.id,
     confNumber: claimsTable.confNumber,
     invoiceGroupId: claimsTable.invoiceGroupId,
+    status: claimsTable.status,
+    errorTypeId: claimsTable.errorTypeId,
   })
     .from(claimsTable)
     .where(inArray(claimsTable.id, requestedIds));
@@ -1506,6 +1508,15 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
   const userEmail = req.user?.email ?? null;
   const userName = req.user?.displayName ?? null;
 
+  // Snapshot the qualifying-for-auto-advance set BEFORE the bulk
+  // update so the per-row transition below sees the same "first-time
+  // classification" predicate the single-claim PATCH at /claims/:id uses
+  // (status was New or Needs Review AND errorTypeId was previously empty).
+  const autoAdvanceCandidates = claims.filter(c =>
+    (c.status === "New" || c.status === "Needs Review") &&
+    (c.errorTypeId === null || c.errorTypeId === ""),
+  );
+
   await db.transaction(async (tx) => {
     await tx.update(claimsTable)
       .set({ errorTypeId: String(errorTypeId), errorTypeName })
@@ -1522,6 +1533,26 @@ router.post("/claims/bulk-assign-error-type", denyClerk, asyncHandler(async (req
       });
     }
   });
+
+  // Audit 2026-05-08 / Fix #5: parity with single-claim PATCH /claims/:id.
+  // When that endpoint sets `errorTypeId` for the first time on a New /
+  // Needs Review claim, it auto-advances the status to "Needs Evidence"
+  // via `transitionClaimStatus` (which also refreshes disposition).
+  // Bulk-assign skipped that step, leaving the bulk path's rows stranded
+  // in "New" with an errorType — out of sync with single-claim behavior.
+  // Run the transition per-qualifying-row outside the txn above; the
+  // canonical helper carries its own atomicity + refresh.
+  const actor = actorFromReq(req);
+  for (const claim of autoAdvanceCandidates) {
+    await transitionClaimStatus({
+      claimId: claim.id,
+      newStatus: "Needs Evidence",
+      source: "auto_after_classify",
+      reason: `Auto-advanced after error type classified (${errorTypeName})`,
+      actor,
+      systemOverride: true,
+    });
+  }
 
   for (const claim of claims) {
     emitClaimEvent(claim.id, "claim_edited", req);

@@ -160,7 +160,7 @@ export default function SystemHealth() {
             <CalendarOff className="h-5 w-5 text-stone-600" /> Expired Sweep
           </CardTitle>
           <CardDescription>
-            Retires invoice groups whose 30-day filing deadline has slipped while still in a pre-submit status (New, Needs Evidence, On Hold, Generating Email). Runs nightly at 1 AM ET; trigger here to catch up immediately.
+            Retires invoice groups whose 30-day filing deadline has slipped while still in the pre-submit phase (any group not yet submitted to the payor portal — includes on-hold rows). Runs nightly at 1 AM ET; trigger here to catch up immediately.
           </CardDescription>
         </CardHeader>
         <CardContent>
