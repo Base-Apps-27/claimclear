@@ -118,6 +118,7 @@ import { HideForClerk } from "@/lib/role";
 import { useToast, successToast, toast } from "@/hooks/use-toast";
 import {
   deriveInvoiceDisputeOutlook,
+  canQueueOrCompleteReattest,
   type InvoiceDisputeOutlook,
 } from "@/lib/whats-next-derivation";
 
@@ -3016,6 +3017,7 @@ function OffRampInputsHero({
       <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
       {activeRamp === "reattest" ? (
         <OffRampReattestStrip
+          group={detail}
           groupId={groupId}
           survivors={survivors}
           dropped={dropped}
@@ -3072,10 +3074,12 @@ function OffRampInputsHero({
 // path uses, with identical query invalidations and toast wording.
 // ─────────────────────────────────────────────────────────────────────
 function OffRampReattestStrip({
+  group,
   groupId,
   survivors,
   dropped,
 }: {
+  group: DetailGroup;
   groupId: number;
   survivors: ClaimResponse[];
   dropped: ClaimResponse[];
@@ -3090,6 +3094,19 @@ function OffRampReattestStrip({
   const survivorCount = survivors.length;
   const droppedCount = dropped.length;
   const busy = promoteDrafts.isPending || bulkQueueReattest.isPending;
+
+  // Source-state gate — mirrors the server's contract on
+  // POST /invoice-groups/:id/bulk-queue-reattest (invoice-groups.ts
+  // L3846-3857). Operators were seeing a 409 toast ("Group can only be
+  // bulk-queued for re-attestation while it is in Needs Review or MAS
+  // Eligible") because the strip rendered an active button on groups
+  // whose phase the server rejects (e.g. response-pending with status
+  // "Ready to Review"). Showing a CTA the API will refuse is the
+  // wrong UX — disable it and surface the plain-language reason from
+  // canQueueOrCompleteReattest so the operator knows what to do.
+  const eligibility = canQueueOrCompleteReattest(group);
+  const canQueue = eligibility.ok;
+  const blockedReason = eligibility.ok ? null : eligibility.reason;
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
@@ -3158,8 +3175,10 @@ function OffRampReattestStrip({
         <Button
           size="sm"
           onClick={onQueue}
-          disabled={busy || survivorCount === 0}
+          disabled={busy || survivorCount === 0 || !canQueue}
+          title={blockedReason ?? undefined}
           data-testid="v3-offramp-queue-reattest"
+          data-blocked-reason={blockedReason ?? undefined}
         >
           {busy ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
@@ -3170,6 +3189,15 @@ function OffRampReattestStrip({
           {survivorCount === 1 ? "" : "s"}
         </Button>
       </div>
+      {blockedReason && (
+        <div
+          className="flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
+          data-testid="v3-offramp-queue-reattest-blocked"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-700" />
+          <span>{blockedReason}</span>
+        </div>
+      )}
       {showNote && (
         <Textarea
           value={note}
