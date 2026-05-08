@@ -31,9 +31,11 @@ const sectionMeta: Record<Section, { label: string; icon: any; count: number; hi
   activity: { label: "Activity", icon: Activity,      count: 11, hint: "11 events · newest 8:31 today" },
 };
 
-export default function V3DrawerMini() {
+export default function V3DrawerMini({
+  initialSection = "evidence",
+}: { initialSection?: Section } = {}) {
   // In the live drawer this would come from which chip was clicked.
-  const [section, setSection] = useState<Section>("evidence");
+  const [section, setSection] = useState<Section>(initialSection);
   const m = sectionMeta[section];
   const Icon = m.icon;
 
