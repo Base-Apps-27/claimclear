@@ -351,11 +351,13 @@ export function ClaimDetailV2({
     onTransition: () => {
       fireJustProcessed();
       // Task #491 — same trigger that fires the per-pill flourish also
-      // bumps the session milestone counter. Dedupe is per-claim
-      // inside `notifyClaimProcessedThisSession`, so visiting the
-      // same leg in a second view (queue row, group page) won't
-      // double-count.
-      notifyClaimProcessedThisSession(claimId);
+      // bumps the session milestone counter. Task #541 — pass the
+      // claim's `updatedAt` as the generation token so a re-processed
+      // leg (revert + re-do, or any future state-machine pass) gets
+      // counted again. Visiting the same leg in a second view still
+      // collapses to one increment because both views observe the
+      // same `updatedAt`.
+      notifyClaimProcessedThisSession(claimId, claim?.updatedAt ?? null);
     },
   });
 

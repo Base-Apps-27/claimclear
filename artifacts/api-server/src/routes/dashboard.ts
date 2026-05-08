@@ -18,6 +18,10 @@ const HIDE_TOUR_SAMPLE_GROUP = eq(invoiceGroupsTable.isTourSample, false);
 const HIDE_TOUR_SAMPLE_CLAIM = eq(claimsTable.isTourSample, false);
 import { computeUrgentSnapshot } from "../lib/urgent-snapshot";
 import { scrubDashboardAmounts, scrubMoneyFieldsArray, canSeeAmounts } from "../lib/role";
+import {
+  groupUnclassifiedSql,
+  needsOperatorAttentionSql,
+} from "../lib/operator-attention";
 
 const router: IRouter = Router();
 
@@ -429,9 +433,16 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // Locked against drift by the must-file-today-parity contract
   // (Task #352, must-file-today-parity.test.ts). See
   // docs/architecture/state-wave-d-pr5-handoff-prompt.md.
+  //
+  // Task #541: also include unclassified Classification Inbox groups
+  // (errorTypeId NULL/'') regardless of phase, gated on the operator
+  // still owing action (`needs_operator_attention`). Mirror change in
+  // `lib/urgent-snapshot.ts` and `lib/expiring-filter.ts` keeps the
+  // must-file-today-parity contract honest. See operator-attention.ts.
   const expiringStatusFilter = or(
     eq(invoiceGroupsTable.phase, "triage"),
     eq(invoiceGroupsTable.phase, "ready_to_submit"),
+    and(groupUnclassifiedSql(), needsOperatorAttentionSql()),
   );
 
   const openGroupsWithDates = await db

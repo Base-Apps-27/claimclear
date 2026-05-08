@@ -1,4 +1,4 @@
-// Session milestone celebrations (Task #491).
+// Session milestone celebrations (Task #491, expanded by Task #541).
 //
 // Tracks "claims processed this session" client-side and fires a small
 // one-shot celebration when the operator crosses 10 / 25 / 50 within a
@@ -7,8 +7,8 @@
 //   • the counter survives component unmounts (operators move between
 //     the queue, detail pages, and the dashboard while still in the
 //     same "session") without resetting,
-//   • dedupe is global — a single claim transitioning to processed in
-//     two different views increments the counter exactly once,
+//   • dedupe is global — a single processing event in two different
+//     views increments the counter exactly once,
 //   • the milestone-fired set guarantees each tier celebrates exactly
 //     once per session even if the operator re-loads the same claim.
 //
@@ -18,6 +18,24 @@
 // Confetti + copy come from `lib/celebrations.ts` (Task #509). The
 // "session-milestone" tier is the SMALL sibling of day-complete in
 // the type system; tweaking visuals or copy is a one-file edit.
+//
+// TASK #541 — generation-aware dedup. The original v1 keyed dedup on
+// claim id only. That meant a single claim that was re-opened (e.g.
+// withdraw → un-withdraw → re-process) could only ever count once
+// per session, suppressing the milestone increment the operator
+// expected on the second pass. The current version keys dedup on
+// `${claimId}:${generation}` instead, where `generation` is any
+// monotonically-changing token the caller already has on hand:
+//   • the leg/group `updatedAt` ISO string off the row payload, OR
+//   • the leg's status string ("processed", "filed", etc.), OR
+//   • a manual epoch the caller bumps when it knows a new processing
+//     pass started.
+// Callers that pass no generation get the old `claimId`-only dedup
+// (semantic-preserving for the two pre-#541 callsites inside
+// `claim-detail-v2` and `leg-conclusion-row`). The new callsites
+// (portal queue submit, email batch send, re-attestation complete,
+// withdraw, non-issue closure) pass the leg's transition timestamp
+// so each fresh state-machine pass increments cleanly.
 
 import { useEffect, useSyncExternalStore } from "react";
 import { toast } from "@/hooks/use-toast";
@@ -25,7 +43,12 @@ import { fireCelebration, celebrationCopy } from "@/lib/celebrations";
 
 const MILESTONES = [10, 25, 50] as const;
 
-const seenClaims = new Set<number>();
+// Dedup keys are `${claimId}:${generation}`. The Set still tracks
+// distinct processing events; the integer count below is the size of
+// the Set so the public `useSessionProcessedCount` snapshot keeps its
+// existing semantics ("how many fresh processed-leg beats have we
+// counted this session").
+const seenEvents = new Set<string>();
 const firedMilestones = new Set<number>();
 
 // Lightweight pub/sub so UI surfaces (e.g. the top-bar pace badge) can
@@ -43,7 +66,7 @@ function subscribe(cb: () => void): () => void {
   };
 }
 function getSnapshot(): number {
-  return seenClaims.size;
+  return seenEvents.size;
 }
 
 /**
@@ -57,18 +80,29 @@ export function useSessionProcessedCount(): number {
 }
 
 /**
- * Record that a claim just transitioned to processed for the current
- * operator. Dedupe is per-claim so callers can fire freely from any
- * watcher that already gates on "the operator caused this transition"
- * (see `setJustProcessed(true)` in claim-detail-v2 / leg-conclusion-row).
+ * Record that a claim just transitioned through a fresh processing
+ * step for the current operator. Dedupe is per `${claimId}:${generation}`
+ * so the same claim re-processed in a later state-machine pass (e.g.
+ * after a revert) increments cleanly, while replays of the SAME
+ * transition from multiple SSE / refetch surfaces still collapse to
+ * one increment.
  *
- * Returns the new session count (post-increment), or `null` if the
- * claim was already counted this session.
+ * Pass any monotonically-changing string for `generation`: the leg
+ * `updatedAt`, the new status name, or a hand-bumped epoch all work.
+ * Omit it entirely for the legacy "once per claim id per session"
+ * behavior the two pre-#541 callsites rely on.
+ *
+ * Returns the new session count (post-increment), or `null` if this
+ * exact event was already counted this session.
  */
-export function notifyClaimProcessedThisSession(claimId: number): number | null {
-  if (seenClaims.has(claimId)) return null;
-  seenClaims.add(claimId);
-  const count = seenClaims.size;
+export function notifyClaimProcessedThisSession(
+  claimId: number,
+  generation?: string | number | null,
+): number | null {
+  const key = `${claimId}:${generation ?? ""}`;
+  if (seenEvents.has(key)) return null;
+  seenEvents.add(key);
+  const count = seenEvents.size;
   emit();
   for (const milestone of MILESTONES) {
     if (count === milestone && !firedMilestones.has(milestone)) {
@@ -88,7 +122,7 @@ export function notifyClaimProcessedThisSession(claimId: number): number | null 
  * from product code is a smell.
  */
 export function __resetSessionMilestonesForTests(): void {
-  seenClaims.clear();
+  seenEvents.clear();
   firedMilestones.clear();
   emit();
 }
@@ -103,7 +137,7 @@ export function useSessionMilestonesLifecycle(opts: { enabled: boolean }): void 
   useEffect(() => {
     if (!enabled) return;
     return () => {
-      seenClaims.clear();
+      seenEvents.clear();
       firedMilestones.clear();
       emit();
     };

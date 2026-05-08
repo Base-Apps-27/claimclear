@@ -33,6 +33,7 @@ import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
   CLAIM_SUBMITTED_STUCK_STATUSES,
 } from "./dashboard";
+import { isGroupOperatorDone } from "../lib/operator-attention";
 
 // A claim is only "on the 30-day clock" while its status is one we still
 // owe action on. Once it's filed (Awaiting Response) or otherwise
@@ -370,25 +371,62 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     .limit(limitVal)
     .offset(offsetVal);
 
+  // Task #541: per-row badge stamping (`isUrgent` / `submittedStuck`)
+  // must respect the parent group's operator-done state. A claim
+  // whose parent group is post-submit / closed / outcome-resolved no
+  // longer needs an "act today" badge — the chase happens in the
+  // dashboard's separate stuck-after-submission tier. We resolve the
+  // parent phase + outcome in a single batched lookup so the per-row
+  // mapping below stays a pure transform. See operator-attention.ts.
+  const parentGroupIds = Array.from(
+    new Set(claimsRaw.map((c) => c.invoiceGroupId).filter((x): x is number => x != null)),
+  );
+  const parentDoneById = new Map<number, boolean>();
+  if (parentGroupIds.length > 0) {
+    const parents = await db
+      .select({
+        id: invoiceGroupsTable.id,
+        phase: invoiceGroupsTable.phase,
+        outcome: invoiceGroupsTable.outcome,
+      })
+      .from(invoiceGroupsTable)
+      .where(inArray(invoiceGroupsTable.id, parentGroupIds));
+    for (const p of parents) {
+      parentDoneById.set(p.id, isGroupOperatorDone({ phase: p.phase, outcome: p.outcome }));
+    }
+  }
+
   const today = new Date();
   const claims = claimsRaw.map(claim => {
-    const urgent = CLAIM_ON_CLOCK_STATUSES.has(claim.status) && isUrgentDeadline(claim.date, today);
+    const parentDone = claim.invoiceGroupId != null
+      ? parentDoneById.get(claim.invoiceGroupId) === true
+      : false;
+    // Status-aware AND operator-done aware: only flag as urgent if we
+    // still owe action (parent NOT operator-done) AND the deadline is
+    // exactly today. `isUrgentDeadline` enforces strict-equality
+    // semantics; past-due rows on still-actionable parents fall
+    // through to the `submittedStuck` chase tier below rather than
+    // inflating "Today".
+    const urgent =
+      !parentDone &&
+      CLAIM_ON_CLOCK_STATUSES.has(claim.status) &&
+      isUrgentDeadline(claim.date, today);
     return {
       ...claim,
       effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
-      // Status-aware: only flag as urgent if we still owe action AND
-      // the deadline is exactly today (see `isUrgentDeadline` —
-      // strict-equality semantics; past-due rows fall through to the
-      // `submittedStuck` chase tier instead of inflating "Today").
       isUrgent: urgent,
-      // Task #352. Post-submit "stuck" tier — uses the broader
-      // "deadline today or past" predicate so a Portal Queued / Processed
-      // claim whose deadline already slipped still surfaces for a
-      // confirmation chase. Independent of `isUrgent` (which is now
-      // strictly today-only), so a stuck row past its deadline can be
-      // `submittedStuck: true, isUrgent: false`.
+      // Task #352 + #541. Post-submit "stuck" tier — same calendar
+      // predicate as before, but now also gated on the parent group
+      // still needing operator attention. A claim under a parent that
+      // has already moved off the operator's queue (Resolved /
+      // Withdrawn / Non-Issue) must NOT keep pulsing its row-level
+      // "Stuck" badge — the chase has either landed or no longer
+      // applies. The dashboard's group-level stuck tier is a separate
+      // surface and is unaffected by this row-flag change.
       submittedStuck:
-        CLAIM_STUCK_STATUSES.has(claim.status) && isAtOrPastEffectiveDeadline(claim.date, today),
+        !parentDone &&
+        CLAIM_STUCK_STATUSES.has(claim.status) &&
+        isAtOrPastEffectiveDeadline(claim.date, today),
     };
   });
 

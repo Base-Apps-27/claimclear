@@ -181,9 +181,12 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         fireJustProcessed();
         // Task #491 — bump the session milestone counter from the
         // same gated trigger so processing a leg from the queue
-        // counts toward the 10/25/50 celebration. Dedupe is per-claim
-        // inside `notifyClaimProcessedThisSession`.
-        notifyClaimProcessedThisSession(claim.id);
+        // counts toward the 10/25/50 celebration. Task #541 — pass
+        // the leg's `updatedAt` as the generation token so a
+        // re-processed leg (e.g. revert + re-do) increments cleanly,
+        // while replays of the same transition from sibling views
+        // still collapse to one increment.
+        notifyClaimProcessedThisSession(claim.id, claim.updatedAt ?? null);
       },
     });
 

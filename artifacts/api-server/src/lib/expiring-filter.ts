@@ -6,6 +6,10 @@ import {
   GROUP_SUBMITTED_STUCK_STATUSES,
 } from "../routes/dashboard";
 import { SOON_DAYS, URGENT_DAYS } from "./risk-config";
+import {
+  groupUnclassifiedSql,
+  needsOperatorAttentionSql,
+} from "./operator-attention";
 
 // `stuck` is the parallel "submitted but unconfirmed" tier introduced
 // in Task #352 — same date math as `urgent` (deadline ≤ today), but a
@@ -105,12 +109,18 @@ function groupPhaseCondition(mode: ExpiringMode): SQL {
   // click site and the deriver promotes any group whose children
   // carry that stamp from `ready_to_submit` → `submitted`, the
   // pre-submit set is exactly `phase IN (triage, ready_to_submit)`.
-  // No residual status carve-out required — membership still matches
-  // GROUP_EXPIRING_ACTIONABLE_STATUSES bit-for-bit, locked by the
-  // must-file-today-parity contract (Task #352).
+  //
+  // Task #541: extend the urgent / soon set to also cover groups
+  // that are still unclassified at the GROUP level (Classification
+  // Inbox cohort) regardless of phase, as long as the operator still
+  // owes action (`needs_operator_attention` SQL). Mirrors the same
+  // expansion applied in `urgent-snapshot.ts` and the dashboard
+  // expiring filter — the must-file-today-parity contract pins all
+  // three surfaces to the same predicate.
   return or(
     eq(invoiceGroupsTable.phase, "triage"),
     eq(invoiceGroupsTable.phase, "ready_to_submit"),
+    and(groupUnclassifiedSql(), needsOperatorAttentionSql()),
   ) as SQL;
 }
 

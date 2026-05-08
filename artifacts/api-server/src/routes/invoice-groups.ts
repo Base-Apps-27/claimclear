@@ -44,6 +44,7 @@ import {
   GROUP_EXPIRING_ACTIONABLE_STATUSES,
   GROUP_SUBMITTED_STUCK_STATUSES,
 } from "./dashboard";
+import { isGroupOperatorDone } from "../lib/operator-attention";
 import {
   classifyGroupServiceDateReason,
   GROUP_SERVICE_DATE_REASONS,
@@ -524,23 +525,37 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   }
 
   const groups = groupsRaw.map(({ row, earliestDate }) => {
-    const urgent = GROUP_ON_CLOCK_STATUSES.has(row.status) && isUrgentDeadline(earliestDate, today);
+    // Task #541: gate per-row badge flags on operator-done. A group
+    // that's been pushed off the operator's active queue (post-submit
+    // phase or outcome-driven closure) no longer surfaces the
+    // pulsing "Today" / "Stuck" row badge — the dashboard's separate
+    // group-level stuck-after-submission tier remains the chase
+    // surface. The status-set check is preserved as a defense-in-depth
+    // mirror so the row flags can never lead the operator-done
+    // predicate (which is the source of truth).
+    const operatorDone = isGroupOperatorDone({ phase: row.phase, outcome: row.outcome });
+    const urgent =
+      !operatorDone &&
+      GROUP_ON_CLOCK_STATUSES.has(row.status) &&
+      isUrgentDeadline(earliestDate, today);
     return {
       ...row,
       earliestDate,
       effectiveDaysLeft: effectiveDaysRemaining(earliestDate, today),
-      // Status-aware: only flag as urgent if we still owe action.
       isUrgent: urgent,
-      // Task #352. Same date math as `isUrgent`, narrowed to the
-      // post-submit "stuck" status set so the UI can render the
-      // distinct "stuck after submission" badge variant. Note: at the
-      // GROUP level `isUrgent` and `submittedStuck` are mutually
-      // exclusive because GROUP_ON_CLOCK_STATUSES (pre-submit only)
-      // and GROUP_STUCK_STATUSES (Portal Queued) don't overlap. We
-      // emit both flags so consumers can branch on whichever surface
-      // they need without recomputing the deadline.
+      // Task #352 + #541. Same date math as `isUrgent`, narrowed to
+      // the post-submit "stuck" status set AND additionally gated on
+      // the operator-done predicate. At the GROUP level the operator-
+      // done set is a superset of the stuck status set (Portal
+      // Queued → phase=submitted → operator-done), so this row flag
+      // collapses to `false` everywhere — the chase tier is the
+      // dashboard's separate group-level stuck list, not a per-row
+      // pulse. Kept on the wire so existing clients that branch on
+      // `submittedStuck` simply get a uniform `false`.
       submittedStuck:
-        GROUP_STUCK_STATUSES.has(row.status) && isAtOrPastEffectiveDeadline(earliestDate, today),
+        !operatorDone &&
+        GROUP_STUCK_STATUSES.has(row.status) &&
+        isAtOrPastEffectiveDeadline(earliestDate, today),
       legSubStatusCounts: legSubStatusByGroup.get(row.id) ?? {},
       serviceDateReason: classifyGroupServiceDateReason(
         earliestDate,
@@ -2164,6 +2179,17 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
 // We layer on the same reviewable-response EXISTS guard the list uses
 // (Task #299) so blank Needs-Review rows the inbox already hides can't
 // bump the badge.
+//
+// Task #541 parity contract: the SQL below reuses
+// `buildMacroPhaseCondition("response-pending")` so the badge cohort
+// is, by construction, the SAME predicate the list endpoint applies
+// when the page calls `useListInvoiceGroups({ macroPhase:
+// "response-pending", errorTypeAssigned: true })`. The
+// `errorTypeAssigned` clause and the reviewable-response EXISTS guard
+// are likewise mirrored. Result: the badge can only ever go to zero
+// when the page's empty state renders, and vice versa — celebrating
+// the empty state without a count of zero (or vice versa) is now
+// impossible without changing both sides of this contract together.
 router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): Promise<void> => {
   const responsePendingPredicate = buildMacroPhaseCondition("response-pending");
   const [row] = await db

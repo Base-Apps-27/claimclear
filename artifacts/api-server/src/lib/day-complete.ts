@@ -70,6 +70,10 @@ const withExecute = (ex: DbExecutor): DbWithExecute => ex as DbWithExecute;
 // Queue page's lane filters and this matcher consume one constant —
 // see that module's lockstep contract for the rule. We re-export
 // `isGroupOperatorDone` here as the API-side name callers already use.
+//
+// Task #541 also re-exports the same predicate under the legacy local
+// name `isGroupConcluded` so older callers / tests in this repo keep
+// reading as written. "Concluded" and "operator-done" are synonyms.
 
 // SQL `IN (...)` literals derived from the same const arrays the JS
 // predicate uses, so the JS branch and the CTE in `isDayConcluded`
@@ -91,8 +95,10 @@ const OPERATOR_DONE_OUTCOMES_SQL = toSqlInList(OPERATOR_DONE_OUTCOMES);
  * Re-exported under the API-side name for callers that already used
  * `isGroupOperatorDone`. Implementation lives in `@workspace/leg-state`
  * so the Queue page and this matcher share one source of truth.
+ * `isGroupConcluded` is the legacy alias used by older callsites.
  */
 export const isGroupOperatorDone = isInvoiceGroupOperatorDone;
+export { isInvoiceGroupOperatorDone as isGroupConcluded };
 
 /**
  * Returns the calendar day a given invoice group belongs to. Returns

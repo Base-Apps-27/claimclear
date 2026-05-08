@@ -12,6 +12,10 @@ import { db, invoiceGroupsTable } from "@workspace/db";
 import { isUrgentDeadline, serverTodayKey } from "./dates";
 import { emitStateEvent } from "./state-events";
 import { logger } from "./logger";
+import {
+  groupUnclassifiedSql,
+  needsOperatorAttentionSql,
+} from "./operator-attention";
 
 export interface UrgentSnapshot {
   urgentCount: number;
@@ -56,9 +60,21 @@ async function loadActionableRows(): Promise<ActionableRow[]> {
         // `status != "Portal Queued"` carve-out needed. Membership
         // still matches GROUP_EXPIRING_ACTIONABLE_STATUSES exactly,
         // locked by the must-file-today-parity contract (Task #352).
+        //
+        // Task #541: also include groups that are still unclassified
+        // at the GROUP level (Classification Inbox cohort) regardless
+        // of their parent phase, as long as the operator still owes
+        // action (`needs_operator_attention`). Without this expansion
+        // an unclassified group whose parent phase has advanced past
+        // `ready_to_submit` (e.g. a Needs Review row whose Error Type
+        // was never assigned) could deadline today without ever
+        // appearing in the dashboard hero. The `expiring-filter` and
+        // `dashboard.expiringStatusFilter` mirrors apply the same
+        // expansion so the parity contract holds.
         or(
           eq(invoiceGroupsTable.phase, "triage"),
           eq(invoiceGroupsTable.phase, "ready_to_submit"),
+          and(groupUnclassifiedSql(), needsOperatorAttentionSql()),
         ),
         isNotNull(invoiceGroupsTable.serviceDate),
       ),
