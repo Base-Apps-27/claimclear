@@ -53,14 +53,32 @@ const MAX_REPORTED = 20;
 async function main(): Promise<void> {
   const client = await pool.connect();
   try {
+    // Audit 2026-05-08 root-cause fix: the runtime path
+    // (`refreshGroupDerivedFields` → `fetchAnyChildSubmittedVia` →
+    // `derivePhaseFromLegacy`) enriches the legacy group shape with the
+    // per-group aggregate of `claims.submitted_via` BEFORE calling the
+    // deriver — that's how the Wave D-PR5 "submitted-promotion" branch
+    // (lib/invoice-state/src/derive-phase.ts:62-75) ever fires for
+    // Portal Queued / Generating Email / Processed rows. Without it the
+    // deriver always falls through to `ready_to_submit` for those
+    // statuses and the script emits phantom `phase_mismatch` violations
+    // for every group that has a child stamped with `submitted_via` but
+    // whose status hasn't yet flipped to `Awaiting Response`. We mirror
+    // the runtime aggregation here with a correlated subquery so both
+    // callers feed identical shapes into the deriver.
     const groups = (await client.query<InvoiceRow & Record<string, unknown>>(
-      `SELECT id, status, outcome, reattest_required AS "reattestRequired",
-              reattest_completed_at AS "reattestCompletedAt",
-              closure_reason AS "closureReason",
-              hold_reason AS "holdReason",
-              phase,
-              is_open AS "isOpen"
-       FROM invoice_groups`,
+      `SELECT g.id, g.status, g.outcome,
+              g.reattest_required AS "reattestRequired",
+              g.reattest_completed_at AS "reattestCompletedAt",
+              g.closure_reason AS "closureReason",
+              g.hold_reason AS "holdReason",
+              g.phase,
+              g.is_open AS "isOpen",
+              (SELECT c.submitted_via FROM claims c
+                WHERE c.invoice_group_id = g.id
+                  AND c.submitted_via IS NOT NULL
+                LIMIT 1) AS "submittedVia"
+       FROM invoice_groups g`,
     )).rows;
 
     const claims = (await client.query<ClaimRow & Record<string, unknown>>(

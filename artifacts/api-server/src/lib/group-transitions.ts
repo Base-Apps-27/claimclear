@@ -481,14 +481,12 @@ export async function transitionGroupStatus(opts: {
     // nothing.
     if (newStatus === "MAS Eligible") {
       await engageMasEligibleAttestationCascade(groupId, ex);
-      // Audit 2026-05-08 / Fix #1: the cascade above bulk-writes
-      // `attestationState='pending'` on every disputed child without
-      // touching `disposition`. Since `attestationState` IS a deriver
-      // input (verdict_approved + attest_pending → `attest_pending`,
-      // etc.), the children's canonical disposition is stale until we
-      // re-derive. Run inside the same executor so the refresh is
-      // atomic with the cascade.
-      await refreshGroupDerivedFields(groupId, ex);
+      // The unconditional `refreshGroupDerivedFields` at the end of
+      // this block (added 2026-05-08 round 2) now covers the
+      // attestation cascade's deriver-input mutations — no separate
+      // refresh needed here. Kept the cascade call itself because it
+      // performs the actual `attestationState='pending'` writes that
+      // the refresh then re-derives off of.
     }
 
     // Auto-exclusion of blank no-issue siblings on the qualifying transition.
@@ -520,6 +518,20 @@ export async function transitionGroupStatus(opts: {
     // before the UPDATE; the unique-index dedupe was dropped in 0033 so the
     // edge check is the sole guard against duplicate broadcasts.
     await checkAndEmitDayCompleteForGroup({ groupId, actor, priorConcluded, executor: ex });
+
+    // Audit 2026-05-08 round 2 — root-cause fix for the recurring
+    // `phase_mismatch` violations the conformance script kept surfacing
+    // (e.g. Portal Queued + child stamped with `submitted_via='portal'`
+    // → deriver promotes to phase=`submitted`, but the group's phase
+    // column never moved because no refresh was called after
+    // `syncChildRides` cascaded `childFields`). The sibling helpers
+    // `transitionGroupOutcome` and `transitionGroupStatusAndOutcome`
+    // already end with this call (lines 927, etc.) — `transitionGroupStatus`
+    // was the inconsistent one. Running here means EVERY status
+    // transition path leaves the canonical `phase` column in lockstep
+    // with the legacy tuple, regardless of what `childFields` the
+    // caller passed (`submittedVia`, `attestationState`, etc.).
+    await refreshGroupDerivedFields(groupId, ex);
   }
 
   return { success: true, group, previousStatus: old.status, previousOutcome: old.outcome };
