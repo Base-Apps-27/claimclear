@@ -41,6 +41,8 @@ const inertMutation = () => ({
 
 mock.module("@workspace/api-client-react", {
   namedExports: {
+    useClassifyLeg: inertMutation,
+    useLookupErrorDetailMappings: inertMutation,
     useStampPreviewGenerated: inertMutation,
     useSaveInvoiceGroupDraft: inertMutation,
     useRegenerateInvoiceGroupDraft: inertMutation,
@@ -162,8 +164,8 @@ function leg(opts: LegOpts): ClaimResponse {
     includedInDispute: opts.includedInDispute ?? true,
     duplicateOfClaimId: opts.duplicateOfClaimId ?? null,
     sopOutcome: opts.sopOutcome ?? null,
-    errorTypeId: opts.errorTypeId ?? "ET-1",
-    errorTypeName: "Wrong member",
+    errorTypeId: "errorTypeId" in opts ? opts.errorTypeId : "ET-1",
+    errorTypeName: opts.errorTypeId === null ? null : "Wrong member",
     holdReason: null,
     latestVerdict: null,
     latestDraft: null,
@@ -398,6 +400,46 @@ test("InlineGroupWorkspaceV3 (reattest_only) — mounts Re-attest CTA, no submis
   assert.equal(html.includes('data-testid="v3-hero-submitted"'), false);
   // No close-out card either.
   assert.equal(html.includes("invoice-nothing-to-do-closeout"), false);
+});
+
+// ─── (j) needs_classification mounts the Classify hero (R4) ───────
+// Active leg with no errorTypeId should render the phase-zero
+// Classify picker instead of WalkSopHero, and the segmented stepper
+// should prepend a "Classify" pill (5-step ladder) with the pill
+// label switching to "{n} to classify".
+test("InlineGroupWorkspaceV3 (has_disputable, needs_classification) — mounts ClassifyHero + Classify stepper pill", () => {
+  capturedGroup = group([
+    leg({ id: 1, errorTypeId: null, sopOutcome: null }),
+    leg({ id: 2, sopOutcome: null }),
+  ]);
+  const html = renderHtml(
+    React.createElement(InlineGroupWorkspaceV3, { groupId: 99 }),
+  );
+  assert.match(html, /data-outlook="has_disputable"/);
+  assert.match(html, /data-testid="v3-hero-classify"/);
+  assert.match(html, /data-testid="v3-classify-search"/);
+  assert.match(html, /data-testid="v3-classify-start-walk"/);
+  assert.match(html, /1 to classify/);
+  assert.match(html, /Classify/);
+  // ClassifyHero replaces WalkSopHero for this leg.
+  assert.equal(html.includes('data-testid="v3-hero-walk"'), false);
+});
+
+test("buildPhaseConfigV3 — has_disputable + needsClassificationCount prepends Classify pill", () => {
+  const cfg = buildPhaseConfigV3({
+    outlook: "has_disputable",
+    legCount: 2,
+    resolvedCount: 0,
+    previewGenerated: false,
+    draftReviewed: false,
+    submitted: false,
+    needsClassificationCount: 1,
+  });
+  assert.equal(cfg.steps.length, 5);
+  assert.equal(cfg.steps[0], "Classify");
+  assert.equal(cfg.activeIndex, 0);
+  assert.equal(cfg.pill.label, "1 to classify");
+  assert.equal(cfg.pill.tone, "amber");
 });
 
 // ─── (i) nothing_to_do collapses chrome to the close-out card ──────

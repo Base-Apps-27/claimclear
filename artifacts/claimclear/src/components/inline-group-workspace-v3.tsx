@@ -3,6 +3,8 @@ import {
   useGetInvoiceGroup,
   useGetClaim,
   useListErrorTypes,
+  useClassifyLeg,
+  useLookupErrorDetailMappings,
   useStampPreviewGenerated,
   useSaveInvoiceGroupDraft,
   useRegenerateInvoiceGroupDraft,
@@ -18,7 +20,7 @@ import type {
   ErrorTypeResponse,
   InvoiceGroupDetailResponse,
 } from "@workspace/api-client-react";
-import { buildLegResolvedIndex, outcomeRole } from "@workspace/leg-state";
+import { buildLegResolvedIndex, outcomeRole, deriveLegSubStatus } from "@workspace/leg-state";
 import {
   CheckCircle2,
   Circle,
@@ -40,6 +42,9 @@ import {
   ChevronRight,
   AlertTriangle,
   Bot,
+  Search,
+  Layers,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Card, CardContent } from "@/components/ui/card";
@@ -122,6 +127,13 @@ interface PhaseInputs {
   previewGenerated: boolean;
   draftReviewed: boolean;
   submitted: boolean;
+  /** When > 0 in the has_disputable outlook, the wizard prepends a
+   *  leading "Classify" pill to the segmented stepper so the chrome
+   *  reads correctly while the operator is still picking error types
+   *  for one or more legs. Defaults to 0 — every existing call site
+   *  keeps the four-pill ladder until at least one leg is in
+   *  needs_classification. */
+  needsClassificationCount?: number;
 }
 
 export function buildPhaseConfigV3(inputs: PhaseInputs): PhaseConfig {
@@ -136,19 +148,32 @@ export function buildPhaseConfigV3(inputs: PhaseInputs): PhaseConfig {
   const allWalked = legCount > 0 && resolvedCount === legCount;
 
   if (outlook === "has_disputable") {
-    const steps = ["Walk legs", "Preview", "Review", "Submit"] as const;
-    let activeIndex = 0;
-    if (submitted) activeIndex = 3;
-    else if (draftReviewed) activeIndex = 3;
-    else if (previewGenerated) activeIndex = 2;
-    else if (allWalked) activeIndex = 1;
+    const needsClassification = (inputs.needsClassificationCount ?? 0) > 0;
+    const steps = needsClassification
+      ? (["Classify", "Walk legs", "Preview", "Review", "Submit"] as const)
+      : (["Walk legs", "Preview", "Review", "Submit"] as const);
+    // Phase indices below assume the 4-pill ladder. When the leading
+    // Classify pill is shown we shift everything by one so the same
+    // group state lights the same conceptual phase.
+    const shift = needsClassification ? 1 : 0;
+    let activeIndex = needsClassification ? 0 : 0;
+    if (submitted) activeIndex = 3 + shift;
+    else if (draftReviewed) activeIndex = 3 + shift;
+    else if (previewGenerated) activeIndex = 2 + shift;
+    else if (allWalked) activeIndex = 1 + shift;
+    else if (!needsClassification) activeIndex = 0;
+    // Keep activeIndex at 0 (Classify) while at least one leg still
+    // needs classification — the wizard hero is the Classify hero.
 
     let helper: string;
     if (submitted) helper = "Submitted to the portal.";
     else if (draftReviewed) helper = "Draft reviewed — submit to the portal.";
     else if (previewGenerated) helper = "Preview generated — review the draft, then submit.";
     else if (allWalked) helper = "All legs walked — generate the preview, then submit to the portal.";
-    else helper = `Walk all ${legCount} leg${legCount === 1 ? "" : "s"} to unlock Generate preview, then Submit.`;
+    else if (needsClassification) {
+      const n = inputs.needsClassificationCount ?? 0;
+      helper = `Pick the error type for ${n} leg${n === 1 ? "" : "s"} to unlock the SOP walk.`;
+    } else helper = `Walk all ${legCount} leg${legCount === 1 ? "" : "s"} to unlock Generate preview, then Submit.`;
 
     let pillLabel: string;
     let pillTone: "amber" | "green" | "blue";
@@ -164,6 +189,10 @@ export function buildPhaseConfigV3(inputs: PhaseInputs): PhaseConfig {
     } else if (allWalked) {
       pillLabel = "Ready to preview";
       pillTone = "blue";
+    } else if (needsClassification) {
+      const n = inputs.needsClassificationCount ?? 0;
+      pillLabel = `${n} to classify`;
+      pillTone = "amber";
     } else {
       pillLabel = `${resolvedCount} of ${legCount} ready`;
       pillTone = "amber";
@@ -309,6 +338,17 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   const resolvedCount = rides.filter(
     (r) => r.includedInDispute === false || resolvedIndex.isLegResolved(r),
   ).length;
+  // R4 chrome: count legs still in needs_classification (excluded legs
+  // never count — they're already removed from the dispute payload).
+  const needsClassificationCount = rides.filter(
+    (r) =>
+      r.includedInDispute !== false &&
+      deriveLegSubStatus(r) === "needs_classification",
+  ).length;
+  const activeLegNeedsClassification =
+    !!activeLeg &&
+    activeLeg.includedInDispute !== false &&
+    deriveLegSubStatus(activeLeg) === "needs_classification";
 
   const previewGenerated = !!detail.previewGeneratedAt;
   const draftReviewed = !!detail.draftReviewedAt;
@@ -327,6 +367,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
     previewGenerated,
     draftReviewed,
     submitted,
+    needsClassificationCount,
   });
 
   const collapseToTerminator = outlook === "nothing_to_do";
@@ -511,6 +552,12 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
             Generate dispute note
           </Button>
         );
+      } else if (activeLeg && activeLegNeedsClassification) {
+        // R4 hero — phase-zero Classify picker. Replaces the SOP
+        // walk player when the active leg has no errorTypeId yet.
+        // Picking a type fires `/classify` and the wizard's normal
+        // hero routing transitions to WalkSopHero on the next render.
+        hero = <ClassifyHero leg={activeLeg} />;
       } else if (activeLeg) {
         hero = <WalkSopHero leg={activeLeg} />;
       } else {
@@ -730,6 +777,343 @@ function WalkSopHero({ leg }: { leg: ClaimResponse }) {
               }
             />
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 0a hero — Classify (R4)
+// Mounted in front of WalkSopHero when the active leg's sub-status is
+// `needs_classification`. The picker shows the most-likely error-type
+// suggestions, a search box that filters every type, and an "All error
+// types" grid that browses the rest of the taxonomy. Picking a type
+// and clicking "Start walk" fires the existing `useClassifyLeg`
+// mutation; on success we invalidate the same query keys WalkSopHero
+// uses, so the wizard's hero routing transitions to the SOP walk for
+// the now-classified leg with no extra click. Mutation errors stay on
+// the picker (toast + selection preserved) so the operator can retry.
+//
+// Suggestion source: the canonical `error_detail_mappings` lookup
+// (`POST /error-detail-mappings/lookup`) is the same signal the import
+// pipeline and the oneshot backfill scripts use to auto-classify legs.
+// When the leg's `errorDetails` resolves there to a saved mapping, we
+// surface that match as the top "Recommended" pick (same id the auto-
+// classifier would have stamped). The remaining suggestion slots fall
+// back to a tiny token-overlap pass over the leg's error details so the
+// operator sees a couple of plausible neighbors when the canonical
+// match misses or is ambiguous; if neither produces results the row is
+// just hidden and the operator picks straight from the grid.
+// ─────────────────────────────────────────────────────────────────────
+
+const CLASSIFY_STOPWORDS = new Set([
+  "the","a","an","and","or","of","to","for","is","are","was","were",
+  "in","on","at","with","by","from","as","this","that","be","been",
+  "it","its","their","there","not","no","too","very","just","than",
+  "but","if","so","do","does","did","has","have","had","will","would",
+  "can","could","should","may","might","into","onto","than","then",
+]);
+function classifyTokens(text: string | null | undefined): Set<string> {
+  if (!text) return new Set();
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !CLASSIFY_STOPWORDS.has(t));
+  return new Set(tokens);
+}
+
+interface SuggestionRanked {
+  type: ErrorTypeResponse;
+  score: number;
+  source: "mapping" | "overlap";
+}
+
+// Token-overlap fallback. Used only to fill the suggestion slots when
+// the canonical mapping lookup returns nothing or doesn't fill all
+// three. Reads the same `errorDetails` field the mapping lookup keys
+// off so the operator's two affordances (auto-classify on import vs.
+// pick-on-walk) stay anchored to the same input.
+function rankByOverlap(
+  leg: ClaimResponse,
+  errorTypes: ErrorTypeResponse[],
+  excludeIds: Set<string>,
+  limit: number,
+): SuggestionRanked[] {
+  if (limit <= 0) return [];
+  const detailsTokens = classifyTokens(leg.errorDetails);
+  if (detailsTokens.size === 0 || errorTypes.length === 0) return [];
+  const detailsLower = (leg.errorDetails ?? "").toLowerCase();
+  const ranked: SuggestionRanked[] = [];
+  for (const type of errorTypes) {
+    if (excludeIds.has(String(type.id))) continue;
+    const nameLower = (type.name ?? "").toLowerCase();
+    const categoryLower = (type.category ?? "").toLowerCase();
+    let score = 0;
+    if (nameLower && detailsLower.includes(nameLower)) score += 100;
+    if (categoryLower && detailsLower.includes(categoryLower)) score += 30;
+    const nameTokens = classifyTokens(type.name);
+    const categoryTokens = classifyTokens(type.category);
+    for (const t of nameTokens) if (detailsTokens.has(t)) score += 10;
+    for (const t of categoryTokens) if (detailsTokens.has(t)) score += 4;
+    if (score > 0) ranked.push({ type, score, source: "overlap" });
+  }
+  ranked.sort((a, b) => b.score - a.score || a.type.name.localeCompare(b.type.name));
+  return ranked.slice(0, limit);
+}
+
+function ClassifyHero({ leg }: { leg: ClaimResponse }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: claim } = useGetClaim(leg.id, {
+    query: { queryKey: getGetClaimQueryKey(leg.id), enabled: !!leg.id },
+  });
+  // Prefer the freshly-fetched claim row when it's landed (so we read
+  // the latest errorDetails / classifier signals) and fall back to the
+  // active-leg snapshot from the parent fetch until the row is hot.
+  const sourceLeg: ClaimResponse = claim ?? leg;
+  const { data: errorTypesData } = useListErrorTypes();
+  const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
+
+  const classifyLeg = useClassifyLeg();
+  const lookupMappings = useLookupErrorDetailMappings();
+  const [selectedTypeId, setSelectedTypeId] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  // Hit the canonical `/error-detail-mappings/lookup` endpoint once per
+  // leg.errorDetails change. The matched errorTypeId (if any) is what
+  // the auto-classifier on import would have stamped, so it becomes the
+  // top "Recommended" suggestion. Failures fall through silently —
+  // the overlap fallback still renders.
+  const lookupMutate = lookupMappings.mutate;
+  useEffect(() => {
+    const details = sourceLeg.errorDetails?.trim();
+    if (!details) return;
+    lookupMutate({ data: { errorDetails: [details] } });
+  }, [sourceLeg.errorDetails, lookupMutate]);
+
+  const suggestions = useMemo<SuggestionRanked[]>(() => {
+    if (errorTypes.length === 0) return [];
+    const out: SuggestionRanked[] = [];
+    const mapped = lookupMappings.data?.mappings?.[0];
+    if (mapped?.matched && mapped.errorTypeId != null) {
+      const mappedId = String(mapped.errorTypeId);
+      const type = errorTypes.find((t) => String(t.id) === mappedId);
+      if (type) out.push({ type, score: 1000, source: "mapping" });
+    }
+    const exclude = new Set(out.map((s) => String(s.type.id)));
+    out.push(...rankByOverlap(sourceLeg, errorTypes, exclude, 3 - out.length));
+    return out;
+  }, [sourceLeg, errorTypes, lookupMappings.data]);
+
+  // Search filters the full taxonomy (no suggestion-exclusion) so an
+  // operator typing a query that overlaps with a suggested type still
+  // sees that tile in the results — they shouldn't have to scroll back
+  // to the suggestions row to pick it.
+  const searchLower = search.trim().toLowerCase();
+  const matchedTypes = useMemo(() => {
+    if (!searchLower) return null;
+    return errorTypes.filter((t) =>
+      (t.name ?? "").toLowerCase().includes(searchLower) ||
+      (t.category ?? "").toLowerCase().includes(searchLower),
+    );
+  }, [errorTypes, searchLower]);
+
+  // The browse grid still hides the suggestion tiles when no search is
+  // active (so the operator doesn't see the same tile twice in the
+  // default view), but during search it shows every match.
+  const suggestionIds = useMemo(
+    () => new Set(suggestions.map((s) => String(s.type.id))),
+    [suggestions],
+  );
+  const browseTypes = useMemo(() => {
+    if (matchedTypes) return matchedTypes;
+    return errorTypes.filter((t) => !suggestionIds.has(String(t.id)));
+  }, [matchedTypes, errorTypes, suggestionIds]);
+
+  const selectedType = useMemo(() => {
+    if (!selectedTypeId) return null;
+    return errorTypes.find((t) => String(t.id) === selectedTypeId) ?? null;
+  }, [selectedTypeId, errorTypes]);
+
+  async function handleStartWalk() {
+    if (!selectedType) return;
+    try {
+      await classifyLeg.mutateAsync({
+        id: sourceLeg.id,
+        data: { errorTypeId: String(selectedType.id) },
+      });
+      // Invalidate the same keys WalkSopHero invalidates after each
+      // SOP-advance, so the wizard's outer fetch refreshes the leg
+      // (and the parent group's leg switcher counts) immediately.
+      qc.invalidateQueries({ queryKey: getGetClaimQueryKey(sourceLeg.id) });
+      if (sourceLeg.invoiceGroupId != null) {
+        qc.invalidateQueries({
+          queryKey: getGetInvoiceGroupQueryKey(sourceLeg.invoiceGroupId),
+        });
+        qc.invalidateQueries({
+          queryKey: getGetInvoiceGroupValidTransitionsQueryKey(sourceLeg.invoiceGroupId),
+        });
+      }
+      successToast({
+        title: "Classified",
+        description: `Leg classified as "${selectedType.name}". Starting SOP walk…`,
+      });
+    } catch (e) {
+      toast({
+        title: "Classify failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    }
+  }
+
+  const isPending = classifyLeg.isPending;
+  const ctaLabel = selectedType
+    ? `Start walk · ${selectedType.name}`
+    : "Pick an error type to start the walk";
+
+  return (
+    <div data-testid="v3-hero-classify" className="space-y-2">
+      <Card>
+        <CardContent className="pt-4 pb-3 space-y-3">
+          <div className="cc-meta text-[11px] flex items-center gap-2">
+            <RefNumber value={sourceLeg.confNumber} variant="inline" />
+            {sourceLeg.date && <span>· {sourceLeg.date}</span>}
+            {sourceLeg.claimAmount && <span>· {sourceLeg.claimAmount}</span>}
+            <span className="cc-pill cc-pill-amber ml-auto">Needs classification</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-700" />
+            <span className="font-semibold text-sm">
+              Pick the error type for this leg
+            </span>
+            <span className="cc-meta text-[11px] ml-1">
+              Determines which SOP this leg walks
+            </span>
+          </div>
+
+          {sourceLeg.errorDetails && (
+            <div className="rounded bg-muted/40 p-2 text-xs">
+              <span className="font-medium">Error details:</span> {sourceLeg.errorDetails}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded border bg-background">
+            <Search className="w-3.5 h-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search error types…"
+              className="flex-1 bg-transparent outline-none text-sm"
+              data-testid="v3-classify-search"
+            />
+            <span className="cc-meta text-[11px]">
+              {errorTypes.length} types
+            </span>
+          </div>
+
+          {suggestions.length > 0 && !searchLower && (
+            <div className="space-y-1.5" data-testid="v3-classify-suggestions">
+              <span className="cc-meta text-[10px] uppercase tracking-wider">
+                Most likely · based on error description
+              </span>
+              {suggestions.map((s, i) => {
+                const id = String(s.type.id);
+                const recommended = i === 0;
+                const isSelected = selectedTypeId === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setSelectedTypeId(id)}
+                    disabled={isPending}
+                    data-testid={`v3-classify-suggestion-${id}`}
+                    data-recommended={recommended ? "true" : "false"}
+                    data-selected={isSelected ? "true" : "false"}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded border text-left ${
+                      isSelected
+                        ? "border-primary ring-2 ring-primary/40"
+                        : recommended
+                        ? "border-blue-500"
+                        : "border-border"
+                    }`}
+                  >
+                    <span className="font-semibold text-sm">{s.type.name}</span>
+                    {s.type.category && (
+                      <span className="cc-meta text-[11px]">· {s.type.category}</span>
+                    )}
+                    {recommended && (
+                      <span className="cc-pill cc-pill-blue ml-auto">Recommended</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <span className="cc-meta text-[10px] uppercase tracking-wider">
+              {searchLower ? "Search results" : "All error types"}
+            </span>
+            {browseTypes.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic px-2 py-1">
+                {searchLower
+                  ? "No error types match that search."
+                  : "No additional error types configured."}
+              </p>
+            ) : (
+              <div
+                className="grid grid-cols-2 sm:grid-cols-3 gap-1.5"
+                data-testid="v3-classify-grid"
+              >
+                {browseTypes.map((t) => {
+                  const id = String(t.id);
+                  const isSelected = selectedTypeId === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setSelectedTypeId(id)}
+                      disabled={isPending}
+                      data-testid={`v3-classify-tile-${id}`}
+                      data-selected={isSelected ? "true" : "false"}
+                      className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded border text-left text-xs ${
+                        isSelected
+                          ? "border-primary ring-2 ring-primary/40"
+                          : "border-border hover:bg-muted/40"
+                      }`}
+                    >
+                      <span className="truncate">{t.name}</span>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 border-t pt-3">
+            <span className="cc-meta text-[11px]">
+              Selecting an error type stamps it on the leg and starts the SOP walk.
+            </span>
+            <Button
+              size="sm"
+              onClick={handleStartWalk}
+              disabled={!selectedType || isPending}
+              data-testid="v3-classify-start-walk"
+              className="ml-auto"
+            >
+              {isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Saving…</>
+              ) : (
+                <><Tag className="w-3.5 h-3.5 mr-1.5" /> {ctaLabel}</>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
