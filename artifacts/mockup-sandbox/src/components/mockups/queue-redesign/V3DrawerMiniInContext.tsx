@@ -1,5 +1,5 @@
 import "./_queue.css";
-import { Pin } from "lucide-react";
+import { Pin, AlertTriangle, Tag, Copy, Link2Off, ArrowUpRight } from "lucide-react";
 import {
   HeaderStrip, ClassificationStrip, MasterList, SopActiveCard,
   legs, groupSummary, Icons,
@@ -269,18 +269,73 @@ function MiniFooter() {
   );
 }
 
-/* ── Imagining 2 — edge drawer (slides in from the right edge,
-   short, vertically centered, NOT full-height) ───────────────────────── */
+/* ── Imagining 2 — edge drawer ────────────────────────────────────────
+   Two separate floating cards docked to the right edge with a gap
+   between them:
+     1. Leg-context header (classification, meta, $/rate, status,
+        reclassify/duplicate/exclude/open-in-full-view) — comes out
+        with the drawer no matter which section was opened.
+     2. The section selection card (header + content rectangle).
+   Group is vertically centered around the hero. NOT full-height. */
 
 function EdgeDrawerPanel({ section }: { section: Section }) {
+  const W = 360;
   return (
     <div
-      role="dialog"
-      aria-label={`${chipMeta[section].label} — quick view`}
       style={{
         position: "absolute",
         top: "50%", right: 0, transform: "translateY(-50%)",
-        width: 360, maxHeight: 520,
+        width: W,
+        zIndex: 5,
+        display: "flex", flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      {/* Card 1 — floating leg-context header */}
+      <LegContextHeaderCard />
+
+      {/* Card 2 — the selection */}
+      <div
+        role="dialog"
+        aria-label={`${chipMeta[section].label} — quick view`}
+        style={{
+          position: "relative",
+          background: "var(--cc-card)",
+          borderTop: "1px solid var(--cc-border)",
+          borderBottom: "1px solid var(--cc-border)",
+          borderLeft: "1px solid var(--cc-border)",
+          borderTopLeftRadius: "var(--cc-radius)",
+          borderBottomLeftRadius: "var(--cc-radius)",
+          boxShadow: "-12px 0 28px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.06)",
+          display: "flex", flexDirection: "column",
+          maxHeight: 420,
+          overflow: "hidden",
+        }}
+      >
+        {/* Drag handle stripe on the left edge */}
+        <div style={{
+          position: "absolute", left: 0, top: "50%",
+          transform: "translateY(-50%)",
+          width: 3, height: 36, borderRadius: 2,
+          background: "var(--cc-border)",
+        }} />
+        <MiniHeader section={section} hideHint />
+        <div style={{ padding: "0.5rem 0.625rem", overflow: "auto", flex: 1 }}>
+          <MiniBody section={section} />
+        </div>
+        <MiniFooter />
+      </div>
+    </div>
+  );
+}
+
+function LegContextHeaderCard() {
+  return (
+    <div
+      role="region"
+      aria-label="Leg context"
+      style={{
+        position: "relative",
         background: "var(--cc-card)",
         borderTop: "1px solid var(--cc-border)",
         borderBottom: "1px solid var(--cc-border)",
@@ -288,23 +343,75 @@ function EdgeDrawerPanel({ section }: { section: Section }) {
         borderTopLeftRadius: "var(--cc-radius)",
         borderBottomLeftRadius: "var(--cc-radius)",
         boxShadow: "-12px 0 28px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.06)",
-        zIndex: 5,
-        display: "flex", flexDirection: "column",
-        overflow: "hidden",
+        padding: "0.5rem 0.625rem",
+        display: "flex", flexDirection: "column", gap: 6,
       }}
     >
-      {/* Drag handle stripe on the left edge */}
+      {/* Drag handle stripe */}
       <div style={{
         position: "absolute", left: 0, top: "50%",
         transform: "translateY(-50%)",
-        width: 3, height: 36, borderRadius: 2,
+        width: 3, height: 28, borderRadius: 2,
         background: "var(--cc-border)",
       }} />
-      <MiniHeader section={section} hideHint />
-      <div style={{ padding: "0.5rem 0.625rem", overflow: "auto", flex: 1 }}>
-        <MiniBody section={section} />
+
+      {/* Title row — leg id + close */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+          Leg details · <span className="mono" style={{ fontWeight: 500 }}>C-2026-04812</span>
+        </span>
+        <button
+          aria-label="Close"
+          className="cc-btn cc-btn-ghost cc-btn-sm"
+          style={{ marginLeft: "auto", padding: "2px 4px" }}
+        >
+          <Icons.X className="w-3 h-3" />
+        </button>
       </div>
-      <MiniFooter />
+
+      {/* Classification + meta */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span className="cc-pill cc-pill-amber" style={{ fontSize: "0.6875rem" }}>
+          <AlertTriangle className="w-3 h-3" /> Mileage mismatch
+        </span>
+        <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>Apr 24 · 14.2 mi</span>
+      </div>
+
+      {/* $ + rate + status */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>$184.50</span>
+        <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>·</span>
+        <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>
+          Rate code <span className="mono">R-12</span>
+        </span>
+        <span className="cc-pill cc-pill-blue" style={{ fontSize: "0.6875rem", marginLeft: "auto" }}>
+          Walked · awaiting evidence
+        </span>
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <button className="cc-btn cc-btn-sm" style={{ fontSize: "0.6875rem" }}>
+          <Tag className="w-3 h-3" /> Reclassify
+        </button>
+        <button className="cc-btn cc-btn-sm" style={{ fontSize: "0.6875rem" }}>
+          <Copy className="w-3 h-3" /> Mark duplicate
+        </button>
+        <button className="cc-btn cc-btn-sm" style={{ fontSize: "0.6875rem" }}>
+          <Link2Off className="w-3 h-3" /> Exclude
+        </button>
+      </div>
+
+      {/* Open-in-full link — invoice context lives here */}
+      <a
+        className="cc-link"
+        style={{
+          fontSize: "0.6875rem",
+          display: "inline-flex", alignItems: "center", gap: 4,
+        }}
+      >
+        Open INV-2026-0487 in full view <ArrowUpRight className="w-3 h-3" />
+      </a>
     </div>
   );
 }
