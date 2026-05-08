@@ -80,7 +80,7 @@ async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext 
 const NON_CONTESTABLE_DISPOSITIONS = new Set(["disposed_withdraw", "disposed_nonissue"]);
 const NON_CONTESTABLE_SOP_OUTCOMES = new Set(["cannot_dispute", "non_issue"]);
 
-function isNonContestable(leg: typeof claimsTable.$inferSelect): boolean {
+export function isNonContestable(leg: typeof claimsTable.$inferSelect): boolean {
   if (leg.disposition && leg.disposition !== "unclassified") {
     return NON_CONTESTABLE_DISPOSITIONS.has(leg.disposition);
   }
