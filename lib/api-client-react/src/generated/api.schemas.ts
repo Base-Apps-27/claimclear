@@ -30,143 +30,139 @@ export interface AuthUser {
  * DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
  * @deprecated
  */
-export type ClaimResponseStatus =
-  (typeof ClaimResponseStatus)[keyof typeof ClaimResponseStatus];
+export type ClaimResponseStatus = typeof ClaimResponseStatus[keyof typeof ClaimResponseStatus];
+
 
 export const ClaimResponseStatus = {
-  New: "New",
-  Needs_Review: "Needs Review",
-  Needs_Evidence: "Needs Evidence",
-  Processed: "Processed",
-  Portal_Queued: "Portal Queued",
-  Generating_Email: "Generating Email",
-  Ready_to_Review: "Ready to Review",
-  Awaiting_Response: "Awaiting Response",
-  On_Hold: "On Hold",
-  Resolved: "Resolved",
-  Denied: "Denied",
+  New: 'New',
+  Needs_Review: 'Needs Review',
+  Needs_Evidence: 'Needs Evidence',
+  Processed: 'Processed',
+  Portal_Queued: 'Portal Queued',
+  Generating_Email: 'Generating Email',
+  Ready_to_Review: 'Ready to Review',
+  Awaiting_Response: 'Awaiting Response',
+  On_Hold: 'On Hold',
+  Resolved: 'Resolved',
+  Denied: 'Denied',
 } as const;
 
 /**
  * DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E.
  * @deprecated
  */
-export type ClaimResponseOutcome =
-  (typeof ClaimResponseOutcome)[keyof typeof ClaimResponseOutcome];
+export type ClaimResponseOutcome = typeof ClaimResponseOutcome[keyof typeof ClaimResponseOutcome];
+
 
 export const ClaimResponseOutcome = {
-  Pending: "Pending",
-  Approved: "Approved",
-  Denied: "Denied",
-  Partially_Approved: "Partially Approved",
-  "Non-Issue": "Non-Issue",
-  Withdrawn: "Withdrawn",
+  Pending: 'Pending',
+  Approved: 'Approved',
+  Denied: 'Denied',
+  Partially_Approved: 'Partially Approved',
+  'Non-Issue': 'Non-Issue',
+  Withdrawn: 'Withdrawn',
 } as const;
 
 /**
  * Canonical per-leg state in the hierarchical state model. Mirrors `claims.disposition`. Constrained by parent invoice's `phase` via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `CLAIM_DISPOSITIONS`.
  */
-export type ClaimResponseDisposition =
-  (typeof ClaimResponseDisposition)[keyof typeof ClaimResponseDisposition];
+export type ClaimResponseDisposition = typeof ClaimResponseDisposition[keyof typeof ClaimResponseDisposition];
+
 
 export const ClaimResponseDisposition = {
-  unclassified: "unclassified",
-  classifying: "classifying",
-  disposed_portal: "disposed_portal",
-  disposed_email: "disposed_email",
-  disposed_withdraw: "disposed_withdraw",
-  disposed_nonissue: "disposed_nonissue",
-  blocked: "blocked",
-  duplicate: "duplicate",
-  awaiting_review: "awaiting_review",
-  verdict_drafted: "verdict_drafted",
-  verdict_approved: "verdict_approved",
-  verdict_denied: "verdict_denied",
-  verdict_partial: "verdict_partial",
-  attest_pending: "attest_pending",
-  attest_queued: "attest_queued",
-  attested: "attested",
-  mas_cancelled: "mas_cancelled",
-  attest_not_required: "attest_not_required",
-  final_reattested: "final_reattested",
-  final_withdrawn: "final_withdrawn",
-  final_denied: "final_denied",
-  final_nonissue: "final_nonissue",
+  unclassified: 'unclassified',
+  classifying: 'classifying',
+  disposed_portal: 'disposed_portal',
+  disposed_email: 'disposed_email',
+  disposed_withdraw: 'disposed_withdraw',
+  disposed_nonissue: 'disposed_nonissue',
+  blocked: 'blocked',
+  duplicate: 'duplicate',
+  awaiting_review: 'awaiting_review',
+  verdict_drafted: 'verdict_drafted',
+  verdict_approved: 'verdict_approved',
+  verdict_denied: 'verdict_denied',
+  verdict_partial: 'verdict_partial',
+  attest_pending: 'attest_pending',
+  attest_queued: 'attest_queued',
+  attested: 'attested',
+  mas_cancelled: 'mas_cancelled',
+  attest_not_required: 'attest_not_required',
+  final_reattested: 'final_reattested',
+  final_withdrawn: 'final_withdrawn',
+  final_denied: 'final_denied',
+  final_nonissue: 'final_nonissue',
 } as const;
 
 /**
  * @nullable
  */
-export type ClaimResponseClosureReason =
-  | (typeof ClaimResponseClosureReason)[keyof typeof ClaimResponseClosureReason]
-  | null;
+export type ClaimResponseClosureReason = typeof ClaimResponseClosureReason[keyof typeof ClaimResponseClosureReason] | null;
+
 
 export const ClaimResponseClosureReason = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  denied_by_payor: 'denied_by_payor',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
  * @nullable
  */
-export type ClaimResponseClosureReviewState =
-  | (typeof ClaimResponseClosureReviewState)[keyof typeof ClaimResponseClosureReviewState]
-  | null;
+export type ClaimResponseClosureReviewState = typeof ClaimResponseClosureReviewState[keyof typeof ClaimResponseClosureReviewState] | null;
+
 
 export const ClaimResponseClosureReviewState = {
-  pending: "pending",
-  acknowledged: "acknowledged",
-  needs_revisit: "needs_revisit",
-  resolved: "resolved",
+  pending: 'pending',
+  acknowledged: 'acknowledged',
+  needs_revisit: 'needs_revisit',
+  resolved: 'resolved',
 } as const;
 
 /**
  * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
  * @nullable
  */
-export type ClaimResponseEvidenceChecklist = { [key: string]: boolean } | null;
+export type ClaimResponseEvidenceChecklist = {[key: string]: boolean} | null;
 
 /**
  * Re-attestation tracking state. `not_required` for any non-Approved outcome, `pending` immediately after an Approved verdict, `queued` if parked for someone with portal access, `completed` once the operator confirms they re-attested in the payor portal.
  */
-export type ClaimResponseAttestationState =
-  (typeof ClaimResponseAttestationState)[keyof typeof ClaimResponseAttestationState];
+export type ClaimResponseAttestationState = typeof ClaimResponseAttestationState[keyof typeof ClaimResponseAttestationState];
+
 
 export const ClaimResponseAttestationState = {
-  not_required: "not_required",
-  pending: "pending",
-  queued: "queued",
-  completed: "completed",
+  not_required: 'not_required',
+  pending: 'pending',
+  queued: 'queued',
+  completed: 'completed',
 } as const;
 
 /**
  * Terminal SOP outcome stamped when the operator reaches a leaf option in the decision tree.
  * @nullable
  */
-export type ClaimResponseSopOutcome =
-  | (typeof ClaimResponseSopOutcome)[keyof typeof ClaimResponseSopOutcome]
-  | null;
+export type ClaimResponseSopOutcome = typeof ClaimResponseSopOutcome[keyof typeof ClaimResponseSopOutcome] | null;
+
 
 export const ClaimResponseSopOutcome = {
-  portal_dispute: "portal_dispute",
-  dispute: "dispute",
-  hold: "hold",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  portal_dispute: 'portal_dispute',
+  dispute: 'dispute',
+  hold: 'hold',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
  * Reason the leg was dropped from dispute. Set when sopOutcome is `cannot_dispute` or `non_issue`.
  * @nullable
  */
-export type ClaimResponseDropReason =
-  | (typeof ClaimResponseDropReason)[keyof typeof ClaimResponseDropReason]
-  | null;
+export type ClaimResponseDropReason = typeof ClaimResponseDropReason[keyof typeof ClaimResponseDropReason] | null;
+
 
 export const ClaimResponseDropReason = {
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 export type ClaimResponseSopAnswersItem = {
@@ -182,13 +178,12 @@ export type ClaimResponseSopAnswersItem = {
  * Whether a downstream MAS-action (cancel) is required for this leg. Stamped automatically on Denied verdicts; `none` when the verdict path doesn't need MAS intervention.
  * @nullable
  */
-export type ClaimResponseMasActionRequired =
-  | (typeof ClaimResponseMasActionRequired)[keyof typeof ClaimResponseMasActionRequired]
-  | null;
+export type ClaimResponseMasActionRequired = typeof ClaimResponseMasActionRequired[keyof typeof ClaimResponseMasActionRequired] | null;
+
 
 export const ClaimResponseMasActionRequired = {
-  cancel: "cancel",
-  none: "none",
+  cancel: 'cancel',
+  none: 'none',
 } as const;
 
 /**
@@ -453,107 +448,102 @@ export interface ValidTransitionsResponse {
  * DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E.
  * @deprecated
  */
-export type InvoiceGroupResponseStatus =
-  (typeof InvoiceGroupResponseStatus)[keyof typeof InvoiceGroupResponseStatus];
+export type InvoiceGroupResponseStatus = typeof InvoiceGroupResponseStatus[keyof typeof InvoiceGroupResponseStatus];
+
 
 export const InvoiceGroupResponseStatus = {
-  New: "New",
-  Needs_Review: "Needs Review",
-  Needs_Evidence: "Needs Evidence",
-  Processed: "Processed",
-  Portal_Queued: "Portal Queued",
-  Generating_Email: "Generating Email",
-  Ready_to_Review: "Ready to Review",
-  Awaiting_Response: "Awaiting Response",
-  On_Hold: "On Hold",
-  Resolved: "Resolved",
-  Denied: "Denied",
+  New: 'New',
+  Needs_Review: 'Needs Review',
+  Needs_Evidence: 'Needs Evidence',
+  Processed: 'Processed',
+  Portal_Queued: 'Portal Queued',
+  Generating_Email: 'Generating Email',
+  Ready_to_Review: 'Ready to Review',
+  Awaiting_Response: 'Awaiting Response',
+  On_Hold: 'On Hold',
+  Resolved: 'Resolved',
+  Denied: 'Denied',
 } as const;
 
 /**
  * DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E.
  * @deprecated
  */
-export type InvoiceGroupResponseOutcome =
-  (typeof InvoiceGroupResponseOutcome)[keyof typeof InvoiceGroupResponseOutcome];
+export type InvoiceGroupResponseOutcome = typeof InvoiceGroupResponseOutcome[keyof typeof InvoiceGroupResponseOutcome];
+
 
 export const InvoiceGroupResponseOutcome = {
-  Pending: "Pending",
-  Approved: "Approved",
-  Denied: "Denied",
-  Partially_Approved: "Partially Approved",
-  "Non-Issue": "Non-Issue",
-  Withdrawn: "Withdrawn",
+  Pending: 'Pending',
+  Approved: 'Approved',
+  Denied: 'Denied',
+  Partially_Approved: 'Partially Approved',
+  'Non-Issue': 'Non-Issue',
+  Withdrawn: 'Withdrawn',
 } as const;
 
 /**
  * Canonical group-level phase in the hierarchical state model. Mirrors `invoice_groups.phase`. Sequential and monotonic forward through the lifecycle; constrains the set of valid child `disposition` values via the `validate_disposition_against_phase` deferrable trigger. Source: `@workspace/vocab` `INVOICE_PHASES`.
  */
-export type InvoiceGroupResponsePhase =
-  (typeof InvoiceGroupResponsePhase)[keyof typeof InvoiceGroupResponsePhase];
+export type InvoiceGroupResponsePhase = typeof InvoiceGroupResponsePhase[keyof typeof InvoiceGroupResponsePhase];
+
 
 export const InvoiceGroupResponsePhase = {
-  triage: "triage",
-  ready_to_submit: "ready_to_submit",
-  submitted: "submitted",
-  response_received: "response_received",
-  reviewed: "reviewed",
-  awaiting_reattestation: "awaiting_reattestation",
-  closed: "closed",
+  triage: 'triage',
+  ready_to_submit: 'ready_to_submit',
+  submitted: 'submitted',
+  response_received: 'response_received',
+  reviewed: 'reviewed',
+  awaiting_reattestation: 'awaiting_reattestation',
+  closed: 'closed',
 } as const;
 
 /**
  * @nullable
  */
-export type InvoiceGroupResponseClosureReason =
-  | (typeof InvoiceGroupResponseClosureReason)[keyof typeof InvoiceGroupResponseClosureReason]
-  | null;
+export type InvoiceGroupResponseClosureReason = typeof InvoiceGroupResponseClosureReason[keyof typeof InvoiceGroupResponseClosureReason] | null;
+
 
 export const InvoiceGroupResponseClosureReason = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  denied_by_payor: 'denied_by_payor',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
  * @nullable
  */
-export type InvoiceGroupResponseClosureReviewState =
-  | (typeof InvoiceGroupResponseClosureReviewState)[keyof typeof InvoiceGroupResponseClosureReviewState]
-  | null;
+export type InvoiceGroupResponseClosureReviewState = typeof InvoiceGroupResponseClosureReviewState[keyof typeof InvoiceGroupResponseClosureReviewState] | null;
+
 
 export const InvoiceGroupResponseClosureReviewState = {
-  pending: "pending",
-  acknowledged: "acknowledged",
-  needs_revisit: "needs_revisit",
-  resolved: "resolved",
+  pending: 'pending',
+  acknowledged: 'acknowledged',
+  needs_revisit: 'needs_revisit',
+  resolved: 'resolved',
 } as const;
 
 /**
  * Operator-tickable checklist mapping evidence-step name → checked. Stored as a `Record<string, boolean>` JSONB blob. No active reader today; declared as a typed map so future UI can read/write it without `as unknown` casts. Null = no checklist captured.
  * @nullable
  */
-export type InvoiceGroupResponseEvidenceChecklist = {
-  [key: string]: boolean;
-} | null;
+export type InvoiceGroupResponseEvidenceChecklist = {[key: string]: boolean} | null;
 
 /**
  * DEPRECATED (Wave C). Server-derived macro phase used by the per-invoice transition surfaces. Read the canonical `phase` column directly instead — this field is now a backwards-compat passthrough mapped from `phase`. Removed in Wave E.
  * @deprecated
  * @nullable
  */
-export type InvoiceGroupResponseMacroPhase =
-  | (typeof InvoiceGroupResponseMacroPhase)[keyof typeof InvoiceGroupResponseMacroPhase]
-  | null;
+export type InvoiceGroupResponseMacroPhase = typeof InvoiceGroupResponseMacroPhase[keyof typeof InvoiceGroupResponseMacroPhase] | null;
+
 
 export const InvoiceGroupResponseMacroPhase = {
-  "pre-submit": "pre-submit",
-  "in-flight": "in-flight",
-  "response-pending": "response-pending",
-  "mas-action-required": "mas-action-required",
-  "awaiting-payout": "awaiting-payout",
-  closed: "closed",
-  "on-hold": "on-hold",
+  'pre-submit': 'pre-submit',
+  'in-flight': 'in-flight',
+  'response-pending': 'response-pending',
+  'mas-action-required': 'mas-action-required',
+  'awaiting-payout': 'awaiting-payout',
+  closed: 'closed',
+  'on-hold': 'on-hold',
 } as const;
 
 /**
@@ -573,16 +563,15 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
 
  * @nullable
  */
-export type InvoiceGroupResponseServiceDateReason =
-  | (typeof InvoiceGroupResponseServiceDateReason)[keyof typeof InvoiceGroupResponseServiceDateReason]
-  | null;
+export type InvoiceGroupResponseServiceDateReason = typeof InvoiceGroupResponseServiceDateReason[keyof typeof InvoiceGroupResponseServiceDateReason] | null;
+
 
 export const InvoiceGroupResponseServiceDateReason = {
-  has_date: "has_date",
-  no_claims: "no_claims",
-  no_dated_claims: "no_dated_claims",
-  parse_failed: "parse_failed",
-  all_dated_legs_excluded: "all_dated_legs_excluded",
+  has_date: 'has_date',
+  no_claims: 'no_claims',
+  no_dated_claims: 'no_dated_claims',
+  parse_failed: 'parse_failed',
+  all_dated_legs_excluded: 'all_dated_legs_excluded',
 } as const;
 
 /**
@@ -608,17 +597,17 @@ by `payor-denial-reason.parity.ts` on the server. Distinct from
 `closureReason`; this is NOT a closure decision.
 
  */
-export type PayorDenialReasonCode =
-  (typeof PayorDenialReasonCode)[keyof typeof PayorDenialReasonCode];
+export type PayorDenialReasonCode = typeof PayorDenialReasonCode[keyof typeof PayorDenialReasonCode];
+
 
 export const PayorDenialReasonCode = {
-  payor_rejected_gps: "payor_rejected_gps",
-  payor_rejected_signature: "payor_rejected_signature",
-  payor_reclassified_error: "payor_reclassified_error",
-  payor_cited_benefit_rule: "payor_cited_benefit_rule",
-  payor_cited_timely_filing: "payor_cited_timely_filing",
-  payor_no_clear_reason: "payor_no_clear_reason",
-  payor_other: "payor_other",
+  payor_rejected_gps: 'payor_rejected_gps',
+  payor_rejected_signature: 'payor_rejected_signature',
+  payor_reclassified_error: 'payor_reclassified_error',
+  payor_cited_benefit_rule: 'payor_cited_benefit_rule',
+  payor_cited_timely_filing: 'payor_cited_timely_filing',
+  payor_no_clear_reason: 'payor_no_clear_reason',
+  payor_other: 'payor_other',
 } as const;
 
 export interface InvoiceGroupResponse {
@@ -892,9 +881,7 @@ are pre-sorted server-side by descending count then status name
 ascending, so the client can iterate in object order.
 
  */
-export type NeedsClassificationInboxResponseByStatus = {
-  [key: string]: number;
-};
+export type NeedsClassificationInboxResponseByStatus = {[key: string]: number};
 
 export interface NeedsClassificationInboxResponse {
   /** Total needs_classification leg count across all surfaced groups. */
@@ -909,17 +896,17 @@ ascending, so the client can iterate in object order.
   groups: NeedsClassificationInboxGroup[];
 }
 
-export type PortalSubmissionResponseStatus =
-  (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
+export type PortalSubmissionResponseStatus = typeof PortalSubmissionResponseStatus[keyof typeof PortalSubmissionResponseStatus];
+
 
 export const PortalSubmissionResponseStatus = {
-  draft: "draft",
-  pending: "pending",
-  in_progress: "in_progress",
-  submitted: "submitted",
-  failed: "failed",
-  cancelled: "cancelled",
-  dry_run: "dry_run",
+  draft: 'draft',
+  pending: 'pending',
+  in_progress: 'in_progress',
+  submitted: 'submitted',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  dry_run: 'dry_run',
 } as const;
 
 export type PortalSubmissionResponseDescriptionHistoryItem = {
@@ -1093,18 +1080,18 @@ null on the success row itself. The latest sibling success wins.
   updatedAt?: string;
 }
 
-export type NoteResponseType =
-  (typeof NoteResponseType)[keyof typeof NoteResponseType];
+export type NoteResponseType = typeof NoteResponseType[keyof typeof NoteResponseType];
+
 
 export const NoteResponseType = {
-  manual: "manual",
-  email: "email",
-  email_sent: "email_sent",
-  reply_parsed: "reply_parsed",
-  status_change: "status_change",
-  outcome_recorded: "outcome_recorded",
-  system: "system",
-  bot: "bot",
+  manual: 'manual',
+  email: 'email',
+  email_sent: 'email_sent',
+  reply_parsed: 'reply_parsed',
+  status_change: 'status_change',
+  outcome_recorded: 'outcome_recorded',
+  system: 'system',
+  bot: 'bot',
 } as const;
 
 export interface NoteResponse {
@@ -1153,25 +1140,25 @@ export interface AuditLogResponse {
   invoiceNumber?: string | null;
 }
 
-export type PortalResponseItemSource =
-  (typeof PortalResponseItemSource)[keyof typeof PortalResponseItemSource];
+export type PortalResponseItemSource = typeof PortalResponseItemSource[keyof typeof PortalResponseItemSource];
+
 
 export const PortalResponseItemSource = {
-  email: "email",
-  portal: "portal",
-  manual: "manual",
+  email: 'email',
+  portal: 'portal',
+  manual: 'manual',
 } as const;
 
-export type PortalResponseItemResponseType =
-  (typeof PortalResponseItemResponseType)[keyof typeof PortalResponseItemResponseType];
+export type PortalResponseItemResponseType = typeof PortalResponseItemResponseType[keyof typeof PortalResponseItemResponseType];
+
 
 export const PortalResponseItemResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
 } as const;
 
 /**
@@ -1180,40 +1167,39 @@ the UI should render it through a sanitizer; `text` (the default) renders
 with whitespace preserved.
 
  */
-export type PortalResponseItemBodyFormat =
-  (typeof PortalResponseItemBodyFormat)[keyof typeof PortalResponseItemBodyFormat];
+export type PortalResponseItemBodyFormat = typeof PortalResponseItemBodyFormat[keyof typeof PortalResponseItemBodyFormat];
+
 
 export const PortalResponseItemBodyFormat = {
-  html: "html",
-  text: "text",
+  html: 'html',
+  text: 'text',
 } as const;
 
 /**
  * Which classifier produced `responseType`. `phrase_signature` is the deterministic phrase classifier (preferred). `ai` is the AI backstop. `abstain` means neither signed nor AI-classified — left for manual review with no auto-transition. `manual` is set by reviewers. `keyword` is the legacy regex (kept for historical rows; no longer produced). `retro_phrase_signature` is the one-shot historical backfill (`reclassify-confirmation-emails-backfill`) — distinguishes rows the legacy classifier got wrong and the backfill corrected, from rows the live phrase classifier produced fresh.
  */
-export type PortalResponseItemClassifierSource =
-  (typeof PortalResponseItemClassifierSource)[keyof typeof PortalResponseItemClassifierSource];
+export type PortalResponseItemClassifierSource = typeof PortalResponseItemClassifierSource[keyof typeof PortalResponseItemClassifierSource];
+
 
 export const PortalResponseItemClassifierSource = {
-  phrase_signature: "phrase_signature",
-  ai: "ai",
-  abstain: "abstain",
-  manual: "manual",
-  keyword: "keyword",
-  retro_phrase_signature: "retro_phrase_signature",
+  phrase_signature: 'phrase_signature',
+  ai: 'ai',
+  abstain: 'abstain',
+  manual: 'manual',
+  keyword: 'keyword',
+  retro_phrase_signature: 'retro_phrase_signature',
 } as const;
 
 /**
  * AI's self-reported confidence in its classification, if classifierSource is "ai".
  */
-export type PortalResponseItemClassifierConfidence =
-  | (typeof PortalResponseItemClassifierConfidence)[keyof typeof PortalResponseItemClassifierConfidence]
-  | null;
+export type PortalResponseItemClassifierConfidence = typeof PortalResponseItemClassifierConfidence[keyof typeof PortalResponseItemClassifierConfidence] | null;
+
 
 export const PortalResponseItemClassifierConfidence = {
-  high: "high",
-  medium: "medium",
-  low: "low",
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
 } as const;
 
 export type PortalResponseItemMetadata = { [key: string]: unknown } | null;
@@ -1394,9 +1380,7 @@ export interface InvoiceGroupConflictResponse {
   existingGroup: InvoiceGroupConflictResponseExistingGroup;
 }
 
-export type UpdateInvoiceGroupBodyEvidenceChecklist = {
-  [key: string]: boolean;
-};
+export type UpdateInvoiceGroupBodyEvidenceChecklist = {[key: string]: boolean};
 
 export interface UpdateInvoiceGroupBody {
   errorDetails?: string;
@@ -1426,7 +1410,7 @@ export interface CreateClaimBody {
   payorEmail?: string;
 }
 
-export type UpdateClaimBodyEvidenceChecklist = { [key: string]: boolean };
+export type UpdateClaimBodyEvidenceChecklist = {[key: string]: boolean};
 
 export interface UpdateClaimBody {
   confNumber?: string;
@@ -1458,12 +1442,13 @@ a typo or drift between sites becomes a typecheck error instead
 of a silent coercion through `as` casts at the call site.
 
  */
-export type ClosureReason = (typeof ClosureReason)[keyof typeof ClosureReason];
+export type ClosureReason = typeof ClosureReason[keyof typeof ClosureReason];
+
 
 export const ClosureReason = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  denied_by_payor: 'denied_by_payor',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
@@ -1474,17 +1459,17 @@ one place without updating the others becomes a typecheck error
 instead of a silent runtime drift.
 
  */
-export type ClosureAccountabilityTag =
-  (typeof ClosureAccountabilityTag)[keyof typeof ClosureAccountabilityTag];
+export type ClosureAccountabilityTag = typeof ClosureAccountabilityTag[keyof typeof ClosureAccountabilityTag];
+
 
 export const ClosureAccountabilityTag = {
-  driver: "driver",
-  dispatcher: "dispatcher",
-  member: "member",
-  it_system: "it_system",
-  our_staff: "our_staff",
-  external_payor: "external_payor",
-  other: "other",
+  driver: 'driver',
+  dispatcher: 'dispatcher',
+  member: 'member',
+  it_system: 'it_system',
+  our_staff: 'our_staff',
+  external_payor: 'external_payor',
+  other: 'other',
 } as const;
 
 /**
@@ -1606,15 +1591,14 @@ strings collapse to null and are not persisted.
 /**
  * @nullable
  */
-export type ClosureReviewBodyClosureReviewState =
-  | (typeof ClosureReviewBodyClosureReviewState)[keyof typeof ClosureReviewBodyClosureReviewState]
-  | null;
+export type ClosureReviewBodyClosureReviewState = typeof ClosureReviewBodyClosureReviewState[keyof typeof ClosureReviewBodyClosureReviewState] | null;
+
 
 export const ClosureReviewBodyClosureReviewState = {
-  pending: "pending",
-  acknowledged: "acknowledged",
-  needs_revisit: "needs_revisit",
-  resolved: "resolved",
+  pending: 'pending',
+  acknowledged: 'acknowledged',
+  needs_revisit: 'needs_revisit',
+  resolved: 'resolved',
 } as const;
 
 /**
@@ -1631,21 +1615,21 @@ export interface ClosureReviewBody {
   addressed?: boolean;
 }
 
-export type WithdrawalRowKind =
-  (typeof WithdrawalRowKind)[keyof typeof WithdrawalRowKind];
+export type WithdrawalRowKind = typeof WithdrawalRowKind[keyof typeof WithdrawalRowKind];
+
 
 export const WithdrawalRowKind = {
-  claim: "claim",
-  invoice_group: "invoice_group",
+  claim: 'claim',
+  invoice_group: 'invoice_group',
 } as const;
 
-export type WithdrawalRowClosureReason =
-  (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
+export type WithdrawalRowClosureReason = typeof WithdrawalRowClosureReason[keyof typeof WithdrawalRowClosureReason];
+
 
 export const WithdrawalRowClosureReason = {
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
-  denied_by_payor: "denied_by_payor",
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
+  denied_by_payor: 'denied_by_payor',
 } as const;
 
 /**
@@ -1735,12 +1719,12 @@ export interface WithdrawalsListResponse {
   closers: WithdrawalCloser[];
 }
 
-export type BulkAddressBodyItemsItemKind =
-  (typeof BulkAddressBodyItemsItemKind)[keyof typeof BulkAddressBodyItemsItemKind];
+export type BulkAddressBodyItemsItemKind = typeof BulkAddressBodyItemsItemKind[keyof typeof BulkAddressBodyItemsItemKind];
+
 
 export const BulkAddressBodyItemsItemKind = {
-  claim: "claim",
-  invoice_group: "invoice_group",
+  claim: 'claim',
+  invoice_group: 'invoice_group',
 } as const;
 
 export type BulkAddressBodyItemsItem = {
@@ -1758,12 +1742,12 @@ export interface BulkAddressResponse {
   updated: number;
 }
 
-export type CreateClosureRequestOutcome =
-  (typeof CreateClosureRequestOutcome)[keyof typeof CreateClosureRequestOutcome];
+export type CreateClosureRequestOutcome = typeof CreateClosureRequestOutcome[keyof typeof CreateClosureRequestOutcome];
+
 
 export const CreateClosureRequestOutcome = {
-  Withdrawn: "Withdrawn",
-  "Non-Issue": "Non-Issue",
+  Withdrawn: 'Withdrawn',
+  'Non-Issue': 'Non-Issue',
 } as const;
 
 /**
@@ -1824,14 +1808,13 @@ export interface CreateClosureRequest {
 /**
  * @nullable
  */
-export type AttachClosureEvidenceBodyClosureReasonAtAttach =
-  | (typeof AttachClosureEvidenceBodyClosureReasonAtAttach)[keyof typeof AttachClosureEvidenceBodyClosureReasonAtAttach]
-  | null;
+export type AttachClosureEvidenceBodyClosureReasonAtAttach = typeof AttachClosureEvidenceBodyClosureReasonAtAttach[keyof typeof AttachClosureEvidenceBodyClosureReasonAtAttach] | null;
+
 
 export const AttachClosureEvidenceBodyClosureReasonAtAttach = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  denied_by_payor: 'denied_by_payor',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
@@ -1858,9 +1841,7 @@ export interface AttachClosureEvidenceBody {
   closureReasonAtAttach?: AttachClosureEvidenceBodyClosureReasonAtAttach;
 }
 
-export type UpdateClaimEvidenceBodyEvidenceChecklist = {
-  [key: string]: boolean;
-};
+export type UpdateClaimEvidenceBodyEvidenceChecklist = {[key: string]: boolean};
 
 export interface UpdateClaimEvidenceBody {
   evidenceFiles?: EvidenceFileRef[];
@@ -1932,13 +1913,13 @@ recorded answer plus walk-tied evidence and returns the leg to
 the tree root.
 
  */
-export type SopRewindAction =
-  (typeof SopRewindAction)[keyof typeof SopRewindAction];
+export type SopRewindAction = typeof SopRewindAction[keyof typeof SopRewindAction];
+
 
 export const SopRewindAction = {
-  "back-step": "back-step",
-  jump: "jump",
-  restart: "restart",
+  'back-step': 'back-step',
+  jump: 'jump',
+  restart: 'restart',
 } as const;
 
 /**
@@ -1997,11 +1978,11 @@ export interface SopJumpBody {
   discardDraft?: boolean;
 }
 
-export type SopRewindDraftConflictResponseCode =
-  (typeof SopRewindDraftConflictResponseCode)[keyof typeof SopRewindDraftConflictResponseCode];
+export type SopRewindDraftConflictResponseCode = typeof SopRewindDraftConflictResponseCode[keyof typeof SopRewindDraftConflictResponseCode];
+
 
 export const SopRewindDraftConflictResponseCode = {
-  draft_discard_required: "draft_discard_required",
+  draft_discard_required: 'draft_discard_required',
 } as const;
 
 /**
@@ -2033,22 +2014,22 @@ Drafts also bypass `note`/`confidence`/`reasoning`/
 concepts only.
 
  */
-export type RecordVerdictBodySource =
-  (typeof RecordVerdictBodySource)[keyof typeof RecordVerdictBodySource];
+export type RecordVerdictBodySource = typeof RecordVerdictBodySource[keyof typeof RecordVerdictBodySource];
+
 
 export const RecordVerdictBodySource = {
-  ai_suggested: "ai_suggested",
-  operator_confirmed: "operator_confirmed",
-  operator_draft: "operator_draft",
+  ai_suggested: 'ai_suggested',
+  operator_confirmed: 'operator_confirmed',
+  operator_draft: 'operator_draft',
 } as const;
 
-export type RecordVerdictBodyOutcome =
-  (typeof RecordVerdictBodyOutcome)[keyof typeof RecordVerdictBodyOutcome];
+export type RecordVerdictBodyOutcome = typeof RecordVerdictBodyOutcome[keyof typeof RecordVerdictBodyOutcome];
+
 
 export const RecordVerdictBodyOutcome = {
-  Approved: "Approved",
-  Denied: "Denied",
-  Partial: "Partial",
+  Approved: 'Approved',
+  Denied: 'Denied',
+  Partial: 'Partial',
 } as const;
 
 export interface RecordVerdictBody {
@@ -2117,15 +2098,15 @@ group is not allowed — every eligible leg gets the same
 outcome or the call rolls back.
 
  */
-export type BulkSopAdvanceBodyTerminalSopOutcome =
-  (typeof BulkSopAdvanceBodyTerminalSopOutcome)[keyof typeof BulkSopAdvanceBodyTerminalSopOutcome];
+export type BulkSopAdvanceBodyTerminalSopOutcome = typeof BulkSopAdvanceBodyTerminalSopOutcome[keyof typeof BulkSopAdvanceBodyTerminalSopOutcome];
+
 
 export const BulkSopAdvanceBodyTerminalSopOutcome = {
-  portal_dispute: "portal_dispute",
-  dispute: "dispute",
-  hold: "hold",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  portal_dispute: 'portal_dispute',
+  dispute: 'dispute',
+  hold: 'hold',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 /**
@@ -2160,14 +2141,14 @@ endpoint hard-fails with `409 { code: "node_not_bulk_eligible" }`
 instead of degrading to a per-leg skip.
 
  */
-export type BulkSopAdvanceSkippedReason =
-  (typeof BulkSopAdvanceSkippedReason)[keyof typeof BulkSopAdvanceSkippedReason];
+export type BulkSopAdvanceSkippedReason = typeof BulkSopAdvanceSkippedReason[keyof typeof BulkSopAdvanceSkippedReason];
+
 
 export const BulkSopAdvanceSkippedReason = {
-  wrong_node: "wrong_node",
-  already_terminal: "already_terminal",
-  excluded_from_dispute: "excluded_from_dispute",
-  sibling_duplicate: "sibling_duplicate",
+  wrong_node: 'wrong_node',
+  already_terminal: 'already_terminal',
+  excluded_from_dispute: 'excluded_from_dispute',
+  sibling_duplicate: 'sibling_duplicate',
 } as const;
 
 export interface BulkSopAdvanceSkippedLeg {
@@ -2181,12 +2162,12 @@ export interface BulkSopAdvanceSkippedLeg {
 /**
  * Present only on a 409 response.
  */
-export type BulkSopAdvanceResponseCode =
-  (typeof BulkSopAdvanceResponseCode)[keyof typeof BulkSopAdvanceResponseCode];
+export type BulkSopAdvanceResponseCode = typeof BulkSopAdvanceResponseCode[keyof typeof BulkSopAdvanceResponseCode];
+
 
 export const BulkSopAdvanceResponseCode = {
-  no_eligible_legs: "no_eligible_legs",
-  node_not_bulk_eligible: "node_not_bulk_eligible",
+  no_eligible_legs: 'no_eligible_legs',
+  node_not_bulk_eligible: 'node_not_bulk_eligible',
 } as const;
 
 /**
@@ -2220,16 +2201,16 @@ export interface PromoteVerdictDraftsResponse {
   promotedClaimIds: number[];
 }
 
-export type ExcludeLegBodyReason =
-  (typeof ExcludeLegBodyReason)[keyof typeof ExcludeLegBodyReason];
+export type ExcludeLegBodyReason = typeof ExcludeLegBodyReason[keyof typeof ExcludeLegBodyReason];
+
 
 export const ExcludeLegBodyReason = {
-  clean_leg: "clean_leg",
-  out_of_scope: "out_of_scope",
-  duplicate: "duplicate",
-  non_issue: "non_issue",
-  cannot_dispute: "cannot_dispute",
-  other: "other",
+  clean_leg: 'clean_leg',
+  out_of_scope: 'out_of_scope',
+  duplicate: 'duplicate',
+  non_issue: 'non_issue',
+  cannot_dispute: 'cannot_dispute',
+  other: 'other',
 } as const;
 
 /**
@@ -2266,12 +2247,12 @@ export interface SetLegContextBody {
 /**
  * Terminal SOP outcome to stamp on the leg.
  */
-export type ConcludeLegBodyReason =
-  (typeof ConcludeLegBodyReason)[keyof typeof ConcludeLegBodyReason];
+export type ConcludeLegBodyReason = typeof ConcludeLegBodyReason[keyof typeof ConcludeLegBodyReason];
+
 
 export const ConcludeLegBodyReason = {
-  non_issue: "non_issue",
-  cannot_dispute: "cannot_dispute",
+  non_issue: 'non_issue',
+  cannot_dispute: 'cannot_dispute',
 } as const;
 
 export interface ConcludeLegBody {
@@ -2472,14 +2453,13 @@ export interface AiCalibrationResponse {
  * Channel the latest payor response came in on.
  * @nullable
  */
-export type AttestationPendingExtrasLastResponseSource =
-  | (typeof AttestationPendingExtrasLastResponseSource)[keyof typeof AttestationPendingExtrasLastResponseSource]
-  | null;
+export type AttestationPendingExtrasLastResponseSource = typeof AttestationPendingExtrasLastResponseSource[keyof typeof AttestationPendingExtrasLastResponseSource] | null;
+
 
 export const AttestationPendingExtrasLastResponseSource = {
-  email: "email",
-  portal: "portal",
-  manual: "manual",
+  email: 'email',
+  portal: 'portal',
+  manual: 'manual',
 } as const;
 
 /**
@@ -2522,14 +2502,14 @@ re-attestation was confirmed. `attested` = leg has an
 sibling that rode along with disputed legs).
 
  */
-export type GroupAttestationHistoryLegAttestationOutcome =
-  (typeof GroupAttestationHistoryLegAttestationOutcome)[keyof typeof GroupAttestationHistoryLegAttestationOutcome];
+export type GroupAttestationHistoryLegAttestationOutcome = typeof GroupAttestationHistoryLegAttestationOutcome[keyof typeof GroupAttestationHistoryLegAttestationOutcome];
+
 
 export const GroupAttestationHistoryLegAttestationOutcome = {
-  attested: "attested",
-  mas_cancelled: "mas_cancelled",
-  queued: "queued",
-  not_required: "not_required",
+  attested: 'attested',
+  mas_cancelled: 'mas_cancelled',
+  queued: 'queued',
+  not_required: 'not_required',
 } as const;
 
 /**
@@ -2593,12 +2573,12 @@ export interface GroupAttestationHistoryResponse {
   truncated: boolean;
 }
 
-export type TriageClaimBodyAction =
-  (typeof TriageClaimBodyAction)[keyof typeof TriageClaimBodyAction];
+export type TriageClaimBodyAction = typeof TriageClaimBodyAction[keyof typeof TriageClaimBodyAction];
+
 
 export const TriageClaimBodyAction = {
-  non_issue: "non_issue",
-  issue_found: "issue_found",
+  non_issue: 'non_issue',
+  issue_found: 'issue_found',
 } as const;
 
 export interface TriageClaimBody {
@@ -2608,14 +2588,14 @@ export interface TriageClaimBody {
   triageNotes?: string;
 }
 
-export type PostResponseActionBodyAction =
-  (typeof PostResponseActionBodyAction)[keyof typeof PostResponseActionBodyAction];
+export type PostResponseActionBodyAction = typeof PostResponseActionBodyAction[keyof typeof PostResponseActionBodyAction];
+
 
 export const PostResponseActionBodyAction = {
-  resolve_reattest: "resolve_reattest",
-  resolve_new_invoice: "resolve_new_invoice",
-  mark_denied_by_payor: "mark_denied_by_payor",
-  re_dispute: "re_dispute",
+  resolve_reattest: 'resolve_reattest',
+  resolve_new_invoice: 'resolve_new_invoice',
+  mark_denied_by_payor: 'mark_denied_by_payor',
+  re_dispute: 're_dispute',
 } as const;
 
 export interface PostResponseActionBody {
@@ -2632,18 +2612,18 @@ export interface CreateNoteBody {
   type?: string;
 }
 
-export type AdminAuditLogItemCategory =
-  (typeof AdminAuditLogItemCategory)[keyof typeof AdminAuditLogItemCategory];
+export type AdminAuditLogItemCategory = typeof AdminAuditLogItemCategory[keyof typeof AdminAuditLogItemCategory];
+
 
 export const AdminAuditLogItemCategory = {
-  status: "status",
-  edit: "edit",
-  evidence: "evidence",
-  workflow: "workflow",
-  hold: "hold",
-  draft: "draft",
-  communication: "communication",
-  other: "other",
+  status: 'status',
+  edit: 'edit',
+  evidence: 'evidence',
+  workflow: 'workflow',
+  hold: 'hold',
+  draft: 'draft',
+  communication: 'communication',
+  other: 'other',
 } as const;
 
 /**
@@ -2684,16 +2664,12 @@ export interface AdminAuditLogsResponse {
 /**
  * @nullable
  */
-export type ErrorTypeResponseDisputeReasonsLibrary = {
-  [key: string]: unknown;
-} | null;
+export type ErrorTypeResponseDisputeReasonsLibrary = { [key: string]: unknown } | null;
 
 /**
  * @nullable
  */
-export type ErrorTypeResponseEvidenceRequirements = {
-  [key: string]: unknown;
-} | null;
+export type ErrorTypeResponseEvidenceRequirements = { [key: string]: unknown } | null;
 
 /**
  * @nullable
@@ -2745,13 +2721,9 @@ the leg carrying this error so the dispute isn't double-billed.
   updatedAt?: string;
 }
 
-export type CreateErrorTypeBodyDisputeReasonsLibrary = {
-  [key: string]: unknown;
-};
+export type CreateErrorTypeBodyDisputeReasonsLibrary = { [key: string]: unknown };
 
-export type CreateErrorTypeBodyEvidenceRequirements = {
-  [key: string]: unknown;
-};
+export type CreateErrorTypeBodyEvidenceRequirements = { [key: string]: unknown };
 
 export type CreateErrorTypeBodyDecisionTree = { [key: string]: unknown };
 
@@ -2771,13 +2743,9 @@ export interface CreateErrorTypeBody {
   tripOverriding?: boolean;
 }
 
-export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
-  [key: string]: unknown;
-};
+export type UpdateErrorTypeBodyDisputeReasonsLibrary = { [key: string]: unknown };
 
-export type UpdateErrorTypeBodyEvidenceRequirements = {
-  [key: string]: unknown;
-};
+export type UpdateErrorTypeBodyEvidenceRequirements = { [key: string]: unknown };
 
 export type UpdateErrorTypeBodyDecisionTree = { [key: string]: unknown };
 
@@ -2865,11 +2833,11 @@ within-batch, missing-required-field) will be added as
 additional enum values without breaking existing clients.
 
  */
-export type ImportRejectedRowReason =
-  (typeof ImportRejectedRowReason)[keyof typeof ImportRejectedRowReason];
+export type ImportRejectedRowReason = typeof ImportRejectedRowReason[keyof typeof ImportRejectedRowReason];
+
 
 export const ImportRejectedRowReason = {
-  invalid_service_date: "invalid_service_date",
+  invalid_service_date: 'invalid_service_date',
 } as const;
 
 /**
@@ -2915,12 +2883,12 @@ rejected) so clients don't have to defensively `?? []`.
   rejected: ImportRejectedRow[];
 }
 
-export type LintResultSeverity =
-  (typeof LintResultSeverity)[keyof typeof LintResultSeverity];
+export type LintResultSeverity = typeof LintResultSeverity[keyof typeof LintResultSeverity];
+
 
 export const LintResultSeverity = {
-  warn: "warn",
-  fail: "fail",
+  warn: 'warn',
+  fail: 'fail',
 } as const;
 
 export interface LintResult {
@@ -2932,12 +2900,12 @@ export interface LintResult {
 /**
  * Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates.
  */
-export type CreatePortalSubmissionBodyActorType =
-  (typeof CreatePortalSubmissionBodyActorType)[keyof typeof CreatePortalSubmissionBodyActorType];
+export type CreatePortalSubmissionBodyActorType = typeof CreatePortalSubmissionBodyActorType[keyof typeof CreatePortalSubmissionBodyActorType];
+
 
 export const CreatePortalSubmissionBodyActorType = {
-  operator: "operator",
-  system: "system",
+  operator: 'operator',
+  system: 'system',
 } as const;
 
 export interface CreatePortalSubmissionBody {
@@ -3027,12 +2995,12 @@ export interface BotInstanceResponse {
 /**
  * The kind of resource a viewer is currently looking at.
  */
-export type PresenceResourceType =
-  (typeof PresenceResourceType)[keyof typeof PresenceResourceType];
+export type PresenceResourceType = typeof PresenceResourceType[keyof typeof PresenceResourceType];
+
 
 export const PresenceResourceType = {
-  claim: "claim",
-  invoice_group: "invoice_group",
+  claim: 'claim',
+  invoice_group: 'invoice_group',
 } as const;
 
 export interface PresenceHeartbeatBody {
@@ -3144,13 +3112,13 @@ export type DashboardSummaryPortalStats = {
   successRate: string;
 };
 
-export type WorkerRunSummaryStatus =
-  (typeof WorkerRunSummaryStatus)[keyof typeof WorkerRunSummaryStatus];
+export type WorkerRunSummaryStatus = typeof WorkerRunSummaryStatus[keyof typeof WorkerRunSummaryStatus];
+
 
 export const WorkerRunSummaryStatus = {
-  running: "running",
-  completed: "completed",
-  failed: "failed",
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
 } as const;
 
 export interface WorkerRunSummary {
@@ -3214,21 +3182,21 @@ without a per-page midnight `setTimeout`.
   today: string;
 }
 
-export type DashboardActivityEventActorRole =
-  (typeof DashboardActivityEventActorRole)[keyof typeof DashboardActivityEventActorRole];
+export type DashboardActivityEventActorRole = typeof DashboardActivityEventActorRole[keyof typeof DashboardActivityEventActorRole];
+
 
 export const DashboardActivityEventActorRole = {
-  user: "user",
-  system: "system",
+  user: 'user',
+  system: 'system',
 } as const;
 
-export type DashboardActivityEventTone =
-  (typeof DashboardActivityEventTone)[keyof typeof DashboardActivityEventTone];
+export type DashboardActivityEventTone = typeof DashboardActivityEventTone[keyof typeof DashboardActivityEventTone];
+
 
 export const DashboardActivityEventTone = {
-  good: "good",
-  bad: "bad",
-  neutral: "neutral",
+  good: 'good',
+  bad: 'bad',
+  neutral: 'neutral',
 } as const;
 
 /**
@@ -3258,7 +3226,7 @@ export interface DashboardActivity {
   events: DashboardActivityEvent[];
 }
 
-export type UrgentTodayTransitionsByStatus = { [key: string]: number };
+export type UrgentTodayTransitionsByStatus = {[key: string]: number};
 
 export interface UrgentTodayCurrentRow {
   id: number;
@@ -3293,7 +3261,7 @@ transition). Free-form string — the UI just renders it.
   timestampET: string;
 }
 
-export type UrgentTodayClearedSummaryByToStatus = { [key: string]: number };
+export type UrgentTodayClearedSummaryByToStatus = {[key: string]: number};
 
 export interface UrgentTodayClearedSummary {
   total: number;
@@ -3457,7 +3425,7 @@ export interface MyActivitySummary {
   /** IANA timezone the counts are bucketed in. */
   timezone: string;
   /** YYYY-MM-DD calendar key for "today" in the resolved timezone.
-   */
+ */
   dayKey: string;
   /**
    * Qualifying actions logged so far today.
@@ -3490,13 +3458,13 @@ does not have to gap-fill.
   dailyCounts: MyActivitySummaryDailyCountsItem[];
 }
 
-export type RepeatOffenderDriverTrend =
-  (typeof RepeatOffenderDriverTrend)[keyof typeof RepeatOffenderDriverTrend];
+export type RepeatOffenderDriverTrend = typeof RepeatOffenderDriverTrend[keyof typeof RepeatOffenderDriverTrend];
+
 
 export const RepeatOffenderDriverTrend = {
-  up: "up",
-  down: "down",
-  flat: "flat",
+  up: 'up',
+  down: 'down',
+  flat: 'flat',
 } as const;
 
 export interface RepeatOffenderDriver {
@@ -3530,13 +3498,13 @@ export interface RepeatOffenderDriver {
   lastRejectionDate: string | null;
 }
 
-export type RepeatOffenderMemberTrend =
-  (typeof RepeatOffenderMemberTrend)[keyof typeof RepeatOffenderMemberTrend];
+export type RepeatOffenderMemberTrend = typeof RepeatOffenderMemberTrend[keyof typeof RepeatOffenderMemberTrend];
+
 
 export const RepeatOffenderMemberTrend = {
-  up: "up",
-  down: "down",
-  flat: "flat",
+  up: 'up',
+  down: 'down',
+  flat: 'flat',
 } as const;
 
 export interface RepeatOffenderMember {
@@ -3781,26 +3749,24 @@ export interface AddClaimEvidenceBody {
 /**
  * @nullable
  */
-export type ClaimEvidenceResponseClosureScope =
-  | (typeof ClaimEvidenceResponseClosureScope)[keyof typeof ClaimEvidenceResponseClosureScope]
-  | null;
+export type ClaimEvidenceResponseClosureScope = typeof ClaimEvidenceResponseClosureScope[keyof typeof ClaimEvidenceResponseClosureScope] | null;
+
 
 export const ClaimEvidenceResponseClosureScope = {
-  tree: "tree",
-  closure: "closure",
+  tree: 'tree',
+  closure: 'closure',
 } as const;
 
 /**
  * @nullable
  */
-export type ClaimEvidenceResponseClosureReasonAtAttach =
-  | (typeof ClaimEvidenceResponseClosureReasonAtAttach)[keyof typeof ClaimEvidenceResponseClosureReasonAtAttach]
-  | null;
+export type ClaimEvidenceResponseClosureReasonAtAttach = typeof ClaimEvidenceResponseClosureReasonAtAttach[keyof typeof ClaimEvidenceResponseClosureReasonAtAttach] | null;
+
 
 export const ClaimEvidenceResponseClosureReasonAtAttach = {
-  denied_by_payor: "denied_by_payor",
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
+  denied_by_payor: 'denied_by_payor',
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
 } as const;
 
 export interface ClaimEvidenceResponse {
@@ -3820,36 +3786,35 @@ export interface ClaimEvidenceResponse {
   closureReasonAtAttach?: ClaimEvidenceResponseClosureReasonAtAttach;
 }
 
-export type EmailThreadMessageDirection =
-  (typeof EmailThreadMessageDirection)[keyof typeof EmailThreadMessageDirection];
+export type EmailThreadMessageDirection = typeof EmailThreadMessageDirection[keyof typeof EmailThreadMessageDirection];
+
 
 export const EmailThreadMessageDirection = {
-  inbound: "inbound",
-  outbound: "outbound",
+  inbound: 'inbound',
+  outbound: 'outbound',
 } as const;
 
 /**
  * Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.
  */
-export type EmailThreadMessageBodyFormat =
-  (typeof EmailThreadMessageBodyFormat)[keyof typeof EmailThreadMessageBodyFormat];
+export type EmailThreadMessageBodyFormat = typeof EmailThreadMessageBodyFormat[keyof typeof EmailThreadMessageBodyFormat];
+
 
 export const EmailThreadMessageBodyFormat = {
-  html: "html",
-  text: "text",
+  html: 'html',
+  text: 'text',
 } as const;
 
-export type EmailThreadMessageResponseType =
-  | (typeof EmailThreadMessageResponseType)[keyof typeof EmailThreadMessageResponseType]
-  | null;
+export type EmailThreadMessageResponseType = typeof EmailThreadMessageResponseType[keyof typeof EmailThreadMessageResponseType] | null;
+
 
 export const EmailThreadMessageResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
 } as const;
 
 export interface EmailThreadMessage {
@@ -3900,14 +3865,14 @@ before attachment names were tracked.
 - resolved: the underlying claim/group is closed
 
  */
-export type EmailThreadConversationStatus =
-  (typeof EmailThreadConversationStatus)[keyof typeof EmailThreadConversationStatus];
+export type EmailThreadConversationStatus = typeof EmailThreadConversationStatus[keyof typeof EmailThreadConversationStatus];
+
 
 export const EmailThreadConversationStatus = {
-  awaiting_their_reply: "awaiting_their_reply",
-  needs_review: "needs_review",
-  acknowledged_pending: "acknowledged_pending",
-  resolved: "resolved",
+  awaiting_their_reply: 'awaiting_their_reply',
+  needs_review: 'needs_review',
+  acknowledged_pending: 'acknowledged_pending',
+  resolved: 'resolved',
 } as const;
 
 export interface EmailThreadConversation {
@@ -4121,13 +4086,13 @@ still-pending rows are flagged as past their cycle.
   lastFailedSubmission: WorkerFailedSubmissionEvent | null;
 }
 
-export type SystemHealthRollupComponentStatus =
-  (typeof SystemHealthRollupComponentStatus)[keyof typeof SystemHealthRollupComponentStatus];
+export type SystemHealthRollupComponentStatus = typeof SystemHealthRollupComponentStatus[keyof typeof SystemHealthRollupComponentStatus];
+
 
 export const SystemHealthRollupComponentStatus = {
-  ok: "ok",
-  degraded: "degraded",
-  failed: "failed",
+  ok: 'ok',
+  degraded: 'degraded',
+  failed: 'failed',
 } as const;
 
 export interface SystemHealthRollupComponent {
@@ -4144,13 +4109,13 @@ treated as alerts.
   informational?: boolean;
 }
 
-export type SystemHealthRollupResponseOverall =
-  (typeof SystemHealthRollupResponseOverall)[keyof typeof SystemHealthRollupResponseOverall];
+export type SystemHealthRollupResponseOverall = typeof SystemHealthRollupResponseOverall[keyof typeof SystemHealthRollupResponseOverall];
+
 
 export const SystemHealthRollupResponseOverall = {
-  ok: "ok",
-  degraded: "degraded",
-  failed: "failed",
+  ok: 'ok',
+  degraded: 'degraded',
+  failed: 'failed',
 } as const;
 
 export interface SystemHealthRollupResponse {
@@ -4179,17 +4144,17 @@ where the AI call was attempted but failed (so a Haiku outage is
 visible separately from genuine `other` verdicts).
 
  */
-export type ClassifierVerdictBin =
-  (typeof ClassifierVerdictBin)[keyof typeof ClassifierVerdictBin];
+export type ClassifierVerdictBin = typeof ClassifierVerdictBin[keyof typeof ClassifierVerdictBin];
+
 
 export const ClassifierVerdictBin = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
-  abstain: "abstain",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
+  abstain: 'abstain',
 } as const;
 
 export interface ClassifierStatsVerdictCounts {
@@ -4228,12 +4193,12 @@ export interface ClassifierStatsTotals {
   outputTokens: number;
 }
 
-export type ClassifierStatsAlertKind =
-  (typeof ClassifierStatsAlertKind)[keyof typeof ClassifierStatsAlertKind];
+export type ClassifierStatsAlertKind = typeof ClassifierStatsAlertKind[keyof typeof ClassifierStatsAlertKind];
+
 
 export const ClassifierStatsAlertKind = {
-  spike_other: "spike_other",
-  spike_abstain: "spike_abstain",
+  spike_other: 'spike_other',
+  spike_abstain: 'spike_abstain',
 } as const;
 
 export interface ClassifierStatsAlert {
@@ -4276,12 +4241,12 @@ export interface GlobalSearchClaim {
   claimAmount?: string | null;
 }
 
-export type GlobalSearchWithdrawalKind =
-  (typeof GlobalSearchWithdrawalKind)[keyof typeof GlobalSearchWithdrawalKind];
+export type GlobalSearchWithdrawalKind = typeof GlobalSearchWithdrawalKind[keyof typeof GlobalSearchWithdrawalKind];
+
 
 export const GlobalSearchWithdrawalKind = {
-  claim: "claim",
-  group: "group",
+  claim: 'claim',
+  group: 'group',
 } as const;
 
 export interface GlobalSearchWithdrawal {
@@ -4328,20 +4293,20 @@ export type GetAuthSession200 = {
 };
 
 export type ListInvoiceGroupsParams = {
-  /**
-   * Comma-separated list of statuses to filter by
-   */
-  status?: string;
-  /**
-   * Comma-separated list of outcomes to filter by
-   */
-  outcome?: string;
-  search?: string;
-  /**
-   * Filter by presence of an error description on the group
-   */
-  errorDetails?: ListInvoiceGroupsErrorDetails;
-  /**
+/**
+ * Comma-separated list of statuses to filter by
+ */
+status?: string;
+/**
+ * Comma-separated list of outcomes to filter by
+ */
+outcome?: string;
+search?: string;
+/**
+ * Filter by presence of an error description on the group
+ */
+errorDetails?: ListInvoiceGroupsErrorDetails;
+/**
  * Restrict to groups tagged with the given import batch id
 (`import_<timestamp>`). Drives the post-upload triage bridge
 screen, which lists only the groups produced by the just-
@@ -4349,16 +4314,16 @@ completed import so the operator can route them without
 sifting through historical groups.
 
  */
-  importBatch?: string;
-  /**
-   * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
-   */
-  errorTypeId?: string;
-  /**
-   * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
-   */
-  errorTypeAssigned?: boolean;
-  /**
+importBatch?: string;
+/**
+ * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
+ */
+errorTypeId?: string;
+/**
+ * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
+ */
+errorTypeAssigned?: boolean;
+/**
  * Restrict the result set to exactly one of the
 "hidden from the Responses Awaiting Review inbox" buckets.
 The predicate is shared with
@@ -4374,28 +4339,28 @@ and this list can never disagree by construction.
   (and not currently suppressed by `awaitingPayorAgain`).
 
  */
-  inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
-  /**
-   * Filter groups created on or after this date (ISO 8601)
-   */
-  createdFrom?: string;
-  /**
-   * Filter groups created on or before this date (ISO 8601)
-   */
-  createdTo?: string;
-  /**
-   * Filter groups with total amount >= this value
-   */
-  amountMin?: string;
-  /**
-   * Filter groups with total amount <= this value
-   */
-  amountMax?: string;
-  /**
-   * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
-   */
-  expiring?: ListInvoiceGroupsExpiring;
-  /**
+inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
+/**
+ * Filter groups created on or after this date (ISO 8601)
+ */
+createdFrom?: string;
+/**
+ * Filter groups created on or before this date (ISO 8601)
+ */
+createdTo?: string;
+/**
+ * Filter groups with total amount >= this value
+ */
+amountMin?: string;
+/**
+ * Filter groups with total amount <= this value
+ */
+amountMax?: string;
+/**
+ * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+ */
+expiring?: ListInvoiceGroupsExpiring;
+/**
  * When `true`, include groups with `status="Expired"` in the
 response. Off by default everywhere — the nightly 6 AM ET
 sweep retires past-deadline pre-submit rows so they recede
@@ -4403,15 +4368,15 @@ from every workload list. Implicitly enabled if the caller
 already filtered to a status set that contains `Expired`.
 
  */
-  includeExpired?: boolean;
-  /**
+includeExpired?: boolean;
+/**
  * Filter groups by server-derived macro phase. `mas-action-required`
 returns groups that owe per-leg MAS cancellations, group-level
 re-attestation, or both. Drives the new MAS Action surfaces.
 
  */
-  macroPhase?: ListInvoiceGroupsMacroPhase;
-  /**
+macroPhase?: ListInvoiceGroupsMacroPhase;
+/**
  * Restrict to groups whose `service_date` is null — i.e. the
 Service Date column would render an empty state. Pairs with
 `missingServiceDateReason` to drill into a specific reason.
@@ -4419,8 +4384,8 @@ See Task #353 (`<ServiceDateCell />` and the
 `serviceDateReason` enum on every list row).
 
  */
-  missingServiceDate?: boolean;
-  /**
+missingServiceDate?: boolean;
+/**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all
@@ -4431,18 +4396,18 @@ the named empty-state branch:
 Implies `missingServiceDate=true` (no need to send both).
 
  */
-  missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
-  /**
-   * Column to sort by
-   */
-  sort?: ListInvoiceGroupsSort;
-  /**
-   * Sort direction
-   */
-  dir?: ListInvoiceGroupsDir;
-  limit?: number;
-  offset?: number;
-  /**
+missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
+/**
+ * Column to sort by
+ */
+sort?: ListInvoiceGroupsSort;
+/**
+ * Sort direction
+ */
+dir?: ListInvoiceGroupsDir;
+limit?: number;
+offset?: number;
+/**
  * Comma-separated additional payloads to embed in the response.
 Currently supported values: `needs_classification` — embeds the
 Classification Inbox payload (groups containing legs in
@@ -4451,128 +4416,128 @@ so the queue page can fetch the list and the inbox in a single
 round trip. Unknown values are silently ignored.
 
  */
-  include?: string;
+include?: string;
 };
 
-export type ListInvoiceGroupsErrorDetails =
-  (typeof ListInvoiceGroupsErrorDetails)[keyof typeof ListInvoiceGroupsErrorDetails];
+export type ListInvoiceGroupsErrorDetails = typeof ListInvoiceGroupsErrorDetails[keyof typeof ListInvoiceGroupsErrorDetails];
+
 
 export const ListInvoiceGroupsErrorDetails = {
-  empty: "empty",
-  present: "present",
+  empty: 'empty',
+  present: 'present',
 } as const;
 
-export type ListInvoiceGroupsInboxHiddenBucket =
-  (typeof ListInvoiceGroupsInboxHiddenBucket)[keyof typeof ListInvoiceGroupsInboxHiddenBucket];
+export type ListInvoiceGroupsInboxHiddenBucket = typeof ListInvoiceGroupsInboxHiddenBucket[keyof typeof ListInvoiceGroupsInboxHiddenBucket];
+
 
 export const ListInvoiceGroupsInboxHiddenBucket = {
-  unclassified: "unclassified",
-  awaitingPayorAgain: "awaitingPayorAgain",
-  acknowledgmentOnly: "acknowledgmentOnly",
+  unclassified: 'unclassified',
+  awaitingPayorAgain: 'awaitingPayorAgain',
+  acknowledgmentOnly: 'acknowledgmentOnly',
 } as const;
 
-export type ListInvoiceGroupsExpiring =
-  (typeof ListInvoiceGroupsExpiring)[keyof typeof ListInvoiceGroupsExpiring];
+export type ListInvoiceGroupsExpiring = typeof ListInvoiceGroupsExpiring[keyof typeof ListInvoiceGroupsExpiring];
+
 
 export const ListInvoiceGroupsExpiring = {
-  soon: "soon",
-  urgent: "urgent",
-  stuck: "stuck",
+  soon: 'soon',
+  urgent: 'urgent',
+  stuck: 'stuck',
 } as const;
 
-export type ListInvoiceGroupsMacroPhase =
-  (typeof ListInvoiceGroupsMacroPhase)[keyof typeof ListInvoiceGroupsMacroPhase];
+export type ListInvoiceGroupsMacroPhase = typeof ListInvoiceGroupsMacroPhase[keyof typeof ListInvoiceGroupsMacroPhase];
+
 
 export const ListInvoiceGroupsMacroPhase = {
-  "pre-submit": "pre-submit",
-  "in-flight": "in-flight",
-  "response-pending": "response-pending",
-  "mas-action-required": "mas-action-required",
-  "awaiting-payout": "awaiting-payout",
-  closed: "closed",
-  "on-hold": "on-hold",
+  'pre-submit': 'pre-submit',
+  'in-flight': 'in-flight',
+  'response-pending': 'response-pending',
+  'mas-action-required': 'mas-action-required',
+  'awaiting-payout': 'awaiting-payout',
+  closed: 'closed',
+  'on-hold': 'on-hold',
 } as const;
 
-export type ListInvoiceGroupsMissingServiceDateReason =
-  (typeof ListInvoiceGroupsMissingServiceDateReason)[keyof typeof ListInvoiceGroupsMissingServiceDateReason];
+export type ListInvoiceGroupsMissingServiceDateReason = typeof ListInvoiceGroupsMissingServiceDateReason[keyof typeof ListInvoiceGroupsMissingServiceDateReason];
+
 
 export const ListInvoiceGroupsMissingServiceDateReason = {
-  no_claims: "no_claims",
-  no_dated_claims: "no_dated_claims",
-  parse_failed: "parse_failed",
-  all_dated_legs_excluded: "all_dated_legs_excluded",
+  no_claims: 'no_claims',
+  no_dated_claims: 'no_dated_claims',
+  parse_failed: 'parse_failed',
+  all_dated_legs_excluded: 'all_dated_legs_excluded',
 } as const;
 
-export type ListInvoiceGroupsSort =
-  (typeof ListInvoiceGroupsSort)[keyof typeof ListInvoiceGroupsSort];
+export type ListInvoiceGroupsSort = typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort];
+
 
 export const ListInvoiceGroupsSort = {
-  invoiceNumber: "invoiceNumber",
-  rideCount: "rideCount",
-  clientNumber: "clientNumber",
-  errorTypeName: "errorTypeName",
-  totalAmount: "totalAmount",
-  status: "status",
-  createdAt: "createdAt",
+  invoiceNumber: 'invoiceNumber',
+  rideCount: 'rideCount',
+  clientNumber: 'clientNumber',
+  errorTypeName: 'errorTypeName',
+  totalAmount: 'totalAmount',
+  status: 'status',
+  createdAt: 'createdAt',
 } as const;
 
-export type ListInvoiceGroupsDir =
-  (typeof ListInvoiceGroupsDir)[keyof typeof ListInvoiceGroupsDir];
+export type ListInvoiceGroupsDir = typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir];
+
 
 export const ListInvoiceGroupsDir = {
-  asc: "asc",
-  desc: "desc",
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type ExportInvoiceGroupsCsvParams = {
-  status?: string;
-  outcome?: string;
-  search?: string;
-  errorDetails?: string;
-  errorTypeId?: string;
-  createdFrom?: string;
-  createdTo?: string;
-  amountMin?: string;
-  amountMax?: string;
-  expiring?: ExportInvoiceGroupsCsvExpiring;
-  /**
-   * When true, include rows with status=Expired in the export. Off by default.
-   */
-  includeExpired?: boolean;
-  sort?: string;
-  dir?: string;
-  /**
-   * Comma-separated list of column keys to include in export
-   */
-  columns?: string;
+status?: string;
+outcome?: string;
+search?: string;
+errorDetails?: string;
+errorTypeId?: string;
+createdFrom?: string;
+createdTo?: string;
+amountMin?: string;
+amountMax?: string;
+expiring?: ExportInvoiceGroupsCsvExpiring;
+/**
+ * When true, include rows with status=Expired in the export. Off by default.
+ */
+includeExpired?: boolean;
+sort?: string;
+dir?: string;
+/**
+ * Comma-separated list of column keys to include in export
+ */
+columns?: string;
 };
 
-export type ExportInvoiceGroupsCsvExpiring =
-  (typeof ExportInvoiceGroupsCsvExpiring)[keyof typeof ExportInvoiceGroupsCsvExpiring];
+export type ExportInvoiceGroupsCsvExpiring = typeof ExportInvoiceGroupsCsvExpiring[keyof typeof ExportInvoiceGroupsCsvExpiring];
+
 
 export const ExportInvoiceGroupsCsvExpiring = {
-  soon: "soon",
-  urgent: "urgent",
-  stuck: "stuck",
+  soon: 'soon',
+  urgent: 'urgent',
+  stuck: 'stuck',
 } as const;
 
 export type GetInvoiceGroupAttestationHistoryParams = {
-  /**
+/**
  * Trailing window for `reattestCompletedAt`. `7d` (default) covers
 the last 7 days, `30d` the last 30 days, and `all` skips the
 window filter entirely (still capped at 200 groups).
 
  */
-  range?: GetInvoiceGroupAttestationHistoryRange;
+range?: GetInvoiceGroupAttestationHistoryRange;
 };
 
-export type GetInvoiceGroupAttestationHistoryRange =
-  (typeof GetInvoiceGroupAttestationHistoryRange)[keyof typeof GetInvoiceGroupAttestationHistoryRange];
+export type GetInvoiceGroupAttestationHistoryRange = typeof GetInvoiceGroupAttestationHistoryRange[keyof typeof GetInvoiceGroupAttestationHistoryRange];
+
 
 export const GetInvoiceGroupAttestationHistoryRange = {
-  "7d": "7d",
-  "30d": "30d",
-  all: "all",
+  '7d': '7d',
+  '30d': '30d',
+  all: 'all',
 } as const;
 
 export type UpdateInvoiceGroupStatusBody = {
@@ -4590,12 +4555,12 @@ export type MarkInvoiceGroupMasEligible200 = InvoiceGroupResponse & {
   attestationsEngaged?: number;
 };
 
-export type TriageInvoiceGroupBodyTriageOutcome =
-  (typeof TriageInvoiceGroupBodyTriageOutcome)[keyof typeof TriageInvoiceGroupBodyTriageOutcome];
+export type TriageInvoiceGroupBodyTriageOutcome = typeof TriageInvoiceGroupBodyTriageOutcome[keyof typeof TriageInvoiceGroupBodyTriageOutcome];
+
 
 export const TriageInvoiceGroupBodyTriageOutcome = {
-  non_issue: "non_issue",
-  issue_found: "issue_found",
+  non_issue: 'non_issue',
+  issue_found: 'issue_found',
 } as const;
 
 export type TriageInvoiceGroupBody = {
@@ -4644,56 +4609,56 @@ export type ReplyToInvoiceGroupEmailConversation502 = {
 };
 
 export type ListClaimsParams = {
-  /**
-   * Comma-separated list of statuses to filter by
-   */
-  status?: string;
-  /**
-   * Comma-separated list of outcomes to filter by
-   */
-  outcome?: string;
-  search?: string;
-  /**
-   * Comma-separated list of error type IDs, use __unassigned__ for claims with no error type
-   */
-  errorTypeId?: string;
-  /**
-   * Filter claims created on or after this date (ISO 8601)
-   */
-  createdFrom?: string;
-  /**
-   * Filter claims created on or before this date (ISO 8601)
-   */
-  createdTo?: string;
-  /**
-   * Filter claims with amount >= this value
-   */
-  amountMin?: string;
-  /**
-   * Filter claims with amount <= this value
-   */
-  amountMax?: string;
-  /**
-   * Filter claims with service date on or after this date (YYYY-MM-DD)
-   */
-  serviceDateFrom?: string;
-  /**
-   * Filter claims with service date on or before this date (YYYY-MM-DD)
-   */
-  serviceDateTo?: string;
-  /**
-   * Filter claims to a specific car/vehicle number (exact match).
-   */
-  carNumber?: string;
-  /**
-   * Filter claims to a specific client/member number (exact match).
-   */
-  clientNumber?: string;
-  /**
-   * Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
-   */
-  expiring?: ListClaimsExpiring;
-  /**
+/**
+ * Comma-separated list of statuses to filter by
+ */
+status?: string;
+/**
+ * Comma-separated list of outcomes to filter by
+ */
+outcome?: string;
+search?: string;
+/**
+ * Comma-separated list of error type IDs, use __unassigned__ for claims with no error type
+ */
+errorTypeId?: string;
+/**
+ * Filter claims created on or after this date (ISO 8601)
+ */
+createdFrom?: string;
+/**
+ * Filter claims created on or before this date (ISO 8601)
+ */
+createdTo?: string;
+/**
+ * Filter claims with amount >= this value
+ */
+amountMin?: string;
+/**
+ * Filter claims with amount <= this value
+ */
+amountMax?: string;
+/**
+ * Filter claims with service date on or after this date (YYYY-MM-DD)
+ */
+serviceDateFrom?: string;
+/**
+ * Filter claims with service date on or before this date (YYYY-MM-DD)
+ */
+serviceDateTo?: string;
+/**
+ * Filter claims to a specific car/vehicle number (exact match).
+ */
+carNumber?: string;
+/**
+ * Filter claims to a specific client/member number (exact match).
+ */
+clientNumber?: string;
+/**
+ * Restrict to actionable claims whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+ */
+expiring?: ListClaimsExpiring;
+/**
  * When `true`, include claims whose `status="Expired"` in the
 response. Off by default everywhere — disputed children
 inherit the Expired status from their parent group when the
@@ -4701,85 +4666,86 @@ nightly sweep retires it. Implicitly enabled if the caller
 already filtered to a status set that contains `Expired`.
 
  */
-  includeExpired?: boolean;
-  /**
-   * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
-   */
-  legSubStatus?: string;
-  /**
-   * Column to sort by
-   */
-  sort?: ListClaimsSort;
-  /**
-   * Sort direction
-   */
-  dir?: ListClaimsDir;
-  limit?: number;
-  offset?: number;
+includeExpired?: boolean;
+/**
+ * Comma-separated list of derived per-leg sub-status values (excluded, duplicate, needs_classification, investigating, blocked, ready, dropped, frozen). `duplicate` filters legs marked as Sibling Duplicate of a primary leg with a trip-overriding error in the same invoice. `frozen` filters legs whose parent invoice group is past pre-submit (in-flight, response-pending, on-hold, closed).
+ */
+legSubStatus?: string;
+/**
+ * Column to sort by
+ */
+sort?: ListClaimsSort;
+/**
+ * Sort direction
+ */
+dir?: ListClaimsDir;
+limit?: number;
+offset?: number;
 };
 
-export type ListClaimsExpiring =
-  (typeof ListClaimsExpiring)[keyof typeof ListClaimsExpiring];
+export type ListClaimsExpiring = typeof ListClaimsExpiring[keyof typeof ListClaimsExpiring];
+
 
 export const ListClaimsExpiring = {
-  soon: "soon",
-  urgent: "urgent",
-  stuck: "stuck",
+  soon: 'soon',
+  urgent: 'urgent',
+  stuck: 'stuck',
 } as const;
 
-export type ListClaimsSort =
-  (typeof ListClaimsSort)[keyof typeof ListClaimsSort];
+export type ListClaimsSort = typeof ListClaimsSort[keyof typeof ListClaimsSort];
+
 
 export const ListClaimsSort = {
-  confNumber: "confNumber",
-  date: "date",
-  clientNumber: "clientNumber",
-  errorTypeName: "errorTypeName",
-  claimAmount: "claimAmount",
-  status: "status",
-  createdAt: "createdAt",
+  confNumber: 'confNumber',
+  date: 'date',
+  clientNumber: 'clientNumber',
+  errorTypeName: 'errorTypeName',
+  claimAmount: 'claimAmount',
+  status: 'status',
+  createdAt: 'createdAt',
 } as const;
 
-export type ListClaimsDir = (typeof ListClaimsDir)[keyof typeof ListClaimsDir];
+export type ListClaimsDir = typeof ListClaimsDir[keyof typeof ListClaimsDir];
+
 
 export const ListClaimsDir = {
-  asc: "asc",
-  desc: "desc",
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type ExportClaimsCsvParams = {
-  status?: string;
-  outcome?: string;
-  search?: string;
-  errorTypeId?: string;
-  createdFrom?: string;
-  createdTo?: string;
-  amountMin?: string;
-  amountMax?: string;
-  serviceDateFrom?: string;
-  serviceDateTo?: string;
-  carNumber?: string;
-  clientNumber?: string;
-  expiring?: ExportClaimsCsvExpiring;
-  /**
-   * When true, include rows with status=Expired in the export. Off by default.
-   */
-  includeExpired?: boolean;
-  sort?: string;
-  dir?: string;
-  /**
-   * Comma-separated list of column keys to include in export
-   */
-  columns?: string;
+status?: string;
+outcome?: string;
+search?: string;
+errorTypeId?: string;
+createdFrom?: string;
+createdTo?: string;
+amountMin?: string;
+amountMax?: string;
+serviceDateFrom?: string;
+serviceDateTo?: string;
+carNumber?: string;
+clientNumber?: string;
+expiring?: ExportClaimsCsvExpiring;
+/**
+ * When true, include rows with status=Expired in the export. Off by default.
+ */
+includeExpired?: boolean;
+sort?: string;
+dir?: string;
+/**
+ * Comma-separated list of column keys to include in export
+ */
+columns?: string;
 };
 
-export type ExportClaimsCsvExpiring =
-  (typeof ExportClaimsCsvExpiring)[keyof typeof ExportClaimsCsvExpiring];
+export type ExportClaimsCsvExpiring = typeof ExportClaimsCsvExpiring[keyof typeof ExportClaimsCsvExpiring];
+
 
 export const ExportClaimsCsvExpiring = {
-  soon: "soon",
-  urgent: "urgent",
-  stuck: "stuck",
+  soon: 'soon',
+  urgent: 'urgent',
+  stuck: 'stuck',
 } as const;
 
 export type GetClaimValidTransitions200 = {
@@ -4803,20 +4769,20 @@ export type GetClaimValidTransitions200 = {
 };
 
 export type ListAttestationPendingParams = {
-  state?: ListAttestationPendingState;
-  /**
-   * @maximum 500
-   */
-  limit?: number;
+state?: ListAttestationPendingState;
+/**
+ * @maximum 500
+ */
+limit?: number;
 };
 
-export type ListAttestationPendingState =
-  (typeof ListAttestationPendingState)[keyof typeof ListAttestationPendingState];
+export type ListAttestationPendingState = typeof ListAttestationPendingState[keyof typeof ListAttestationPendingState];
+
 
 export const ListAttestationPendingState = {
-  pending: "pending",
-  queued: "queued",
-  completed: "completed",
+  pending: 'pending',
+  queued: 'queued',
+  completed: 'completed',
 } as const;
 
 /**
@@ -4825,9 +4791,7 @@ string). Surfaces the data the queue-review UI needs
 without forcing a second roundtrip per row.
 
  */
-export type ListAttestationPending200Extras = {
-  [key: string]: AttestationPendingExtras;
-};
+export type ListAttestationPending200Extras = {[key: string]: AttestationPendingExtras};
 
 export type ListAttestationPending200 = {
   claims: ClaimResponse[];
@@ -4839,20 +4803,20 @@ without forcing a second roundtrip per row.
 };
 
 export type GetAiCalibrationParams = {
-  errorTypeId: string;
-  /**
-   * @minimum 1
-   * @maximum 365
-   */
-  windowDays?: number;
+errorTypeId: string;
+/**
+ * @minimum 1
+ * @maximum 365
+ */
+windowDays?: number;
 };
 
 export type GetSopRewindImpactParams = {
-  action: SopRewindAction;
-  /**
-   * Target node id — required when `action=jump`.
-   */
-  nodeId?: string;
+action: SopRewindAction;
+/**
+ * Target node id — required when `action=jump`.
+ */
+nodeId?: string;
 };
 
 export type UpgradeReplyDraftBody = {
@@ -4874,11 +4838,11 @@ export type UpgradeReplyDraft502 = {
   error?: string;
 };
 
-export type BulkAssignErrorType409Code =
-  (typeof BulkAssignErrorType409Code)[keyof typeof BulkAssignErrorType409Code];
+export type BulkAssignErrorType409Code = typeof BulkAssignErrorType409Code[keyof typeof BulkAssignErrorType409Code];
+
 
 export const BulkAssignErrorType409Code = {
-  use_group_endpoint: "use_group_endpoint",
+  use_group_endpoint: 'use_group_endpoint',
 } as const;
 
 export type BulkAssignErrorType409 = {
@@ -4888,7 +4852,7 @@ export type BulkAssignErrorType409 = {
 };
 
 export type ListPortalSubmissionsParams = {
-  status?: string;
+status?: string;
 };
 
 export type UpdatePortalSubmissionDraftBody = {
@@ -4921,68 +4885,68 @@ export type ConfirmPortalSubmission422 = {
 };
 
 export type GetDashboardTimeseriesParams = {
-  /**
-   * @minimum 1
-   * @maximum 365
-   */
-  days?: number;
+/**
+ * @minimum 1
+ * @maximum 365
+ */
+days?: number;
 };
 
 export type GetDashboardInsightsParams = {
-  /**
-   * @minimum 1
-   * @maximum 365
-   */
-  days?: number;
+/**
+ * @minimum 1
+ * @maximum 365
+ */
+days?: number;
 };
 
 export type GetDashboardUserProductivityParams = {
-  /**
-   * @minimum 1
-   * @maximum 365
-   */
-  days?: number;
+/**
+ * @minimum 1
+ * @maximum 365
+ */
+days?: number;
 };
 
 export type GetDashboardActivityParams = {
-  /**
-   * @minimum 1
-   * @maximum 50
-   */
-  limit?: number;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };
 
 export type GetMyProcessedTodayParams = {
-  /**
+/**
  * IANA timezone (e.g. `America/New_York`) used to anchor "start of
 today". Defaults to the server's office timezone if absent or
 invalid so the response is never empty due to a bad client value.
 
  */
-  tz?: string;
+tz?: string;
 };
 
 export type GetMyActivitySummaryParams = {
-  /**
+/**
  * IANA timezone (e.g. `America/New_York`) used to anchor "start
 of today" and bucket the per-day counts. Defaults to the
 server's office timezone if absent or invalid.
 
  */
-  tz?: string;
+tz?: string;
 };
 
 export type GetDashboardRepeatOffendersParams = {
-  /**
-   * @minimum 1
-   * @maximum 365
-   */
-  days?: number;
-  /**
-   * @minimum 1
-   * @maximum 50
-   */
-  limit?: number;
+/**
+ * @minimum 1
+ * @maximum 365
+ */
+days?: number;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };
 
 export type ListEvidenceTypes200 = {
@@ -4994,44 +4958,44 @@ export type ListClaimEvidence200 = {
 };
 
 export type ListResponsesParams = {
-  claimId?: number;
-  source?: ListResponsesSource;
-  processed?: ListResponsesProcessed;
-  limit?: number;
-  offset?: number;
+claimId?: number;
+source?: ListResponsesSource;
+processed?: ListResponsesProcessed;
+limit?: number;
+offset?: number;
 };
 
-export type ListResponsesSource =
-  (typeof ListResponsesSource)[keyof typeof ListResponsesSource];
+export type ListResponsesSource = typeof ListResponsesSource[keyof typeof ListResponsesSource];
+
 
 export const ListResponsesSource = {
-  email: "email",
-  portal: "portal",
-  manual: "manual",
+  email: 'email',
+  portal: 'portal',
+  manual: 'manual',
 } as const;
 
-export type ListResponsesProcessed =
-  (typeof ListResponsesProcessed)[keyof typeof ListResponsesProcessed];
+export type ListResponsesProcessed = typeof ListResponsesProcessed[keyof typeof ListResponsesProcessed];
+
 
 export const ListResponsesProcessed = {
-  true: "true",
-  false: "false",
+  true: 'true',
+  false: 'false',
 } as const;
 
 export type ListResponses200 = {
   responses?: PortalResponseItem[];
 };
 
-export type ProcessResponseBodyResponseType =
-  (typeof ProcessResponseBodyResponseType)[keyof typeof ProcessResponseBodyResponseType];
+export type ProcessResponseBodyResponseType = typeof ProcessResponseBodyResponseType[keyof typeof ProcessResponseBodyResponseType];
+
 
 export const ProcessResponseBodyResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
 } as const;
 
 export type ProcessResponseBody = {
@@ -5081,16 +5045,16 @@ export type CheckEmailResponsesBody = {
   hoursBack?: number;
 };
 
-export type RecordPortalResponseBodyResponseType =
-  (typeof RecordPortalResponseBodyResponseType)[keyof typeof RecordPortalResponseBodyResponseType];
+export type RecordPortalResponseBodyResponseType = typeof RecordPortalResponseBodyResponseType[keyof typeof RecordPortalResponseBodyResponseType];
+
 
 export const RecordPortalResponseBodyResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
 } as const;
 
 /**
@@ -5100,12 +5064,12 @@ emphasis, and lists survive. Defaults to `text` for backwards
 compatibility with bots that have not been updated.
 
  */
-export type RecordPortalResponseBodyBodyFormat =
-  (typeof RecordPortalResponseBodyBodyFormat)[keyof typeof RecordPortalResponseBodyBodyFormat];
+export type RecordPortalResponseBodyBodyFormat = typeof RecordPortalResponseBodyBodyFormat[keyof typeof RecordPortalResponseBodyBodyFormat];
+
 
 export const RecordPortalResponseBodyBodyFormat = {
-  html: "html",
-  text: "text",
+  html: 'html',
+  text: 'text',
 } as const;
 
 export type RecordPortalResponseBodyMetadata = { [key: string]: unknown };
@@ -5138,69 +5102,69 @@ export type RecordPortalResponse200 = {
 };
 
 export type AdminListAuditLogsParams = {
-  userEmail?: string;
-  category?: AdminListAuditLogsCategory;
-  from?: string;
-  to?: string;
-  limit?: number;
-  offset?: number;
+userEmail?: string;
+category?: AdminListAuditLogsCategory;
+from?: string;
+to?: string;
+limit?: number;
+offset?: number;
 };
 
-export type AdminListAuditLogsCategory =
-  (typeof AdminListAuditLogsCategory)[keyof typeof AdminListAuditLogsCategory];
+export type AdminListAuditLogsCategory = typeof AdminListAuditLogsCategory[keyof typeof AdminListAuditLogsCategory];
+
 
 export const AdminListAuditLogsCategory = {
-  all: "all",
-  status: "status",
-  edit: "edit",
-  evidence: "evidence",
-  workflow: "workflow",
-  hold: "hold",
-  draft: "draft",
-  communication: "communication",
-  other: "other",
+  all: 'all',
+  status: 'status',
+  edit: 'edit',
+  evidence: 'evidence',
+  workflow: 'workflow',
+  hold: 'hold',
+  draft: 'draft',
+  communication: 'communication',
+  other: 'other',
 } as const;
 
 export type AdminExportAuditLogsCsvParams = {
-  userEmail?: string;
-  category?: AdminExportAuditLogsCsvCategory;
-  from?: string;
-  to?: string;
+userEmail?: string;
+category?: AdminExportAuditLogsCsvCategory;
+from?: string;
+to?: string;
 };
 
-export type AdminExportAuditLogsCsvCategory =
-  (typeof AdminExportAuditLogsCsvCategory)[keyof typeof AdminExportAuditLogsCsvCategory];
+export type AdminExportAuditLogsCsvCategory = typeof AdminExportAuditLogsCsvCategory[keyof typeof AdminExportAuditLogsCsvCategory];
+
 
 export const AdminExportAuditLogsCsvCategory = {
-  all: "all",
-  status: "status",
-  edit: "edit",
-  evidence: "evidence",
-  workflow: "workflow",
-  hold: "hold",
-  draft: "draft",
-  communication: "communication",
-  other: "other",
+  all: 'all',
+  status: 'status',
+  edit: 'edit',
+  evidence: 'evidence',
+  workflow: 'workflow',
+  hold: 'hold',
+  draft: 'draft',
+  communication: 'communication',
+  other: 'other',
 } as const;
 
 export type GetSystemHealthClassifierStatsParams = {
-  /**
-   * Window length in days (1-90, default 14).
-   */
-  days?: number;
+/**
+ * Window length in days (1-90, default 14).
+ */
+days?: number;
 };
 
 export type GetSystemHealthBouncesParams = {
-  limit?: number;
-  onlyUnmatched?: GetSystemHealthBouncesOnlyUnmatched;
+limit?: number;
+onlyUnmatched?: GetSystemHealthBouncesOnlyUnmatched;
 };
 
-export type GetSystemHealthBouncesOnlyUnmatched =
-  (typeof GetSystemHealthBouncesOnlyUnmatched)[keyof typeof GetSystemHealthBouncesOnlyUnmatched];
+export type GetSystemHealthBouncesOnlyUnmatched = typeof GetSystemHealthBouncesOnlyUnmatched[keyof typeof GetSystemHealthBouncesOnlyUnmatched];
+
 
 export const GetSystemHealthBouncesOnlyUnmatched = {
-  true: "true",
-  false: "false",
+  true: 'true',
+  false: 'false',
 } as const;
 
 export type RunExpiredSweepBody = {
@@ -5211,7 +5175,7 @@ export type RunExpiredSweepBody = {
 /**
  * Per-source-status breakdown of the retired rows.
  */
-export type RunExpiredSweep200ByStatus = { [key: string]: number };
+export type RunExpiredSweep200ByStatus = {[key: string]: number};
 
 export type RunExpiredSweep200 = {
   /** Number of groups transitioned to Expired (or that would be, if dryRun). */
@@ -5231,100 +5195,101 @@ export type BackfillInvoiceGroupsBody = {
 };
 
 export type ListWithdrawalsParams = {
-  search?: string;
-  /**
-   * Comma-separated list of closure reasons to include
-   */
-  reason?: string;
-  /**
-   * When true (default), hide rows already marked as addressed
-   */
-  hideAddressed?: ListWithdrawalsHideAddressed;
-  closedFrom?: string;
-  closedTo?: string;
-  /**
-   * Comma-separated user ids — only return rows whose closer matches one of these users
-   */
-  closedBy?: string;
-  sort?: ListWithdrawalsSort;
-  dir?: ListWithdrawalsDir;
-  limit?: number;
-  offset?: number;
+search?: string;
+/**
+ * Comma-separated list of closure reasons to include
+ */
+reason?: string;
+/**
+ * When true (default), hide rows already marked as addressed
+ */
+hideAddressed?: ListWithdrawalsHideAddressed;
+closedFrom?: string;
+closedTo?: string;
+/**
+ * Comma-separated user ids — only return rows whose closer matches one of these users
+ */
+closedBy?: string;
+sort?: ListWithdrawalsSort;
+dir?: ListWithdrawalsDir;
+limit?: number;
+offset?: number;
 };
 
-export type ListWithdrawalsHideAddressed =
-  (typeof ListWithdrawalsHideAddressed)[keyof typeof ListWithdrawalsHideAddressed];
+export type ListWithdrawalsHideAddressed = typeof ListWithdrawalsHideAddressed[keyof typeof ListWithdrawalsHideAddressed];
+
 
 export const ListWithdrawalsHideAddressed = {
-  true: "true",
-  false: "false",
+  true: 'true',
+  false: 'false',
 } as const;
 
-export type ListWithdrawalsSort =
-  (typeof ListWithdrawalsSort)[keyof typeof ListWithdrawalsSort];
+export type ListWithdrawalsSort = typeof ListWithdrawalsSort[keyof typeof ListWithdrawalsSort];
+
 
 export const ListWithdrawalsSort = {
-  closedAt: "closedAt",
-  reason: "reason",
-  kind: "kind",
-  identifier: "identifier",
-  amount: "amount",
-  addressed: "addressed",
+  closedAt: 'closedAt',
+  reason: 'reason',
+  kind: 'kind',
+  identifier: 'identifier',
+  amount: 'amount',
+  addressed: 'addressed',
 } as const;
 
-export type ListWithdrawalsDir =
-  (typeof ListWithdrawalsDir)[keyof typeof ListWithdrawalsDir];
+export type ListWithdrawalsDir = typeof ListWithdrawalsDir[keyof typeof ListWithdrawalsDir];
+
 
 export const ListWithdrawalsDir = {
-  asc: "asc",
-  desc: "desc",
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type ExportWithdrawalsCsvParams = {
-  search?: string;
-  reason?: string;
-  hideAddressed?: ExportWithdrawalsCsvHideAddressed;
-  closedFrom?: string;
-  closedTo?: string;
-  /**
-   * Comma-separated user ids — only export rows whose closer matches one of these users
-   */
-  closedBy?: string;
-  sort?: ExportWithdrawalsCsvSort;
-  dir?: ExportWithdrawalsCsvDir;
+search?: string;
+reason?: string;
+hideAddressed?: ExportWithdrawalsCsvHideAddressed;
+closedFrom?: string;
+closedTo?: string;
+/**
+ * Comma-separated user ids — only export rows whose closer matches one of these users
+ */
+closedBy?: string;
+sort?: ExportWithdrawalsCsvSort;
+dir?: ExportWithdrawalsCsvDir;
 };
 
-export type ExportWithdrawalsCsvHideAddressed =
-  (typeof ExportWithdrawalsCsvHideAddressed)[keyof typeof ExportWithdrawalsCsvHideAddressed];
+export type ExportWithdrawalsCsvHideAddressed = typeof ExportWithdrawalsCsvHideAddressed[keyof typeof ExportWithdrawalsCsvHideAddressed];
+
 
 export const ExportWithdrawalsCsvHideAddressed = {
-  true: "true",
-  false: "false",
+  true: 'true',
+  false: 'false',
 } as const;
 
-export type ExportWithdrawalsCsvSort =
-  (typeof ExportWithdrawalsCsvSort)[keyof typeof ExportWithdrawalsCsvSort];
+export type ExportWithdrawalsCsvSort = typeof ExportWithdrawalsCsvSort[keyof typeof ExportWithdrawalsCsvSort];
+
 
 export const ExportWithdrawalsCsvSort = {
-  closedAt: "closedAt",
-  reason: "reason",
-  kind: "kind",
-  identifier: "identifier",
-  amount: "amount",
-  addressed: "addressed",
+  closedAt: 'closedAt',
+  reason: 'reason',
+  kind: 'kind',
+  identifier: 'identifier',
+  amount: 'amount',
+  addressed: 'addressed',
 } as const;
 
-export type ExportWithdrawalsCsvDir =
-  (typeof ExportWithdrawalsCsvDir)[keyof typeof ExportWithdrawalsCsvDir];
+export type ExportWithdrawalsCsvDir = typeof ExportWithdrawalsCsvDir[keyof typeof ExportWithdrawalsCsvDir];
+
 
 export const ExportWithdrawalsCsvDir = {
-  asc: "asc",
-  desc: "desc",
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type GlobalSearchParams = {
-  /**
-   * Free-text query. Substring/ILIKE match against the same fields the dedicated list pages search.
-   */
-  q?: string;
+/**
+ * Free-text query. Substring/ILIKE match against the same fields the dedicated list pages search.
+ */
+q?: string;
 };
+
