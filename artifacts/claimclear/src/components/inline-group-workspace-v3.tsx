@@ -993,48 +993,129 @@ function WalkSopHero({
         <CardContent className="pt-4 pb-3">
           {legMeta}
           {countsStrip}
-          {!claim ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading leg…
-            </div>
-          ) : !claim.errorTypeId ? (
-            <div className="text-xs flex items-start gap-2 p-3 rounded bg-amber-50 border border-amber-200 text-amber-900">
-              <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-              <span>
-                This leg has no error type yet. Open Details to classify it
-                — the SOP walk unlocks once an error type is assigned.
-              </span>
-            </div>
-          ) : !tree ? (
-            <div className="text-xs flex items-start gap-2 p-3 rounded bg-amber-50 border border-amber-200 text-amber-900">
-              <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-              <span>
-                The assigned error type ({claim.errorTypeName ?? "—"}) has
-                no decision tree configured. Configure one to walk the SOP.
-              </span>
-            </div>
-          ) : (
-            <SopAdvancePlayer
-              leg={{
-                id: claim.id,
-                errorTypeId: claim.errorTypeId,
-                sopNodeId: claim.sopNodeId,
-                sopOutcome: claim.sopOutcome,
-                dropReason: claim.dropReason,
-                invoiceGroupId: claim.invoiceGroupId,
-                duplicateOfClaimId: claim.duplicateOfClaimId,
-                perLegContext: claim.perLegContext,
-                sopAnswers: claim.sopAnswers,
-              }}
-              tree={tree}
-              onAdvanced={invalidateLeg}
-              errorType={
-                errorType
-                  ? { useDirectEmail: errorType.useDirectEmail ?? null }
-                  : null
-              }
-            />
-          )}
+          {(() => {
+            if (!claim) {
+              return (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading leg…
+                </div>
+              );
+            }
+            // Closed-state legs (excluded, dropped as non_issue /
+            // cannot_dispute, or frozen) must NOT show the "classify this
+            // leg" prompt — they already have a final disposition and the
+            // SOP walk is intentionally not their next step. Surface the
+            // closure clearly instead so the operator sees why the leg is
+            // inert.
+            const sub = deriveLegSubStatus(claim);
+            if (sub === "excluded" || sub === "dropped" || sub === "frozen") {
+              const reason =
+                claim.sopOutcome === "non_issue" || claim.dropReason === "non_issue"
+                  ? { label: "Non-issue", body: "This leg was marked as a non-issue. Nothing to dispute — it routes to re-attestation in the payor portal.", tone: "blue" as const }
+                  : claim.sopOutcome === "cannot_dispute" || claim.dropReason === "cannot_dispute"
+                  ? { label: "Cannot dispute", body: "This leg is non-contestable and has been withdrawn from the dispute.", tone: "amber" as const }
+                  : claim.includedInDispute === false
+                  ? { label: "Excluded", body: "This leg has been excluded from the dispute.", tone: "muted" as const }
+                  : { label: "Closed", body: "This leg has reached a final state and no further SOP work is needed.", tone: "muted" as const };
+              const accentVar =
+                reason.tone === "blue" ? "var(--cc-blue-fg)"
+                : reason.tone === "amber" ? "var(--cc-amber-fg)"
+                : "var(--cc-border)";
+              const iconColor =
+                reason.tone === "blue" ? "var(--cc-blue-fg)"
+                : reason.tone === "amber" ? "var(--cc-amber-fg)"
+                : "var(--cc-meta-fg)";
+              const pillClass =
+                reason.tone === "blue" ? "cc-pill-green"
+                : reason.tone === "amber" ? "cc-pill-amber"
+                : "cc-pill-muted";
+              return (
+                <div
+                  className="cc-sop-card"
+                  style={{
+                    background: "var(--cc-card)",
+                    border: "1px solid var(--cc-border)",
+                    borderLeft: `3px solid ${accentVar}`,
+                    padding: "0.875rem 1rem",
+                    borderRadius: "var(--cc-radius)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                  }}
+                  data-testid={`v3-hero-walk-closed-${claim.id}`}
+                  data-closure={reason.label.toLowerCase().replace(/\s+/g, "-")}
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" style={{ color: iconColor }} />
+                    <span className="text-sm font-semibold" style={{ color: "var(--cc-fg)" }}>
+                      This leg is closed as {reason.label}
+                    </span>
+                    <span className={`cc-pill ${pillClass} ml-auto`}>{reason.label}</span>
+                  </div>
+                  <p className="cc-meta text-[12px]" style={{ margin: 0, lineHeight: 1.5 }}>
+                    {reason.body}
+                  </p>
+                  {(onOpenSection || onOpenDrawer) && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={openChip("activity")}
+                        className="cc-link text-[12px]"
+                        style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+                        data-testid={`v3-hero-walk-closed-open-activity-${claim.id}`}
+                      >
+                        View closure activity →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            if (!claim.errorTypeId) {
+              return (
+                <div className="text-xs flex items-start gap-2 p-3 rounded bg-amber-50 border border-amber-200 text-amber-900">
+                  <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    This leg has no error type yet. Open Details to classify it
+                    — the SOP walk unlocks once an error type is assigned.
+                  </span>
+                </div>
+              );
+            }
+            if (!tree) {
+              return (
+                <div className="text-xs flex items-start gap-2 p-3 rounded bg-amber-50 border border-amber-200 text-amber-900">
+                  <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    The assigned error type ({claim.errorTypeName ?? "—"}) has
+                    no decision tree configured. Configure one to walk the SOP.
+                  </span>
+                </div>
+              );
+            }
+            return (
+              <SopAdvancePlayer
+                leg={{
+                  id: claim.id,
+                  errorTypeId: claim.errorTypeId,
+                  sopNodeId: claim.sopNodeId,
+                  sopOutcome: claim.sopOutcome,
+                  dropReason: claim.dropReason,
+                  invoiceGroupId: claim.invoiceGroupId,
+                  duplicateOfClaimId: claim.duplicateOfClaimId,
+                  perLegContext: claim.perLegContext,
+                  sopAnswers: claim.sopAnswers,
+                }}
+                tree={tree}
+                onAdvanced={invalidateLeg}
+                errorType={
+                  errorType
+                    ? { useDirectEmail: errorType.useDirectEmail ?? null }
+                    : null
+                }
+              />
+            );
+          })()}
         </CardContent>
       </Card>
     </div>

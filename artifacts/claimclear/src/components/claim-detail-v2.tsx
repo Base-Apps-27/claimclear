@@ -1292,12 +1292,61 @@ export function ClaimDetailV2({
                   }}
                 />
               ) : null}
-              {!isDuplicate && !claim.errorTypeId && (
+              {/* Closed-state legs (excluded, dropped as non_issue /
+                  cannot_dispute, or frozen) take precedence over the
+                  classify prompt — they already have a final disposition
+                  and the SOP walk is intentionally not their next step. */}
+              {!isDuplicate &&
+                (subStatus === "excluded" || subStatus === "dropped" || subStatus === "frozen") && (() => {
+                  const reason =
+                    claim.sopOutcome === "non_issue" || claim.dropReason === "non_issue"
+                      ? { label: "Non-issue", body: "This leg was marked as a non-issue. Nothing to dispute — it routes to re-attestation in the payor portal.", pill: "cc-pill-green" }
+                      : claim.sopOutcome === "cannot_dispute" || claim.dropReason === "cannot_dispute"
+                      ? { label: "Cannot dispute", body: "This leg is non-contestable and has been withdrawn from the dispute.", pill: "cc-pill-amber" }
+                      : claim.includedInDispute === false
+                      ? { label: "Excluded", body: "This leg has been excluded from the dispute.", pill: "cc-pill-muted" }
+                      : { label: "Closed", body: "This leg has reached a final state and no further SOP work is needed.", pill: "cc-pill-muted" };
+                  return (
+                    <div
+                      className="rounded"
+                      style={{
+                        background: "var(--cc-card)",
+                        border: "1px solid var(--cc-border)",
+                        borderLeft: `3px solid var(--cc-${reason.pill === "cc-pill-green" ? "blue" : reason.pill === "cc-pill-amber" ? "amber" : "border"}-fg, var(--cc-border))`,
+                        padding: "0.875rem 1rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.5rem",
+                      }}
+                      data-testid={`leg-closed-${reason.label.toLowerCase().replace(/\s+/g, "-")}-${claim.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2
+                          className="w-4 h-4"
+                          style={{ color: reason.pill === "cc-pill-green" ? "var(--cc-blue-fg)" : reason.pill === "cc-pill-amber" ? "var(--cc-amber-fg)" : "var(--cc-meta-fg)" }}
+                        />
+                        <span className="text-sm font-semibold" style={{ color: "var(--cc-fg)" }}>
+                          This leg is closed as {reason.label}
+                        </span>
+                        <span className={`cc-pill ${reason.pill} ml-auto`}>{reason.label}</span>
+                      </div>
+                      <p className="cc-meta text-[12px]" style={{ margin: 0, lineHeight: 1.5 }}>
+                        {reason.body}
+                      </p>
+                      <div className="cc-meta text-[11px]">
+                        Audit trail is recorded in the Activity history below.
+                      </div>
+                    </div>
+                  );
+                })()}
+              {!isDuplicate && !claim.errorTypeId && subStatus === "needs_classification" && (
                 // Task #412: Replaces the read-only amber "pick one
                 // from the queue" banner with a real entry point.
                 // Opens the shared ClassifyDialog scoped to this leg so
                 // the operator can assign an Error Type without leaving
-                // the detail page.
+                // the detail page. Gated on `needs_classification` so
+                // closed-state legs (handled above) don't also see the
+                // amber "classify it" prompt.
                 <div
                   className="flex items-center justify-between gap-3 p-3 rounded"
                   style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
