@@ -7,7 +7,7 @@ import { closureAuditPayload, type NormalizedClosure } from "./closure-validatio
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
 import { computeAttestationDelta, engageMasEligibleAttestationCascade } from "./attestation";
 import { checkAndEmitDayCompleteForGroup, snapshotDayConcludedForGroup } from "./day-complete";
-import { refreshClaimDenormalizedCache } from "./denormalized-cache";
+import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "./denormalized-cache";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
 type GroupOutcome = typeof invoiceGroupsTable.outcome.enumValues[number];
@@ -481,6 +481,14 @@ export async function transitionGroupStatus(opts: {
     // nothing.
     if (newStatus === "MAS Eligible") {
       await engageMasEligibleAttestationCascade(groupId, ex);
+      // Audit 2026-05-08 / Fix #1: the cascade above bulk-writes
+      // `attestationState='pending'` on every disputed child without
+      // touching `disposition`. Since `attestationState` IS a deriver
+      // input (verdict_approved + attest_pending → `attest_pending`,
+      // etc.), the children's canonical disposition is stale until we
+      // re-derive. Run inside the same executor so the refresh is
+      // atomic with the cascade.
+      await refreshGroupDerivedFields(groupId, ex);
     }
 
     // Auto-exclusion of blank no-issue siblings on the qualifying transition.
@@ -912,6 +920,11 @@ export async function transitionGroupStatusAndOutcome(opts: {
   // when a caller flips status+outcome together). See note there.
   if (newStatus === "MAS Eligible") {
     await engageMasEligibleAttestationCascade(groupId, ex);
+    // Audit 2026-05-08 / Fix #1 (combined-transition mirror): re-derive
+    // child dispositions after the bulk `attestationState='pending'`
+    // cascade so the canonical column stays lockstep with the legacy
+    // attestation write.
+    await refreshGroupDerivedFields(groupId, ex);
   }
 
   broadcastGroupEvent({

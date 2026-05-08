@@ -990,7 +990,7 @@ async function applyAttestationAction(opts: {
       : `Queued attestation confirmed by ${actorIdentity}`;
   }
 
-  const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
+  await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId));
 
   await db.insert(auditLogsTable).values({
     claimId,
@@ -1004,6 +1004,15 @@ async function applyAttestationAction(opts: {
     userEmail: actor.userEmail,
     userName: actor.userName,
   });
+
+  // Audit 2026-05-08 / Fix #2: `attestationState` IS a disposition
+  // deriver input (verdict_approved + attest_pending → `attest_pending`,
+  // attest_queued → `attest_queued`, completed → `attested`, etc.).
+  // The direct UPDATE above bypasses the canonical helpers, so refresh
+  // here to keep `claims.disposition` lockstep before we return the row
+  // to the caller.
+  await refreshClaimDenormalizedCache(claimId);
+  const [claim] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
 
   emitClaimEvent(claimId, "attestation_updated", req);
   return { status: 200 as const, body: claim };

@@ -18,6 +18,7 @@ import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { blockMutationOnTourSampleResponse } from "../lib/tour-sample";
 import { logger } from "../lib/logger";
 import { isBounceMessage, recordBounce } from "../lib/bounce-detection";
@@ -152,6 +153,12 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
       await db.update(invoiceGroupsTable)
         .set({ outcome: PENDING_OUTCOME })
         .where(eq(invoiceGroupsTable.id, response.invoiceGroupId));
+      // Audit 2026-05-08 / Fix #3a: `outcome` IS a `derivePhaseFromLegacy`
+      // input. The transition above already refreshed the group on the
+      // OLD outcome; the manual reset below changes the deriver inputs
+      // again, so re-run the canonical refresher to keep `phase` and
+      // every child `disposition` lockstep with the new outcome.
+      await refreshGroupDerivedFields(response.invoiceGroupId);
     } else if (response.claimId) {
       await db.insert(notesTable).values({
         claimId: response.claimId,
@@ -181,6 +188,10 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
       await db.update(claimsTable)
         .set({ outcome: PENDING_OUTCOME })
         .where(eq(claimsTable.id, response.claimId));
+      // Audit 2026-05-08 / Fix #3b: `outcome` IS a
+      // `deriveDispositionFromLegacy` input. Refresh after the manual
+      // reset so `claims.disposition` matches the new outcome.
+      await refreshClaimDenormalizedCache(response.claimId);
     }
   }
 
