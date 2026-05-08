@@ -130,7 +130,17 @@ function applyClosureApprovedFields(
     (newOutcome === "Approved" || newOutcome === "Partially Approved")
   ) {
     updateData.phase = "closed";
-    updateData.closureReason = "approved";
+    // Task #543 — only stamp the default 'approved' closure_reason
+    // when the caller has not already supplied one in extraFields.
+    // The reattest-completion writer routes Needs Review →
+    // Resolved+Approved while preserving closure_reason='reattested'
+    // (the canonical value for any row carrying reattest_completed_at,
+    // per derivePhaseFromLegacy). Overwriting it here would drop the
+    // reattest narrative and trip the §G `dual_terminal_violation`
+    // fingerprint.
+    if (updateData.closureReason == null) {
+      updateData.closureReason = "approved";
+    }
     updateData.phaseEnteredAt = new Date();
   }
 }
@@ -751,7 +761,20 @@ export async function transitionGroupStatusAndOutcome(opts: {
     if (closureReason === undefined) closureReason = "non_issue";
   }
   if (newOutcome !== "Denied" && newOutcome !== "Withdrawn" && newOutcome !== "Non-Issue") {
-    closureReason = null;
+    // Task #543 — Resolved+Approved with closureReason='reattested'
+    // is the legitimate post-MAS-reattest closure path. Anything else
+    // on the non-Denied/Withdrawn/Non-Issue branch still gets nulled
+    // out so a stray opt doesn't accidentally tag a non-closure
+    // transition with a closure narrative.
+    // The opt-typed `closureReason` doesn't include 'reattested'
+    // (that vocabulary lives in derivePhaseFromLegacy / the schema
+    // enum, not in the closure-intake opts). When the reattest
+    // writer routes through us it supplies closureReason via
+    // extraFields, so we leave the opt-derived value alone if
+    // extraFields already carried one.
+    if (extraFields?.closureReason !== "reattested") {
+      closureReason = null;
+    }
   }
 
   const updateData: Partial<typeof invoiceGroupsTable.$inferInsert> = {
@@ -759,7 +782,12 @@ export async function transitionGroupStatusAndOutcome(opts: {
     outcome: newOutcome,
     ...extraFields,
   };
-  if (closureReason !== undefined) updateData.closureReason = closureReason ?? null;
+  // Task #543 — extraFields.closureReason wins over the opt-derived
+  // value when supplied, so the reattest writer can preserve
+  // 'reattested' on the Resolved/Approved path.
+  if (closureReason !== undefined && extraFields?.closureReason === undefined) {
+    updateData.closureReason = closureReason ?? null;
+  }
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;
@@ -808,7 +836,12 @@ export async function transitionGroupStatusAndOutcome(opts: {
   const changes: string[] = [];
   if (old.status !== newStatus) changes.push(`status: ${old.status} → ${newStatus}`);
   if (old.outcome !== newOutcome) changes.push(`outcome: ${old.outcome} → ${newOutcome}`);
-  const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
+  // Task #543 — fall back to the persisted (post-update) closure
+  // reason when extraFields supplied one (e.g. 'reattested') rather
+  // than the opt-derived value, so the audit trail records the
+  // narrative actually written to the row.
+  const effectiveClosureReason = (group.closureReason ?? closureReason ?? null) as ClosureReason | null;
+  const closureLabel = effectiveClosureReason ? CLOSURE_REASON_LABELS[effectiveClosureReason] : null;
   if (closureLabel) changes.push(`closure: ${closureLabel}`);
   const changeDesc = changes.length > 0 ? changes.join(", ") : "no change";
 
@@ -820,7 +853,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
       fromStatus: old.status, toStatus: newStatus,
       fromOutcome: old.outcome, toOutcome: newOutcome,
       source, reason,
-      closureReason: closureReason ?? null,
+      closureReason: effectiveClosureReason,
       closureReasonLabel: closureLabel,
       ...(closure ? { closure: closureAuditPayload(closure) } : {}),
     },

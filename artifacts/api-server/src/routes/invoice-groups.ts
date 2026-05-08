@@ -3507,15 +3507,42 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
         await applyGroupInvoiceRename(tx, id, renameValidation, actor);
       }
 
-      const [u] = await tx
-        .update(invoiceGroupsTable)
-        .set({
+      // Task #543 — route the reattest-complete write through the
+      // canonical status+outcome writer so legacy `status` / `outcome`
+      // land on `Resolved` / `Approved` alongside the reattest stamps.
+      // Before this change the route only stamped
+      // `reattest_completed_at` (+ `_by` / `_note`) and left the
+      // legacy status wherever the operator clicked from — almost
+      // always `Needs Review` post-email-match — which leaked closed
+      // groups onto the operator's Classification Inbox indefinitely
+      // (prod scan 2026-05-08 found 9 such rows). The closure_reason
+      // is pinned to `'reattested'` (the canonical value any row
+      // carrying `reattest_completed_at` must hold per
+      // `derivePhaseFromLegacy`) — `applyClosureApprovedFields` knows
+      // not to overwrite a preset value. `systemOverride: true`
+      // because the route already enforces its own preconditions
+      // (macro-phase=mas-action-required + all MAS cancels complete,
+      // or admin offline override); the writer's transition-map and
+      // active-submission checks would be redundant duplicates.
+      const transition = await transitionGroupStatusAndOutcome({
+        groupId: id,
+        newStatus: "Resolved",
+        newOutcome: "Approved",
+        source: recordedOffline ? "mas_reattest_recorded_offline" : "mas_reattest_completed",
+        reason: recordedOffline
+          ? "MAS re-attest recorded (offline)"
+          : "MAS re-attest completed",
+        actor,
+        systemOverride: true,
+        extraFields: {
           reattestCompletedAt: now,
           reattestCompletedBy: req.user?.email ?? null,
           reattestNote: fullNote,
-        })
-        .where(eq(invoiceGroupsTable.id, id))
-        .returning();
+          closureReason: "reattested",
+        },
+        executor: tx,
+      });
+      const u = transition.group;
 
       if (recordedOffline) {
         await tx.insert(auditLogsTable).values({

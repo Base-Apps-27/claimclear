@@ -74,6 +74,20 @@ SELECT 'dual_terminal_violation', COUNT(*)::text
    AND closure_reason IS NOT NULL
    AND closure_reason <> 'reattested'
 UNION ALL
+-- Task #543 — rows whose canonical hierarchical state moved to
+-- closed (closure_reason set OR phase='closed') but whose legacy
+-- `status` column is still in a non-terminal value, which leaks
+-- the row onto the operator's Classification Inbox forever. The
+-- pre-fix `/invoice-groups/:id/reattest/complete` route stamped
+-- reattest_completed_at directly without funneling through
+-- `transitionGroupStatusAndOutcome`; production scan on
+-- 2026-05-08 surfaced 9 such rows. Should sit at 0 once the
+-- writer fix + one-shot heal land.
+SELECT 'closed_phase_nonterm_status', COUNT(*)::text
+  FROM invoice_groups
+ WHERE (phase = 'closed' OR closure_reason IS NOT NULL)
+   AND status NOT IN ('Resolved', 'Denied', 'Expired')
+UNION ALL
 -- Valid set tracks the post-D-PR5 closure-reason vocabulary AND the
 -- per-claim Denied-by-Payor / Non-Issue refinements emitted by the
 -- /outcome routes (see lib/vocab + closure-intake-dialog). Sub-PR 1

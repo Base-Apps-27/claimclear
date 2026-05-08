@@ -378,6 +378,97 @@ test("POST /invoice-groups/:id/reattest/complete recordedOffline=true still grad
   }
 });
 
+// Task #543 — invariant guard. The pre-fix writer stamped
+// `reattest_completed_at` directly without funneling through
+// `transitionGroupStatusAndOutcome`, leaving legacy `status` /
+// `outcome` at whatever the operator clicked from (almost always
+// Needs Review / Pending). Production scan on 2026-05-08 surfaced
+// 9 such rows. These two tests cover both the standard and the
+// admin-offline path: after a successful re-attest completion, the
+// row MUST land at status=Resolved + outcome=Approved with phase
+// closed and closure_reason='reattested'. Re-running this writer
+// after the route is already terminal must remain idempotent.
+test("Task #543: standard reattest/complete lands status=Resolved, outcome=Approved, closure_reason=reattested", async () => {
+  currentRole = "operator";
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  // Set up the same prod fingerprint: reattestRequired=true, no
+  // outstanding MAS cancels — phase=awaiting_reattestation maps
+  // to macro=mas-action-required so the standard path is allowed.
+  await db.update(invoiceGroupsTable).set({
+    reattestRequired: true,
+    phase: "awaiting_reattestation",
+  }).where(eq(invoiceGroupsTable.id, group.id));
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+  });
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST",
+      body: { note: "approved on the portal", masReference: "MAS-543-A" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [post] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(post.status, "Resolved", "legacy status must move to Resolved");
+    assert.equal(post.outcome, "Approved", "legacy outcome must move to Approved");
+    assert.equal(post.phase, "closed", "canonical phase must be 'closed'");
+    assert.equal(
+      post.closureReason,
+      "reattested",
+      "closure_reason must remain 'reattested' (NOT overwritten to 'approved' by applyClosureApprovedFields)",
+    );
+    assert.ok(post.reattestCompletedAt, "reattest_completed_at must be stamped");
+    assert.ok(post.phaseEnteredAt, "phase_entered_at must be stamped");
+
+    const audits = await db.select().from(auditLogsTable)
+      .where(eq(auditLogsTable.invoiceGroupId, group.id))
+      .orderBy(desc(auditLogsTable.timestamp));
+    assert.ok(
+      audits.find((a) => a.action === "mas_reattest_completed"),
+      "mas_reattest_completed audit row must still be written",
+    );
+    assert.ok(
+      audits.find((a) => a.action === "group_status_and_outcome_changed"),
+      "transitionGroupStatusAndOutcome must emit a status/outcome audit row",
+    );
+    void claim;
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Task #543: recordedOffline=true also lands status=Resolved + outcome=Approved + closure_reason=reattested", async () => {
+  currentRole = "admin";
+  const group = await createSeedGroup({ status: "Needs Review" });
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST",
+      body: {
+        recordedOffline: true,
+        offlineNote: "Re-attest paper-logged earlier; backfilling now.",
+      },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [post] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(post.status, "Resolved");
+    assert.equal(post.outcome, "Approved");
+    assert.equal(post.phase, "closed");
+    assert.equal(post.closureReason, "reattested");
+    assert.ok(post.reattestCompletedAt);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
 test("POST /invoice-groups/:id/reattest/complete WITHOUT recordedOffline still enforces the standard preconditions for non-admin actors", async () => {
   // Sanity-check that the standard 409 path is unaffected by the new
   // branch: non-admin, no recordedOffline flag, group not in
