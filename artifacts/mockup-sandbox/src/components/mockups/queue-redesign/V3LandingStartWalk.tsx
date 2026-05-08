@@ -1,25 +1,25 @@
 import "./_queue.css";
-import { Tag, Copy, Link2Off, ArrowRight } from "lucide-react";
+import { Tag, Copy, Link2Off, ArrowRight, Edit2 } from "lucide-react";
 import {
   HeaderStrip, ClassificationStrip, MasterList,
   legs, groupSummary, Icons,
 } from "./_shared";
 
 /**
- * V3 Landing — "Start walk" hero (minimal).
+ * V3 Landing — "Start walk" hero (middle ground).
  *
  * Shown when an invoice is selected and the active leg has no SOP
- * progress yet. Replaces the current behavior of dropping the operator
- * straight into SOP step 1.
+ * progress yet. Replaces dropping the operator straight into SOP
+ * step 1.
  *
- * Only renders fields that exist in the codebase today:
- *   - Conf #, service date, amount         (from claim row)
- *   - Classification label                  (from leg.errorType)
- *   - Reclassify / Mark as duplicate / Exclude  (existing leg actions)
- *   - Counts strip (evidence/notes/comms/activity counts already loaded)
- *
- * No invented metadata (no ~steps, no ~ETA, no AI pre-fill, no
- * plain-language restatement of the issue).
+ * Every field below comes from the existing claim/group payload that
+ * `ClaimDetailV2` already renders (see claim-detail-v2.tsx ~L868):
+ *   - StatusPill / subStatusLabel        → "Not started"
+ *   - claim.errorTypeName + "Change"      → classification + re-pick
+ *   - claim.claimAmount, claim.date       → meta row (DOS + amount)
+ *   - relativeTime(claim.updatedAt)       → "Updated …"
+ *   - parentGroup.status                  → group state line
+ *   - canReclassify / Mark dup / Exclude  → existing leg actions
  */
 export default function V3LandingStartWalk() {
   const leg = legs[0];
@@ -49,32 +49,61 @@ export default function V3LandingStartWalk() {
             </div>
           </div>
 
-          {/* Hero — minimal landing */}
+          {/* Hero — middle-ground landing */}
           <div style={{
             flex: 1, display: "flex", flexDirection: "column",
             gap: "0.625rem", justifyContent: "center", padding: "0 2rem",
           }}>
             <div style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}>
-              {/* Meta row — only what claim already has */}
-              <div className="cc-meta text-[11px] mb-2 flex items-center gap-2">
+              {/* Meta row — fields that already exist on the claim row */}
+              <div className="cc-meta text-[11px] mb-2 flex items-center gap-2 flex-wrap">
                 <span className="mono">{leg.conf}</span>
                 <span>·</span>
-                <span>{leg.date}</span>
+                <span>DOS {leg.date}</span>
                 <span>·</span>
-                <span>{leg.amount}</span>
+                <span className="mono">{leg.amount}</span>
+                <span>·</span>
+                <span>Updated 14m ago</span>
               </div>
 
               {/* Blue-gradient landing card */}
-              <div className="cc-sop-card" style={{ padding: "1.5rem 1.25rem 1.125rem" }}>
-                {/* Classification pill — pulled from leg.errorType */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="cc-pill cc-pill-amber" style={{ fontSize: "0.6875rem" }}>
-                    <Icons.AlertTriangle className="w-3 h-3" /> GPS Deviation Status
+              <div className="cc-sop-card" style={{ padding: "1.125rem 1.25rem 1rem" }}>
+                {/* Status + classification (with Change affordance) */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span className="cc-pill cc-pill-muted" style={{ fontSize: "0.6875rem" }}>
+                    Not started
                   </span>
+                  <span className="cc-meta" style={{ fontSize: "0.75rem" }}>·</span>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>
+                    GPS Deviation Status
+                  </span>
+                  <button className="cc-btn cc-btn-ghost cc-btn-sm" style={{ fontSize: "0.6875rem", height: 22, padding: "0 6px" }}>
+                    <Edit2 className="w-3 h-3" /> Change
+                  </button>
+                </div>
+
+                {/* Heading — generic UI copy, no invented data */}
+                <h3 className="cc-sop-question" style={{ fontSize: "1rem", marginTop: 12 }}>
+                  Ready to walk this leg
+                </h3>
+                <p className="cc-meta" style={{ fontSize: "0.75rem", marginTop: 4, lineHeight: 1.45 }}>
+                  Walking the SOP confirms whether this leg is disputable. You can stop
+                  and resume at any time, and your answers are saved as you go.
+                </p>
+
+                {/* Group state line — pulled from parentGroup */}
+                <div style={{
+                  marginTop: 10, paddingTop: 10,
+                  borderTop: "1px solid var(--cc-blue-border)",
+                  fontSize: "0.6875rem", color: "var(--cc-muted-fg)",
+                }}>
+                  Group state: <span style={{ color: "var(--cc-fg)", fontWeight: 500 }}>awaiting submission</span>
+                  {" · "}
+                  <a href="#" className="cc-link">Open INV-2026-0487 in full view</a>
                 </div>
 
                 {/* Primary CTA */}
-                <div className="cc-sop-actions" style={{ marginTop: 14 }}>
+                <div className="cc-sop-actions" style={{ marginTop: 12 }}>
                   <button className="cc-btn cc-btn-primary">
                     Start walk <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -82,12 +111,12 @@ export default function V3LandingStartWalk() {
 
                 {/* Escape hatches — existing leg actions */}
                 <div style={{
-                  marginTop: 14, paddingTop: 12,
+                  marginTop: 12, paddingTop: 10,
                   borderTop: "1px dashed var(--cc-blue-border)",
                   display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
                 }}>
                   <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>
-                    Or:
+                    Or, if this leg shouldn't be walked:
                   </span>
                   <button className="cc-btn cc-btn-sm" style={{ fontSize: "0.6875rem" }}>
                     <Tag className="w-3 h-3" /> Reclassify
