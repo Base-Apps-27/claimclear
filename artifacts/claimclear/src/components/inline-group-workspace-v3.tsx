@@ -1480,10 +1480,16 @@ function ClassifyHero({ leg }: { leg: ClaimResponse }) {
  * two in sync. */
 function legAiInclusion(
   leg: ClaimResponse,
-): "included" | "non_contestable" | "duplicate" | "held" | "excluded" {
+): "included" | "non_issue" | "non_contestable" | "duplicate" | "held" | "excluded" {
   if (leg.includedInDispute === false) return "excluded";
   const role = outcomeRole(leg);
-  if (role === "cannot_dispute" || role === "non_issue") return "non_contestable";
+  // Per `whats-next-derivation`, non_issue is a SURVIVOR (re-attest in
+  // the portal) — distinct from cannot_dispute (drop / cancel). Keep
+  // them in separate buckets so the inputs strip + the file collector
+  // can treat survivors with their correct calm-blue tone instead of
+  // the amber "cannot dispute" warning.
+  if (role === "non_issue") return "non_issue";
+  if (role === "cannot_dispute") return "non_contestable";
   if (role === "duplicate") return "duplicate";
   if (leg.sopOutcome === "hold") return "held";
   return "included";
@@ -1492,6 +1498,7 @@ function legAiInclusion(
 function inclusionPill(kind: ReturnType<typeof legAiInclusion>): { label: string; tone: "green" | "amber" | "blue" | "muted" } {
   switch (kind) {
     case "included": return { label: "Included in draft", tone: "green" };
+    case "non_issue": return { label: "Not in prompt · re-attest in portal", tone: "blue" };
     case "non_contestable": return { label: "Not in prompt · cannot dispute", tone: "amber" };
     case "excluded": return { label: "Not in prompt · excluded", tone: "amber" };
     case "held": return { label: "Not in prompt · on hold", tone: "amber" };
@@ -1540,7 +1547,15 @@ export function InputsCardsRow({
         const verdict = legVerdictLabel(leg);
         const pill = inclusionPill(inclusion);
         const isFiltered = inclusion !== "included";
-        const accent = inclusion === "included" ? "var(--cc-green-fg)" : "var(--cc-amber-fg)";
+        // Survivor (non_issue) and sibling-duplicate legs are filtered
+        // out of the AI prompt for legitimate, non-warning reasons —
+        // colour them calm-blue so the row reads "fine, just routed
+        // elsewhere" instead of "amber-warning, something's wrong".
+        const isCalmFiltered = inclusion === "non_issue" || inclusion === "duplicate";
+        const accent =
+          inclusion === "included" ? "var(--cc-green-fg)"
+          : isCalmFiltered ? "var(--cc-blue-fg)"
+          : "var(--cc-amber-fg)";
         const evidenceFiles = (leg.evidenceFiles ?? []) as Array<{
           url: string;
           name?: string | null;
@@ -1580,7 +1595,10 @@ export function InputsCardsRow({
               {!isFiltered && (
                 <CheckCircle2 className="w-3 h-3 ml-auto" style={{ color: "var(--cc-green-fg)" }} />
               )}
-              {isFiltered && inclusion !== "duplicate" && (
+              {isFiltered && isCalmFiltered && (
+                <CheckCircle2 className="w-3 h-3 ml-auto" style={{ color: "var(--cc-blue-fg)" }} />
+              )}
+              {isFiltered && !isCalmFiltered && (
                 <XCircle className="w-3 h-3 ml-auto" style={{ color: "var(--cc-amber-fg)" }} />
               )}
             </div>
