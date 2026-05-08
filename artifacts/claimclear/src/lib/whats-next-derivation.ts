@@ -224,6 +224,83 @@ export function isAwaitingPayorAgain(group: InvoiceGroupResponse): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Re-attest eligibility — client-side mirror of the server gate on
+// `POST /invoice-groups/:id/bulk-queue-reattest` AND
+// `POST /invoice-groups/:id/complete-reattest`. Both endpoints share
+// the same source-state contract (see invoice-groups.ts L3810-3852),
+// which is reproduced here so the operator never sees a Re-attest CTA
+// that 409s on submit.
+//
+// The server's macro-phase derivation (`getGroupMacroPhase` in
+// api-server/src/lib/macro-phase.ts) is reproduced inline rather than
+// reusing the client's `getGroupLifecyclePhaseFromGroup`, because the
+// latter folds `awaiting-payout` into `mas-action-required` and would
+// therefore mis-classify a re-attested group as eligible.
+//
+// Eligible iff:
+//   - macroPhase = "response-pending" AND status = "Needs Review", OR
+//   - macroPhase = "mas-action-required"
+// ─────────────────────────────────────────────────────────────────────
+
+type ReattestEligibility =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+const SERVER_PHASE_TO_MACRO: Record<string, string> = {
+  triage: "pre-submit",
+  ready_to_submit: "pre-submit",
+  submitted: "in-flight",
+  response_received: "response-pending",
+  reviewed: "response-pending",
+  awaiting_reattestation: "mas-action-required",
+  closed: "closed",
+};
+
+function deriveServerMacroPhase(group: InvoiceGroupResponse): string {
+  if (group.status === "On Hold") return "on-hold";
+  if (group.reattestCompletedAt != null && group.phase !== "closed") {
+    return "awaiting-payout";
+  }
+  if (group.phase && SERVER_PHASE_TO_MACRO[group.phase]) {
+    return SERVER_PHASE_TO_MACRO[group.phase];
+  }
+  return "pre-submit";
+}
+
+export function canQueueOrCompleteReattest(
+  group: InvoiceGroupResponse,
+): ReattestEligibility {
+  const macro = deriveServerMacroPhase(group);
+  if (macro === "mas-action-required") return { ok: true };
+  if (macro === "response-pending" && group.status === "Needs Review") {
+    return { ok: true };
+  }
+  // Map every blocking state to a plain-language explanation the
+  // operator can act on without bouncing to engineering.
+  if (macro === "on-hold") {
+    return { ok: false, reason: "This invoice is on hold — release the hold before re-attesting." };
+  }
+  if (macro === "awaiting-payout") {
+    return { ok: false, reason: "Re-attestation has already been recorded — waiting on payout, no further action here." };
+  }
+  if (macro === "closed") {
+    return { ok: false, reason: "This invoice is closed — no further re-attestation is possible." };
+  }
+  if (macro === "in-flight") {
+    return { ok: false, reason: "Waiting on the payor — re-attestation unlocks once a response lands and is routed for review." };
+  }
+  if (macro === "pre-submit") {
+    return { ok: false, reason: "This invoice hasn't been submitted to the payor yet." };
+  }
+  // response-pending but status is "Ready to Review" — the response
+  // has landed but hasn't been picked up for human review yet.
+  return {
+    ok: false,
+    reason: "The payor response hasn't been routed for review yet — refresh in a moment, or pick it up from the Responses Awaiting Review page.",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Task #476 — Invoice-level dispute outlook.
 //
 // Some invoices end triage with **zero dispute-worthy legs**: every leg

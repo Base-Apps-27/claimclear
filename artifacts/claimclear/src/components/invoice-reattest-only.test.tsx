@@ -179,17 +179,27 @@ function leg(opts: LegOpts): ClaimResponse {
   } as unknown as ClaimResponse;
 }
 
-function group(rides: ClaimResponse[]): InvoiceGroupDetailResponse {
+function group(
+  rides: ClaimResponse[],
+  overrides: Partial<InvoiceGroupDetailResponse> = {},
+): InvoiceGroupDetailResponse {
   return {
     id: 99,
     confNumber: "GRP-99",
     invoiceNumber: "INV-99",
-    status: "New",
+    // Default to the canonical Task #476 Early-Re-attest state so the
+    // ReattestOnlyCta's server-mirror eligibility gate
+    // (`canQueueOrCompleteReattest`) passes without per-test
+    // boilerplate. Tests that need to exercise blocked phases pass
+    // overrides explicitly.
+    status: "MAS Eligible",
+    phase: "awaiting_reattestation",
     rides,
     submissions: [],
     notes: [],
     auditLogs: [],
     responses: [],
+    ...overrides,
   } as unknown as InvoiceGroupDetailResponse;
 }
 
@@ -308,6 +318,46 @@ test("InvoiceGroupActionSlot (reattest_only, Queue surface) — gauntlet absent,
     false,
     "Queue-surface mount must not render the gauntlet in reattest_only",
   );
+});
+
+// ─── Re-attest server-mirror gate: blocked phases disable the CTA ──
+// Mirrors the server's gate on /bulk-queue-reattest and
+// /complete-reattest (invoice-groups.ts L3810-3852) so the operator
+// can't fire the request from a phase that will 409.
+test("InvoiceGroupActionSlot (reattest_only) — phase=in-flight blocks the Re-attest button", () => {
+  const g = group(
+    [
+      leg({ id: 1, sopOutcome: "non_issue" }),
+      leg({ id: 2, sopOutcome: "cannot_dispute" }),
+    ],
+    { status: "Awaiting Response" as InvoiceGroupDetailResponse["status"], phase: "submitted" as InvoiceGroupDetailResponse["phase"] },
+  );
+  const html = renderHtml(
+    React.createElement(InvoiceGroupActionSlot, { group: g, groupId: 99 }),
+  );
+  assert.match(html, /data-testid="invoice-reattest-only-cta"/);
+  assert.match(html, /data-testid="invoice-reattest-only-blocked"/);
+  assert.equal(
+    html.includes(`data-testid="invoice-reattest-only-open"`),
+    false,
+    "enabled CTA must not render when the server gate would 409",
+  );
+  assert.match(html, /Waiting on the payor/);
+});
+
+test("InvoiceGroupActionSlot (reattest_only) — reattestCompletedAt set blocks the Re-attest button", () => {
+  const g = group(
+    [
+      leg({ id: 1, sopOutcome: "non_issue" }),
+      leg({ id: 2, sopOutcome: "cannot_dispute" }),
+    ],
+    { reattestCompletedAt: "2026-05-01T12:00:00Z" as InvoiceGroupDetailResponse["reattestCompletedAt"] },
+  );
+  const html = renderHtml(
+    React.createElement(InvoiceGroupActionSlot, { group: g, groupId: 99 }),
+  );
+  assert.match(html, /data-testid="invoice-reattest-only-blocked"/);
+  assert.match(html, /Re-attestation has already been recorded/);
 });
 
 // ─── (f) has_disputable render: gauntlet present, CTA absent ──────

@@ -24,6 +24,7 @@ import {
   pickSuggestedNewInvoiceNumberWithSource,
   pickSuggestedPayorDenialReason,
   isAwaitingPayorAgain,
+  canQueueOrCompleteReattest,
   type VerdictDerivation,
 } from "@/lib/whats-next-derivation";
 import { Button } from "@/components/ui/button";
@@ -155,6 +156,13 @@ export function WhatsNextCard({
     derivation.mix === "all_approved" || derivation.mix === "mixed";
   const showCloseOut = derivation.mix === "all_denied";
   const showAwaitingPayorAgain = !isAwaitingPayorAgain(group);
+  // Server-side bulk-queue / complete-reattest endpoints both reject
+  // (HTTP 409) unless the group is in `response-pending`+Needs Review
+  // or `mas-action-required`. Mirror that gate here so the operator
+  // sees a calm "blocked, here's why" state instead of submitting and
+  // catching a 409 destructive toast. See `canQueueOrCompleteReattest`
+  // for the exact server-mirror logic.
+  const reattestEligibility = canQueueOrCompleteReattest(group);
 
   // Step 4 close-out commit. Open the closure intake dialog and hand
   // the launcher a `beforeSubmit` hook that promotes per-leg drafts to
@@ -342,7 +350,7 @@ export function WhatsNextCard({
 
         {decisionReady && (
           <>
-            {showReattest && (
+            {showReattest && reattestEligibility.ok && (
               <OptionRow
                 tone="amber"
                 icon={<ShieldCheck className="h-4 w-4" />}
@@ -354,6 +362,19 @@ export function WhatsNextCard({
                 }
                 onClick={() => setReattestOpen(true)}
                 testId="button-open-reattest"
+              />
+            )}
+            {showReattest && !reattestEligibility.ok && (
+              // OptionRow's description already surfaces the blocking
+              // reason in plain language — no extra tooltip needed.
+              <OptionRow
+                tone="amber"
+                icon={<ShieldCheck className="h-4 w-4" />}
+                title="Re-attest"
+                description={reattestEligibility.reason}
+                onClick={() => undefined}
+                disabled
+                testId="button-open-reattest-blocked"
               />
             )}
 

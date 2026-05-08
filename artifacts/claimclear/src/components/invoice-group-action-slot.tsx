@@ -18,7 +18,10 @@ import { Archive, ShieldCheck } from "lucide-react";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { ReattestModal } from "@/components/whats-next/reattest-modal";
 import { useClosureLauncher } from "@/components/closure/closure-launcher";
-import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
+import {
+  deriveInvoiceDisputeOutlook,
+  canQueueOrCompleteReattest,
+} from "@/lib/whats-next-derivation";
 import { successToast } from "@/hooks/use-toast";
 
 // Task #476 — single shared gating component that decides, per
@@ -117,6 +120,11 @@ function ReattestOnlyCta({
 
   const survivorCount = survivors.length;
   const droppedCount = dropped.length;
+  // Server-side bulk-queue / complete-reattest both 409 unless the
+  // group is in `response-pending`+Needs Review or `mas-action-required`.
+  // Mirror that gate so the operator sees an actionable explanation
+  // instead of submitting and catching a destructive toast.
+  const reattestEligibility = canQueueOrCompleteReattest(group);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
@@ -159,15 +167,38 @@ function ReattestOnlyCta({
             ) : null}
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => setOpen(true)}
-          data-testid="invoice-reattest-only-open"
-        >
-          <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-          Re-attest
-        </Button>
+        {reattestEligibility.ok ? (
+          <Button
+            size="sm"
+            onClick={() => setOpen(true)}
+            data-testid="invoice-reattest-only-open"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+            Re-attest
+          </Button>
+        ) : (
+          // Native title attribute keeps the explanation reachable on
+          // hover without depending on Radix TooltipProvider being in
+          // scope at every mount site.
+          <Button
+            size="sm"
+            disabled
+            title={reattestEligibility.reason}
+            data-testid="invoice-reattest-only-blocked"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+            Re-attest
+          </Button>
+        )}
       </div>
+      {!reattestEligibility.ok && (
+        <p
+          className="text-[11px] text-blue-900/70 italic pl-12"
+          data-testid="invoice-reattest-only-blocked-reason"
+        >
+          {reattestEligibility.reason}
+        </p>
+      )}
 
       <ReattestModal
         open={open}
