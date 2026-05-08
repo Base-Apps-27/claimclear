@@ -467,7 +467,34 @@ export default function Dashboard() {
     return <DashboardLoading firstName={firstName} />;
   }
 
-  if (!summary) return null;
+  // Defensive fallback: if the summary endpoint failed (e.g. transient
+  // network error or a stale role-gating deploy that 403s the call),
+  // render the page chrome and an actionable "Refresh" empty state
+  // instead of returning null. Returning null produced a fully blank
+  // pane for clerks during the May 2026 deploy where the server still
+  // 403'd /dashboard/summary — the operator had no way to recover and
+  // could not even see they were on the dashboard.
+  if (!summary) {
+    return (
+      <div className="space-y-5 pb-8">
+        <PageHeader
+          title="Command Center"
+          sub={`${greetingPrefix}here's what's moving today.`}
+          accent="blue"
+        />
+        <Card>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Inbox}
+              title="Dashboard data unavailable"
+              description="We couldn't load the dashboard summary. Refresh the page; if the problem persists, reach out so we can take a look."
+              primaryAction={{ label: "Refresh", onClick: () => window.location.reload() }}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const pipeline = summary.pipeline;
   const amounts = summary.amounts;

@@ -15,6 +15,7 @@ import appSettingsRouter from "../routes/app-settings";
 import importRouter from "../routes/import";
 import batchJobsRouter from "../routes/batch-jobs";
 import adminRouter from "../routes/admin";
+import dashboardRouter from "../routes/dashboard";
 
 let server: http.Server;
 let basePort: number;
@@ -50,6 +51,7 @@ before(async () => {
   app.use("/api/import", importRouter);
   app.use("/api", batchJobsRouter);
   app.use("/api", adminRouter);
+  app.use("/api", dashboardRouter);
 
   await new Promise<void>((resolve, reject) => {
     server = app.listen(0, () => {
@@ -187,3 +189,37 @@ test("clerk reads /invoice-groups with totalAmount nulled", async () => {
     assert.equal(g.totalAmount, null, "totalAmount must be null for clerks");
   }
 });
+
+// ===== Clerk READ access regression guard =====
+//
+// The dashboard, queue, and portal-submissions pages depend on these
+// GET endpoints to render. A regression in May 2026 deployed a build
+// that 403'd these for clerks, producing a fully blank Command Center
+// pane (`if (!summary) return null;` in dashboard.tsx). The frontend
+// guard was made graceful, but the canonical fix is to keep these
+// READ endpoints accessible to all approved roles — money fields are
+// nulled per `canSeeAmounts`, the gates only apply to mutations and
+// bulk/setup writes (covered by GATED_ENDPOINTS above).
+//
+// If you intentionally need to deny a clerk on one of these reads,
+// remove that endpoint from CLERK_READABLE_ENDPOINTS and add it to
+// GATED_ENDPOINTS. Do not silently flip a gate without updating the
+// frontend's empty/error state — see dashboard.tsx for the pattern.
+const CLERK_READABLE_ENDPOINTS: Array<{ path: string; label: string }> = [
+  { path: "/api/dashboard/summary",                  label: "GET /dashboard/summary" },
+  { path: "/api/dashboard/my-processed-today",       label: "GET /dashboard/my-processed-today" },
+  { path: "/api/dashboard/urgent-today/transitions", label: "GET /dashboard/urgent-today/transitions" },
+  { path: "/api/portal-submissions/queue-status",    label: "GET /portal-submissions/queue-status" },
+  { path: "/api/responses/awaiting-review/count",    label: "GET /responses/awaiting-review/count" },
+];
+
+for (const ep of CLERK_READABLE_ENDPOINTS) {
+  test(`clerk is NOT denied (≠403) on read: ${ep.label}`, async () => {
+    const res = await request({ method: "GET", path: ep.path, role: "clerk" });
+    assert.notEqual(
+      res.status,
+      403,
+      `clerk must be allowed to read ${ep.label} (money fields are nulled by canSeeAmounts), got 403: ${res.body.slice(0, 200)}`,
+    );
+  });
+}
