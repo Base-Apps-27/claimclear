@@ -25,8 +25,8 @@ export interface GroupEvent {
   userName: string | null;
   userEmail: string | null;
   timestamp: string;
-  // For `type: "status_changed"`, the new status the group was moved into.
-  // Lets clients react to specific transitions (e.g. the streak-pip
+  // For `type: "group_status_changed"`, the new status the group was moved
+  // into. Lets clients react to specific transitions (e.g. the streak-pip
   // microinteraction that bumps when the actor moves a group into
   // "Portal Queued") without having to refetch the row first. Optional
   // because not every group event carries a meaningful status change.

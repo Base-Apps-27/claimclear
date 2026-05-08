@@ -500,8 +500,12 @@ export async function transitionGroupStatus(opts: {
     // helper's comment for the prod incident this prevents.
     await autoExcludeUnclassifiedOnTerminalClose(groupId, old.status, newStatus, source, actor, ex);
 
+    // Wire `type` is `group_status_changed` (with the `group_` prefix) so
+    // the global group SSE channel uses one consistent namespace alongside
+    // `group_edited`, `group_evidence_added`, etc. The frontend
+    // `GROUP_EVENT_LABELS` map keys on the prefixed name.
     broadcastGroupEvent({
-      type: "status_changed",
+      type: "group_status_changed",
       invoiceGroupId: groupId,
       userName: actor.userName,
       userEmail: actor.userEmail,
@@ -708,8 +712,11 @@ export async function transitionGroupOutcome(opts: {
     author: actor.userName || actor.userEmail || source,
   });
 
+  // Wire `type` is `group_outcome_changed` (with the `group_` prefix) so the
+  // global group SSE channel uses one consistent namespace; the frontend
+  // `GROUP_EVENT_LABELS` map keys on the prefixed name.
   broadcastGroupEvent({
-    type: "outcome_changed",
+    type: "group_outcome_changed",
     invoiceGroupId: groupId,
     userName: actor.userName,
     userEmail: actor.userEmail,
@@ -939,8 +946,11 @@ export async function transitionGroupStatusAndOutcome(opts: {
     await refreshGroupDerivedFields(groupId, ex);
   }
 
+  // Wire `type` is `group_status_changed` (prefixed) so the global group SSE
+  // channel stays in one consistent namespace and the frontend
+  // `GROUP_EVENT_LABELS` toast map matches.
   broadcastGroupEvent({
-    type: "status_changed",
+    type: "group_status_changed",
     invoiceGroupId: groupId,
     userName: actor.userName,
     userEmail: actor.userEmail,

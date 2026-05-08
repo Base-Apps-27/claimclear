@@ -258,18 +258,18 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
   );
 }
 
-// Status values whose group `status_changed` events flowing through
-// the `/api/invoice-groups/events` SSE channel are themselves
+// Status values whose group `group_status_changed` events flowing
+// through the `/api/invoice-groups/events` SSE channel are themselves
 // qualifying activity for the personal pip counter (Task #522).
 // Mirrors EXACTLY the server-side `qualifyingActivityPredicate()`
 // status-shaped clause — `group_status_changed` is qualifying ONLY
 // when `metadata->>'to' = 'Portal Queued'`. Other terminal flips
 // (Resolved / Denied / Withdrawn / Non-Issue) write a separate
 // `group_outcome_changed` audit row that is qualifying on its own,
-// and arrive on the wire as `type: "outcome_changed"` events — those
-// drive the pip via `QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP` below,
-// not via this status set. Keeping the two channels separate avoids
-// double-counting the same closure (which writes both an
+// and arrive on the wire as `type: "group_outcome_changed"` events —
+// those drive the pip via `QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP`
+// below, not via this status set. Keeping the two channels separate
+// avoids double-counting the same closure (which writes both an
 // outcome_changed audit AND a status_changed audit for the
 // terminal status, but only the outcome_changed one is qualifying).
 const QUALIFYING_GROUP_STATUSES_FOR_PIP = new Set<string>([
@@ -277,11 +277,14 @@ const QUALIFYING_GROUP_STATUSES_FOR_PIP = new Set<string>([
 ]);
 
 // Group SSE event types that are themselves qualifying activity
-// regardless of the carried status. `outcome_changed` corresponds to
-// the qualifying `group_outcome_changed` audit row written by both
-// `transitionGroupOutcome` and `transitionGroupStatusAndOutcome`.
+// regardless of the carried status. `group_outcome_changed`
+// corresponds to the qualifying `group_outcome_changed` audit row
+// written by both `transitionGroupOutcome` and
+// `transitionGroupStatusAndOutcome`. Wire `type` carries the `group_`
+// prefix to share the namespace with `group_edited`,
+// `group_evidence_added`, etc. on the same channel.
 const QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP = new Set<string>([
-  "outcome_changed",
+  "group_outcome_changed",
 ]);
 
 // Claim SSE event types that map 1:1 to a qualifying audit row from
@@ -393,7 +396,7 @@ export function useStreakPipLiveUpdates() {
         // an over-bump for the rest of the day. Anything missed here
         // is reconciled by the 60s polling refetch in `StreakPipAvatar`.
         const isQualifyingStatus =
-          data.type === "status_changed" &&
+          data.type === "group_status_changed" &&
           !!data.toStatus &&
           QUALIFYING_GROUP_STATUSES_FOR_PIP.has(data.toStatus);
         const isQualifyingEvent = QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP.has(data.type);
