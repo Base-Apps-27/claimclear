@@ -3019,6 +3019,7 @@ function OffRampInputsHero({
         <OffRampReattestStrip
           group={detail}
           groupId={groupId}
+          outlook={outlook}
           survivors={survivors}
           dropped={dropped}
         />
@@ -3076,11 +3077,13 @@ function OffRampInputsHero({
 function OffRampReattestStrip({
   group,
   groupId,
+  outlook,
   survivors,
   dropped,
 }: {
   group: DetailGroup;
   groupId: number;
+  outlook: InvoiceDisputeOutlook;
   survivors: ClaimResponse[];
   dropped: ClaimResponse[];
 }) {
@@ -3096,15 +3099,16 @@ function OffRampReattestStrip({
   const busy = promoteDrafts.isPending || bulkQueueReattest.isPending;
 
   // Source-state gate — mirrors the server's contract on
-  // POST /invoice-groups/:id/bulk-queue-reattest (invoice-groups.ts
-  // L3846-3857). Operators were seeing a 409 toast ("Group can only be
-  // bulk-queued for re-attestation while it is in Needs Review or MAS
-  // Eligible") because the strip rendered an active button on groups
-  // whose phase the server rejects (e.g. response-pending with status
-  // "Ready to Review"). Showing a CTA the API will refuse is the
-  // wrong UX — disable it and surface the plain-language reason from
-  // canQueueOrCompleteReattest so the operator knows what to do.
-  const eligibility = canQueueOrCompleteReattest(group);
+  // POST /invoice-groups/:id/reattest/queue. The strip's parent
+  // (`OffRampInputsHero`) only mounts this for activeRamp=reattest,
+  // which is either the recommended path when outlook=reattest_only
+  // or an operator override on a group that has survivors. Pass the
+  // `outlook` so the helper accepts the Early Re-attest entry from
+  // any non-terminal phase — without it, the helper would block
+  // legitimate reattest_only groups whose macroPhase isn't yet
+  // mas-action-required, exactly the bug Task #476's server gate
+  // expansion was meant to unlock.
+  const eligibility = canQueueOrCompleteReattest(group, outlook);
   const canQueue = eligibility.ok;
   const blockedReason = eligibility.ok ? null : eligibility.reason;
 

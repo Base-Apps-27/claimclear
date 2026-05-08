@@ -3823,8 +3823,7 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
     return;
   }
 
-  // Source-state contract — mirrors `/reattest/complete` so the two
-  // sibling actions stay in lock-step. Two valid entry phases:
+  // Source-state contract. Three valid entry conditions:
   //
   //   * `response-pending` (status=Needs Review) — the original
   //     "park the response review for the portal user" path. Requires
@@ -3833,25 +3832,80 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
   //     group drops off Responses Awaiting Review.
   //
   //   * `mas-action-required` (status=MAS Eligible / phase=
-  //     awaiting_reattestation) — the Early Re-attest path
-  //     (Task #476): an invoice has zero disputable legs but
-  //     survivor legs that still need re-attestation. There is no
-  //     payor-response review to drop off, so we DON'T require an
-  //     inbound response and we DON'T stamp `awaitingPayorAgainAt`.
+  //     awaiting_reattestation) — the standard MAS-Eligible path:
+  //     MAS has acknowledged and the operator is re-attesting
+  //     survivors in the portal. No payor-response review to drop
+  //     off, so no `awaitingPayorAgainAt` stamp.
   //
-  // Any other phase (pre-submit, in-flight, awaiting-payout, closed,
-  // on-hold) is rejected — the same predicate `/reattest/complete`
-  // uses, so an admin can never reach a state where one sibling
-  // action would succeed and the other would 409.
+  //   * `outlook = reattest_only` from any non-terminal/non-on-hold
+  //     phase — the Early Re-attest path (Task #476). An invoice has
+  //     zero disputable legs but ≥1 survivor leg that still needs
+  //     re-attestation. The operator should not be forced through a
+  //     phantom MAS-submission step just to unlock the queue. This
+  //     was the May-8 incident class the audit script
+  //     `reattest_cta_would_409` was built to detect — see
+  //     scripts/audit-state-divergence.ts. The mirror in
+  //     artifacts/claimclear/src/lib/whats-next-derivation.ts
+  //     (`canQueueOrCompleteReattest`) and in the audit script's
+  //     `reattestGateAccepts` MUST stay in lock-step with this gate.
+  //
+  // Terminal phases (closed, on-hold) are still rejected — closing a
+  // closed invoice or an on-hold one would be incoherent regardless
+  // of leg state.
   const sourcePhase = getGroupMacroPhase(group);
   const isResponsePending = sourcePhase === "response-pending"
     && group.status === "Needs Review";
   const isMasActionRequired = sourcePhase === "mas-action-required";
-  if (!isResponsePending && !isMasActionRequired) {
+  // Compute reattest_only outlook by inspecting the group's legs.
+  // Mirrors `deriveInvoiceDisputeOutlook` (frontend) and
+  // `isReattestOnlyOutlook` (audit script). Single source of truth:
+  // these three implementations must move together.
+  const outlookLegs = await db
+    .select({
+      includedInDispute: claimsTable.includedInDispute,
+      duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+      sopOutcome: claimsTable.sopOutcome,
+      disposition: claimsTable.disposition,
+      outcome: claimsTable.outcome,
+    })
+    .from(claimsTable)
+    .where(eq(claimsTable.invoiceGroupId, id));
+  const isReattestOnlyOutlook = (() => {
+    let hasDisputable = false;
+    let hasSurvivor = false;
+    for (const leg of outlookLegs) {
+      const isDuplicate = leg.duplicateOfClaimId != null;
+      const isNonIssue = leg.disposition === "disposed_nonissue"
+        || leg.disposition === "final_nonissue"
+        || leg.sopOutcome === "non_issue";
+      const isCannotDispute = leg.disposition === "disposed_withdraw"
+        || leg.disposition === "final_withdrawn"
+        || leg.sopOutcome === "cannot_dispute";
+      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
+      const isDenied = leg.outcome === "Denied";
+      if (isNonIssue || isApproved) hasSurvivor = true;
+      if (
+        leg.includedInDispute === true
+        && !isDuplicate
+        && !isCannotDispute
+        && !isNonIssue
+        && !isDenied
+      ) {
+        hasDisputable = true;
+      }
+    }
+    return !hasDisputable && hasSurvivor;
+  })();
+  const isEarlyReattest = isReattestOnlyOutlook
+    && !isResponsePending
+    && !isMasActionRequired
+    && sourcePhase !== "closed"
+    && sourcePhase !== "on-hold";
+  if (!isResponsePending && !isMasActionRequired && !isEarlyReattest) {
     res.status(409).json({
-      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review or MAS Eligible.",
-      expectedState: "phase in (response-pending with status=Needs Review, mas-action-required)",
-      actualState: `phase=${sourcePhase}, status=${group.status}`,
+      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review, MAS Eligible, or has zero disputable legs with at least one survivor (Early Re-attest).",
+      expectedState: "phase in (response-pending with status=Needs Review, mas-action-required) OR outlook=reattest_only",
+      actualState: `phase=${sourcePhase}, status=${group.status}, reattestOnlyOutlook=${isReattestOnlyOutlook}`,
     });
     return;
   }
@@ -3993,16 +4047,31 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
       }, tx);
     }
 
-    // Only stamp `awaitingPayorAgainAt` when the source phase is
-    // `response-pending` — that's the leg of the contract that drops
-    // the group off Responses Awaiting Review. The Early Re-attest
-    // (`mas-action-required`) entry has nothing to drop off, so we
-    // leave the timestamp untouched (and skip the matching SSE event
-    // post-commit).
+    // Group-level write per entry path:
+    //
+    //   * `response-pending`: stamp `awaitingPayorAgainAt` to drop the
+    //     group off Responses Awaiting Review.
+    //   * `mas-action-required`: nothing to stamp — the group is
+    //     already in the right phase/status.
+    //   * Early Re-attest (`isEarlyReattest`): promote the group to
+    //     {phase=awaiting_reattestation, status=MAS Eligible,
+    //     reattestRequired=true} as part of the same transaction. This
+    //     keeps downstream invariants honest — `/reattest/complete`,
+    //     leg-status projections, and the audit script all expect a
+    //     queued early-reattest group to read as MAS Eligible.
     let g: typeof invoiceGroupsTable.$inferSelect;
     if (isResponsePending) {
       [g] = await tx.update(invoiceGroupsTable)
         .set({ awaitingPayorAgainAt: now })
+        .where(eq(invoiceGroupsTable.id, id))
+        .returning();
+    } else if (isEarlyReattest) {
+      [g] = await tx.update(invoiceGroupsTable)
+        .set({
+          phase: "awaiting_reattestation",
+          status: "MAS Eligible",
+          reattestRequired: true,
+        })
         .where(eq(invoiceGroupsTable.id, id))
         .returning();
     } else {

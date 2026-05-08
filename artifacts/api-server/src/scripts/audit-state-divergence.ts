@@ -98,7 +98,7 @@ interface Finding {
 // to the route gate must be matched here AND in
 // artifacts/claimclear/src/lib/whats-next-derivation.ts
 // (canQueueOrCompleteReattest).
-function reattestGateAccepts(group: GroupRow): boolean {
+function reattestGateAccepts(group: GroupRow, legs: LegRow[]): boolean {
   const macro = getGroupMacroPhase({
     phase: group.phase,
     status: group.status,
@@ -107,6 +107,16 @@ function reattestGateAccepts(group: GroupRow): boolean {
   });
   if (macro === "mas-action-required") return true;
   if (macro === "response-pending" && group.status === "Needs Review") return true;
+  // Early Re-attest (Task #476) — the server now accepts the call
+  // when outlook=reattest_only from any non-terminal/non-on-hold
+  // phase. Mirrors invoice-groups.ts L3826-3905.
+  if (
+    macro !== "closed"
+    && macro !== "on-hold"
+    && isReattestOnlyOutlook(legs)
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -260,7 +270,7 @@ async function main(): Promise<void> {
     });
 
     // ── Check 1: reattest_cta_would_409 ────────────────────────────
-    if (isReattestOnlyOutlook(groupLegs) && !reattestGateAccepts(g)) {
+    if (isReattestOnlyOutlook(groupLegs) && !reattestGateAccepts(g, groupLegs)) {
       findings.push({
         check: "reattest_cta_would_409",
         groupId: g.id,

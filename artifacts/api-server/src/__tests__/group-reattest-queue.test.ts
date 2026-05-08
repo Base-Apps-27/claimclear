@@ -432,7 +432,42 @@ test("returns 409 when the group is in a phase outside Needs Review / MAS Eligib
       { method: "POST", body: {} },
     );
     assert.equal(res.status, 409);
-    assert.match(res.json.error, /Needs Review or MAS Eligible/i);
+    assert.match(res.json.error, /Needs Review, MAS Eligible, or has zero disputable legs/i);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("Early Re-attest from triage: succeeds when outlook=reattest_only (zero disputable + ≥1 survivor)", async () => {
+  // Task #476 / May-8 incident class. The operator finishes triage on
+  // an invoice whose only legs are survivors (Approved + not in dispute).
+  // The server must accept the bulk-queue from this pre-submit phase
+  // — phantom-MAS-submission would block real work — and promote the
+  // group to MAS Eligible / awaiting_reattestation in the same tx so
+  // /reattest/complete can take over downstream.
+  const group = await seedGroup({ status: "New", phase: "triage", withResponse: false });
+  const leg = await seedLeg(group.id);
+  // Make the leg a pure survivor: Approved verdict + not in dispute.
+  await db.update(claimsTable).set({ includedInDispute: false }).where(eq(claimsTable.id, leg.id));
+  try {
+    const res = await fetchJson<{
+      group: { status: string; phase: string; reattestRequired: boolean };
+      queuedLegIds: number[];
+    }>(`/api/invoice-groups/${group.id}/reattest/queue`, { method: "POST", body: {} });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.deepEqual(res.json.queuedLegIds, [leg.id]);
+
+    const [refreshed] = await db.select().from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(refreshed.phase, "awaiting_reattestation",
+      "Early Re-attest must promote phase so /reattest/complete works downstream");
+    assert.equal(refreshed.status, "MAS Eligible");
+    assert.equal(refreshed.reattestRequired, true);
+    assert.equal(refreshed.awaitingPayorAgainAt, null,
+      "Early Re-attest must NOT stamp awaitingPayorAgainAt — no review surface to drop off");
+
+    const [refreshedLeg] = await db.select().from(claimsTable).where(eq(claimsTable.id, leg.id));
+    assert.equal(refreshedLeg.attestationState, "queued");
   } finally {
     await cleanupGroup(group.id);
   }

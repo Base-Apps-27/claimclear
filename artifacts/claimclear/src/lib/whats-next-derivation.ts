@@ -269,10 +269,29 @@ function deriveServerMacroPhase(group: InvoiceGroupResponse): string {
 
 export function canQueueOrCompleteReattest(
   group: InvoiceGroupResponse,
+  // Optional Early Re-attest signal (Task #476). When the calling
+  // surface has the legs in scope and has already derived
+  // `outlook === "reattest_only"`, pass it in: the server's
+  // `/reattest/queue` gate accepts that condition from any
+  // non-terminal phase regardless of `phase`/`status` (see
+  // invoice-groups.ts L3826-3905), and disabling the CTA on the
+  // client when the server would accept is the wrong UX.
+  outlook?: InvoiceDisputeOutlook,
 ): ReattestEligibility {
   const macro = deriveServerMacroPhase(group);
   if (macro === "mas-action-required") return { ok: true };
   if (macro === "response-pending" && group.status === "Needs Review") {
+    return { ok: true };
+  }
+  // Early Re-attest: zero disputable legs + ≥1 survivor. Allowed
+  // from any non-terminal/non-on-hold phase. The terminal cases
+  // (closed, on-hold) still block below for the same reason the
+  // server gate blocks them.
+  if (
+    outlook === "reattest_only"
+    && macro !== "closed"
+    && macro !== "on-hold"
+  ) {
     return { ok: true };
   }
   // Map every blocking state to a plain-language explanation the
