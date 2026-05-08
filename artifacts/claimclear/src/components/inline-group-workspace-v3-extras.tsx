@@ -8,6 +8,7 @@ import {
   Edit2,
   ExternalLink,
   FileText,
+  Link2Off,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -488,177 +489,205 @@ export function WalkLandingHero({
   return (
     <div
       data-testid="v3-hero-walk-landing"
-      className="space-y-3"
       style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}
     >
       {actions.dialogs}
+
+      {/* Inline meta strip above the card — mono conf · DOS · amount ·
+          updated. Mirrors V3LandingStartWalk so the leg's identity
+          reads at a glance without taking vertical space. */}
       <div
-        className="cc-card cc-sop-card"
-        style={{ padding: "1.5rem 1.5rem 1.25rem" }}
+        className="cc-meta mb-2 flex items-center gap-2 flex-wrap"
+        style={{ fontSize: "0.6875rem" }}
       >
-        {/* Status + classification — primary identity row, sits above
-            the heading so the eye sees state first, then the action. */}
+        <span className="mono">
+          <RefNumber value={claim.confNumber} variant="inline" />
+        </span>
+        {claim.date && (
+          <>
+            <span>·</span>
+            <span>DOS {claim.date}</span>
+          </>
+        )}
+        <HideForClerk>
+          {claim.claimAmount && (
+            <>
+              <span>·</span>
+              <span className="mono">{formatCurrency(claim.claimAmount)}</span>
+            </>
+          )}
+        </HideForClerk>
+        {claim.updatedAt && (
+          <>
+            <span>·</span>
+            <span>Updated {relativeTime(claim.updatedAt)}</span>
+          </>
+        )}
+      </div>
+
+      {/* Blue-gradient landing card */}
+      <div
+        className="cc-sop-card"
+        style={{ padding: "1.125rem 1.25rem 1rem" }}
+      >
+        {/* Status pill · classification · Change */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            variant="outline"
-            className="text-[10px] font-medium tracking-wide uppercase px-2 py-0.5"
-            style={{
-              background: "hsl(var(--cc-card))",
-              borderColor: "hsl(var(--cc-blue-border))",
-              color: "hsl(var(--cc-blue-fg))",
-            }}
-          >
+          <span className="cc-pill cc-pill-muted" style={{ fontSize: "0.6875rem" }}>
             Not started
-          </Badge>
+          </span>
+          <span className="cc-meta" style={{ fontSize: "0.75rem" }}>·</span>
           {claim.errorTypeName ? (
-            <span className="text-sm font-medium" style={{ color: "var(--cc-fg)" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>
               {claim.errorTypeName}
             </span>
           ) : (
-            <span className="text-sm italic text-muted-foreground">
+            <span
+              className="italic"
+              style={{ fontSize: "0.75rem", color: "var(--cc-muted-fg)" }}
+            >
               Not yet classified
             </span>
           )}
           {actions.canChangeClassification && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            <button
+              type="button"
+              className="cc-btn cc-btn-ghost cc-btn-sm"
+              style={{ fontSize: "0.6875rem", height: 22, padding: "0 6px" }}
               onClick={actions.openClassify}
               data-testid="v3-landing-change-classification"
             >
-              <Edit2 className="h-3 w-3 mr-1" /> Change
-            </Button>
+              <Edit2 className="w-3 h-3" /> Change
+            </button>
           )}
         </div>
 
-        {/* Heading — generic UI copy, no invented data */}
+        {/* Heading + one-line description */}
         <h3
-          className="mt-3 font-semibold tracking-tight"
-          style={{ fontSize: "1.375rem", lineHeight: 1.2, color: "var(--cc-fg)" }}
+          className="cc-sop-question"
+          style={{ fontSize: "1rem", marginTop: 12 }}
         >
           Ready to walk this leg
         </h3>
         <p
-          className="mt-1.5 leading-relaxed"
-          style={{ fontSize: "0.8125rem", color: "var(--cc-muted-fg)", maxWidth: 540 }}
+          className="cc-meta"
+          style={{ fontSize: "0.75rem", marginTop: 4, lineHeight: 1.45 }}
         >
           Walking the SOP confirms whether this leg is disputable. You can stop
           and resume at any time — your answers are saved as you go.
         </p>
 
-        {/* Meta row — promoted to a structured field strip below the
-            heading so the leg's identity (conf, DOS, $, freshness) is
-            scannable at a glance, with vertical dividers between
-            fields instead of inline middots. */}
+        {/* Group state line — divider row above the CTA */}
         <div
-          className="mt-4 grid gap-2 text-[12px]"
           style={{
-            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: "1px solid var(--cc-blue-border)",
+            fontSize: "0.6875rem",
             color: "var(--cc-muted-fg)",
           }}
         >
-          <MetaCell
-            label="Confirmation"
-            value={<RefNumber value={claim.confNumber} variant="inline" />}
-          />
-          {claim.date && (
-            <MetaCell label="Date of service" value={<span>{claim.date}</span>} />
-          )}
-          <HideForClerk>
-            {claim.claimAmount && (
-              <MetaCell
-                label="Amount"
-                value={<span className="mono font-medium" style={{ color: "var(--cc-fg)" }}>{formatCurrency(claim.claimAmount)}</span>}
-              />
-            )}
-          </HideForClerk>
-          {claim.updatedAt && (
-            <MetaCell
-              label="Last updated"
-              value={<span>{relativeTime(claim.updatedAt)}</span>}
-            />
-          )}
+          Group state:{" "}
+          <span style={{ color: "var(--cc-fg)", fontWeight: 500 }}>
+            {group.status}
+          </span>
         </div>
 
-        {/* Primary CTA + group-state context line */}
-        <div
-          className="mt-5 pt-4 flex items-center justify-between gap-3 flex-wrap"
-          style={{ borderTop: "1px solid hsl(var(--cc-blue-border) / 0.6)" }}
-        >
-          <div
-            className="text-[11px] flex items-center gap-1.5"
-            style={{ color: "var(--cc-muted-fg)" }}
-          >
-            <span>Group state:</span>
-            <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
-              {group.status}
-            </span>
-          </div>
-          <Button
+        {/* Primary CTA */}
+        <div className="cc-sop-actions" style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="cc-btn cc-btn-primary"
             onClick={onStartWalk}
-            size="default"
-            className="h-9 px-4 text-sm font-medium shadow-sm"
             data-testid="v3-landing-start-walk"
           >
-            Start walk <ArrowRight className="w-4 h-4 ml-1.5" />
-          </Button>
+            Start walk <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        {/* Escape hatches — existing leg actions, set apart so they
-            never compete with the primary "Start walk" affordance. */}
+        {/* Escape hatches — flat ghost-style row, set apart so they
+            never compete with the primary Start-walk affordance. */}
         {(actions.canReclassify || actions.canMarkDuplicate || actions.canExclude) && (
           <div
-            className="mt-4 pt-3 flex items-center gap-1.5 flex-wrap"
-            style={{ borderTop: "1px dashed hsl(var(--cc-blue-border) / 0.6)" }}
+            style={{
+              marginTop: 12,
+              paddingTop: 10,
+              borderTop: "1px dashed var(--cc-blue-border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
           >
-            <span
-              className="text-[11px] mr-1"
-              style={{ color: "var(--cc-muted-fg)" }}
-            >
+            <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>
               Or, if this leg shouldn't be walked:
             </span>
-            <ActionButtons
-              size="xs"
-              canReclassify={actions.canReclassify}
-              canExclude={actions.canExclude}
-              canMarkDuplicate={actions.canMarkDuplicate}
-              openReclassify={actions.openReclassify}
-              openExclude={actions.openExclude}
-              openMarkDuplicate={actions.openMarkDuplicate}
-            />
+            {actions.canReclassify && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-sm"
+                style={{ fontSize: "0.6875rem" }}
+                onClick={actions.openReclassify}
+                data-testid="v3-action-reclassify"
+              >
+                <Tag className="w-3 h-3" /> Reclassify
+              </button>
+            )}
+            {actions.canMarkDuplicate && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-sm"
+                style={{ fontSize: "0.6875rem" }}
+                onClick={actions.openMarkDuplicate}
+                data-testid="v3-action-mark-duplicate"
+              >
+                <Copy className="w-3 h-3" /> Mark as duplicate
+              </button>
+            )}
+            {actions.canExclude && (
+              <button
+                type="button"
+                className="cc-btn cc-btn-sm"
+                style={{ fontSize: "0.6875rem" }}
+                onClick={actions.openExclude}
+                data-testid="v3-action-exclude"
+              >
+                <Link2Off className="w-3 h-3" /> Exclude
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* Counts strip — chips open the edge drawer per section */}
       {onOpenSection && (
-        <div
-          className="cc-counts-strip"
-          data-testid="v3-landing-counts-strip"
-        >
-          <CountChip
-            label="Evidence"
-            count={evidenceCount}
-            icon={<Paperclip className="w-3.5 h-3.5" />}
-            onClick={() => onOpenSection("evidence")}
-          />
-          <CountChip
-            label="Notes"
-            count={noteCount}
-            icon={<FileText className="w-3.5 h-3.5" />}
-            onClick={() => onOpenSection("notes")}
-          />
-          <CountChip
-            label="Comms"
-            icon={<MessageSquare className="w-3.5 h-3.5" />}
-            onClick={() => onOpenSection("comms")}
-          />
-          <CountChip
-            label="Activity"
-            icon={<Activity className="w-3.5 h-3.5" />}
-            onClick={() => onOpenSection("activity")}
-          />
+        <div style={{ marginTop: "0.75rem" }}>
+          <div
+            className="cc-counts-strip"
+            data-testid="v3-landing-counts-strip"
+          >
+            <CountChip
+              label="Evidence"
+              count={evidenceCount}
+              icon={<Paperclip className="w-3 h-3" />}
+              onClick={() => onOpenSection("evidence")}
+            />
+            <CountChip
+              label="Notes"
+              count={noteCount}
+              icon={<FileText className="w-3 h-3" />}
+              onClick={() => onOpenSection("notes")}
+            />
+            <CountChip
+              label="Comms"
+              icon={<MessageSquare className="w-3 h-3" />}
+              onClick={() => onOpenSection("comms")}
+            />
+            <CountChip
+              label="Activity"
+              icon={<Activity className="w-3 h-3" />}
+              onClick={() => onOpenSection("activity")}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -789,41 +818,37 @@ export function HoldExitHero({
   }
 
   return (
-    <div data-testid={`v3-hero-hold-exit-${scope}`} className="space-y-2">
+    <div data-testid={`v3-hero-hold-exit-${scope}`} style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}>
       <div
-        className="cc-card"
         style={{
           background: "var(--cc-amber-bg)",
-          border: "1px solid var(--cc-amber-border, var(--cc-amber-fg))",
+          border: "1px solid var(--cc-amber-border)",
+          borderRadius: "var(--cc-radius)",
           padding: "1.125rem 1.25rem 1rem",
-          maxWidth: 720,
-          margin: "0 auto",
-          width: "100%",
         }}
       >
-        {/* Scope chip + when */}
-        <div className="flex items-center gap-2 mb-2">
-          <Badge
-            variant="outline"
-            className="text-[10px] uppercase tracking-wide"
-            style={{ borderColor: "var(--cc-amber-fg)", color: "var(--cc-amber-fg)" }}
+        {/* Scope chip + placed-at */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span
+            className="cc-pill cc-pill-amber"
+            style={{ fontSize: "0.625rem", textTransform: "uppercase", letterSpacing: "0.04em" }}
           >
             {scope === "leg" ? "Leg-scoped hold" : "Group-scoped hold"}
-          </Badge>
+          </span>
           {placedAt && (
-            <span className="cc-meta text-[11px] ml-auto">
+            <span className="cc-meta" style={{ fontSize: "0.6875rem", marginLeft: "auto" }}>
               Placed {relativeTime(placedAt)}
             </span>
           )}
         </div>
 
-        {/* Title */}
-        <div className="flex items-center gap-2.5">
+        {/* Pause icon + title */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <PauseCircle
-            className="w-6 h-6 flex-shrink-0"
-            style={{ color: "var(--cc-amber-fg)" }}
+            className="w-6 h-6"
+            style={{ color: "var(--cc-amber-fg)", flexShrink: 0 }}
           />
-          <h3 className="text-base font-semibold m-0">
+          <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 600, color: "var(--cc-fg)" }}>
             {scope === "leg" ? "This leg is on hold" : "The whole invoice is on hold"}
           </h3>
         </div>
@@ -831,21 +856,25 @@ export function HoldExitHero({
         {/* Reason + pending-from — already on payload */}
         {(reason || pendingFrom) && (
           <div
-            className="mt-3 px-3 py-2 text-xs leading-relaxed rounded"
             style={{
+              marginTop: 10,
+              padding: "8px 10px",
               background: "var(--cc-card)",
-              border: "1px solid var(--cc-amber-border, var(--cc-amber-fg))",
+              border: "1px solid var(--cc-amber-border)",
+              borderRadius: 8,
+              fontSize: "0.75rem",
+              lineHeight: 1.45,
             }}
           >
             {reason && (
               <div>
-                <span className="cc-meta text-[11px]">Reason:</span>{" "}
-                <span className="font-medium">{reason}</span>
+                <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>Reason:</span>{" "}
+                <span style={{ fontWeight: 500 }}>{reason}</span>
               </div>
             )}
             {pendingFrom && (
-              <div className="mt-1">
-                <span className="cc-meta text-[11px]">Pending from:</span>{" "}
+              <div style={{ marginTop: 4 }}>
+                <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>Pending from:</span>{" "}
                 <span>{pendingFrom}</span>
               </div>
             )}
@@ -853,27 +882,30 @@ export function HoldExitHero({
         )}
 
         {/* Primary clear-hold CTA */}
-        <div className="cc-sop-actions mt-3">
-          <Button
+        <div className="cc-sop-actions" style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="cc-btn cc-btn-primary"
             onClick={onClear}
-            size="sm"
             disabled={isPending}
             data-testid={`v3-clear-${scope}-hold`}
           >
             {isPending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Play className="w-3.5 h-3.5 mr-1" />
+              <Play className="w-3.5 h-3.5" />
             )}
             Clear {scope} hold
-          </Button>
+          </button>
         </div>
 
         {/* Footnote with Open details */}
         <div
-          className="mt-3 pt-2 text-[11px]"
           style={{
-            borderTop: "1px dashed var(--cc-amber-border, var(--cc-amber-fg))",
+            marginTop: 10,
+            paddingTop: 8,
+            borderTop: "1px dashed var(--cc-amber-border)",
+            fontSize: "0.6875rem",
             color: "var(--cc-muted-fg)",
           }}
         >
@@ -886,7 +918,8 @@ export function HoldExitHero({
               <button
                 type="button"
                 onClick={onOpenFullDetails}
-                className="underline inline-flex items-center gap-0.5"
+                className="cc-link"
+                style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "transparent", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
                 data-testid={`v3-hold-open-details-${scope}`}
               >
                 Open details <ArrowUpRight className="w-3 h-3" />
