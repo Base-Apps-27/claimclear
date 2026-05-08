@@ -832,6 +832,7 @@ function WalkSopHero({ leg }: { leg: ClaimResponse }) {
                 invoiceGroupId: claim.invoiceGroupId,
                 duplicateOfClaimId: claim.duplicateOfClaimId,
                 perLegContext: claim.perLegContext,
+                sopAnswers: claim.sopAnswers,
               }}
               tree={tree}
               onAdvanced={invalidateLeg}
