@@ -13,7 +13,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
 import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
-import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor } from "../lib/response-matcher";
+import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor, MATCHER_CLASSIFIED_TARGET_STATUS } from "../lib/response-matcher";
 import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { transitionClaimStatus } from "../lib/claim-transitions";
@@ -105,9 +105,15 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
   const [response] = await db.update(portalResponsesTable).set(updates).where(eq(portalResponsesTable.id, id)).returning();
   if (!response) { res.status(404).json({ error: "Response not found" }); return; }
 
-  // Tagging is a hint, never a verdict: route every non-ack tag to Needs
-  // Review + Pending. Mirrors response-matcher's shouldTransitionToNeedsReview.
-  const NEEDS_REVIEW: typeof claimsTable.status.enumValues[number] = "Needs Review";
+  // Tagging is a hint, never a verdict: route every non-ack tag to the
+  // matcher's classified target status (`Ready to Review`, phase
+  // `response_received`) so the verdict endpoint accepts the operator's
+  // Approved/Denied click. Writing the legacy `Needs Review` here was
+  // the original Task #547 drift — that status derives to phase=triage
+  // (macro `pre-submit`), and the verdict gate 409s every click.
+  // Task #550 enumerates this site in the transition-helper newStatus
+  // contract test alongside the matcher writes.
+  const TAGGED_TARGET_STATUS: typeof claimsTable.status.enumValues[number] = MATCHER_CLASSIFIED_TARGET_STATUS;
   const PENDING_OUTCOME: typeof claimsTable.outcome.enumValues[number] = "Pending";
 
   if (responseType && shouldTransitionToNeedsReview(responseType)) {
@@ -135,7 +141,7 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 
       await transitionGroupStatus({
         groupId: response.invoiceGroupId,
-        newStatus: NEEDS_REVIEW,
+        newStatus: TAGGED_TARGET_STATUS,
         source: "response_tracker",
         reason: tagDetails,
         actor: { userEmail: actorEmail, userName: actorName },
@@ -164,7 +170,7 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
 
       await transitionClaimStatus({
         claimId: response.claimId,
-        newStatus: NEEDS_REVIEW,
+        newStatus: TAGGED_TARGET_STATUS,
         source: "response_tracker",
         reason: tagDetails,
         actor: { userEmail: actorEmail, userName: actorName },
@@ -451,11 +457,13 @@ router.post("/responses/:id/reassign", asyncHandler(async (req, res): Promise<vo
     userName: req.user?.displayName ?? "User",
   };
 
-  // Reverse the original "Needs Review" transition on the source if it
-  // still sits in Needs Review and was triggered by this response's match.
+  // Reverse the original tag-driven transition on the source if it
+  // still sits in the matcher's classified target status (or the legacy
+  // pre-Task-#547 `Needs Review`, for rows still in flight from older
+  // writes) and was triggered by this response's match.
   if (sourceClaimId) {
     const [src] = await db.select().from(claimsTable).where(eq(claimsTable.id, sourceClaimId));
-    if (src && src.status === "Needs Review") {
+    if (src && (src.status === MATCHER_CLASSIFIED_TARGET_STATUS || src.status === "Needs Review")) {
       try {
         await transitionClaimStatus({
           claimId: sourceClaimId,
@@ -472,7 +480,7 @@ router.post("/responses/:id/reassign", asyncHandler(async (req, res): Promise<vo
   }
   if (sourceGroupId) {
     const [src] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, sourceGroupId));
-    if (src && src.status === "Needs Review") {
+    if (src && (src.status === MATCHER_CLASSIFIED_TARGET_STATUS || src.status === "Needs Review")) {
       try {
         await transitionGroupStatus({
           groupId: sourceGroupId,
