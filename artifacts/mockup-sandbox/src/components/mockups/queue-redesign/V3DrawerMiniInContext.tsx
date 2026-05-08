@@ -28,9 +28,12 @@ const chipMeta: Record<Section, { label: string; n: number; icon: any; hint: str
   activity: { label: "Activity", n: 11, icon: Icons.Activity,      hint: "newest 8:31 today" },
 };
 
+export type Placement = "popover" | "drawer" | "inline" | "tray";
+
 export default function V3DrawerMiniInContext({
   section = "evidence",
-}: { section?: Section }) {
+  placement = "popover",
+}: { section?: Section; placement?: Placement }) {
   return (
     <div
       className="cc-scope"
@@ -40,7 +43,7 @@ export default function V3DrawerMiniInContext({
       <HeaderStrip />
       <ClassificationStrip count={3} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: 760 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: 760, position: "relative" }}>
         <MasterList dense />
 
         <div style={{ display: "flex", flexDirection: "column", padding: "0.75rem", gap: "0.625rem", overflow: "hidden", position: "relative" }}>
@@ -60,7 +63,7 @@ export default function V3DrawerMiniInContext({
             </div>
           </div>
 
-          {/* Hero — active SOP step + the persistent chips + floating popover */}
+          {/* Hero */}
           <div style={{
             flex: 1, display: "flex", flexDirection: "column",
             gap: "0.625rem", justifyContent: "center", padding: "0 2rem",
@@ -72,16 +75,18 @@ export default function V3DrawerMiniInContext({
               </div>
               <SopActiveCard question={legs[0].question} />
 
-              {/* Persistent chips — wrap in a relatively-positioned holder
-                  so the floating popover can anchor under the active chip. */}
+              {/* Persistent chips. Inline-expand placement renders panel
+                  in flow right below the chip strip; popover anchors to it. */}
               <div style={{ marginTop: "0.75rem", position: "relative" }}>
                 <ChipsStrip active={section} />
-                <FloatingPanel section={section} />
+                {placement === "popover" && <FloatingPanel section={section} />}
+                {placement === "inline"  && <InlinePanel section={section} />}
               </div>
             </div>
           </div>
 
-          {/* Footer */}
+          {/* Footer (tray docks just above this) */}
+          {placement === "tray" && <TrayPanel section={section} />}
           <div className="cc-footer-card cc-footer-pinned" style={{ padding: "0.5rem 0.875rem" }}>
             <span className="cc-pill cc-pill-amber">1 of 3 ready</span>
             <span className="cc-meta text-xs flex-1">Resolve all 3 legs to unlock Generate preview · then Submit.</span>
@@ -90,6 +95,10 @@ export default function V3DrawerMiniInContext({
             </button>
           </div>
         </div>
+
+        {/* Edge-drawer placement: small panel docked to the right edge of
+            the right pane, vertically centered, NOT full-height. */}
+        {placement === "drawer" && <EdgeDrawerPanel section={section} />}
       </div>
     </div>
   );
@@ -201,6 +210,150 @@ function FloatingPanel({ section }: { section: Section }) {
         <a className="cc-link" style={{ fontSize: "0.6875rem" }}>
           Open full leg details →
         </a>
+      </div>
+    </div>
+  );
+}
+
+/* ── Shared mini header ──────────────────────────────────────────────── */
+
+function MiniHeader({ section, hideHint = false }: { section: Section; hideHint?: boolean }) {
+  const m = chipMeta[section];
+  const Icon = m.icon;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "0.5rem",
+      padding: "0.5rem 0.625rem",
+      borderBottom: "1px solid var(--cc-border)",
+    }}>
+      <Icon className="w-3.5 h-3.5" style={{ color: "var(--cc-fg)" }} />
+      <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>{m.label}</span>
+      <span className="cc-tag" style={{
+        background: "var(--cc-blue-bg)", color: "var(--cc-blue-fg)",
+      }}>{m.n}</span>
+      {!hideHint && <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>{m.hint}</span>}
+      <button
+        aria-label="Close"
+        className="cc-btn cc-btn-ghost cc-btn-sm"
+        style={{ marginLeft: "auto", padding: "2px 4px" }}
+      >
+        <Icons.X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
+function MiniBody({ section }: { section: Section }) {
+  return (
+    <>
+      {section === "evidence" && <MiniEvidence />}
+      {section === "notes"    && <MiniNotes />}
+      {section === "comms"    && <MiniComms />}
+      {section === "activity" && <MiniActivity />}
+    </>
+  );
+}
+
+function MiniFooter() {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "flex-end",
+      padding: "0.375rem 0.625rem",
+      borderTop: "1px solid var(--cc-border)",
+      background: "var(--cc-bg)",
+    }}>
+      <a className="cc-link" style={{ fontSize: "0.6875rem" }}>
+        Open full leg details →
+      </a>
+    </div>
+  );
+}
+
+/* ── Imagining 2 — edge drawer (slides in from the right edge,
+   short, vertically centered, NOT full-height) ───────────────────────── */
+
+function EdgeDrawerPanel({ section }: { section: Section }) {
+  return (
+    <div
+      role="dialog"
+      aria-label={`${chipMeta[section].label} — quick view`}
+      style={{
+        position: "absolute",
+        top: "50%", right: 0, transform: "translateY(-50%)",
+        width: 360, maxHeight: 520,
+        background: "var(--cc-card)",
+        borderTop: "1px solid var(--cc-border)",
+        borderBottom: "1px solid var(--cc-border)",
+        borderLeft: "1px solid var(--cc-border)",
+        borderTopLeftRadius: "var(--cc-radius)",
+        borderBottomLeftRadius: "var(--cc-radius)",
+        boxShadow: "-12px 0 28px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.06)",
+        zIndex: 5,
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* Drag handle stripe on the left edge */}
+      <div style={{
+        position: "absolute", left: 0, top: "50%",
+        transform: "translateY(-50%)",
+        width: 3, height: 36, borderRadius: 2,
+        background: "var(--cc-border)",
+      }} />
+      <MiniHeader section={section} hideHint />
+      <div style={{ padding: "0.5rem 0.625rem", overflow: "auto", flex: 1 }}>
+        <MiniBody section={section} />
+      </div>
+      <MiniFooter />
+    </div>
+  );
+}
+
+/* ── Imagining 3 — inline expand (in flow, below the chip strip) ─────── */
+
+function InlinePanel({ section }: { section: Section }) {
+  return (
+    <div
+      role="region"
+      aria-label={`${chipMeta[section].label} — quick view`}
+      style={{
+        marginTop: 8,
+        background: "var(--cc-card)",
+        border: "1px solid var(--cc-border)",
+        borderRadius: "var(--cc-radius)",
+        overflow: "hidden",
+      }}
+    >
+      <MiniHeader section={section} />
+      <div style={{ padding: "0.5rem 0.625rem", maxHeight: 320, overflow: "auto" }}>
+        <MiniBody section={section} />
+      </div>
+      <MiniFooter />
+    </div>
+  );
+}
+
+/* ── Imagining 4 — bottom tray (docks above the footer) ──────────────── */
+
+function TrayPanel({ section }: { section: Section }) {
+  return (
+    <div
+      role="region"
+      aria-label={`${chipMeta[section].label} — quick view`}
+      style={{
+        background: "var(--cc-card)",
+        border: "1px solid var(--cc-border)",
+        borderRadius: "var(--cc-radius)",
+        boxShadow: "0 -6px 18px rgba(15,23,42,0.08)",
+        margin: "0 0.25rem",
+        display: "flex", flexDirection: "column",
+        maxHeight: 240,
+        overflow: "hidden",
+      }}
+    >
+      <MiniHeader section={section} />
+      <div style={{ padding: "0.5rem 0.75rem", overflow: "auto" }}>
+        <MiniBody section={section} />
       </div>
     </div>
   );
