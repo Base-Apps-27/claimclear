@@ -71,6 +71,29 @@ export function InvoiceGroupActionSlot({
   }
 
   if (outlook === "reattest_only") {
+    // Audit-state-divergence guardrail (2026-05-08). The outlook
+    // ladder above only inspects per-leg shape (survivors vs
+    // dispute-eligible vs dropped) — it does not look at the invoice
+    // macro phase. For invoices in `phase=triage / status ∈ {New}`
+    // (and other pre-submit shapes), the leg shape can collapse to
+    // `reattest_only` while the server's reattest gate still 409s
+    // because the invoice has not been submitted to the payor yet.
+    // Render the reason inline instead of an active CTA the operator
+    // would just bounce off.
+    const eligibility = canQueueOrCompleteReattest(group);
+    if (!eligibility.ok) {
+      return (
+        <Card className={bare ? "border-0 shadow-none" : undefined}>
+          <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 font-medium text-foreground">
+              <ShieldCheck className="h-4 w-4" />
+              Re-attestation not available yet
+            </div>
+            <p>{eligibility.reason}</p>
+          </CardContent>
+        </Card>
+      );
+    }
     return (
       <ReattestOnlyCta
         group={group}
