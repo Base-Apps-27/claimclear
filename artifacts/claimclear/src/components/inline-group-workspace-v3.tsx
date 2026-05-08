@@ -62,7 +62,19 @@ import {
   MoreHorizontal,
   RotateCcw,
   Undo2,
+  MessageSquare,
+  Activity,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -584,7 +596,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         hero = activeLegNeedsClassification ? (
           <ClassifyHero leg={activeLeg} />
         ) : (
-          <WalkSopHero leg={activeLeg} />
+          <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />
         );
       } else if (allWalked) {
         hero = (
@@ -617,7 +629,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         // hero routing transitions to WalkSopHero on the next render.
         hero = <ClassifyHero leg={activeLeg} />;
       } else if (activeLeg) {
-        hero = <WalkSopHero leg={activeLeg} />;
+        hero = <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />;
       } else {
         hero = (
           <Card>
@@ -633,7 +645,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         // classic queue mounts. Don't render a custom hero on top.
         hero = null;
       } else if (activeLeg) {
-        hero = <WalkSopHero leg={activeLeg} />;
+        hero = <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />;
       }
     }
   }
@@ -753,7 +765,13 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
 // context editor, no evidence panel — those all live in the drawer
 // (via the drawer's ClaimDetailV2 embed).
 // ─────────────────────────────────────────────────────────────────────
-function WalkSopHero({ leg }: { leg: ClaimResponse }) {
+function WalkSopHero({
+  leg,
+  onOpenDrawer,
+}: {
+  leg: ClaimResponse;
+  onOpenDrawer?: () => void;
+}) {
   const qc = useQueryClient();
   const { data: claim } = useGetClaim(leg.id, {
     query: { queryKey: getGetClaimQueryKey(leg.id), enabled: !!leg.id },
@@ -796,11 +814,66 @@ function WalkSopHero({ leg }: { leg: ClaimResponse }) {
     </div>
   );
 
+  // V4 — counts strip: clickable chips that open the Details drawer
+  // for the active leg. Counts come from data already on the claim
+  // payload (no extra fetches). Activity / Comms chips are countless
+  // entry points — the drawer surfaces those panels once opened.
+  const evidenceCount = (claim?.evidenceFiles ?? []).length;
+  const noteCount = (claim?.evidenceNotes ?? "").trim().length > 0 ? 1 : 0;
+  const countsStrip = onOpenDrawer ? (
+    <div
+      className="flex items-center gap-1.5 mb-2 flex-wrap"
+      data-testid="v3-walk-counts-strip"
+    >
+      <button
+        type="button"
+        onClick={onOpenDrawer}
+        className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
+        data-testid="v3-walk-counts-chip-evidence"
+        aria-label="Open evidence in details drawer"
+      >
+        <Paperclip className="w-3 h-3 inline mr-1" />
+        Evidence · {evidenceCount}
+      </button>
+      <button
+        type="button"
+        onClick={onOpenDrawer}
+        className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
+        data-testid="v3-walk-counts-chip-notes"
+        aria-label="Open notes in details drawer"
+      >
+        <FileText className="w-3 h-3 inline mr-1" />
+        Notes · {noteCount}
+      </button>
+      <button
+        type="button"
+        onClick={onOpenDrawer}
+        className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
+        data-testid="v3-walk-counts-chip-thread"
+        aria-label="Open communication thread in details drawer"
+      >
+        <MessageSquare className="w-3 h-3 inline mr-1" />
+        Comms
+      </button>
+      <button
+        type="button"
+        onClick={onOpenDrawer}
+        className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
+        data-testid="v3-walk-counts-chip-activity"
+        aria-label="Open activity in details drawer"
+      >
+        <Activity className="w-3 h-3 inline mr-1" />
+        Activity
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div data-testid="v3-hero-walk" className="space-y-2">
       <Card>
         <CardContent className="pt-4 pb-3">
           {legMeta}
+          {countsStrip}
           {!claim ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading leg…
@@ -1663,16 +1736,26 @@ function WizardInvoiceHeaderStrip({
   rides,
   current,
   offRampCurrent,
+  offRampDisabledReattest,
+  onOffRampChange,
   trailingPill,
   trailingExtra,
 }: {
   detail: DetailGroup;
   rides: ClaimResponse[];
   current?: WizardPhase;
-  /** When set, the segmented stepper renders a single-pill mode for an
-   *  off-ramp outlook (V4 Q6 / Q7) instead of the four-step Walk →
-   *  Preview → Review → Submit ladder. Mutually exclusive with `current`. */
+  /** When set, the segmented stepper renders the off-ramp pair
+   *  (Re-attest · Close) with `offRampCurrent` highlighted. Other
+   *  segment is clickable when `onOffRampChange` is provided.
+   *  Mutually exclusive with `current`. */
   offRampCurrent?: OffRampPhase;
+  /** When true, the Re-attest segment is rendered disabled (e.g. the
+   *  group has no survivors to re-attest under `nothing_to_do`). */
+  offRampDisabledReattest?: boolean;
+  /** Operator-override handler. When provided, the inactive off-ramp
+   *  segment becomes clickable; clicks fire this with the segment
+   *  the operator picked. Caller is responsible for any confirm UX. */
+  onOffRampChange?: (next: OffRampPhase) => void;
   /** Optional small pill rendered after the bucket-counts pill (e.g. Q4
    *  "Note edited · unsaved" purple state, or Q5 "Ready to send"). */
   trailingPill?: {
@@ -1768,24 +1851,52 @@ function WizardInvoiceHeaderStrip({
         data-mode={offRampCurrent ? "off-ramp" : "dispute"}
       >
         {offRampCurrent
-          ? offRampPhases
-              .filter((p) => p.key === offRampCurrent)
-              .map((p) => (
+          ? offRampPhases.map((p) => {
+              const isActive = p.key === offRampCurrent;
+              const isUnavailable =
+                p.key === "reattest" && !!offRampDisabledReattest;
+              const clickable =
+                !isActive && !isUnavailable && !!onOffRampChange;
+              return (
                 <button
                   key={p.key}
                   type="button"
                   role="tab"
-                  aria-selected
-                  aria-disabled
-                  disabled
-                  className="is-active"
+                  aria-selected={isActive}
+                  aria-disabled={!clickable}
+                  disabled={!clickable && !isActive ? true : isActive}
+                  className={isActive ? "is-active" : ""}
                   data-phase={p.key}
-                  data-state="active"
+                  data-state={
+                    isActive
+                      ? "active"
+                      : isUnavailable
+                      ? "disabled"
+                      : "inactive"
+                  }
                   data-testid={`v3-wizard-step-${p.key}`}
+                  onClick={
+                    clickable ? () => onOffRampChange!(p.key) : undefined
+                  }
+                  title={
+                    isUnavailable
+                      ? "No survivors to re-attest"
+                      : clickable
+                      ? `Switch to ${p.label.toLowerCase()}`
+                      : undefined
+                  }
+                  style={
+                    !isActive && !isUnavailable
+                      ? { opacity: 0.78, cursor: clickable ? "pointer" : "default" }
+                      : isUnavailable
+                      ? { opacity: 0.5 }
+                      : undefined
+                  }
                 >
                   {p.label}
                 </button>
-              ))
+              );
+            })
           : phases.map((p, i) => {
               const isActive = p.key === current;
               const isDone = i < currentIdx;
@@ -2636,19 +2747,49 @@ function OffRampInputsHero({
   dropped: ClaimResponse[];
   onJumpToLeg: (id: number) => void;
 }) {
-  const isReattest = outlook === "reattest_only";
+  const recommended: OffRampPhase =
+    outlook === "reattest_only" ? "reattest" : "close";
+  // Operator override of the system's recommended off-ramp. Default to
+  // null so first render shows the recommended path. Switching from
+  // reattest → close prompts a confirm dialog because it forfeits the
+  // recommended re-attestation; reverse direction (close → reattest)
+  // only appears when survivors exist, so no confirm needed there.
+  const [overrideRamp, setOverrideRamp] = useState<OffRampPhase | null>(null);
+  const [pendingSwitch, setPendingSwitch] = useState<OffRampPhase | null>(null);
+  const activeRamp: OffRampPhase = overrideRamp ?? recommended;
+  const noSurvivors = survivors.length === 0;
+  const alreadyClosed =
+    !!detail.outcome &&
+    // vocab-allow-next-line — comparing against API enum value, not a label.
+    (detail.outcome === "Withdrawn" || detail.outcome === "Non-Issue");
+
+  function onSegmentSwitch(next: OffRampPhase) {
+    if (next === activeRamp) return;
+    // Destructive direction: switching FROM the recommended reattest TO
+    // close means the operator is giving up on re-attesting survivors.
+    if (recommended === "reattest" && next === "close" && !noSurvivors) {
+      setPendingSwitch("close");
+      return;
+    }
+    setOverrideRamp(next);
+  }
+
   return (
     <div
-      data-testid={isReattest ? "v3-hero-reattest" : "v3-hero-close"}
+      data-testid={activeRamp === "reattest" ? "v3-hero-reattest" : "v3-hero-close"}
+      data-active-ramp={activeRamp}
+      data-recommended-ramp={recommended}
       className="space-y-3"
     >
       <WizardInvoiceHeaderStrip
         detail={detail}
         rides={rides}
-        offRampCurrent={isReattest ? "reattest" : "close"}
+        offRampCurrent={activeRamp}
+        offRampDisabledReattest={noSurvivors}
+        onOffRampChange={alreadyClosed ? undefined : onSegmentSwitch}
       />
       <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
-      {isReattest ? (
+      {activeRamp === "reattest" ? (
         <OffRampReattestStrip
           groupId={groupId}
           survivors={survivors}
@@ -2661,6 +2802,39 @@ function OffRampInputsHero({
           dropped={dropped}
         />
       )}
+      <AlertDialog
+        open={pendingSwitch !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSwitch(null);
+        }}
+      >
+        <AlertDialogContent data-testid="v3-offramp-switch-confirm-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close instead of re-attesting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {survivors.length} survivor leg
+              {survivors.length === 1 ? "" : "s"} are eligible for
+              re-attestation. Closing the invoice cancels them and they
+              will not be re-submitted to MAS. This is reversible only by
+              re-opening the invoice.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="v3-offramp-switch-cancel-button">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="v3-offramp-switch-confirm-button"
+              onClick={() => {
+                if (pendingSwitch) setOverrideRamp(pendingSwitch);
+                setPendingSwitch(null);
+              }}
+            >
+              Yes, close instead
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
