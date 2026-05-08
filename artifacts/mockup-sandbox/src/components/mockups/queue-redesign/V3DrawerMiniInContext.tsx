@@ -1,4 +1,5 @@
 import "./_queue.css";
+import { useState } from "react";
 import { Pin, AlertTriangle, Tag, Copy, Link2Off, ArrowUpRight } from "lucide-react";
 import {
   HeaderStrip, ClassificationStrip, MasterList, SopActiveCard,
@@ -31,9 +32,13 @@ const chipMeta: Record<Section, { label: string; n: number; icon: any; hint: str
 export type Placement = "popover" | "drawer" | "inline" | "tray";
 
 export default function V3DrawerMiniInContext({
-  section = "evidence",
+  section: sectionProp = "evidence",
   placement = "popover",
-}: { section?: Section; placement?: Placement }) {
+  interactive = false,
+}: { section?: Section; placement?: Placement; interactive?: boolean }) {
+  const [sectionState, setSectionState] = useState<Section>(sectionProp);
+  const section = interactive ? sectionState : sectionProp;
+  const onSelect = interactive ? setSectionState : undefined;
   return (
     <div
       className="cc-scope"
@@ -78,7 +83,7 @@ export default function V3DrawerMiniInContext({
               {/* Persistent chips. Inline-expand placement renders panel
                   in flow right below the chip strip; popover anchors to it. */}
               <div style={{ marginTop: "0.75rem", position: "relative" }}>
-                <ChipsStrip active={section} />
+                <ChipsStrip active={section} onSelect={onSelect} />
                 {placement === "popover" && <FloatingPanel section={section} />}
                 {placement === "inline"  && <InlinePanel section={section} />}
               </div>
@@ -106,8 +111,15 @@ export default function V3DrawerMiniInContext({
 
 /* ── Chips strip — active chip pressed ───────────────────────────────── */
 
-function ChipsStrip({ active }: { active: Section }) {
+function ChipsStrip({
+  active,
+  onSelect,
+}: {
+  active: Section;
+  onSelect?: (s: Section) => void;
+}) {
   const items: Section[] = ["evidence", "notes", "comms", "activity"];
+  const interactive = !!onSelect;
   return (
     <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}
          data-testid="v3-walk-counts-strip">
@@ -115,15 +127,36 @@ function ChipsStrip({ active }: { active: Section }) {
         const m = chipMeta[key];
         const I = m.icon;
         const on = key === active;
-        return (
+        const className = `cc-pill ${on ? "cc-pill-blue" : "cc-pill-muted"}`;
+        const style = {
+          ...(on ? { boxShadow: "inset 0 0 0 1.5px var(--cc-blue-fg)" } : null),
+          ...(interactive ? { cursor: "pointer", border: "none" } : null),
+        };
+        const label = (
+          <>
+            <I className="w-3 h-3" />
+            {m.label}{key !== "comms" ? ` · ${m.n}` : ""}
+          </>
+        );
+        return interactive ? (
+          <button
+            key={key}
+            data-chip={key}
+            className={className}
+            style={style}
+            onClick={() => onSelect!(key)}
+            aria-pressed={on}
+          >
+            {label}
+          </button>
+        ) : (
           <span
             key={key}
             data-chip={key}
-            className={`cc-pill ${on ? "cc-pill-blue" : "cc-pill-muted"}`}
-            style={on ? { boxShadow: "inset 0 0 0 1.5px var(--cc-blue-fg)" } : undefined}
+            className={className}
+            style={style}
           >
-            <I className="w-3 h-3" />
-            {m.label}{key !== "comms" ? ` · ${m.n}` : ""}
+            {label}
           </span>
         );
       })}
