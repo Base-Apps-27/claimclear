@@ -1967,7 +1967,7 @@ function ClosedTerminalRewindCard({
 // as a single concise dialog rather than the heavier rewind dialog.
 // ─────────────────────────────────────────────────────────────────────
 
-function ReclassifyConfirmDialog({
+export function ReclassifyConfirmDialog({
   open,
   onOpenChange,
   legRef,

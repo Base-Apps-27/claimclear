@@ -12,18 +12,36 @@ import {
   useCreatePortalSubmission,
   useBulkQueueGroupReattest,
   usePromoteVerdictDrafts,
+  useSopBackStepLeg,
+  useSopJumpLeg,
+  useSopRestartLeg,
+  useReclassifyLeg,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetClaimQueryKey,
   getListInvoiceGroupsQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
+  getListClaimEvidenceQueryKey,
+  getGetSopRewindImpactQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   ClaimResponse,
   ErrorTypeResponse,
   InvoiceGroupDetailResponse,
+  SopRewindAction,
+  SopRewindImpactResponse,
 } from "@workspace/api-client-react";
+import { RewindConfirmDialog } from "@/components/decision-tree/rewind-confirm-dialog";
+import { ReclassifyConfirmDialog } from "@/components/decision-tree/sop-advance-player";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { buildLegResolvedIndex, outcomeRole, deriveLegSubStatus } from "@workspace/leg-state";
 import {
   CheckCircle2,
@@ -49,6 +67,9 @@ import {
   Search,
   Layers,
   Tag,
+  MoreHorizontal,
+  RotateCcw,
+  Undo2,
 } from "lucide-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1379,11 +1400,203 @@ function InputsCardsRow({
               >
                 Open
               </Button>
+              <LegRewindMenu leg={leg} />
             </div>
           </div>
         );
       })}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #536 (R3) — Per-leg rewind menu on the InputsCardsRow.
+//
+// Renders a small overflow menu next to each leg card's "Open" button
+// when the leg has any sopAnswers. Reuses the shared
+// `RewindConfirmDialog` (R5 mockup, light/heavy variants chosen by
+// `pickRewindDialogVariant` inside the dialog itself) for back-step /
+// restart and the player's `ReclassifyConfirmDialog` for the
+// destructive reclassify path. Mirrors the player's
+// invalidateAfterRewind set so the cards row stays in sync after any
+// of the four mutations land.
+// ─────────────────────────────────────────────────────────────────────
+function LegRewindMenu({ leg }: { leg: ClaimResponse }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const hasAnswers =
+    Array.isArray(leg.sopAnswers) && leg.sopAnswers.length > 0;
+
+  const [rewindAction, setRewindAction] = useState<SopRewindAction | null>(
+    null,
+  );
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
+
+  const backStepMutation = useSopBackStepLeg<Error>();
+  const jumpMutation = useSopJumpLeg<Error>();
+  const restartMutation = useSopRestartLeg<Error>();
+  const reclassifyMutation = useReclassifyLeg<Error>({
+    mutation: {
+      onSuccess: () => {
+        markLocalAction(`claim:${leg.id}`);
+        invalidateAfterRewind();
+        successToast({
+          title: "__VERB__",
+          description: "Leg reclassified — pick an error type to start over",
+        });
+        setReclassifyOpen(false);
+      },
+      onError: handleRewindError,
+    },
+  });
+
+  const anyRewindPending =
+    backStepMutation.isPending ||
+    jumpMutation.isPending ||
+    restartMutation.isPending;
+
+  const legRefLabel = leg.confNumber || `CLM-${leg.id}`;
+
+  function invalidateAfterRewind() {
+    qc.invalidateQueries({ queryKey: ["claim", leg.id] });
+    qc.invalidateQueries({ queryKey: ["claims"] });
+    qc.invalidateQueries({
+      queryKey: getListClaimEvidenceQueryKey(leg.id),
+    });
+    qc.invalidateQueries({
+      queryKey: getGetSopRewindImpactQueryKey(leg.id),
+    });
+    if (leg.invoiceGroupId != null) {
+      qc.invalidateQueries({
+        queryKey: ["invoice-group", leg.invoiceGroupId],
+      });
+      qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+    }
+  }
+
+  function handleRewindError(err: unknown) {
+    const e = err as { status?: number; message?: string };
+    toast({
+      title: "Could not rewind the SOP walk",
+      description: e?.message || "Please try again.",
+      variant: "destructive",
+    });
+  }
+
+  function handleRewindSuccess(verb: string) {
+    markLocalAction(`claim:${leg.id}`);
+    invalidateAfterRewind();
+    successToast({ title: "__VERB__", description: verb });
+    setRewindAction(null);
+  }
+
+  function handleConfirm({ impact }: { impact: SopRewindImpactResponse }) {
+    if (!rewindAction) return;
+    const data = { discardDraft: impact.draftWillBeDiscarded };
+    if (rewindAction === "back-step") {
+      backStepMutation.mutate(
+        { id: leg.id, data },
+        {
+          onSuccess: () =>
+            handleRewindSuccess("Walk stepped back one answer"),
+          onError: handleRewindError,
+        },
+      );
+    } else if (rewindAction === "restart") {
+      restartMutation.mutate(
+        { id: leg.id, data },
+        {
+          onSuccess: () =>
+            handleRewindSuccess("Walk restarted from the top"),
+          onError: handleRewindError,
+        },
+      );
+    }
+    // "jump" is wired but not exposed in the cards-row menu — the
+    // breadcrumb chips inside the player own that flow.
+  }
+
+  if (!hasAnswers) return null;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            disabled={anyRewindPending || reclassifyMutation.isPending}
+            data-testid={`v3-inputs-rewind-menu-${leg.id}`}
+            aria-label={`Rewind options for ${legRefLabel}`}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setRewindAction("back-step");
+            }}
+            disabled={anyRewindPending}
+            data-testid={`v3-inputs-rewind-back-step-${leg.id}`}
+          >
+            <Undo2 className="h-3.5 w-3.5 mr-2" />
+            Back-step
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setRewindAction("restart");
+            }}
+            disabled={anyRewindPending}
+            data-testid={`v3-inputs-rewind-restart-${leg.id}`}
+          >
+            <RotateCcw className="h-3.5 w-3.5 mr-2" />
+            Restart
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              setReclassifyOpen(true);
+            }}
+            disabled={reclassifyMutation.isPending}
+            data-testid={`v3-inputs-rewind-reclassify-${leg.id}`}
+          >
+            <Layers className="h-3.5 w-3.5 mr-2" />
+            Reclassify
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {rewindAction && (
+        <RewindConfirmDialog
+          open={!!rewindAction}
+          onOpenChange={(next) => {
+            if (!next && !anyRewindPending) setRewindAction(null);
+          }}
+          legId={leg.id}
+          legRef={legRefLabel}
+          action={rewindAction}
+          currentVerdictLabel={leg.sopOutcome ?? null}
+          onConfirm={handleConfirm}
+          isPending={anyRewindPending}
+        />
+      )}
+
+      <ReclassifyConfirmDialog
+        open={reclassifyOpen}
+        onOpenChange={(next) =>
+          !reclassifyMutation.isPending && setReclassifyOpen(next)
+        }
+        legRef={legRefLabel}
+        isPending={reclassifyMutation.isPending}
+        onConfirm={() => reclassifyMutation.mutate({ id: leg.id })}
+      />
+    </>
   );
 }
 
