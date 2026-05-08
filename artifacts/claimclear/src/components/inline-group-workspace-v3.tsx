@@ -89,6 +89,12 @@ import {
 } from "@/components/ui/sheet";
 import { RefNumber } from "@/components/ref-number";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
+import {
+  WalkLandingHero,
+  HoldExitHero,
+  EdgeDrawer,
+  type DrawerSection,
+} from "@/components/inline-group-workspace-v3-extras";
 import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { useClosureLauncher } from "@/components/closure/closure-launcher";
 import {
@@ -341,7 +347,12 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   const [forceWalkLegId, setForceWalkLegId] = useState<number | null>(null);
   const setActiveLegId = (id: number | null) => {
     setForceWalkLegId(null);
+    setWalkStartedFor(null);
     set({ leg: id == null ? null : String(id) }, false);
+  };
+  const openEdgeDrawer = (section: DrawerSection) => {
+    setEdgeSection(section);
+    setEdgeDrawerOpen(true);
   };
   const openWalkForLeg = (id: number) => {
     setForceWalkLegId(id);
@@ -349,6 +360,19 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   };
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Edge drawer (chip-driven, two floating right-edge cards). Lives
+  // alongside the full Sheet drawer above so the operator can reach
+  // ClaimDetailV2 (composer / comms / activity) via the "Open full
+  // leg details" footer links when the compact section card isn't
+  // enough. `edgeSection` defaults to "evidence" because that's what
+  // the chip strip surfaces first.
+  const [edgeDrawerOpen, setEdgeDrawerOpen] = useState(false);
+  const [edgeSection, setEdgeSection] = useState<DrawerSection>("evidence");
+  // "Start walk" CTA on the landing hero flips this for the active
+  // leg id, which makes the routing below render WalkSopHero on the
+  // next tick. Resets when the operator switches legs so each leg
+  // starts on its own landing card.
+  const [walkStartedFor, setWalkStartedFor] = useState<number | null>(null);
   // Local "I'm reviewing now" toggle — flips the Preview hero into the
   // editable Review hero before the operator hits Mark reviewed. Reset
   // automatically when the upstream draftReviewedAt stamps so we don't
@@ -558,11 +582,48 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
     );
   }
 
+  // Detect a manual hold scope. Group-scoped wins over leg-scoped so
+  // a hold placed on the whole invoice is the hero regardless of
+  // which leg is active. SOP holds (sopOutcome === "hold") are not
+  // covered here — those still flow through HoldTerminal inside the
+  // SOP player. We also skip the hold hero post-submission so the
+  // receipt stays the source of truth.
+  const groupHoldActive =
+    !submitted &&
+    (detail.status === "On Hold" ||
+      ((detail as InvoiceGroupDetailResponse & { holdReason?: string | null }).holdReason ?? null) != null);
+  const legHoldActive =
+    !submitted &&
+    !groupHoldActive &&
+    activeLeg != null &&
+    activeLeg.sopOutcome !== "hold" &&
+    ((activeLeg.holdReason ?? null) != null);
+
   if (!collapseToTerminator) {
     if (outlook === "has_disputable") {
       if (submitted) {
         hero = (
           <SubmittedReceiptHero detail={detail} rides={rides} />
+        );
+        footerPrimary = null;
+      } else if (groupHoldActive) {
+        hero = (
+          <HoldExitHero
+            claim={activeLeg ?? rides[0]}
+            group={detail}
+            scope="group"
+            onOpenFullDetails={() => setDrawerOpen(true)}
+          />
+        );
+        footerPrimary = null;
+      } else if (legHoldActive && activeLeg) {
+        hero = (
+          <HoldExitHero
+            claim={activeLeg}
+            group={detail}
+            scope="leg"
+            onOpenFullDetails={() => setDrawerOpen(true)}
+          />
         );
         footerPrimary = null;
       } else if (previewGenerated && (draftReviewed || reviewMode)) {
@@ -596,7 +657,11 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         hero = activeLegNeedsClassification ? (
           <ClassifyHero leg={activeLeg} />
         ) : (
-          <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />
+          <WalkSopHero
+            leg={activeLeg}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenSection={openEdgeDrawer}
+          />
         );
       } else if (allWalked) {
         hero = (
@@ -628,8 +693,33 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         // Picking a type fires `/classify` and the wizard's normal
         // hero routing transitions to WalkSopHero on the next render.
         hero = <ClassifyHero leg={activeLeg} />;
+      } else if (
+        activeLeg &&
+        activeLeg.errorTypeId &&
+        !activeLeg.sopNodeId &&
+        activeLeg.sopOutcome == null &&
+        walkStartedFor !== activeLeg.id
+      ) {
+        // Pre-walk landing — leg is classified and a tree is configured
+        // but no SOP progress exists yet. "Start walk" flips
+        // walkStartedFor for this leg id, which falls through to the
+        // SOP player below on the next render.
+        hero = (
+          <WalkLandingHero
+            claim={activeLeg}
+            group={detail}
+            onStartWalk={() => setWalkStartedFor(activeLeg.id)}
+            onOpenSection={openEdgeDrawer}
+          />
+        );
       } else if (activeLeg) {
-        hero = <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />;
+        hero = (
+          <WalkSopHero
+            leg={activeLeg}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenSection={openEdgeDrawer}
+          />
+        );
       } else {
         hero = (
           <Card>
@@ -645,7 +735,13 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         // classic queue mounts. Don't render a custom hero on top.
         hero = null;
       } else if (activeLeg) {
-        hero = <WalkSopHero leg={activeLeg} onOpenDrawer={() => setDrawerOpen(true)} />;
+        hero = (
+          <WalkSopHero
+            leg={activeLeg}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenSection={openEdgeDrawer}
+          />
+        );
       }
     }
   }
@@ -754,6 +850,20 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
       )}
 
       {detailsDrawer}
+      {activeLeg && (
+        <EdgeDrawer
+          open={edgeDrawerOpen}
+          section={edgeSection}
+          onSectionChange={setEdgeSection}
+          onClose={() => setEdgeDrawerOpen(false)}
+          onOpenFullDetails={() => {
+            setEdgeDrawerOpen(false);
+            setDrawerOpen(true);
+          }}
+          claim={activeLeg}
+          group={detail}
+        />
+      )}
     </div>
   );
 }
@@ -768,9 +878,11 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
 function WalkSopHero({
   leg,
   onOpenDrawer,
+  onOpenSection,
 }: {
   leg: ClaimResponse;
   onOpenDrawer?: () => void;
+  onOpenSection?: (section: DrawerSection) => void;
 }) {
   const qc = useQueryClient();
   const { data: claim } = useGetClaim(leg.id, {
@@ -820,14 +932,21 @@ function WalkSopHero({
   // entry points — the drawer surfaces those panels once opened.
   const evidenceCount = (claim?.evidenceFiles ?? []).length;
   const noteCount = (claim?.evidenceNotes ?? "").trim().length > 0 ? 1 : 0;
-  const countsStrip = onOpenDrawer ? (
+  // The chip strip drives the right-edge drawer when `onOpenSection`
+  // is wired (V3 graduation), and falls back to the full Sheet drawer
+  // when it isn't.
+  const openChip = (section: DrawerSection) => () => {
+    if (onOpenSection) onOpenSection(section);
+    else if (onOpenDrawer) onOpenDrawer();
+  };
+  const countsStrip = onOpenDrawer || onOpenSection ? (
     <div
       className="flex items-center gap-1.5 mb-2 flex-wrap"
       data-testid="v3-walk-counts-strip"
     >
       <button
         type="button"
-        onClick={onOpenDrawer}
+        onClick={openChip("evidence")}
         className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
         data-testid="v3-walk-counts-chip-evidence"
         aria-label="Open evidence in details drawer"
@@ -837,7 +956,7 @@ function WalkSopHero({
       </button>
       <button
         type="button"
-        onClick={onOpenDrawer}
+        onClick={openChip("notes")}
         className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
         data-testid="v3-walk-counts-chip-notes"
         aria-label="Open notes in details drawer"
@@ -847,7 +966,7 @@ function WalkSopHero({
       </button>
       <button
         type="button"
-        onClick={onOpenDrawer}
+        onClick={openChip("comms")}
         className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
         data-testid="v3-walk-counts-chip-thread"
         aria-label="Open communication thread in details drawer"
@@ -857,7 +976,7 @@ function WalkSopHero({
       </button>
       <button
         type="button"
-        onClick={onOpenDrawer}
+        onClick={openChip("activity")}
         className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
         data-testid="v3-walk-counts-chip-activity"
         aria-label="Open activity in details drawer"
