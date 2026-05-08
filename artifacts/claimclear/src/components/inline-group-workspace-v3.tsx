@@ -334,6 +334,12 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
 
   const qc = useQueryClient();
   const { toast } = useToast();
+  // V4 Q1 — owns the Generate-preview mutation at the parent level so
+  // the primary CTA can render inside the global pinned footer
+  // (alongside the gauntlet row + ready-to-draft pill) instead of
+  // floating right-aligned in the hero. Hook MUST be declared above
+  // the loading early-return below or we trip Rules of Hooks (#300).
+  const stampPreview = useStampPreviewGenerated();
   const { data: group, isLoading } = useGetInvoiceGroup(groupId);
 
   const detail: DetailGroup | null = useMemo(
@@ -506,13 +512,10 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   let hero: React.ReactNode = null;
   let footerPrimary: React.ReactNode = null;
 
-  // V4 Q1 — owns the Generate-preview mutation at the parent level so
-  // the primary CTA can render inside the global pinned footer
-  // (alongside the gauntlet row + ready-to-draft pill) instead of
-  // floating right-aligned in the hero. Keeps WalkCompleteHero
-  // presentational.
-  const stampPreview = useStampPreviewGenerated();
-  const walkBuckets = useMemo(() => summarizeInclusion(rides), [rides]);
+  // V4 Q1 — Generate-preview mutation is declared above the early
+  // return (above) so Rules of Hooks always sees the same hook order
+  // regardless of loading state. Buckets are derived eagerly here.
+  const walkBuckets = summarizeInclusion(rides);
   function onGeneratePreview() {
     stampPreview.mutate(
       { id: groupId },
