@@ -23482,6 +23482,87 @@ export const GetMyProcessedTodayResponse = zod
   );
 
 /**
+ * Powers the avatar hover card on the sidebar footer and the header
+session-pace badge (Task #522). Returns the four headline stats
+(today, this week Mon→today, this month, working-day streak) plus
+an 84-day per-day count series the front-end renders as a
+GitHub-style heatmap.
+
+Counts are sourced from the same shared "qualifying user activity"
+predicate as `/dashboard/my-processed-today`, so the pip ring's
+"today" count and the hover card's `today` stat always agree.
+
+The card is private — only the requesting user's data is returned.
+
+ * @summary Personal activity summary (headline stats + 12-week heatmap)
+ */
+export const GetMyActivitySummaryQueryParams = zod.object({
+  tz: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'IANA timezone (e.g. `America\/New_York`) used to anchor \"start\nof today\" and bucket the per-day counts. Defaults to the\nserver\'s office timezone if absent or invalid.\n',
+    ),
+});
+
+export const getMyActivitySummaryResponseTodayMin = 0;
+
+export const getMyActivitySummaryResponseThisWeekMin = 0;
+
+export const getMyActivitySummaryResponseThisMonthMin = 0;
+
+export const getMyActivitySummaryResponseStreakMin = 0;
+
+export const getMyActivitySummaryResponseDailyCountsItemCountMin = 0;
+
+export const GetMyActivitySummaryResponse = zod
+  .object({
+    timezone: zod
+      .string()
+      .describe("IANA timezone the counts are bucketed in."),
+    dayKey: zod
+      .string()
+      .describe(
+        'YYYY-MM-DD calendar key for \"today\" in the resolved timezone.\n',
+      ),
+    today: zod
+      .number()
+      .min(getMyActivitySummaryResponseTodayMin)
+      .describe("Qualifying actions logged so far today."),
+    thisWeek: zod
+      .number()
+      .min(getMyActivitySummaryResponseThisWeekMin)
+      .describe("Qualifying actions Mon → today (inclusive)."),
+    thisMonth: zod
+      .number()
+      .min(getMyActivitySummaryResponseThisMonthMin)
+      .describe("Qualifying actions since the 1st of the current month."),
+    streak: zod
+      .number()
+      .min(getMyActivitySummaryResponseStreakMin)
+      .describe(
+        "Consecutive working-day streak (Mon–Fri). Weekend days are\nskipped — they neither continue nor break the streak. Today\nonly counts when it has activity; an empty today does not\nbreak the prior run.\n",
+      ),
+    dailyCounts: zod
+      .array(
+        zod.object({
+          date: zod
+            .string()
+            .describe("YYYY-MM-DD calendar date in the resolved timezone."),
+          count: zod
+            .number()
+            .min(getMyActivitySummaryResponseDailyCountsItemCountMin),
+        }),
+      )
+      .describe(
+        "84 consecutive days ending today, oldest first. Days with\nno activity are present with `count: 0` so the front end\ndoes not have to gap-fill.\n",
+      ),
+  })
+  .describe(
+    "Personal activity summary for the avatar hover card (Task #522).\nHeadline stats + a 12-week per-day count series for the heatmap.\n",
+  );
+
+/**
  * @summary Aggregate rejected claims by car number (drivers/vehicles) and client number (members)
  */
 export const getDashboardRepeatOffendersQueryDaysDefault = 30;

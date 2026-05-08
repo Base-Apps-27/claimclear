@@ -8,6 +8,7 @@ import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
 import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor";
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 import { getOverdueCount } from "../lib/overdue-submissions";
+import { qualifyingActivityPredicate } from "../lib/qualifying-activity";
 
 // Always exclude the global "tour sample" rows from every aggregate
 // query — that pair exists only so the in-app guided tour can navigate
@@ -847,19 +848,19 @@ function dayKeyInTz(now: Date, tz: string): string {
   }).format(now);
 }
 
-// Streak pip on the user avatar (Task #317). Returns the count of
-// invoice groups the calling user "processed" — i.e. finished the
-// worktree and queued for portal submission — since the start of
-// "today" in their local timezone.
+// Streak pip on the user avatar (Task #317; broadened in Task #522).
+// Returns the count of qualifying personal-activity beats the calling
+// user has logged since the start of "today" in their local timezone.
 //
-// Sourced from group-level status transitions: every audit row with
-// `action = 'group_status_changed'` and `metadata->>'to' = 'Portal
-// Queued'`, filtered by the actor's `userEmail`. This is what fires
-// when the operator clicks Submit on a packaged group and it lands
-// in the Portal Queued lane. Earlier the count read claim-leg
-// transitions into `Processed`, but operators rarely flip individual
-// legs through that intermediate status — the meaningful "I finished
-// this one" event is the group-level Portal Queued transition.
+// The qualifying-activity set is the shared
+// `qualifyingActivityPredicate()` defined in `lib/qualifying-activity.ts`
+// — same predicate used by `/dashboard/my-activity-summary`, so the
+// pip's "today" count and the avatar hover-card stats always agree.
+// The set was originally just "queued for portal" (Task #317) but is
+// now broader: claim/group closures, manual leg exclusions, attest
+// queue+confirm, manual portal submits, closure-review acks, MAS
+// re-attest (including offline), and invoice imports all count. See
+// the predicate module for the canonical list.
 //
 // Never exposes anything about other users — the actor filter is
 // pinned to `req.user.email`.
@@ -885,12 +886,218 @@ router.get("/dashboard/my-processed-today", asyncHandler(async (req, res): Promi
     .from(auditLogsTable)
     .where(and(
       eq(auditLogsTable.userEmail, userEmail),
-      eq(auditLogsTable.action, "group_status_changed"),
-      sql`${auditLogsTable.metadata}->>'to' = 'Portal Queued'`,
+      qualifyingActivityPredicate(),
       sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date = ${dayKey}::date`,
     ));
 
   res.json({ count: Number(value) || 0, timezone: tz, dayKey });
+}));
+
+// ────────────────────────────────────────────────────────────────────
+// Avatar hover-card activity summary (Task #522).
+//
+// Single endpoint backing the hover card on the sidebar avatar and
+// the header session-pace badge. Returns four headline stats (today,
+// this week Mon→today, this month, working-day streak) plus a
+// per-day count series for the trailing 12 weeks (84 days) so the
+// front-end can render a GitHub-style heatmap. Auth-pinned to the
+// caller; mirrors `/dashboard/my-processed-today`'s timezone +
+// `dayKey` handling so the "today" stat and the pip ring can never
+// disagree.
+//
+// Streak rule: working days only (Mon–Fri). Weekend days are
+// skipped — neither continue nor break the streak. We walk backwards
+// from today (or, if today is a weekend, from the most recent
+// Friday); a working day with ≥1 qualifying action continues the
+// streak, a working day with 0 actions ends it. Today itself counts
+// only if it has activity (zero-today does not break the prior run,
+// it just doesn't add to it).
+// ────────────────────────────────────────────────────────────────────
+const ACTIVITY_HEATMAP_DAYS = 84;
+
+function ymdMinusDays(dayKey: string, daysBack: number): string {
+  // dayKey is `YYYY-MM-DD` — anchor at noon UTC so the subtraction
+  // never crosses a DST boundary on the wrong side.
+  const [y, m, d] = dayKey.split("-").map(s => parseInt(s, 10));
+  const base = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  base.setUTCDate(base.getUTCDate() - daysBack);
+  const yy = base.getUTCFullYear();
+  const mm = String(base.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(base.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+// 0 = Sun, 1 = Mon, … 6 = Sat. Computed on the YMD itself (no
+// timezone math needed — a calendar date has a fixed weekday).
+function dowOfYmd(dayKey: string): number {
+  const [y, m, d] = dayKey.split("-").map(s => parseInt(s, 10));
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function isWorkingDayYmd(dayKey: string): boolean {
+  const dow = dowOfYmd(dayKey);
+  return dow >= 1 && dow <= 5;
+}
+
+function computeStreak(activeDays: Set<string>, todayKey: string): number {
+  // Walk backwards over working days only. If today is a weekend,
+  // start at the most recent Friday. Today counts only if it has
+  // activity; otherwise the walk skips it without breaking the run.
+  // `activeDays` is the set of YYYY-MM-DD keys (in user-tz) that
+  // have at least one qualifying audit row — populated from a
+  // dedicated wide-window query so the streak is correct beyond the
+  // 84-day heatmap window.
+  let cursor = todayKey;
+  while (!isWorkingDayYmd(cursor)) cursor = ymdMinusDays(cursor, 1);
+
+  let streak = 0;
+  // Special-case the first working-day cell (today, if today is a
+  // weekday): an empty cell does NOT break — it just doesn't extend
+  // the prior run. Skip past it to the previous working day and
+  // continue the strict rule from there.
+  if (activeDays.has(cursor)) {
+    streak += 1;
+    cursor = ymdMinusDays(cursor, 1);
+    while (!isWorkingDayYmd(cursor)) cursor = ymdMinusDays(cursor, 1);
+  } else if (cursor === todayKey) {
+    cursor = ymdMinusDays(cursor, 1);
+    while (!isWorkingDayYmd(cursor)) cursor = ymdMinusDays(cursor, 1);
+  }
+
+  // Bound the back-scan at the size of the active-day set: the
+  // streak cannot extend further back than the oldest qualifying
+  // day on file, and the dedicated query already caps the lookback
+  // at `STREAK_LOOKBACK_DAYS` so this loop is finite by construction.
+  // The 1.5x safety multiplier accounts for weekend skips inside the
+  // walk without ever degrading to an unbounded loop.
+  const maxIters = Math.max(activeDays.size, 1) * 3;
+  for (let i = 0; i < maxIters; i++) {
+    if (!isWorkingDayYmd(cursor)) {
+      cursor = ymdMinusDays(cursor, 1);
+      continue;
+    }
+    if (activeDays.has(cursor)) {
+      streak += 1;
+      cursor = ymdMinusDays(cursor, 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+// Wider lookback window for the streak query specifically — the
+// 84-day heatmap window is for visual rendering, but a streak of
+// "I worked every weekday this year" must be representable. One
+// year of working days (~261) comfortably exceeds any realistic
+// uninterrupted streak; the query is index-backed by
+// `(user_email, timestamp)` so the wider scan is cheap.
+const STREAK_LOOKBACK_DAYS = 366;
+
+// Returns `YYYY-MM-DD` for the most recent Monday on or before
+// `dayKey`. Used for the "this week" stat (Mon→today inclusive).
+function startOfWeekMon(dayKey: string): string {
+  const dow = dowOfYmd(dayKey);
+  // dow: 0=Sun, 1=Mon, …; backstep to Mon. Sunday → 6 days back.
+  const back = dow === 0 ? 6 : dow - 1;
+  return ymdMinusDays(dayKey, back);
+}
+
+function startOfMonth(dayKey: string): string {
+  const [y, m] = dayKey.split("-");
+  return `${y}-${m}-01`;
+}
+
+router.get("/dashboard/my-activity-summary", asyncHandler(async (req, res): Promise<void> => {
+  const userEmail = req.user?.email;
+  if (!userEmail) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const rawTz = typeof req.query.tz === "string" ? req.query.tz : "";
+  const tz = rawTz && isValidIanaTz(rawTz) ? rawTz : PIP_DEFAULT_TZ;
+  const now = new Date();
+  const todayKey = dayKeyInTz(now, tz);
+  const startKey = ymdMinusDays(todayKey, ACTIVITY_HEATMAP_DAYS - 1);
+
+  // One grouped scan returns the per-day counts. Bucketing by the
+  // user-tz date stays consistent with `/my-processed-today`. The
+  // range bound is inclusive on both ends and clamps the scan so the
+  // composite `(user_email, timestamp)` index can be used.
+  const rows = await db
+    .select({
+      day: sql<string>`to_char((${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date, 'YYYY-MM-DD')`,
+      value: count(),
+    })
+    .from(auditLogsTable)
+    .where(and(
+      eq(auditLogsTable.userEmail, userEmail),
+      qualifyingActivityPredicate(),
+      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date >= ${startKey}::date`,
+      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date <= ${todayKey}::date`,
+    ))
+    .groupBy(sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date`);
+
+  const countsByDay = new Map<string, number>();
+  for (const r of rows) countsByDay.set(r.day, Number(r.value) || 0);
+
+  // Densify — every day in the window is present with `count: 0` so
+  // the heatmap renders all cells without front-end gap-filling.
+  const dailyCounts: Array<{ date: string; count: number }> = [];
+  for (let i = ACTIVITY_HEATMAP_DAYS - 1; i >= 0; i--) {
+    const d = ymdMinusDays(todayKey, i);
+    dailyCounts.push({ date: d, count: countsByDay.get(d) ?? 0 });
+  }
+
+  // Aggregate stats over the same source.
+  const today = countsByDay.get(todayKey) ?? 0;
+  const weekStart = startOfWeekMon(todayKey);
+  const monthStart = startOfMonth(todayKey);
+  let thisWeek = 0;
+  let thisMonth = 0;
+  for (const { date, count: c } of dailyCounts) {
+    if (date >= weekStart && date <= todayKey) thisWeek += c;
+    if (date >= monthStart && date <= todayKey) thisMonth += c;
+  }
+
+  // Note: `thisMonth` is bounded by the 84-day window — when the
+  // current month started more than 84 days ago (impossible in
+  // practice; max month length is 31), the count would under-report.
+  // That's fine for our window. If we ever shrink the window we'd
+  // need a separate query for `thisMonth`.
+
+  // Dedicated wider-window scan for the streak. Returns just the
+  // distinct YYYY-MM-DD keys (in user-tz) that have at least one
+  // qualifying audit row, so a year-long streak isn't truncated by
+  // the 84-day heatmap window. Index-backed by
+  // `(user_email, timestamp)`; the projection is a single scalar
+  // expression so the planner can stream straight into a sort+unique.
+  const streakStartKey = ymdMinusDays(todayKey, STREAK_LOOKBACK_DAYS - 1);
+  const streakRows = await db
+    .selectDistinct({
+      day: sql<string>`to_char((${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date, 'YYYY-MM-DD')`,
+    })
+    .from(auditLogsTable)
+    .where(and(
+      eq(auditLogsTable.userEmail, userEmail),
+      qualifyingActivityPredicate(),
+      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date >= ${streakStartKey}::date`,
+      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date <= ${todayKey}::date`,
+    ));
+  const activeDays = new Set<string>();
+  for (const r of streakRows) activeDays.add(r.day);
+  const streak = computeStreak(activeDays, todayKey);
+
+  res.json({
+    timezone: tz,
+    dayKey: todayKey,
+    today,
+    thisWeek,
+    thisMonth,
+    streak,
+    dailyCounts,
+  });
 }));
 
 export function parseLimit(raw: unknown, fallback: number, max = 50): number {

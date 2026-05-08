@@ -3581,6 +3581,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/MyProcessedTodayCount"
 
+  /dashboard/my-activity-summary:
+    get:
+      operationId: getMyActivitySummary
+      tags: [dashboard]
+      summary: Personal activity summary (headline stats + 12-week heatmap)
+      description: |
+        Powers the avatar hover card on the sidebar footer and the header
+        session-pace badge (Task #522). Returns the four headline stats
+        (today, this week Mon→today, this month, working-day streak) plus
+        an 84-day per-day count series the front-end renders as a
+        GitHub-style heatmap.
+
+        Counts are sourced from the same shared "qualifying user activity"
+        predicate as `/dashboard/my-processed-today`, so the pip ring's
+        "today" count and the hover card's `today` stat always agree.
+
+        The card is private — only the requesting user's data is returned.
+      parameters:
+        - name: tz
+          in: query
+          required: false
+          description: |
+            IANA timezone (e.g. `America/New_York`) used to anchor "start
+            of today" and bucket the per-day counts. Defaults to the
+            server's office timezone if absent or invalid.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Personal activity summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyActivitySummary"
+
   /dashboard/repeat-offenders:
     get:
       operationId: getDashboardRepeatOffenders
@@ -8311,6 +8346,66 @@ components:
         - count
         - timezone
         - dayKey
+
+    MyActivitySummary:
+      type: object
+      description: |
+        Personal activity summary for the avatar hover card (Task #522).
+        Headline stats + a 12-week per-day count series for the heatmap.
+      properties:
+        timezone:
+          type: string
+          description: IANA timezone the counts are bucketed in.
+        dayKey:
+          type: string
+          description: |
+            YYYY-MM-DD calendar key for "today" in the resolved timezone.
+        today:
+          type: integer
+          minimum: 0
+          description: Qualifying actions logged so far today.
+        thisWeek:
+          type: integer
+          minimum: 0
+          description: Qualifying actions Mon → today (inclusive).
+        thisMonth:
+          type: integer
+          minimum: 0
+          description: Qualifying actions since the 1st of the current month.
+        streak:
+          type: integer
+          minimum: 0
+          description: |
+            Consecutive working-day streak (Mon–Fri). Weekend days are
+            skipped — they neither continue nor break the streak. Today
+            only counts when it has activity; an empty today does not
+            break the prior run.
+        dailyCounts:
+          type: array
+          description: |
+            84 consecutive days ending today, oldest first. Days with
+            no activity are present with `count: 0` so the front end
+            does not have to gap-fill.
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                description: YYYY-MM-DD calendar date in the resolved timezone.
+              count:
+                type: integer
+                minimum: 0
+            required:
+              - date
+              - count
+      required:
+        - timezone
+        - dayKey
+        - today
+        - thisWeek
+        - thisMonth
+        - streak
+        - dailyCounts
 
     DashboardRepeatOffenders:
       type: object

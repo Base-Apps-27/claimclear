@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetMyProcessedToday,
   getGetMyProcessedTodayQueryKey,
+  getGetMyActivitySummaryQueryKey,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -257,15 +258,61 @@ export function StreakPipAvatar({ imageUrl, fallback, className }: StreakPipAvat
   );
 }
 
+// Status values whose group `status_changed` events flowing through
+// the `/api/invoice-groups/events` SSE channel are themselves
+// qualifying activity for the personal pip counter (Task #522).
+// Mirrors EXACTLY the server-side `qualifyingActivityPredicate()`
+// status-shaped clause — `group_status_changed` is qualifying ONLY
+// when `metadata->>'to' = 'Portal Queued'`. Other terminal flips
+// (Resolved / Denied / Withdrawn / Non-Issue) write a separate
+// `group_outcome_changed` audit row that is qualifying on its own,
+// and arrive on the wire as `type: "outcome_changed"` events — those
+// drive the pip via `QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP` below,
+// not via this status set. Keeping the two channels separate avoids
+// double-counting the same closure (which writes both an
+// outcome_changed audit AND a status_changed audit for the
+// terminal status, but only the outcome_changed one is qualifying).
+const QUALIFYING_GROUP_STATUSES_FOR_PIP = new Set<string>([
+  "Portal Queued",
+]);
+
+// Group SSE event types that are themselves qualifying activity
+// regardless of the carried status. `outcome_changed` corresponds to
+// the qualifying `group_outcome_changed` audit row written by both
+// `transitionGroupOutcome` and `transitionGroupStatusAndOutcome`.
+const QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP = new Set<string>([
+  "outcome_changed",
+]);
+
+// Claim SSE event types that map 1:1 to a qualifying audit row from
+// `qualifyingActivityPredicate()`. `outcome_changed` corresponds to
+// the claim-level `outcome_changed` audit row written by
+// `transitionClaimOutcome`. Other qualifying claim-level audit rows
+// (manual `leg_excluded`, `attestation_queued`, `closure_addressed`,
+// `attestation_queue_confirmed`, `mas_reattest_recorded_offline`,
+// `claims_imported`, manual `portal_submission_confirmed`) do not
+// have a single dedicated SSE event type — they ride on
+// `claim_updated`, `attestation_updated`, `verdict_recorded`, or
+// no SSE event at all. For those we conservatively invalidate the
+// pip query (no optimistic +1) so the cache reconciles to the
+// authoritative server count within one render, instead of waiting
+// up to 60s for the polling refetch.
+const QUALIFYING_CLAIM_EVENT_TYPES_FOR_PIP_BUMP = new Set<string>([
+  "outcome_changed",
+]);
+
 // Optimistic-bump hook. Keep this colocated with the pip so the only
 // SSE consumer that touches the personal counter lives next to the
 // component that renders it. Listens to the global invoice-group SSE
 // channel; when a `status_changed` event arrives whose actor is the
-// current user and whose new status is `Portal Queued` (operator
-// finished the worktree and submitted to the portal), bumps the
-// cached count by 1. The polling refetch in `StreakPipAvatar`
-// invalidates as a safety net. Server-side definition lives in
-// `GET /dashboard/my-processed-today`.
+// current user and whose new status is in the qualifying set above
+// (Task #522 broadening), bumps the cached count by 1 AND invalidates
+// the avatar hover-card's activity-summary query so the heatmap +
+// stats stay fresh after every in-session action. The polling
+// refetch in `StreakPipAvatar` invalidates the pip as a safety net
+// for any qualifying audit rows that don't have an SSE counterpart.
+// Server-side definition lives in `GET /dashboard/my-processed-today`
+// and `GET /dashboard/my-activity-summary` (shared predicate).
 export function useStreakPipLiveUpdates() {
   const queryClient = useQueryClient();
   const { user, isAuthenticated } = useAuth();
@@ -275,12 +322,25 @@ export function useStreakPipLiveUpdates() {
   useEffect(() => {
     if (!isAuthenticated || user?.status !== "approved" || !user?.email) return;
     const userEmail = user.email;
-    let es: EventSource | null = null;
+    const sources: EventSource[] = [];
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let retry = 0;
     let cancelled = false;
 
-    function bump() {
+    // Invalidate the avatar hover-card's activity-summary query.
+    // Called on every qualifying SSE event from the current user
+    // (status changes AND non-status mutations like claim_edited /
+    // claim_updated / verdict_recorded / attestation_updated /
+    // note_added — all of which correspond to qualifying audit
+    // actions). Keyed on the same tz the card uses so React Query
+    // hits the same entry the hook reads from.
+    function refreshActivitySummary() {
+      queryClient.invalidateQueries({
+        queryKey: getGetMyActivitySummaryQueryKey({ tz }),
+      });
+    }
+
+    function bumpPip() {
       const queryKey = getGetMyProcessedTodayQueryKey({ tz });
       queryClient.setQueryData<
         { count: number; timezone: string; dayKey: string } | undefined
@@ -292,9 +352,24 @@ export function useStreakPipLiveUpdates() {
       // missed SSE or a transient state on the server never strands
       // the pip on a stale value.
       queryClient.invalidateQueries({ queryKey });
+      refreshActivitySummary();
     }
 
-    function onStatusChanged(event: MessageEvent) {
+    // Conservative dedupe: pin to (channel, eventType, id, timestamp)
+    // so legitimate repeated events still count but reconnect-replay
+    // doesn't.
+    function shouldProcess(channel: string, type: string, id: number | string, ts: string | undefined): boolean {
+      const key = `${channel}::${type}::${id}::${ts ?? ""}`;
+      if (seenIds.current.has(key)) return false;
+      seenIds.current.add(key);
+      if (seenIds.current.size > 400) {
+        const first = seenIds.current.values().next().value;
+        if (first !== undefined) seenIds.current.delete(first);
+      }
+      return true;
+    }
+
+    function onGroupUpdate(event: MessageEvent) {
       try {
         const data = JSON.parse(event.data) as {
           type?: string;
@@ -303,23 +378,61 @@ export function useStreakPipLiveUpdates() {
           toStatus?: string | null;
           timestamp?: string;
         };
-        if (data.type !== "status_changed") return;
-        if (data.toStatus !== "Portal Queued") return;
-        if (!data.userEmail || data.userEmail !== userEmail) return;
-        // Dedupe — the SSE channel can occasionally double-deliver
-        // on reconnect. Pin on (invoiceGroupId, timestamp) so a real
-        // legitimate second transition into Portal Queued (e.g. moved
-        // out and back in) still counts.
-        const dedupeKey = `${data.invoiceGroupId ?? "?"}::${data.timestamp ?? ""}`;
-        if (seenIds.current.has(dedupeKey)) return;
-        seenIds.current.add(dedupeKey);
-        if (seenIds.current.size > 200) {
-          // Soft cap so the dedupe set doesn't grow forever on
-          // long-lived sessions.
-          const first = seenIds.current.values().next().value;
-          if (first !== undefined) seenIds.current.delete(first);
+        if (!data.type || !data.userEmail || data.userEmail !== userEmail) return;
+        if (!shouldProcess("group", data.type, data.invoiceGroupId ?? "?", data.timestamp)) return;
+        // Always refresh the hover card on any same-user group event:
+        // outcome_changed (group closure), status_changed, group_edited,
+        // attestation_updated, verdict_recorded, sop_advanced/terminal,
+        // note_added/note_deleted — the server-side qualifying predicate
+        // is the source of truth, so we just nudge the cache and let
+        // the endpoint decide what counts.
+        refreshActivitySummary();
+        // Pip ring bumps optimistically only on events that map 1:1
+        // to a qualifying audit row, mirroring the server predicate
+        // exactly so `Math.max(prev, serverCount)` can never strand
+        // an over-bump for the rest of the day. Anything missed here
+        // is reconciled by the 60s polling refetch in `StreakPipAvatar`.
+        const isQualifyingStatus =
+          data.type === "status_changed" &&
+          !!data.toStatus &&
+          QUALIFYING_GROUP_STATUSES_FOR_PIP.has(data.toStatus);
+        const isQualifyingEvent = QUALIFYING_GROUP_EVENT_TYPES_FOR_PIP.has(data.type);
+        if (isQualifyingStatus || isQualifyingEvent) {
+          bumpPip();
         }
-        bump();
+      } catch {
+        // ignore malformed events
+      }
+    }
+
+    function onClaimUpdate(event: MessageEvent) {
+      try {
+        const data = JSON.parse(event.data) as {
+          type?: string;
+          claimId?: number;
+          userEmail?: string | null;
+          timestamp?: string;
+        };
+        if (!data.type || !data.userEmail || data.userEmail !== userEmail) return;
+        if (!shouldProcess("claim", data.type, data.claimId ?? "?", data.timestamp)) return;
+        // Always refresh the hover-card's activity summary on any
+        // same-user claim event — server predicate is the source of
+        // truth for what counts.
+        refreshActivitySummary();
+        // Pip ring: bump optimistically only when the SSE event maps
+        // 1:1 to a qualifying audit row (claim `outcome_changed`).
+        // For other claim events that *might* have written a
+        // qualifying audit row (claim_updated, attestation_updated,
+        // verdict_recorded, claim_edited), invalidate the pip query
+        // so it reconciles to the authoritative server count
+        // immediately instead of waiting for the 60s safety-net poll.
+        if (QUALIFYING_CLAIM_EVENT_TYPES_FOR_PIP_BUMP.has(data.type)) {
+          bumpPip();
+        } else {
+          queryClient.invalidateQueries({
+            queryKey: getGetMyProcessedTodayQueryKey({ tz }),
+          });
+        }
       } catch {
         // ignore malformed events
       }
@@ -328,26 +441,48 @@ export function useStreakPipLiveUpdates() {
     function connect() {
       if (cancelled) return;
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-      es = new EventSource(`${base}/api/invoice-groups/events`, {
+      const groupES = new EventSource(`${base}/api/invoice-groups/events`, {
         withCredentials: true,
       });
-      es.addEventListener("group_update", onStatusChanged);
-      es.onopen = () => {
-        retry = 0;
+      groupES.addEventListener("group_update", onGroupUpdate);
+      groupES.onopen = () => { retry = 0; };
+      groupES.onerror = () => {
+        groupES.close();
+        scheduleReconnect();
       };
-      es.onerror = () => {
-        es?.close();
-        if (cancelled) return;
-        const delay = Math.min(1000 * 2 ** Math.min(retry, 5), 30000);
-        retry += 1;
-        reconnectTimer = setTimeout(connect, delay);
+      sources.push(groupES);
+
+      const claimES = new EventSource(`${base}/api/claims/events`, {
+        withCredentials: true,
+      });
+      // The global claim channel emits a NAMED `claim_update` event
+      // (see `sendEvent` in `artifacts/api-server/src/lib/sse.ts`).
+      // Using `onmessage` here would silently miss every claim event,
+      // which is what regressed in the prior round of this task.
+      claimES.addEventListener("claim_update", onClaimUpdate);
+      claimES.onerror = () => {
+        claimES.close();
+        scheduleReconnect();
       };
+      sources.push(claimES);
+    }
+
+    function scheduleReconnect() {
+      if (cancelled || reconnectTimer) return;
+      const delay = Math.min(1000 * 2 ** Math.min(retry, 5), 30000);
+      retry += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        // Tear down any half-open sources before reconnecting both.
+        while (sources.length) sources.pop()?.close();
+        connect();
+      }, delay);
     }
 
     connect();
     return () => {
       cancelled = true;
-      es?.close();
+      while (sources.length) sources.pop()?.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [isAuthenticated, user?.status, user?.email, queryClient, tz]);

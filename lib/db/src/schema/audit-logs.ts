@@ -16,6 +16,12 @@ export const auditLogsTable = pgTable("audit_logs", {
   timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("audit_logs_claim_id_idx").on(table.claimId),
+  // Composite index powering the per-user activity aggregates that
+  // back the streak pip's "today" count and the avatar hover-card
+  // heatmap (Task #522). Both queries pin `user_email` and bound
+  // `timestamp` to a window, so this column order matches their
+  // access pattern.
+  index("audit_logs_user_email_timestamp_idx").on(table.userEmail, table.timestamp),
 ]);
 
 export const insertAuditLogSchema = createInsertSchema(auditLogsTable).omit({ id: true, timestamp: true });

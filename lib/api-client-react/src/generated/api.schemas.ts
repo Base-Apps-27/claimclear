@@ -3326,6 +3326,55 @@ The client uses this to detect day rollover.
   dayKey: string;
 }
 
+export type MyActivitySummaryDailyCountsItem = {
+  /** YYYY-MM-DD calendar date in the resolved timezone. */
+  date: string;
+  /** @minimum 0 */
+  count: number;
+};
+
+/**
+ * Personal activity summary for the avatar hover card (Task #522).
+Headline stats + a 12-week per-day count series for the heatmap.
+
+ */
+export interface MyActivitySummary {
+  /** IANA timezone the counts are bucketed in. */
+  timezone: string;
+  /** YYYY-MM-DD calendar key for "today" in the resolved timezone.
+   */
+  dayKey: string;
+  /**
+   * Qualifying actions logged so far today.
+   * @minimum 0
+   */
+  today: number;
+  /**
+   * Qualifying actions Mon → today (inclusive).
+   * @minimum 0
+   */
+  thisWeek: number;
+  /**
+   * Qualifying actions since the 1st of the current month.
+   * @minimum 0
+   */
+  thisMonth: number;
+  /**
+   * Consecutive working-day streak (Mon–Fri). Weekend days are
+skipped — they neither continue nor break the streak. Today
+only counts when it has activity; an empty today does not
+break the prior run.
+
+   * @minimum 0
+   */
+  streak: number;
+  /** 84 consecutive days ending today, oldest first. Days with
+no activity are present with `count: 0` so the front end
+does not have to gap-fill.
+ */
+  dailyCounts: MyActivitySummaryDailyCountsItem[];
+}
+
 export type RepeatOffenderDriverTrend =
   (typeof RepeatOffenderDriverTrend)[keyof typeof RepeatOffenderDriverTrend];
 
@@ -4759,6 +4808,16 @@ export type GetMyProcessedTodayParams = {
  * IANA timezone (e.g. `America/New_York`) used to anchor "start of
 today". Defaults to the server's office timezone if absent or
 invalid so the response is never empty due to a bad client value.
+
+ */
+  tz?: string;
+};
+
+export type GetMyActivitySummaryParams = {
+  /**
+ * IANA timezone (e.g. `America/New_York`) used to anchor "start
+of today" and bucket the per-day counts. Defaults to the
+server's office timezone if absent or invalid.
 
  */
   tz?: string;

@@ -54,6 +54,7 @@
     "@types/jsdom": "^28.0.1",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
+    "@types/react-calendar-heatmap": "^1.9.0",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
@@ -103,6 +104,7 @@
     "@workspace/vocab": "workspace:*",
     "canvas-confetti": "^1.9.4",
     "dompurify": "^3.4.0",
+    "react-calendar-heatmap": "^1.10.0",
     "react-joyride": "^3.1.0",
     "xlsx": "^0.18.5"
   }

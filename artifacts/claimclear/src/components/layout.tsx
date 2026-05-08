@@ -32,6 +32,7 @@ import { useAdminTour } from "@/tour/admin-tour";
 import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
 import { StreakPipAvatar, useStreakPipLiveUpdates } from "@/components/streak-pip-avatar";
+import { ActivityHoverCard } from "@/components/activity-hover-card";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -464,10 +465,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarFooter className="border-t border-sidebar-border p-4">
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3 overflow-hidden">
-                <StreakPipAvatar
-                  imageUrl={user.profileImageUrl}
-                  fallback={user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                />
+                {/* The avatar always represents the signed-in user, so
+                    wrapping it in `ActivityHoverCard` here is safe.
+                    Do NOT reuse the wrapper around other-user avatars
+                    elsewhere (e.g. activity-feed actors) — the card is
+                    self-only by contract (Task #522). */}
+                <ActivityHoverCard side="right" align="end">
+                  <StreakPipAvatar
+                    imageUrl={user.profileImageUrl}
+                    fallback={user.displayName?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                  />
+                </ActivityHoverCard>
                 <div className="flex flex-col overflow-hidden">
                   <span className="text-sm font-medium text-sidebar-foreground truncate">
                     {user.displayName || "User"}
@@ -513,20 +521,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 function SessionPaceBadge() {
   const count = useSessionProcessedCount();
   if (count <= 0) return null;
+  // The header session-pace badge always reflects the signed-in
+  // user's own session count — never another user's — so wrapping it
+  // in `ActivityHoverCard` is safe by the same contract as the
+  // sidebar avatar. Open downward from the header (Task #522).
   return (
-    <WrapTooltip
-      content={`${count} ${count === 1 ? "claim" : "claims"} processed in this session — resets when you sign out.`}
-      side="bottom"
-    >
-      <span
-        data-testid="session-pace-badge"
-        aria-label={`${count} processed today`}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 h-7 text-xs font-medium text-muted-foreground"
+    <ActivityHoverCard side="bottom" align="end">
+      <WrapTooltip
+        content={`${count} ${count === 1 ? "claim" : "claims"} processed in this session — hover for your activity history.`}
+        side="bottom"
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-        <span className="tabular-nums text-foreground">{count}</span>
-        <span className="hidden sm:inline">processed today</span>
-      </span>
-    </WrapTooltip>
+        <span
+          data-testid="session-pace-badge"
+          aria-label={`${count} processed today`}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 h-7 text-xs font-medium text-muted-foreground cursor-default"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+          <span className="tabular-nums text-foreground">{count}</span>
+          <span className="hidden sm:inline">processed today</span>
+        </span>
+      </WrapTooltip>
+    </ActivityHoverCard>
   );
 }

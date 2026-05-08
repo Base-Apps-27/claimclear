@@ -106,6 +106,7 @@ import type {
   GetDashboardUserProductivityParams,
   GetInvoiceGroupAttestationHistoryParams,
   GetInvoiceGroupEmailThread404,
+  GetMyActivitySummaryParams,
   GetMyProcessedTodayParams,
   GetSystemHealthBouncesParams,
   GetSystemHealthClassifierStatsParams,
@@ -140,6 +141,7 @@ import type {
   MarkInvoiceGroupMasEligible200,
   MarkInvoiceGroupMasEligibleBody,
   MarkLegDuplicateBody,
+  MyActivitySummary,
   MyProcessedTodayCount,
   NeedsClassificationInboxResponse,
   NoteResponse,
@@ -10468,6 +10470,121 @@ export function useGetMyProcessedToday<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMyProcessedTodayQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Powers the avatar hover card on the sidebar footer and the header
+session-pace badge (Task #522). Returns the four headline stats
+(today, this week Mon→today, this month, working-day streak) plus
+an 84-day per-day count series the front-end renders as a
+GitHub-style heatmap.
+
+Counts are sourced from the same shared "qualifying user activity"
+predicate as `/dashboard/my-processed-today`, so the pip ring's
+"today" count and the hover card's `today` stat always agree.
+
+The card is private — only the requesting user's data is returned.
+
+ * @summary Personal activity summary (headline stats + 12-week heatmap)
+ */
+export const getGetMyActivitySummaryUrl = (
+  params?: GetMyActivitySummaryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/my-activity-summary?${stringifiedParams}`
+    : `/api/dashboard/my-activity-summary`;
+};
+
+export const getMyActivitySummary = async (
+  params?: GetMyActivitySummaryParams,
+  options?: RequestInit,
+): Promise<MyActivitySummary> => {
+  return customFetch<MyActivitySummary>(getGetMyActivitySummaryUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMyActivitySummaryQueryKey = (
+  params?: GetMyActivitySummaryParams,
+) => {
+  return [
+    `/api/dashboard/my-activity-summary`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetMyActivitySummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyActivitySummary>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMyActivitySummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyActivitySummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMyActivitySummaryQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyActivitySummary>>
+  > = ({ signal }) =>
+    getMyActivitySummary(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyActivitySummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyActivitySummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyActivitySummary>>
+>;
+export type GetMyActivitySummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Personal activity summary (headline stats + 12-week heatmap)
+ */
+
+export function useGetMyActivitySummary<
+  TData = Awaited<ReturnType<typeof getMyActivitySummary>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMyActivitySummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMyActivitySummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyActivitySummaryQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
