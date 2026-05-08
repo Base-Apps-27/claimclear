@@ -140,7 +140,7 @@ async function main() {
 
       const updateRes = await client.query(
         `UPDATE invoice_groups
-            SET status           = $2::group_status,
+            SET status           = $2::claim_status,
                 phase            = $3::invoice_phase,
                 phase_entered_at = COALESCE(phase_entered_at, NOW())
           WHERE id = $1
