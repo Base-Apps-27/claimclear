@@ -7,6 +7,7 @@ import { closureAuditPayload, type NormalizedClosure } from "./closure-validatio
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
 import { computeAttestationDelta, engageMasEligibleAttestationCascade } from "./attestation";
 import { checkAndEmitDayCompleteForGroup, snapshotDayConcludedForGroup } from "./day-complete";
+import { refreshClaimDenormalizedCache } from "./denormalized-cache";
 
 export type GroupStatus = typeof invoiceGroupsTable.status.enumValues[number];
 type GroupOutcome = typeof invoiceGroupsTable.outcome.enumValues[number];
@@ -253,6 +254,19 @@ async function syncChildRides(
 
   if (auditRows.length > 0) {
     await ex.insert(auditLogsTable).values(auditRows);
+  }
+
+  // 2026-05-08 prod incident — group cascade left children's `disposition`
+  // column drifted from the deriver. Example: response_received transition
+  // (matcher-driven "Ready to Review") flipped child status but kept
+  // `disposition='disposed_portal'/'disposed_email'`, where the deriver
+  // wants `awaiting_review` (or `verdict_*` if outcome already set). The
+  // canonical fix is to call the cache refresher per cascaded child — it
+  // re-derives parent phase + child disposition from the just-written
+  // legacy mirrors and stamps the canonical `disposition` column. Without
+  // this, every group cascade silently produces a conformance violation.
+  for (const c of disputedChildren) {
+    await refreshClaimDenormalizedCache(c.id, ex);
   }
 }
 

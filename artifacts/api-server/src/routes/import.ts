@@ -2,11 +2,45 @@ import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
+import { deriveDispositionFromLegacy, type LegacyClaimShape } from "@workspace/invoice-state";
 import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { normalizeServiceDate } from "../lib/dates";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { denyClerk } from "../middlewares/denyClerk";
+
+// Importer disposition stamp. Newly-imported claims always land in a
+// just-created group at phase='triage'. The deriver's triage branch
+// reads (includedInDispute, errorTypeId, sopOutcome, dropReason,
+// duplicateOfClaimId) — the importer sets the first two and leaves
+// the rest at their defaults (null). Stamping `disposition` here keeps
+// the new canonical column in lockstep with the legacy mirrors the
+// importer already writes (status, outcome, includedInDispute), so
+// the conformance audit returns 0 for fresh imports. Without this,
+// every import wrote `disposition='unclassified'` (the DB default),
+// which the deriver wants as `classifying` (hasErrorType) or
+// `disposed_nonissue` (excluded). 2026-05-08 prod incident.
+function importedClaimDisposition(opts: {
+  errorTypeId: number | null;
+  includedInDispute: boolean;
+  status: "New" | "Needs Review";
+}) {
+  const legacy: LegacyClaimShape = {
+    status: opts.status,
+    outcome: "Pending",
+    sopOutcome: null,
+    attestationState: "not_required",
+    includedInDispute: opts.includedInDispute,
+    duplicateOfClaimId: null,
+    dropReason: null,
+    // LegacyClaimShape.errorTypeId is `string | null` (mirrors the
+    // legacy text column shape used by the deriver) — only its
+    // presence matters here, so coerce.
+    errorTypeId: opts.errorTypeId != null ? String(opts.errorTypeId) : null,
+    closureReason: null,
+  };
+  return deriveDispositionFromLegacy(legacy, "triage");
+}
 
 const router: IRouter = Router();
 
@@ -225,6 +259,11 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
           claimAmount: row.claimAmount != null ? String(typeof row.claimAmount === "number" ? row.claimAmount : parseFloat(row.claimAmount) || 0) : null,
           status: "New",
           outcome: "Pending",
+          disposition: importedClaimDisposition({
+            errorTypeId: row.errorTypeId ?? null,
+            includedInDispute: hasErrorType,
+            status: "New",
+          }),
           importBatch: batchId,
           invoiceNumbers: invoiceNumber,
           includedInDispute: hasErrorType,
@@ -270,6 +309,8 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
       }
     } else {
       const hasErrorType = row.errorTypeId != null;
+      const stampedStatus: "New" | "Needs Review" =
+        (!row.errorDetails || !row.errorDetails.trim()) ? "Needs Review" : "New";
       await db.insert(claimsTable).values({
         confNumber: row.confNumber,
         date: row.date,
@@ -280,8 +321,13 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
         errorTypeId: row.errorTypeId || null,
         errorTypeName: row.errorTypeName || null,
         claimAmount: row.claimAmount != null ? String(typeof row.claimAmount === "number" ? row.claimAmount : parseFloat(row.claimAmount) || 0) : null,
-        status: (!row.errorDetails || !row.errorDetails.trim()) ? "Needs Review" : "New",
+        status: stampedStatus,
         outcome: "Pending",
+        disposition: importedClaimDisposition({
+          errorTypeId: row.errorTypeId ?? null,
+          includedInDispute: hasErrorType,
+          status: stampedStatus,
+        }),
         importBatch: batchId,
         includedInDispute: hasErrorType,
       });
