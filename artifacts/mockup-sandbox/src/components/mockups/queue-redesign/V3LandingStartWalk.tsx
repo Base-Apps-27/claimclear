@@ -1,30 +1,25 @@
 import "./_queue.css";
-import { Tag, Copy, Link2Off, ArrowRight, Sparkles, Clock, ListChecks } from "lucide-react";
+import { Tag, Copy, Link2Off, ArrowRight } from "lucide-react";
 import {
   HeaderStrip, ClassificationStrip, MasterList,
   legs, groupSummary, Icons,
 } from "./_shared";
 
 /**
- * V3 Landing — "Start walk" hero.
+ * V3 Landing — "Start walk" hero (minimal).
  *
- * What problem this solves:
- *   When the user picks an invoice in the master list today, the right
- *   pane drops them straight into SOP step 1 — a wall of question +
- *   instructions + Yes/No buttons. There's no breathing room to
- *   orient: which leg, what's the issue, how long, what are my outs.
+ * Shown when an invoice is selected and the active leg has no SOP
+ * progress yet. Replaces the current behavior of dropping the operator
+ * straight into SOP step 1.
  *
- * What this shows:
- *   The same shell (header + classification strip + master list +
- *   one-line group summary + segmented leg switcher), but the hero is
- *   a calm blue-gradient card that:
- *     - Restates the leg + classification in plain language
- *     - Tells the operator what they're about to do (steps + ETA)
- *     - Offers a primary "Start walk" CTA
- *     - Surfaces the leg-level escape hatches inline (Reclassify,
- *       Mark as duplicate, Exclude) so the operator doesn't have to
- *       open the drawer just to bail out
- *     - Keeps the chips strip + footer in the same place
+ * Only renders fields that exist in the codebase today:
+ *   - Conf #, service date, amount         (from claim row)
+ *   - Classification label                  (from leg.errorType)
+ *   - Reclassify / Mark as duplicate / Exclude  (existing leg actions)
+ *   - Counts strip (evidence/notes/comms/activity counts already loaded)
+ *
+ * No invented metadata (no ~steps, no ~ETA, no AI pre-fill, no
+ * plain-language restatement of the issue).
  */
 export default function V3LandingStartWalk() {
   const leg = legs[0];
@@ -54,95 +49,45 @@ export default function V3LandingStartWalk() {
             </div>
           </div>
 
-          {/* Hero — calm landing */}
+          {/* Hero — minimal landing */}
           <div style={{
             flex: 1, display: "flex", flexDirection: "column",
             gap: "0.625rem", justifyContent: "center", padding: "0 2rem",
           }}>
             <div style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}>
-              {/* Tiny meta row above the card */}
+              {/* Meta row — only what claim already has */}
               <div className="cc-meta text-[11px] mb-2 flex items-center gap-2">
                 <span className="mono">{leg.conf}</span>
                 <span>·</span>
                 <span>{leg.date}</span>
                 <span>·</span>
                 <span>{leg.amount}</span>
-                <span>·</span>
-                <span>14.2 mi · Rate code <span className="mono">R-12</span></span>
               </div>
 
-              {/* The blue-gradient landing card */}
-              <div className="cc-sop-card" style={{ padding: "1.25rem 1.25rem 1rem" }}>
-                {/* Classification + status pill row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {/* Blue-gradient landing card */}
+              <div className="cc-sop-card" style={{ padding: "1.5rem 1.25rem 1.125rem" }}>
+                {/* Classification pill — pulled from leg.errorType */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="cc-pill cc-pill-amber" style={{ fontSize: "0.6875rem" }}>
-                    <Icons.AlertTriangle className="w-3 h-3" /> Mileage mismatch
-                  </span>
-                  <span className="cc-pill cc-pill-muted" style={{ fontSize: "0.6875rem" }}>
-                    Leg 1 of 3
-                  </span>
-                  <span className="cc-meta" style={{ fontSize: "0.6875rem", marginLeft: "auto" }}>
-                    Not started
+                    <Icons.AlertTriangle className="w-3 h-3" /> GPS Deviation Status
                   </span>
                 </div>
 
-                {/* Plain-language restatement */}
-                <h3 className="cc-sop-question" style={{ fontSize: "1.0625rem", marginTop: 10 }}>
-                  GPS log shows 14.2 mi but the invoice billed under rate code R-12.
-                  Walk the SOP to confirm whether this is disputable.
-                </h3>
-
-                {/* "What you're about to do" — calms the operator */}
-                <div style={{
-                  marginTop: 12,
-                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
-                }}>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "8px 10px",
-                    background: "var(--cc-card)",
-                    border: "1px solid var(--cc-blue-border)",
-                    borderRadius: 8,
-                  }}>
-                    <ListChecks className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-                    <div style={{ fontSize: "0.75rem", lineHeight: 1.3 }}>
-                      <div style={{ fontWeight: 600 }}>~4 steps</div>
-                      <div className="cc-meta" style={{ fontSize: "0.6875rem" }}>GPS Deviation Status SOP</div>
-                    </div>
-                  </div>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "8px 10px",
-                    background: "var(--cc-card)",
-                    border: "1px solid var(--cc-blue-border)",
-                    borderRadius: 8,
-                  }}>
-                    <Clock className="w-4 h-4" style={{ color: "var(--cc-blue-fg)" }} />
-                    <div style={{ fontSize: "0.75rem", lineHeight: 1.3 }}>
-                      <div style={{ fontWeight: 600 }}>~2 minutes</div>
-                      <div className="cc-meta" style={{ fontSize: "0.6875rem" }}>Median for legs like this</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Primary CTA + AI assist */}
+                {/* Primary CTA */}
                 <div className="cc-sop-actions" style={{ marginTop: 14 }}>
                   <button className="cc-btn cc-btn-primary">
                     Start walk <ArrowRight className="w-3.5 h-3.5" />
                   </button>
-                  <button className="cc-btn">
-                    <Sparkles className="w-3.5 h-3.5" /> Pre-fill with AI
-                  </button>
                 </div>
 
-                {/* Escape hatches — leg-level outs without opening the drawer */}
+                {/* Escape hatches — existing leg actions */}
                 <div style={{
-                  marginTop: 12, paddingTop: 10,
+                  marginTop: 14, paddingTop: 12,
                   borderTop: "1px dashed var(--cc-blue-border)",
                   display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
                 }}>
                   <span className="cc-meta" style={{ fontSize: "0.6875rem" }}>
-                    Or, if this leg shouldn't be walked:
+                    Or:
                   </span>
                   <button className="cc-btn cc-btn-sm" style={{ fontSize: "0.6875rem" }}>
                     <Tag className="w-3 h-3" /> Reclassify
@@ -156,7 +101,7 @@ export default function V3LandingStartWalk() {
                 </div>
               </div>
 
-              {/* Same chips strip — context surfaces (closed by default) */}
+              {/* Same chips strip — closed by default */}
               <div style={{ marginTop: "0.75rem" }}>
                 <div className="cc-counts-strip">
                   <button className="cc-count-pill">
