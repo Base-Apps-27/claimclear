@@ -69,12 +69,36 @@ async function loadGroupContextByGroupId(groupId: number): Promise<GroupContext 
   return { group, rides, primaryClaim: rides[0] };
 }
 
+// Canonical "this leg cannot be disputed" terminal markers. Mirrors the
+// EXCLUSION_DISPOSITIONS / EXCLUSION_OUTCOMES ladder in
+// `lib/group-packaging.ts` (Wave-C+ disposition column wins; legacy
+// sopOutcome is the fallback for in-flight rows whose disposition writer
+// hasn't synced yet). A leg landing on either marker is the operator's
+// signed-off "no dispute here" verdict and MUST NOT be passed to the
+// portal write-up prompt or have its attachments collected — that was
+// the surface bug behind the "both proven correct" 2-leg write-up.
+const NON_CONTESTABLE_DISPOSITIONS = new Set(["disposed_withdraw", "disposed_nonissue"]);
+const NON_CONTESTABLE_SOP_OUTCOMES = new Set(["cannot_dispute", "non_issue"]);
+
+function isNonContestable(leg: typeof claimsTable.$inferSelect): boolean {
+  if (leg.disposition && leg.disposition !== "unclassified") {
+    return NON_CONTESTABLE_DISPOSITIONS.has(leg.disposition);
+  }
+  return leg.sopOutcome != null && NON_CONTESTABLE_SOP_OUTCOMES.has(leg.sopOutcome);
+}
+
 /**
  * Filter rides down to those eligible for inclusion in a new portal submission.
  * Excludes:
  *   - legs currently On Hold (they're being parked while evidence is gathered)
  *   - legs that already have an in-flight submission (pending/in_progress) or a
  *     submitted-and-awaiting-response submission tied to the same group
+ *   - legs the operator's SOP walk terminated as non-contestable
+ *     (cannot_dispute / non_issue) — these have no dispute to write up and
+ *     including them here was the bug behind the "both proven correct"
+ *     2-leg write-up. The exclusion runs BEFORE the in-flight check so a
+ *     non-contestable leg never counts toward the "already submitted"
+ *     short-circuit.
  *
  * Returns the filtered rides plus the excluded buckets so the caller can audit
  * what was skipped.
@@ -86,9 +110,12 @@ async function filterRidesForSubmission(
   rides: (typeof claimsTable.$inferSelect)[];
   excludedHeld: (typeof claimsTable.$inferSelect)[];
   excludedAlreadySubmitted: (typeof claimsTable.$inferSelect)[];
+  excludedNonContestable: (typeof claimsTable.$inferSelect)[];
 }> {
   const excludedHeld = rides.filter(r => r.status === "On Hold");
-  let candidate = rides.filter(r => r.status !== "On Hold");
+  const afterHeld = rides.filter(r => r.status !== "On Hold");
+  const excludedNonContestable = afterHeld.filter(isNonContestable);
+  let candidate = afterHeld.filter(r => !isNonContestable(r));
   let excludedAlreadySubmitted: (typeof claimsTable.$inferSelect)[] = [];
 
   if (candidate.length > 0) {
@@ -109,7 +136,7 @@ async function filterRidesForSubmission(
     }
   }
 
-  return { rides: candidate, excludedHeld, excludedAlreadySubmitted };
+  return { rides: candidate, excludedHeld, excludedAlreadySubmitted, excludedNonContestable };
 }
 
 /**
@@ -500,11 +527,18 @@ export class LLMUnavailableError extends Error {
 export class NoEligibleLegsError extends Error {
   readonly excludedHeld: number;
   readonly excludedAlreadySubmitted: number;
-  constructor(message: string, excludedHeld: number, excludedAlreadySubmitted: number) {
+  readonly excludedNonContestable: number;
+  constructor(
+    message: string,
+    excludedHeld: number,
+    excludedAlreadySubmitted: number,
+    excludedNonContestable: number = 0,
+  ) {
     super(message);
     this.name = "NoEligibleLegsError";
     this.excludedHeld = excludedHeld;
     this.excludedAlreadySubmitted = excludedAlreadySubmitted;
+    this.excludedNonContestable = excludedNonContestable;
   }
 }
 
@@ -859,13 +893,16 @@ export async function generatePortalDraftForGroup(
   if (filtered.rides.length === 0) {
     const heldCount = filtered.excludedHeld.length;
     const subCount = filtered.excludedAlreadySubmitted.length;
+    const ncCount = filtered.excludedNonContestable.length;
     const reasons: string[] = [];
     if (heldCount > 0) reasons.push(`${heldCount} on hold`);
     if (subCount > 0) reasons.push(`${subCount} already submitted`);
+    if (ncCount > 0) reasons.push(`${ncCount} non-contestable`);
     throw new NoEligibleLegsError(
-      `Nothing to submit — every leg is excluded (${reasons.join(", ") || "no eligible legs"}). Remove a hold or wait for the existing submission to resolve.`,
+      `Nothing to submit — every leg is excluded (${reasons.join(", ") || "no eligible legs"}). Remove a hold, withdraw a non-contestable verdict, or wait for the existing submission to resolve.`,
       heldCount,
       subCount,
+      ncCount,
     );
   }
   const ctx: GroupContext = { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] };
@@ -954,7 +991,7 @@ export async function generatePortalDraftForGroup(
   }).returning();
 
   const partialSuffix = isPartialSubmission
-    ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted)`
+    ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted, ${filtered.excludedNonContestable.length} non-contestable)`
     : "";
   const contextSuffix = trimmedSpecial ? " — with operator special circumstances" : "";
   await db.insert(auditLogsTable).values({
@@ -969,6 +1006,7 @@ export async function generatePortalDraftForGroup(
         includedLegs: ctx.rides.map(r => r.confNumber || r.id),
         excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
         excludedAlreadySubmitted: filtered.excludedAlreadySubmitted.map(r => r.confNumber || r.id),
+        excludedNonContestable: filtered.excludedNonContestable.map(r => r.confNumber || r.id),
       } : {}),
     },
     userEmail: req.user?.email ?? null,

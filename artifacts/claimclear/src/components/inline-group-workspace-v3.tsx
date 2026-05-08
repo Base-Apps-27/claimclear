@@ -438,7 +438,9 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         hero = (
           <ReviewEditHero
             detail={detail}
+            rides={rides}
             groupId={groupId}
+            onJumpToLeg={(id) => setActiveLegId(id)}
             onAfterReviewed={() => setReviewMode(false)}
           />
         );
@@ -446,7 +448,9 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
         hero = (
           <PreviewDocHero
             detail={detail}
+            rides={rides}
             groupId={groupId}
+            onJumpToLeg={(id) => setActiveLegId(id)}
             onEnterReview={() => setReviewMode(true)}
           />
         );
@@ -553,12 +557,27 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
           For reattest_only and nothing_to_do, the action slot is the
           terminator and renders here. */}
       {outlook !== "has_disputable" && (
-        <InvoiceGroupActionSlot
-          group={detail}
-          groupId={groupId}
-          bare
-          onJumpToLeg={(claimId) => setActiveLegId(claimId)}
-        />
+        <>
+          {/* V4 Q6/Q7 graduation — cards-row preamble for off-ramps.
+              Anchors the operator on which legs they're acting on
+              before the existing reattest / close CTA renders below.
+              Wiring stays in InvoiceGroupActionSlot so the modal flows
+              don't fork. */}
+          {((outlook === "reattest_only" && allWalked) ||
+            outlook === "nothing_to_do") && (
+            <OffRampInputsHero
+              rides={rides}
+              outlook={outlook}
+              onJumpToLeg={(id) => setActiveLegId(id)}
+            />
+          )}
+          <InvoiceGroupActionSlot
+            group={detail}
+            groupId={groupId}
+            bare
+            onJumpToLeg={(claimId) => setActiveLegId(claimId)}
+          />
+        </>
       )}
 
       {detailsDrawer}
@@ -669,11 +688,151 @@ function WalkSopHero({ leg }: { leg: ClaimResponse }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Phase 1 hero — Walk complete
-// All legs have a verdict. Show one card per leg with its derived
-// label, then a single Generate-preview CTA bound to
-// useStampPreviewGenerated.
+// Phase 1 hero — AI Inputs Summary (post-walk, pre-generate)
+// All legs have a verdict. Renders compact stubby cards (one per leg)
+// in a horizontal row that mirrors what the AI will see when it drafts
+// the dispute note: which legs feed the prompt, which are filtered.
+// The non-contestable / excluded / held buckets stay visible (so
+// nothing looks "missing") but are visually marked "Not in prompt" so
+// the operator can confirm at-a-glance the AI won't write them up.
+// Followed by a paragraph-slot placeholder explaining the about-to-be-
+// generated single dispute note, then the Generate-preview CTA.
+//
+// Mirrors the canonical V4 Q1 mockup; uses cc-* tokens from the
+// claimclear index.css (already loaded under cc-scope).
 // ─────────────────────────────────────────────────────────────────────
+
+/** Whether this leg will be included in the AI prompt + attachments
+ * pass. Mirrors the server-side filter in
+ * `routes/portal-submissions.ts#filterRidesForSubmission` — keep these
+ * two in sync. */
+function legAiInclusion(
+  leg: ClaimResponse,
+): "included" | "non_contestable" | "duplicate" | "held" | "excluded" {
+  if (leg.includedInDispute === false) return "excluded";
+  const role = outcomeRole(leg);
+  if (role === "cannot_dispute" || role === "non_issue") return "non_contestable";
+  if (role === "duplicate") return "duplicate";
+  if (leg.sopOutcome === "hold") return "held";
+  return "included";
+}
+
+function inclusionPill(kind: ReturnType<typeof legAiInclusion>): { label: string; tone: "green" | "amber" | "blue" | "muted" } {
+  switch (kind) {
+    case "included": return { label: "Included in draft", tone: "green" };
+    case "non_contestable": return { label: "Not in prompt · cannot dispute", tone: "amber" };
+    case "excluded": return { label: "Not in prompt · excluded", tone: "amber" };
+    case "held": return { label: "Not in prompt · on hold", tone: "amber" };
+    case "duplicate": return { label: "Follows primary", tone: "blue" };
+  }
+}
+
+/**
+ * Shared compact-card row used by all three has_disputable heroes
+ * (WalkCompleteHero, PreviewDocHero, ReviewEditHero). The row is the
+ * visual anchor that tells the operator at-a-glance which legs feed
+ * the AI prompt. `variant`:
+ *   - "full"  → cards show SOP verdict + inclusion pill (Q1 layout)
+ *   - "slim"  → cards drop the SOP verdict line; just leg meta + pill
+ *               (Q3/Q4/Q5 layout where the paragraph is the focus)
+ */
+function InputsCardsRow({
+  rides,
+  onJumpToLeg,
+  variant,
+}: {
+  rides: ClaimResponse[];
+  onJumpToLeg: (id: number) => void;
+  variant: "full" | "slim";
+}) {
+  return (
+    <div className="flex flex-wrap gap-2.5" data-testid="v3-inputs-cards">
+      {rides.map((leg, i) => {
+        const inclusion = legAiInclusion(leg);
+        const verdict = legVerdictLabel(leg);
+        const pill = inclusionPill(inclusion);
+        const isFiltered = inclusion !== "included";
+        const accent = inclusion === "included" ? "var(--cc-green-fg)" : "var(--cc-amber-fg)";
+        return (
+          <div
+            key={leg.id}
+            data-testid={`v3-inputs-card-${leg.id}`}
+            className="cc-card"
+            style={{
+              flex: "1 1 280px",
+              minWidth: 280,
+              maxWidth: 340,
+              borderTop: `3px solid ${accent}`,
+              padding: variant === "slim" ? "0.5rem 0.75rem" : "0.625rem 0.75rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: variant === "slim" ? "0.3rem" : "0.4rem",
+              opacity: isFiltered ? 0.78 : 1,
+            }}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="cc-meta text-[10px] font-semibold uppercase tracking-wider">
+                Leg {i + 1}
+              </span>
+              <RefNumber value={leg.confNumber} variant="inline" className="font-medium text-[12px]" />
+              {!isFiltered && (
+                <CheckCircle2 className="w-3 h-3 ml-auto" style={{ color: "var(--cc-green-fg)" }} />
+              )}
+              {isFiltered && inclusion !== "duplicate" && (
+                <XCircle className="w-3 h-3 ml-auto" style={{ color: "var(--cc-amber-fg)" }} />
+              )}
+            </div>
+            {(leg.date || leg.claimAmount) && (
+              <div className="cc-meta text-[11px]">
+                {leg.date}{leg.date && leg.claimAmount ? " · " : ""}{leg.claimAmount}
+              </div>
+            )}
+            {leg.errorTypeName && (
+              <span className="cc-tag" style={{ alignSelf: "flex-start" }}>{leg.errorTypeName}</span>
+            )}
+            {variant === "full" && (
+              <>
+                <div style={{ height: 1, background: "var(--cc-border)", margin: "0.125rem 0" }} />
+                <div className="flex items-center gap-1.5">
+                  <span className="cc-meta text-[10px] uppercase tracking-wider">SOP</span>
+                  <span className={`cc-pill cc-pill-${verdict.tone}`}>{verdict.label}</span>
+                </div>
+              </>
+            )}
+            <div className="flex items-center gap-2 pt-0.5">
+              <span className={`cc-pill cc-pill-${pill.tone}`}>{pill.label}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs ml-auto"
+                onClick={() => onJumpToLeg(leg.id)}
+                data-testid={`v3-inputs-jump-${leg.id}`}
+              >
+                Open
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Helper: bucket counts for the inputs strip + paragraph helper text.
+ * Counts every leg, even filtered ones, so the strip's "N walked"
+ * total never disagrees with what the cards show.
+ */
+function summarizeInclusion(rides: ClaimResponse[]): { included: number; filtered: number; total: number } {
+  let included = 0;
+  let filtered = 0;
+  for (const leg of rides) {
+    if (legAiInclusion(leg) === "included") included++;
+    else filtered++;
+  }
+  return { included, filtered, total: rides.length };
+}
+
 function WalkCompleteHero({
   rides,
   groupId,
@@ -686,6 +845,8 @@ function WalkCompleteHero({
   const qc = useQueryClient();
   const { toast } = useToast();
   const stampPreview = useStampPreviewGenerated();
+
+  const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
 
   function onGenerate() {
     stampPreview.mutate(
@@ -707,45 +868,60 @@ function WalkCompleteHero({
   }
 
   return (
-    <div data-testid="v3-hero-walk-complete" className="space-y-2">
+    <div data-testid="v3-hero-walk-complete" className="space-y-3">
+      {/* Strip — one-line summary the operator sees first */}
       <div className="flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-700" />
-        <span className="font-semibold text-sm">Walk complete · review verdicts</span>
-        <span className="cc-meta text-xs ml-auto">
-          {rides.length} of {rides.length} legs
+        <span className="font-semibold text-sm">AI inputs · what the prompt will see</span>
+        <span className="cc-pill cc-pill-muted ml-auto">
+          {buckets.total} walked · {buckets.included} disputable · {buckets.filtered} filtered
         </span>
       </div>
-      {rides.map((leg, i) => {
-        const v = legVerdictLabel(leg);
-        return (
-          <Card key={leg.id} data-testid={`v3-verdict-${leg.id}`}>
-            <CardContent className="py-2.5 px-3 flex items-center gap-2">
-              <span className="cc-meta text-[10px] font-semibold uppercase tracking-wider">
-                Leg {i + 1}
-              </span>
-              <RefNumber value={leg.confNumber} variant="inline" className="font-medium" />
-              {leg.date && <span className="cc-meta text-[11px]">{leg.date}</span>}
-              {leg.claimAmount && (
-                <span className="cc-meta text-[11px] tabular-nums">{leg.claimAmount}</span>
-              )}
-              <span className={`cc-pill cc-pill-${v.tone} ml-auto`}>{v.label}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => onJumpToLeg(leg.id)}
-                data-testid={`v3-verdict-jump-${leg.id}`}
-              >
-                Open
-              </Button>
-            </CardContent>
-          </Card>
-        );
-      })}
+
+      <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="full" />
+
+      {/* Paragraph slot — empty pre-generate */}
+      <div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <FileText className="w-4 h-4" style={{ color: "var(--cc-meta-fg, currentColor)" }} />
+          <span className="font-semibold text-sm">Dispute note · one paragraph for this invoice</span>
+          <span className="cc-meta text-xs ml-auto">Not generated yet</span>
+        </div>
+        <div
+          data-testid="v3-inputs-paragraph-slot"
+          style={{
+            minHeight: 140,
+            border: "1px dashed var(--cc-border)",
+            borderRadius: "var(--cc-radius)",
+            background: "var(--cc-bg)",
+            padding: "1.25rem",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.5rem",
+            textAlign: "center",
+          }}
+        >
+          <Sparkles className="w-5 h-5" style={{ color: "var(--cc-blue-fg)" }} />
+          <div className="font-semibold text-sm">
+            One dispute note will be drafted from the {buckets.included} included leg{buckets.included === 1 ? "" : "s"} above
+          </div>
+          {buckets.filtered > 0 && (
+            <div className="cc-meta text-xs" style={{ maxWidth: 520 }}>
+              {buckets.filtered} leg{buckets.filtered === 1 ? "" : "s"} filtered out before the AI sees the
+              prompt — non-contestable verdicts, holds, and excluded legs never enter the write-up.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Generate CTA — right-aligned, hero-internal (parent gauntlet
+          footer doesn't carry a primary at this phase). */}
       <div className="flex justify-end pt-1">
         <Button
           onClick={onGenerate}
-          disabled={stampPreview.isPending}
+          disabled={stampPreview.isPending || buckets.included === 0}
           data-testid="v3-generate-preview"
         >
           {stampPreview.isPending ? (
@@ -753,7 +929,7 @@ function WalkCompleteHero({
           ) : (
             <Sparkles className="h-3.5 w-3.5 mr-1" />
           )}
-          Generate preview
+          Generate dispute note
         </Button>
       </div>
     </div>
@@ -761,19 +937,24 @@ function WalkCompleteHero({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Phase 2 hero — Preview (read-only)
-// The just-assembled MAS dispute package. Subject + body sourced from
-// either the operator-saved draft or the AI baseline. Two affordances:
-// "Skip review" (mark reviewed without editing → unlocks Submit) and
-// "Review & edit" (flips the local reviewMode flag → ReviewEditHero).
+// Phase 2 hero — Preview (read-only · POST-generate)
+// Mirrors V4 Q3: cards row at top (slim variant) anchors which legs
+// fed the prompt, then the AI-drafted single paragraph below. Subject
+// stays visible (the portal needs it) but de-emphasized — the body is
+// the focus. Two affordances: "Skip review" (mark reviewed → unlocks
+// Submit) and "Review & edit" (flips reviewMode → ReviewEditHero).
 // ─────────────────────────────────────────────────────────────────────
 function PreviewDocHero({
   detail,
+  rides,
   groupId,
+  onJumpToLeg,
   onEnterReview,
 }: {
   detail: DetailGroup;
+  rides: ClaimResponse[];
   groupId: number;
+  onJumpToLeg: (id: number) => void;
   onEnterReview: () => void;
 }) {
   const qc = useQueryClient();
@@ -782,6 +963,7 @@ function PreviewDocHero({
   const subject = detail.draftSubject ?? detail.aiBaselineSubject ?? "";
   const body =
     detail.draftDescriptionHtml ?? detail.aiBaselineDescriptionHtml ?? "";
+  const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
 
   function onSkipReview() {
     markReviewed.mutate(
@@ -803,37 +985,60 @@ function PreviewDocHero({
   }
 
   return (
-    <div data-testid="v3-hero-preview" className="space-y-2">
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <Sparkles className="w-4 h-4 text-blue-700" />
-            <div className="flex-1 min-w-0">
-              <div className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
-                MAS dispute submission · preview
-              </div>
-              <div className="font-semibold text-sm truncate">
-                {subject || "(no subject yet — regenerate to populate)"}
-              </div>
+    <div data-testid="v3-hero-preview" className="space-y-3">
+      {/* Strip — what fed the prompt */}
+      <div className="flex items-center gap-2">
+        <Sparkles className="w-4 h-4 text-blue-700" />
+        <span className="font-semibold text-sm">AI draft · review before submit</span>
+        <span className="cc-pill cc-pill-muted ml-auto">
+          {buckets.included} included · {buckets.filtered} filtered
+        </span>
+      </div>
+
+      <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
+
+      {/* Paragraph — AI-drafted, read-only here */}
+      <div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <FileText className="w-4 h-4" style={{ color: "var(--cc-meta-fg, currentColor)" }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sm truncate">
+              {subject || "(no subject yet — regenerate to populate)"}
             </div>
-            {detail.previewGeneratedAt && (
-              <Badge variant="secondary" className="text-[10px]">
-                Generated {formatDateTime(detail.previewGeneratedAt)}
-              </Badge>
-            )}
+            <div className="cc-meta text-[10px] uppercase tracking-wider">
+              Dispute note · one paragraph for this invoice
+            </div>
           </div>
-          <div
-            className="text-sm whitespace-pre-wrap leading-relaxed max-h-[480px] overflow-auto rounded border bg-white px-4 py-3"
-            data-testid="v3-preview-body"
-          >
-            {body || (
-              <span className="text-muted-foreground italic">
-                No draft body yet. Regenerate from preview to populate it.
-              </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          {detail.previewGeneratedAt && (
+            <Badge variant="secondary" className="text-[10px]">
+              Generated {formatDateTime(detail.previewGeneratedAt)}
+            </Badge>
+          )}
+        </div>
+        <div
+          className="text-sm whitespace-pre-wrap leading-relaxed max-h-[420px] overflow-auto"
+          style={{
+            border: "1px solid var(--cc-border)",
+            borderRadius: "var(--cc-radius)",
+            background: "var(--cc-card)",
+            padding: "1rem 1.125rem",
+          }}
+          data-testid="v3-preview-body"
+        >
+          {body || (
+            <span className="text-muted-foreground italic">
+              No draft body yet. Regenerate from preview to populate it.
+            </span>
+          )}
+        </div>
+        {buckets.filtered > 0 && (
+          <p className="cc-meta text-xs mt-2">
+            {buckets.filtered} leg{buckets.filtered === 1 ? "" : "s"} filtered out before draft —
+            non-contestable verdicts, holds, and excluded legs were never sent to the AI.
+          </p>
+        )}
+      </div>
+
       <div className="flex justify-end gap-2 pt-1">
         <Button
           variant="outline"
@@ -858,18 +1063,27 @@ function PreviewDocHero({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Phase 3 hero — Review & edit
-// Editable subject + body, plus Save / Regenerate / Mark reviewed /
-// Submit. Mirrors the gauntlet's draft-review section but in the
-// wizard's hero instead of buried at the bottom of a 700-line card.
+// Phase 3 hero — Review & edit, then Queue
+// Two internal modes (V4 Q4 + Q5), toggled by `submitMode` state:
+//   - Q4 (edit): cards row · editable subject + body · Save /
+//                Regenerate / Mark reviewed → on success flips to Q5.
+//   - Q5 (submit): cards row · locked paragraph · "Queue for Portal"
+//                  CTA wired to useCreatePortalSubmission.
+// "Queue for Portal" wording is scoped to this V3 wizard step only —
+// the classic gauntlet and per-claim email path keep their existing
+// labels.
 // ─────────────────────────────────────────────────────────────────────
 function ReviewEditHero({
   detail,
+  rides,
   groupId,
+  onJumpToLeg,
   onAfterReviewed,
 }: {
   detail: DetailGroup;
+  rides: ClaimResponse[];
   groupId: number;
+  onJumpToLeg: (id: number) => void;
   onAfterReviewed: () => void;
 }) {
   const qc = useQueryClient();
@@ -901,6 +1115,16 @@ function ReviewEditHero({
   const bodyEmpty = body.trim().length === 0;
   const draftReviewed = !!detail.draftReviewedAt;
   const isDirectEmail = detail.useDirectEmail === true;
+  const buckets = useMemo(() => summarizeInclusion(rides), [rides]);
+
+  // Q4 → Q5 toggle. Default to submit-mode IFF the draft is already
+  // reviewed (operator came back to a queued-but-not-sent invoice);
+  // otherwise start in edit-mode. Flips to submit on Mark reviewed
+  // success.
+  const [submitMode, setSubmitMode] = useState(draftReviewed);
+  useEffect(() => {
+    if (draftReviewed) setSubmitMode(true);
+  }, [draftReviewed]);
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
@@ -952,6 +1176,7 @@ function ReviewEditHero({
           onSuccess: () => {
             successToast({ title: "__VERB__", description: "Draft marked as reviewed" });
             invalidate();
+            setSubmitMode(true);
             onAfterReviewed();
           },
           onError: (e: unknown) =>
@@ -1001,124 +1226,239 @@ function ReviewEditHero({
     );
   }
 
+  const queueLabel = isDirectEmail ? "Queue email" : "Queue for Portal";
+
   return (
-    <div data-testid="v3-hero-review" className="space-y-2">
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Edit3 className="w-4 h-4 text-amber-700" />
-            <span className="font-semibold text-sm">Review &amp; edit dispute write-up</span>
-            {draftReviewed && (
-              <Badge variant="secondary" className="text-[10px]">
-                Reviewed{" "}
-                {detail.draftReviewedAt
-                  ? formatDateTime(detail.draftReviewedAt)
-                  : ""}
-              </Badge>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onRegenerate}
-                disabled={regenDraft.isPending}
-                data-testid="v3-regenerate"
-              >
-                {regenDraft.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                )}
-                Regenerate
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSave}
-                disabled={!dirty || saveDraft.isPending}
-                data-testid="v3-save-draft"
-              >
-                {saveDraft.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                ) : (
-                  <Save className="h-3.5 w-3.5 mr-1" />
-                )}
-                Save draft
-              </Button>
+    <div
+      data-testid="v3-hero-review"
+      data-submit-mode={submitMode ? "true" : "false"}
+      className="space-y-3"
+    >
+      {/* Strip — phase indicator + mode swap affordance */}
+      <div className="flex items-center gap-2">
+        {submitMode ? (
+          <Send className="w-4 h-4 text-blue-700" />
+        ) : (
+          <Edit3 className="w-4 h-4 text-amber-700" />
+        )}
+        <span className="font-semibold text-sm">
+          {submitMode ? "Ready to queue · final check" : "Review & edit dispute write-up"}
+        </span>
+        {draftReviewed && detail.draftReviewedAt && (
+          <Badge variant="secondary" className="text-[10px]">
+            Reviewed {formatDateTime(detail.draftReviewedAt)}
+          </Badge>
+        )}
+        <span className="cc-pill cc-pill-muted ml-auto">
+          {buckets.included} included · {buckets.filtered} filtered
+        </span>
+      </div>
+
+      <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
+
+      {/* Body — editable in Q4, locked in Q5 */}
+      {submitMode ? (
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <FileText className="w-4 h-4" style={{ color: "var(--cc-meta-fg, currentColor)" }} />
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-sm truncate">
+                {subject || "(no subject)"}
+              </div>
+              <div className="cc-meta text-[10px] uppercase tracking-wider">
+                Locked for queueing · use Edit again to revise
+              </div>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <label
-              htmlFor="v3-draft-subject"
-              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSubmitMode(false)}
+              data-testid="v3-edit-again"
             >
-              Subject
-            </label>
-            <Input
-              id="v3-draft-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Dispute subject line"
-              data-testid="v3-draft-subject-input"
-            />
+              <Edit3 className="h-3.5 w-3.5 mr-1" />
+              Edit again
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <label
-              htmlFor="v3-draft-body"
-              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            >
-              Description
-            </label>
-            <Textarea
-              id="v3-draft-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={14}
-              placeholder="Body the dispute will send. Edit freely; Save then Mark reviewed to unlock Submit."
-              data-testid="v3-draft-body-input"
-            />
-            {dirty && (
-              <p className="text-xs text-amber-700">
-                Unsaved edits — Save draft to persist (Mark reviewed saves automatically).
-              </p>
+          <div
+            className="text-sm whitespace-pre-wrap leading-relaxed max-h-[360px] overflow-auto"
+            style={{
+              border: "1px solid var(--cc-border)",
+              borderRadius: "var(--cc-radius)",
+              background: "var(--cc-card)",
+              padding: "1rem 1.125rem",
+            }}
+            data-testid="v3-locked-body"
+          >
+            {body || (
+              <span className="text-muted-foreground italic">
+                No body — go back and regenerate before queueing.
+              </span>
             )}
           </div>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <Button
-              variant="outline"
-              onClick={onMarkReviewed}
-              disabled={
-                bodyEmpty ||
-                markReviewed.isPending ||
-                saveDraft.isPending ||
-                draftReviewed
-              }
-              data-testid="v3-mark-reviewed"
-            >
-              {markReviewed.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+          <p className="cc-meta text-xs mt-2">
+            Queueing packages this paragraph plus evidence from the {buckets.included}{" "}
+            included leg{buckets.included === 1 ? "" : "s"} above and{" "}
+            {isDirectEmail ? "sends the dispute email" : "submits to the MAS portal"}.
+          </p>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4" style={{ color: "var(--cc-meta-fg, currentColor)" }} />
+              <span className="cc-meta text-[10px] uppercase tracking-wider font-semibold">
+                Dispute note · one paragraph for this invoice
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRegenerate}
+                  disabled={regenDraft.isPending}
+                  data-testid="v3-regenerate"
+                >
+                  {regenDraft.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Regenerate
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onSave}
+                  disabled={!dirty || saveDraft.isPending}
+                  data-testid="v3-save-draft"
+                >
+                  {saveDraft.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Save draft
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="v3-draft-subject"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Subject
+              </label>
+              <Input
+                id="v3-draft-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Dispute subject line"
+                data-testid="v3-draft-subject-input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="v3-draft-body"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Description
+              </label>
+              <Textarea
+                id="v3-draft-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={12}
+                placeholder="Body the dispute will send. Edit freely; Mark reviewed to lock and queue."
+                data-testid="v3-draft-body-input"
+              />
+              {dirty && (
+                <p className="text-xs text-amber-700">
+                  Unsaved edits — Save draft to persist (Mark reviewed saves automatically).
+                </p>
               )}
-              {draftReviewed ? "Reviewed" : "Mark reviewed"}
-            </Button>
-            <Button
-              onClick={onSubmit}
-              disabled={
-                !draftReviewed || bodyEmpty || submitMutation.isPending
-              }
-              data-testid="v3-submit-to-portal"
-            >
-              {submitMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              ) : (
-                <Send className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isDirectEmail ? "Send email" : "Submit to portal"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Footer CTAs — different per mode */}
+      <div className="flex items-center justify-end gap-2 pt-1">
+        {submitMode ? (
+          <Button
+            onClick={onSubmit}
+            disabled={bodyEmpty || submitMutation.isPending}
+            data-testid="v3-queue-for-portal"
+          >
+            {submitMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+            ) : (
+              <Send className="h-3.5 w-3.5 mr-1" />
+            )}
+            {queueLabel}
+          </Button>
+        ) : (
+          <Button
+            onClick={onMarkReviewed}
+            disabled={bodyEmpty || markReviewed.isPending || saveDraft.isPending}
+            data-testid="v3-mark-reviewed"
+          >
+            {markReviewed.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+            )}
+            Mark reviewed &amp; continue
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Off-ramp inputs hero (V4 Q6 + Q7)
+// Cards-row preamble for the reattest_only and nothing_to_do outlooks.
+// Mirrors the inputs-summary card visual the dispute path uses, so
+// every walk-complete state — dispute, reattest, close — opens with
+// the same anchor: "here's what you walked, here's what happens next."
+// The action machinery (ReattestModal / closure launcher) lives in
+// the existing InvoiceGroupActionSlot below, so wiring is unchanged.
+// ─────────────────────────────────────────────────────────────────────
+function OffRampInputsHero({
+  rides,
+  outlook,
+  onJumpToLeg,
+}: {
+  rides: ClaimResponse[];
+  outlook: InvoiceDisputeOutlook;
+  onJumpToLeg: (id: number) => void;
+}) {
+  const isReattest = outlook === "reattest_only";
+  return (
+    <div
+      data-testid={isReattest ? "v3-hero-reattest" : "v3-hero-close"}
+      className="space-y-3"
+    >
+      <div className="flex items-center gap-2">
+        {isReattest ? (
+          <ShieldCheck className="w-4 h-4 text-blue-700" />
+        ) : (
+          <Archive className="w-4 h-4 text-amber-700" />
+        )}
+        <span className="font-semibold text-sm">
+          {isReattest
+            ? "No disputable legs — survivors owe re-attestation"
+            : "Nothing to dispute, nothing to re-attest"}
+        </span>
+        <span className="cc-pill cc-pill-muted ml-auto">
+          {rides.length} leg{rides.length === 1 ? "" : "s"} walked
+        </span>
+      </div>
+      <InputsCardsRow rides={rides} onJumpToLeg={onJumpToLeg} variant="slim" />
+      <p className="cc-meta text-xs px-1">
+        {isReattest
+          ? "No portal note will be drafted. Use the action below to queue the survivors for re-attestation; non-contestable legs will be cancelled."
+          : "Use the action below to close this invoice out for the audit trail. No portal post, no re-attest queued."}
+      </p>
     </div>
   );
 }

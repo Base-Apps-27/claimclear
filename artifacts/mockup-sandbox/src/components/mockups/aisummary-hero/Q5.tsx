@@ -218,7 +218,7 @@ function FooterSubmit() {
       </span>
       <button className="cc-btn"><Icons.ArrowLeft className="w-3 h-3" /> Back to review</button>
       <button className="cc-btn cc-btn-primary">
-        <Icons.Send className="w-3.5 h-3.5" /> Submit to MAS portal
+        <Icons.Send className="w-3.5 h-3.5" /> Queue for Portal
       </button>
     </div>
   );
