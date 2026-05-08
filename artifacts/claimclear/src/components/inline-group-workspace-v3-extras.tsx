@@ -486,53 +486,44 @@ export function WalkLandingHero({
   const noteCount = (claim.evidenceNotes ?? "").trim().length > 0 ? 1 : 0;
 
   return (
-    <div data-testid="v3-hero-walk-landing" className="space-y-2">
+    <div
+      data-testid="v3-hero-walk-landing"
+      className="space-y-3"
+      style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}
+    >
       {actions.dialogs}
       <div
         className="cc-card cc-sop-card"
-        style={{
-          padding: "1.125rem 1.25rem 1rem",
-          maxWidth: 720,
-          margin: "0 auto",
-          width: "100%",
-        }}
+        style={{ padding: "1.5rem 1.5rem 1.25rem" }}
       >
-        {/* Meta row — every field already on the claim payload */}
-        <div className="cc-meta text-[11px] mb-2 flex items-center gap-2 flex-wrap">
-          <RefNumber value={claim.confNumber} variant="inline" />
-          {claim.date && <><span>·</span><span>DOS {claim.date}</span></>}
-          <HideForClerk>
-            {claim.claimAmount && (
-              <>
-                <span>·</span>
-                <span className="mono">{formatCurrency(claim.claimAmount)}</span>
-              </>
-            )}
-          </HideForClerk>
-          {claim.updatedAt && (
-            <>
-              <span>·</span>
-              <span>Updated {relativeTime(claim.updatedAt)}</span>
-            </>
-          )}
-        </div>
-
-        {/* Status + classification with Change affordance */}
+        {/* Status + classification — primary identity row, sits above
+            the heading so the eye sees state first, then the action. */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="text-[10px] font-normal">
+          <Badge
+            variant="outline"
+            className="text-[10px] font-medium tracking-wide uppercase px-2 py-0.5"
+            style={{
+              background: "hsl(var(--cc-card))",
+              borderColor: "hsl(var(--cc-blue-border))",
+              color: "hsl(var(--cc-blue-fg))",
+            }}
+          >
             Not started
           </Badge>
-          <span className="cc-meta text-xs">·</span>
           {claim.errorTypeName ? (
-            <span className="text-xs font-medium">{claim.errorTypeName}</span>
+            <span className="text-sm font-medium" style={{ color: "var(--cc-fg)" }}>
+              {claim.errorTypeName}
+            </span>
           ) : (
-            <span className="text-xs italic text-muted-foreground">Not yet classified</span>
+            <span className="text-sm italic text-muted-foreground">
+              Not yet classified
+            </span>
           )}
           {actions.canChangeClassification && (
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 px-1.5 text-[11px]"
+              className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
               onClick={actions.openClassify}
               data-testid="v3-landing-change-classification"
             >
@@ -542,46 +533,89 @@ export function WalkLandingHero({
         </div>
 
         {/* Heading — generic UI copy, no invented data */}
-        <h3 className="cc-sop-question text-base mt-3 font-semibold">
+        <h3
+          className="mt-3 font-semibold tracking-tight"
+          style={{ fontSize: "1.375rem", lineHeight: 1.2, color: "var(--cc-fg)" }}
+        >
           Ready to walk this leg
         </h3>
-        <p className="cc-meta text-xs mt-1 leading-relaxed">
+        <p
+          className="mt-1.5 leading-relaxed"
+          style={{ fontSize: "0.8125rem", color: "var(--cc-muted-fg)", maxWidth: 540 }}
+        >
           Walking the SOP confirms whether this leg is disputable. You can stop
-          and resume at any time, and your answers are saved as you go.
+          and resume at any time — your answers are saved as you go.
         </p>
 
-        {/* Group state line — pulled from the existing group payload */}
+        {/* Meta row — promoted to a structured field strip below the
+            heading so the leg's identity (conf, DOS, $, freshness) is
+            scannable at a glance, with vertical dividers between
+            fields instead of inline middots. */}
         <div
-          className="text-[11px] mt-3 pt-3"
+          className="mt-4 grid gap-2 text-[12px]"
           style={{
-            borderTop: "1px solid var(--cc-blue-border, var(--cc-border))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
             color: "var(--cc-muted-fg)",
           }}
         >
-          Group state:{" "}
-          <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
-            {group.status}
-          </span>
+          <MetaCell
+            label="Confirmation"
+            value={<RefNumber value={claim.confNumber} variant="inline" />}
+          />
+          {claim.date && (
+            <MetaCell label="Date of service" value={<span>{claim.date}</span>} />
+          )}
+          <HideForClerk>
+            {claim.claimAmount && (
+              <MetaCell
+                label="Amount"
+                value={<span className="mono font-medium" style={{ color: "var(--cc-fg)" }}>{formatCurrency(claim.claimAmount)}</span>}
+              />
+            )}
+          </HideForClerk>
+          {claim.updatedAt && (
+            <MetaCell
+              label="Last updated"
+              value={<span>{relativeTime(claim.updatedAt)}</span>}
+            />
+          )}
         </div>
 
-        {/* Primary CTA */}
-        <div className="cc-sop-actions mt-3">
+        {/* Primary CTA + group-state context line */}
+        <div
+          className="mt-5 pt-4 flex items-center justify-between gap-3 flex-wrap"
+          style={{ borderTop: "1px solid hsl(var(--cc-blue-border) / 0.6)" }}
+        >
+          <div
+            className="text-[11px] flex items-center gap-1.5"
+            style={{ color: "var(--cc-muted-fg)" }}
+          >
+            <span>Group state:</span>
+            <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
+              {group.status}
+            </span>
+          </div>
           <Button
             onClick={onStartWalk}
-            size="sm"
+            size="default"
+            className="h-9 px-4 text-sm font-medium shadow-sm"
             data-testid="v3-landing-start-walk"
           >
-            Start walk <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            Start walk <ArrowRight className="w-4 h-4 ml-1.5" />
           </Button>
         </div>
 
-        {/* Escape hatches — existing leg actions */}
+        {/* Escape hatches — existing leg actions, set apart so they
+            never compete with the primary "Start walk" affordance. */}
         {(actions.canReclassify || actions.canMarkDuplicate || actions.canExclude) && (
           <div
-            className="mt-3 pt-3 flex items-center gap-1.5 flex-wrap"
-            style={{ borderTop: "1px dashed var(--cc-blue-border, var(--cc-border))" }}
+            className="mt-4 pt-3 flex items-center gap-1.5 flex-wrap"
+            style={{ borderTop: "1px dashed hsl(var(--cc-blue-border) / 0.6)" }}
           >
-            <span className="cc-meta text-[11px]">
+            <span
+              className="text-[11px] mr-1"
+              style={{ color: "var(--cc-muted-fg)" }}
+            >
               Or, if this leg shouldn't be walked:
             </span>
             <ActionButtons
@@ -600,33 +634,55 @@ export function WalkLandingHero({
       {/* Counts strip — chips open the edge drawer per section */}
       {onOpenSection && (
         <div
-          className="flex items-center gap-1.5 flex-wrap mt-2"
+          className="cc-counts-strip"
           data-testid="v3-landing-counts-strip"
         >
           <CountChip
             label="Evidence"
             count={evidenceCount}
-            icon={<Paperclip className="w-3 h-3 inline mr-1" />}
+            icon={<Paperclip className="w-3.5 h-3.5" />}
             onClick={() => onOpenSection("evidence")}
           />
           <CountChip
             label="Notes"
             count={noteCount}
-            icon={<FileText className="w-3 h-3 inline mr-1" />}
+            icon={<FileText className="w-3.5 h-3.5" />}
             onClick={() => onOpenSection("notes")}
           />
           <CountChip
             label="Comms"
-            icon={<MessageSquare className="w-3 h-3 inline mr-1" />}
+            icon={<MessageSquare className="w-3.5 h-3.5" />}
             onClick={() => onOpenSection("comms")}
           />
           <CountChip
             label="Activity"
-            icon={<Activity className="w-3 h-3 inline mr-1" />}
+            icon={<Activity className="w-3.5 h-3.5" />}
             onClick={() => onOpenSection("activity")}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function MetaCell({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span
+        className="text-[10px] font-medium uppercase tracking-wider"
+        style={{ color: "var(--cc-muted-fg)" }}
+      >
+        {label}
+      </span>
+      <span className="text-[12.5px] truncate" style={{ color: "var(--cc-fg)" }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -646,12 +702,12 @@ function CountChip({
     <button
       type="button"
       onClick={onClick}
-      className="cc-pill cc-pill-muted hover:opacity-80 transition-opacity"
+      className="cc-count-pill"
       data-testid={`v3-counts-chip-${label.toLowerCase()}`}
     >
       {icon}
-      {label}
-      {count != null ? ` · ${count}` : ""}
+      <span>{label}</span>
+      {count != null && <span className="cc-count-n">{count}</span>}
     </button>
   );
 }

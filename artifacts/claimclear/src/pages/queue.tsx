@@ -1794,15 +1794,47 @@ export default function Queue({ variant = "classic" }: QueueProps = {}) {
         )}
 
         {!selectedWorkflowId && (
-          <Card>
-            <CardContent className="py-16 text-center text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="font-medium">Select an invoice group to process</p>
-              <p className="text-sm mt-1">
-                Click on a group from any workflow tab to start the dispute workflow inline.
-              </p>
-            </CardContent>
-          </Card>
+          <div
+            className="cc-scope hidden lg:block lg:col-span-2"
+            data-testid="queue-no-selection"
+          >
+            <div className="lg:sticky lg:top-4 flex items-center justify-center min-h-[420px] py-12 px-6 rounded-xl border border-dashed"
+              style={{
+                background:
+                  "linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--cc-blue-bg) / 0.35) 100%)",
+                borderColor: "hsl(var(--cc-blue-border))",
+              }}
+            >
+              <div className="max-w-sm w-full flex flex-col items-center text-center gap-4">
+                <div
+                  className="flex items-center justify-center w-14 h-14 rounded-full"
+                  style={{
+                    background: "hsl(var(--cc-blue-bg))",
+                    color: "hsl(var(--cc-blue-fg))",
+                    border: "1px solid hsl(var(--cc-blue-border))",
+                  }}
+                >
+                  <FileText className="h-6 w-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-semibold tracking-tight">
+                    Select an invoice to get started
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Pick any group from the list on the left to open it here.
+                    The wizard walks you leg by leg, then helps you draft and
+                    submit the dispute without leaving this view.
+                  </p>
+                </div>
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <Inbox className="h-3 w-3" />
+                  <span>
+                    Nothing selected · the queue stays in place while you work.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
         </>
