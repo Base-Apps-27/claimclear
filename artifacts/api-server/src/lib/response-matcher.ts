@@ -8,6 +8,19 @@ import { transitionGroupStatus } from "./group-transitions";
 import { tryClassifyInboundEmail, type ClassifiedDecision, type InboundEmailContext } from "./inbound-email-classifier";
 import { computeCostUsd } from "./llm-pricing";
 import { classifyByPhrase } from "./email-phrase-classifier";
+import type { GroupStatus } from "./group-transitions";
+
+/**
+ * Legacy `status` written by the response matcher when an inbound payor
+ * reply is classified as anything actionable (approval / denial /
+ * partial / info-request / other). Lockstep with the deriver in
+ * `lib/invoice-state` — this status MUST derive to phase
+ * `response_received` (macro `response-pending`) so the verdict
+ * endpoint accepts the operator's Approved/Denied click. Task #547
+ * regression: writing "Needs Review" here lands phase=triage and
+ * 409s every verdict click.
+ */
+export const MATCHER_CLASSIFIED_TARGET_STATUS: GroupStatus = "Ready to Review";
 
 interface MatchResult {
   claimId: number | null;
@@ -240,13 +253,15 @@ async function loadInboundContext(match: MatchResult): Promise<InboundEmailConte
 /**
  * Process a matched inbound email: persist it as a portal_response, run the AI
  * classifier (best-effort), and decide whether to push the claim/group into
- * Needs Review.
+ * "Ready to Review" (phase=response_received) for the operator.
  *
  * Behavior split:
  * - "acknowledgment" → silent receipt. Stored, an "Acknowledged" note is added
- *   to the claim/group timeline as proof, but status is NOT moved to
- *   Needs Review (otherwise every "we got your request" reply spams the queue).
- * - everything else  → existing behavior: full note + Needs Review transition.
+ *   to the claim/group timeline as proof, but status is NOT moved
+ *   (otherwise every "we got your request" reply spams the queue).
+ * - everything else  → full note + transition to "Ready to Review" so the
+ *   verdict endpoint's `response-pending` macro-phase gate accepts the
+ *   operator's Approved/Denied click (Task #547).
  */
 export async function processEmailResponse(email: InboxMessage, match: MatchResult): Promise<number> {
   const isGroup = match.invoiceGroupId !== null && match.invoiceGroupId !== undefined;
@@ -421,9 +436,13 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     });
 
     if (!skipTransition) {
+      // Task #547: write "Ready to Review" (phase=response_received) so
+      // the verdict endpoint's `response-pending` gate accepts the
+      // operator's Approved/Denied click. "Needs Review" derives to
+      // phase=triage and would 409 the verdict route.
       await transitionGroupStatus({
         groupId: match.invoiceGroupId!,
-        newStatus: "Needs Review",
+        newStatus: MATCHER_CLASSIFIED_TARGET_STATUS,
         source: "email_response_matcher",
         reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
         actor: { userEmail: "system", userName: "Response Tracker" },
@@ -465,9 +484,12 @@ export async function processEmailResponse(email: InboxMessage, match: MatchResu
     });
 
     if (!skipTransition) {
+      // Task #547: mirror the group-side change so the cascaded child
+      // status (and the audit `group_cascade:email_response_matcher` row)
+      // matches the group's "Ready to Review" landing point.
       await transitionClaimStatus({
         claimId: match.claimId!,
-        newStatus: "Needs Review",
+        newStatus: MATCHER_CLASSIFIED_TARGET_STATUS,
         source: "email_response_matcher",
         reason: `${responseType} response received via email — awaiting staff review (confidence: ${match.confidence}, matched via: ${match.matchedVia})`,
         actor: { userEmail: "system", userName: "Response Tracker" },
@@ -620,9 +642,12 @@ export async function processPortalResponse(data: {
     userName: "Response Tracker",
   });
 
+  // Task #547: write "Ready to Review" (phase=response_received) so the
+  // verdict endpoint's `response-pending` gate accepts the operator's
+  // Approved/Denied click. "Needs Review" derives to phase=triage.
   await transitionGroupStatus({
     groupId: invoiceGroupId,
-    newStatus: "Needs Review",
+    newStatus: MATCHER_CLASSIFIED_TARGET_STATUS,
     source: "portal_response_matcher",
     reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
     actor: { userEmail: "system", userName: "Response Tracker" },
