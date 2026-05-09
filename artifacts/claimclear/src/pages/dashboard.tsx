@@ -9,8 +9,6 @@ import {
   Mail,
   Stamp,
   Inbox,
-  ListChecks,
-  Wallet,
 } from "lucide-react";
 import {
   useGetDashboardSummary,
@@ -21,8 +19,6 @@ import {
   getGetResponsesAwaitingReviewCountQueryKey,
   useGetAttestationCounts,
   getGetAttestationCountsQueryKey,
-  useGetMacroPhaseRollup,
-  getGetMacroPhaseRollupQueryKey,
   useListInvoiceGroups,
   getListInvoiceGroupsQueryKey,
   type DashboardActivityEvent,
@@ -49,7 +45,6 @@ import {
   selectUrgentRows,
 } from "@/lib/urgent-count";
 import { matchesExpiringFilter } from "@/lib/queue-urgency";
-import { macroPhaseLabel } from "@/lib/lifecycle-phase";
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
 function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
@@ -433,33 +428,14 @@ export default function Dashboard() {
   const { data: attestationCounts } = useGetAttestationCounts({
     query: { queryKey: getGetAttestationCountsQueryKey() },
   });
-  // Task #559 — single rollup feeds the two new "MAS Action Required"
-  // and "Awaiting Payout" tiles below the KPI strip. Same source the
-  // sidebar badge and Queue lane use, so the three numbers can never
-  // disagree at a glance.
-  const { data: macroPhaseRollup } = useGetMacroPhaseRollup({
-    query: { queryKey: getGetMacroPhaseRollupQueryKey() },
-  });
-  const masActionRequiredCount = macroPhaseRollup?.counts?.masActionRequired ?? 0;
-  const awaitingPayoutCount = macroPhaseRollup?.counts?.awaitingPayout ?? 0;
-
-  // Top items for the "Responses to review" hero card.
-  // `includeExpired: true`: response-pending and
-  // MAS-action-required hero cards surface verdict / reattest work
-  // that's still actionable past the filing deadline. Opt past-
-  // deadline rows back in so the dashboard top-3 mirrors what the
-  // dedicated workspaces show.
+  // Top items for the "Responses to review" hero card. `includeExpired:
+  // true` keeps verdict work that's still actionable past the filing
+  // deadline visible so the dashboard top-3 mirrors the dedicated
+  // workspace.
   const responsesQueryArgs = { macroPhase: "response-pending", limit: 3, includeExpired: true } as const;
   const { data: responsesData, isLoading: responsesLoading } = useListInvoiceGroups(
     responsesQueryArgs,
     { query: { queryKey: getListInvoiceGroupsQueryKey(responsesQueryArgs) } },
-  );
-
-  // Top items for the "MAS reattest pending" hero card.
-  const reattestQueryArgs = { macroPhase: "mas-action-required", limit: 3, includeExpired: true } as const;
-  const { data: reattestData, isLoading: reattestLoading } = useListInvoiceGroups(
-    reattestQueryArgs,
-    { query: { queryKey: getListInvoiceGroupsQueryKey(reattestQueryArgs) } },
   );
 
   if (isLoading) {
@@ -552,7 +528,6 @@ export default function Dashboard() {
 
   const reattestCount =
     (attestationCounts?.pending ?? 0) + (attestationCounts?.queued ?? 0);
-  const reattestItems: InvoiceGroupResponse[] = (reattestData?.groups ?? []).slice(0, 3);
 
   // Personalized opening line for the readout card.
   const startHint = buildStartHint({
@@ -705,49 +680,7 @@ export default function Dashboard() {
         </HideForClerk>
       </div>
 
-      {/* Macro-phase rollup tiles (task #559). Compact, clickable —
-          same numbers as the sidebar badge and Queue MAS lane, jumping
-          straight into the Invoice Groups list pre-filtered by macro
-          phase. */}
-      <div
-        className="grid grid-cols-1 md:grid-cols-2 gap-3"
-        data-tour="dashboard-macro-phase-rollup"
-      >
-        <Link
-          href="/invoice-groups?macroPhase=mas-action-required"
-          className="rounded-md border border-border bg-card p-4 hover:border-primary/40 hover:bg-muted/40 transition-colors"
-          data-testid="tile-mas-action-required"
-        >
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5 text-muted-foreground flex items-center gap-1">
-            <ListChecks className="w-3.5 h-3.5" />
-            {macroPhaseLabel("mas-action-required")}
-          </div>
-          <div className="text-3xl font-bold tabular-nums" data-testid="tile-mas-action-required-count">
-            {masActionRequiredCount}
-          </div>
-          <div className="text-xs mt-1.5 text-muted-foreground">
-            Groups owing per-leg MAS cancels and/or re-attestation. Open the list →
-          </div>
-        </Link>
-        <Link
-          href="/invoice-groups?macroPhase=awaiting-payout"
-          className="rounded-md border border-border bg-card p-4 hover:border-primary/40 hover:bg-muted/40 transition-colors"
-          data-testid="tile-awaiting-payout"
-        >
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5 text-muted-foreground flex items-center gap-1">
-            <Wallet className="w-3.5 h-3.5" />
-            {macroPhaseLabel("awaiting-payout")}
-          </div>
-          <div className="text-3xl font-bold tabular-nums" data-testid="tile-awaiting-payout-count">
-            {awaitingPayoutCount}
-          </div>
-          <div className="text-xs mt-1.5 text-muted-foreground">
-            Re-attest recorded · payor remit not yet booked. Open the list →
-          </div>
-        </Link>
-      </div>
-
-      {/* TODAY'S WORK — four hero columns: file today / stuck / respond / reattest */}
+      {/* TODAY'S WORK — three hero columns: file today / stuck / respond */}
       <div data-tour="dashboard-today">
         <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
           Today's work
@@ -890,46 +823,6 @@ export default function Dashboard() {
             testid="hero-responses"
           />
 
-          <HeroCard
-            tone={!reattestLoading && reattestCount === 0 ? "neutral" : "amber"}
-            icon={<Stamp className="w-4 h-4" />}
-            eyebrow="MAS reattest pending"
-            count={reattestCount}
-            title="awaiting billing admin in MAS portal"
-            seeAllHref="/attestation-queue"
-            isLoading={reattestLoading}
-            itemsEmpty="No reattests in the queue."
-            items={reattestItems.map(g => (
-              <HeroRow
-                key={g.id}
-                to={`/invoice-groups/${g.id}`}
-                testid={`reattest-row-${g.id}`}
-                primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
-                sub={
-                  <>
-                    <ServiceDateCell
-                      groupId={g.id}
-                      earliestDate={g.earliestDate}
-                      reason={(g as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
-                      isUrgent={g.isUrgent}
-                    />{" · "}
-                    {g.status}
-                  </>
-                }
-                right={<HideForClerk>{formatCurrency(g.totalAmount)}</HideForClerk>}
-              />
-            ))}
-            footer={
-              <Link
-                href="/attestation-queue"
-                className="hover:underline"
-                data-testid="reattest-footer"
-              >
-                Open Attestation Queue →
-              </Link>
-            }
-            testid="hero-reattest"
-          />
         </div>
       </div>
 

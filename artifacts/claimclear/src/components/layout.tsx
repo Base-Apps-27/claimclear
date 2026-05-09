@@ -164,26 +164,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     },
   });
   const responsesAwaitingReview = awaitingReviewCount?.count ?? 0;
-  // Task #559 — bring back the MAS-action sub-badge, sourced from the
-  // single macro-phase rollup endpoint so the sidebar count, the
-  // Dashboard "MAS Action Required" tile, and the Queue lane header
-  // can never disagree. Same 60s cadence as the verdict-pending poll.
-  const { data: macroPhaseRollup } = useGetMacroPhaseRollup({
-    query: {
-      queryKey: getGetMacroPhaseRollupQueryKey(),
-      refetchInterval: 60_000,
-      enabled: isAuthenticated && user?.status === "approved",
-    },
-  });
-  const masActionCount = macroPhaseRollup?.counts?.masActionRequired ?? 0;
-  const responsesAwaitingReviewBadges: NavBadge[] = [
-    ...(responsesAwaitingReview > 0
-      ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
-      : []),
-    ...(masActionCount > 0
-      ? [{ count: masActionCount, tone: "blue" as const, label: macroPhaseLabel("mas-action-required") }]
-      : []),
-  ];
+  const responsesAwaitingReviewBadges: NavBadge[] = responsesAwaitingReview > 0
+    ? [{ count: responsesAwaitingReview, tone: "amber" as const, label: "Verdict pending" }]
+    : [];
   // Task #430: badge counts distinct invoice groups (the new row unit
   // on the Open tab), not raw legs. Tooltip stays short — the surface
   // itself is labelled "Attestation Queue", so the pluralised noun is

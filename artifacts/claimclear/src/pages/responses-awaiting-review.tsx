@@ -18,15 +18,7 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
-  useGetMacroPhaseRollup,
-  getGetMacroPhaseRollupQueryKey,
 } from "@workspace/api-client-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUrlParams } from "@/lib/use-url-params";
-import { GroupActionChecklist } from "@/components/attestation/group-action-checklist";
-import { QueueWorkspace } from "@/components/attestation/queue-workspace";
-import { CompletedWorkspace } from "@/components/attestation/completed-workspace";
-import { macroPhaseLabel } from "@/lib/lifecycle-phase";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -105,33 +97,6 @@ import {
  */
 
 type SortMode = "oldest_response" | "newest_response" | "urgency" | "amount";
-
-/**
- * Task #560 — three-tab workspace.
- *
- * The page is now a tabbed shell over three operator-facing buckets
- * that share the same nav badge ("Responses Awaiting Review"):
- *   - Verdict Pending    (`?tab=verdict-pending`, default)
- *   - MAS Action         (`?tab=mas-action`)
- *   - Attestation        (`?tab=attestation`)
- *
- * All three tab counts come from a single rollup endpoint
- * (`GET /macro-phase/rollup`), which now also returns
- * `attestationOpen` so the Attestation tab badge agrees with the
- * standalone /attestation surface byte-for-byte. The legacy
- * /attestation-queue route redirects here with the inner Open /
- * Completed selector mapped to `?attest=open|completed`.
- */
-const RESPONSES_TAB_VALUES = [
-  "verdict-pending",
-  "mas-action",
-  "attestation",
-] as const;
-type ResponsesTabValue = (typeof RESPONSES_TAB_VALUES)[number];
-
-function isResponsesTabValue(v: string): v is ResponsesTabValue {
-  return (RESPONSES_TAB_VALUES as readonly string[]).includes(v);
-}
 
 const SORT_OPTIONS: ReadonlyArray<{ value: SortMode; label: string; help: string }> = [
   {

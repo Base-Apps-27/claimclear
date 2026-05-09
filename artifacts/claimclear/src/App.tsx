@@ -23,6 +23,7 @@ import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Withdrawals from "@/pages/withdrawals";
 import ResponsesAwaitingReview from "@/pages/responses-awaiting-review";
+import AttestationQueue from "@/pages/attestation-queue";
 import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
 import SystemHealth from "@/pages/system-health";
@@ -63,35 +64,6 @@ function DenyClerk({ component: Component }: { component: ComponentType }) {
 // hurts the platform tour, where the operator lands on a page already
 // scrolled past the anchor the tour wants to spotlight. Mount-once,
 // no UI; runs after each successful navigation.
-// Task #560 — /attestation-queue → /responses-awaiting-review?tab=attestation.
-//
-// The attestation surface moved into the Responses Awaiting Review
-// workspace as its third tab. Old deep links keep working: the legacy
-// page used `?tab=open|completed` to switch between Open and Completed
-// re-attestations, and the embedded version uses `?attest=…` (because
-// the outer router already owns `?tab=`). We translate that one param
-// here and forward everything else (`group`, `range`, …) untouched.
-function AttestationQueueRedirect() {
-  const [, navigate] = useLocation();
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const incoming = new URLSearchParams(window.location.search);
-    const out = new URLSearchParams();
-    out.set("tab", "attestation");
-    for (const [k, v] of incoming.entries()) {
-      if (k === "tab") {
-        if (v === "open" || v === "completed") out.set("attest", v);
-        // Any other legacy `?tab=` value is dropped — the outer
-        // router would just ignore it.
-      } else {
-        out.set(k, v);
-      }
-    }
-    navigate(`/responses-awaiting-review?${out.toString()}`, { replace: true });
-  }, [navigate]);
-  return null;
-}
-
 function ScrollToTopOnRouteChange() {
   const [location] = useLocation();
   useEffect(() => {
@@ -111,7 +83,7 @@ function Router() {
         <Route path="/queue" component={Queue} />
         <Route path="/queue-v3" component={() => <Redirect to="/queue" />} />
         <Route path="/queue-mini" component={() => <Redirect to="/queue" />} />
-        <Route path="/attestation-queue" component={AttestationQueueRedirect} />
+        <Route path="/attestation-queue" component={AttestationQueue} />
         <Route path="/responses-awaiting-review" component={ResponsesAwaitingReview} />
         <Route path="/responses-awaiting-review/:id" component={ResponsesAwaitingReview} />
         <Route path="/review" component={() => <Redirect to="/queue?tab=needs-review" />} />

@@ -344,30 +344,26 @@ export function computeAggregateUrgentCount(
  * instead of falsely claiming the lane is empty.
  */
 export function emptyStateCopy(
-  lane: "actionable" | "mas-action-required" | "portal-queued" | "on-hold",
+  lane: "actionable" | "portal-queued" | "on-hold",
   filter: ExpiringFilter,
 ): string {
   if (filter === "urgent") {
     if (lane === "actionable") return "No file-today groups in Action Required.";
-    if (lane === "mas-action-required") return "No file-today groups owe MAS action.";
     if (lane === "portal-queued") return "No file-today groups in Portal Queued.";
     return "No file-today groups on hold.";
   }
   if (filter === "soon") {
     if (lane === "actionable") return "No due-within-3-days groups in Action Required.";
-    if (lane === "mas-action-required") return "No due-within-3-days groups owe MAS action.";
     if (lane === "portal-queued") return "No due-within-3-days groups in Portal Queued.";
     return "No due-within-3-days groups on hold.";
   }
   if (filter === "tomorrow") {
     if (lane === "actionable") return "No file-tomorrow groups in Action Required.";
-    if (lane === "mas-action-required") return "No file-tomorrow groups owe MAS action.";
     if (lane === "portal-queued") return "No file-tomorrow groups in Portal Queued.";
     return "No file-tomorrow groups on hold.";
   }
   if (filter === "today-tomorrow") {
     if (lane === "actionable") return "No file-today-or-tomorrow groups in Action Required.";
-    if (lane === "mas-action-required") return "No file-today-or-tomorrow groups owe MAS action.";
     if (lane === "portal-queued") return "No file-today-or-tomorrow groups in Portal Queued.";
     return "No file-today-or-tomorrow groups on hold.";
   }
@@ -378,7 +374,6 @@ export function emptyStateCopy(
     return "No stuck-after-submission groups in this lane.";
   }
   if (lane === "actionable") return "No invoice groups need action right now.";
-  if (lane === "mas-action-required") return "No groups owe MAS action right now.";
   if (lane === "portal-queued") return "No invoice groups queued for portal submission.";
   return "No invoice groups on hold.";
 }

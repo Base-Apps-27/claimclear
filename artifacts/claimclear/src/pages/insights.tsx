@@ -52,8 +52,6 @@ const PHASE_LABELS: Record<string, string> = {
   "pre-submit": "Pre-submit",
   "in-flight": "In flight",
   "response-pending": "Response pending",
-  "mas-action-required": "MAS action",
-  "awaiting-payout": "Awaiting payout",
   "closed": "Closed",
   "on-hold": "On hold",
 };
@@ -176,9 +174,6 @@ export default function Insights() {
       }));
   }, [tip?.phases]);
 
-  const masPhase = useMemo(() => {
-    return (tip?.phases ?? []).find(p => p.phase === "mas-action-required") ?? null;
-  }, [tip?.phases]);
   const bottleneck = tip?.bottleneck ?? null;
   const tzShort = getDisplayTimezoneShort();
 
@@ -485,46 +480,6 @@ export default function Insights() {
                     <Bar dataKey="p90" name="p90" fill="hsl(var(--cc-warning))" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
-              <div
-                className="rounded-md border border-border bg-card p-3.5"
-                data-testid="time-in-mas-action"
-              >
-                <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-                  Time in MAS action
-                  <InfoTooltip content="How long invoices wait in the MAS-action-required phase before the operator clears the cancel queue. Overdue threshold is 7 days." />
-                </div>
-                {masPhase ? (
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Median</span>
-                      <span className="font-mono tabular-nums">{formatDuration(masPhase.medianMs)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">p90</span>
-                      <span className="font-mono tabular-nums">{formatDuration(masPhase.p90Ms)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Transitions</span>
-                      <span className="font-mono tabular-nums">{masPhase.count}</span>
-                    </div>
-                    <div className="flex justify-between pt-1 border-t border-border mt-1">
-                      <span className="text-muted-foreground">Overdue (&gt;7d)</span>
-                      <span
-                        className="font-mono tabular-nums"
-                        style={{
-                          color: (masPhase.overdueCount ?? 0) > 0
-                            ? "hsl(var(--destructive))"
-                            : "hsl(var(--muted-foreground))",
-                        }}
-                      >
-                        {masPhase.overdueCount ?? 0}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">No MAS-action transitions in this window.</p>
-                )}
               </div>
             </div>
           )}
