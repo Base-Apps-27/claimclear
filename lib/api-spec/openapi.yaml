@@ -288,6 +288,19 @@ paths:
             actionable to scope to.
           schema:
             type: string
+        - name: draftReviewed
+          in: query
+          description: |
+            Pre-submit-only sub-filter. When `true`, restricts the result
+            set to groups whose dispute draft has been marked reviewed
+            (`draft_reviewed_at IS NOT NULL`) — i.e. one click away from
+            being queued for portal submission. When `false`, returns
+            groups in pre-submit whose draft has NOT been marked reviewed
+            yet (still needs the operator's sign-off). Intended to be
+            surfaced only on the Pre-submit (Action Required) tab; the
+            API stays permissive so deep links / scripts still work.
+          schema:
+            type: boolean
         - name: missingServiceDateReason
           in: query
           description: |
@@ -782,6 +795,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkAssignResult"
+
+  /invoice-groups/bulk-submit-to-portal:
+    post:
+      operationId: bulkSubmitInvoiceGroupsToPortal
+      tags: [invoice-groups]
+      summary: Queue many reviewed-draft groups for portal submission in one shot
+      description: |
+        Bulk equivalent of `POST /portal-submissions` that creates a
+        pending portal submission row for every group in `groupIds`
+        whose dispute draft has already been marked reviewed
+        (`draft_reviewed_at IS NOT NULL`). Each accepted group is
+        transitioned to `Portal Queued` exactly as the single-group
+        endpoint does, so the bot picks them up on the next sweep.
+
+        Per-row gates (groups failing any of these are surfaced in
+        `skipped` with a stable reason string, not aborted as a batch):
+          * `not_found` — id no longer exists
+          * `not_pre_submit` — group has moved past pre-submit
+          * `not_reviewed` — `draft_reviewed_at` is null
+          * `error_type_unset` — neither the group nor its primary
+            claim has an `error_type_id` set; refused so the bulk path
+            can never silently file an "Other Issue or Question"
+            dispute the operator never picked
+          * `legs_unresolved` — at least one disputed leg lacks a
+            committed disposition
+          * `already_submitted` — group already has an active submission
+          * `draft_empty` — `draft_description_html` is blank
+
+        Mirrors the per-row breakdown shape used by
+        `POST /invoice-groups/bulk-assign-error-type`, so the UI can
+        surface "Queued 12, skipped 3 (#INV-… not_reviewed)".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupIds:
+                  type: array
+                  items:
+                    type: integer
+              required:
+                - groupIds
+      responses:
+        "200":
+          description: Bulk queue result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkSubmitToPortalResult"
 
   /invoice-groups/{id}/valid-transitions:
     get:
@@ -9495,6 +9559,47 @@ components:
           type: boolean
       required:
         - updated
+
+    BulkSubmitToPortalResult:
+      # Mirrors `BulkAssignResult` so the UI can use the same toast
+      # surface ("Queued N, skipped M (#INV-… reason)"). `queued` is the
+      # count of groups that were transitioned to Portal Queued; the
+      # `skipped` array carries a stable per-row reason string drawn
+      # from the per-row gates documented on the endpoint.
+      type: object
+      properties:
+        queued:
+          type: integer
+        queuedItems:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              submissionId:
+                type: integer
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, reason]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        success:
+          type: boolean
+      required:
+        - queued
 
     UploadResponse:
       type: object

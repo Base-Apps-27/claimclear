@@ -51,6 +51,8 @@ import type {
   BulkQueueGroupReattestResponse,
   BulkSopAdvanceBody,
   BulkSopAdvanceResponse,
+  BulkSubmitInvoiceGroupsToPortalBody,
+  BulkSubmitToPortalResult,
   CheckEmailResponsesBody,
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -1919,6 +1921,123 @@ export const useBulkAssignInvoiceGroupErrorType = <
 > => {
   return useMutation(
     getBulkAssignInvoiceGroupErrorTypeMutationOptions(options),
+  );
+};
+
+/**
+ * Bulk equivalent of `POST /portal-submissions` that creates a
+pending portal submission row for every group in `groupIds`
+whose dispute draft has already been marked reviewed
+(`draft_reviewed_at IS NOT NULL`). Each accepted group is
+transitioned to `Portal Queued` exactly as the single-group
+endpoint does, so the bot picks them up on the next sweep.
+
+Per-row gates (groups failing any of these are surfaced in
+`skipped` with a stable reason string, not aborted as a batch):
+  * `not_found` — id no longer exists
+  * `not_pre_submit` — group has moved past pre-submit
+  * `not_reviewed` — `draft_reviewed_at` is null
+  * `error_type_unset` — neither the group nor its primary
+    claim has an `error_type_id` set; refused so the bulk path
+    can never silently file an "Other Issue or Question"
+    dispute the operator never picked
+  * `legs_unresolved` — at least one disputed leg lacks a
+    committed disposition
+  * `already_submitted` — group already has an active submission
+  * `draft_empty` — `draft_description_html` is blank
+
+Mirrors the per-row breakdown shape used by
+`POST /invoice-groups/bulk-assign-error-type`, so the UI can
+surface "Queued 12, skipped 3 (#INV-… not_reviewed)".
+
+ * @summary Queue many reviewed-draft groups for portal submission in one shot
+ */
+export const getBulkSubmitInvoiceGroupsToPortalUrl = () => {
+  return `/api/invoice-groups/bulk-submit-to-portal`;
+};
+
+export const bulkSubmitInvoiceGroupsToPortal = async (
+  bulkSubmitInvoiceGroupsToPortalBody: BulkSubmitInvoiceGroupsToPortalBody,
+  options?: RequestInit,
+): Promise<BulkSubmitToPortalResult> => {
+  return customFetch<BulkSubmitToPortalResult>(
+    getBulkSubmitInvoiceGroupsToPortalUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkSubmitInvoiceGroupsToPortalBody),
+    },
+  );
+};
+
+export const getBulkSubmitInvoiceGroupsToPortalMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>,
+    TError,
+    { data: BodyType<BulkSubmitInvoiceGroupsToPortalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>,
+  TError,
+  { data: BodyType<BulkSubmitInvoiceGroupsToPortalBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkSubmitInvoiceGroupsToPortal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>,
+    { data: BodyType<BulkSubmitInvoiceGroupsToPortalBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkSubmitInvoiceGroupsToPortal(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkSubmitInvoiceGroupsToPortalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>
+>;
+export type BulkSubmitInvoiceGroupsToPortalMutationBody =
+  BodyType<BulkSubmitInvoiceGroupsToPortalBody>;
+export type BulkSubmitInvoiceGroupsToPortalMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Queue many reviewed-draft groups for portal submission in one shot
+ */
+export const useBulkSubmitInvoiceGroupsToPortal = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>,
+    TError,
+    { data: BodyType<BulkSubmitInvoiceGroupsToPortalBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkSubmitInvoiceGroupsToPortal>>,
+  TError,
+  { data: BodyType<BulkSubmitInvoiceGroupsToPortalBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkSubmitInvoiceGroupsToPortalMutationOptions(options),
   );
 };
 

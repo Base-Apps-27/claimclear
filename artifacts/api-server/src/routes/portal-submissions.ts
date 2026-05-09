@@ -5,6 +5,7 @@ import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 import { asyncHandler } from "../lib/asyncHandler";
+import { denyClerk } from "../middlewares/denyClerk";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
@@ -1844,6 +1845,166 @@ router.get("/portal-submissions/:id/activity", asyncHandler(async (req, res): Pr
     .orderBy(desc(botActivityLogTable.createdAt));
 
   res.json(logs);
+}));
+
+// POST /invoice-groups/bulk-submit-to-portal — Task #631 follow-up.
+// Bulk equivalent of POST /portal-submissions for groups whose draft
+// has already been marked reviewed. Each group is gated independently;
+// failures land in `skipped` with a stable reason string instead of
+// aborting the batch. Mirrors the per-row breakdown shape used by
+// /invoice-groups/bulk-assign-error-type so the toast surface is
+// consistent ("Queued 12, skipped 3 (#INV-… not_reviewed)").
+//
+// Mounted on the portal-submissions router (instead of the
+// invoice-groups router) because every helper this endpoint touches —
+// resolveContext, allDisputedLegsResolved, getPortalSettings,
+// loadErrorTypeForContext, determineIssueType, buildSnapshot,
+// collectGroupEvidenceUrls, resolveGpsBreadcrumbs, transitionContext —
+// lives in this file and is intentionally module-private. Routing
+// matches the OpenAPI path /invoice-groups/bulk-submit-to-portal
+// because both routers share a common mount in routes/index.ts.
+// Mirrors `/invoice-groups/bulk-assign-error-type` — clerks can read
+// invoice groups but cannot file disputes, so the endpoint must be
+// gated server-side as well as in the rail UI.
+router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    res.status(400).json({ error: "groupIds array is required" });
+    return;
+  }
+
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Skipped = { id: number; refNumber: string | null; reason: string };
+  type Queued = { id: number; refNumber: string | null; submissionId: number };
+  const skipped: Skipped[] = [];
+  const queuedItems: Queued[] = [];
+
+  const settings = await getPortalSettings();
+
+  for (const gid of requestedIds) {
+    const ctx = await resolveContext({ invoiceGroupId: gid });
+    if (!ctx) {
+      skipped.push({ id: gid, refNumber: null, reason: "not_found" });
+      continue;
+    }
+    const refNumber = ctx.group.invoiceNumber;
+
+    const phase = getGroupMacroPhase(ctx.group);
+    if (phase !== "pre-submit") {
+      skipped.push({ id: gid, refNumber, reason: "not_pre_submit" });
+      continue;
+    }
+
+    if (ctx.group.draftReviewedAt == null) {
+      skipped.push({ id: gid, refNumber, reason: "not_reviewed" });
+      continue;
+    }
+    // Explicit error-type gate. The single-group preview/confirm flow
+    // forces classification before the draft is even reviewable, but
+    // the bulk path takes any selection from the operator so we must
+    // refuse unclassified rows here — otherwise loadErrorTypeForContext
+    // returns null and determineIssueType() silently falls back to
+    // "Other Issue or Question", which would file a generic dispute.
+    if (!ctx.group.errorTypeId && !ctx.primaryClaim.errorTypeId) {
+      skipped.push({ id: gid, refNumber, reason: "error_type_unset" });
+      continue;
+    }
+    const draftHtml = (ctx.group.draftDescriptionHtml || "").trim();
+    if (!draftHtml) {
+      skipped.push({ id: gid, refNumber, reason: "draft_empty" });
+      continue;
+    }
+
+    const legsResult = await allDisputedLegsResolved(ctx.group.id);
+    if (!legsResult.ok) {
+      skipped.push({ id: gid, refNumber, reason: "legs_unresolved" });
+      continue;
+    }
+
+    // Mirror the same in-flight guard the single-group POST relies on
+    // via filterRidesForSubmission — if the group already has an
+    // active submission row we must not double-queue it. NB: the
+    // check + insert are not wrapped in a transaction because
+    // `transitionGroupStatus` is also non-transactional and the
+    // single-group POST /portal-submissions has the same TOCTOU
+    // window (see lines ~1665+). Tightening this should be done as
+    // a cross-cutting refactor on both call sites at once so the
+    // guard semantics stay identical.
+    const activeSubs = await db.select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.invoiceGroupId, ctx.group.id),
+        inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
+      ));
+    if (activeSubs.length > 0) {
+      skipped.push({ id: gid, refNumber, reason: "already_submitted" });
+      continue;
+    }
+
+    const errorType = await loadErrorTypeForContext(ctx);
+    const snap = buildSnapshot(ctx);
+    const resolvedIssueType = determineIssueType(errorType);
+    const attachmentUrls = await collectGroupEvidenceUrls(ctx);
+    const gpsBreadcrumbs = resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
+    const trimmedReadback = (ctx.group.understandingReadback || "").trim();
+
+    const [submission] = await db.insert(portalSubmissionsTable).values({
+      invoiceGroupId: ctx.group.id,
+      status: "pending",
+      issueType: resolvedIssueType,
+      subject: ctx.group.draftSubject || snap.subjectFallback,
+      requesterEmail: settings.contactEmail,
+      transportationProviderName: settings.providerName,
+      phoneNumber: settings.contactPhone,
+      invoiceNumber: snap.invoiceNumber,
+      gpsBreadcrumbsAvailable: gpsBreadcrumbs,
+      descriptionHtml: draftHtml,
+      descriptionEditorEmail: req.user?.email ?? null,
+      descriptionEditorName: req.user?.displayName ?? null,
+      attachmentUrls,
+      confNumber: snap.confNumber,
+      serviceDate: snap.serviceDate,
+      refNumber: snap.refNumber,
+      clientNumber: snap.clientNumber,
+      carNumber: snap.carNumber,
+      claimAmount: snap.claimAmount,
+      errorTypeName: snap.errorTypeName,
+      errorDetails: snap.errorDetails,
+      disputeReason: "",
+      specialCircumstances: null,
+      understandingReadback: trimmedReadback || null,
+      understandingReadbackAt: trimmedReadback ? new Date() : null,
+      evidenceNotes: snap.evidenceNotes,
+      evidenceFiles: snap.evidenceFiles,
+      attempts: 0,
+      legs: ctx.rides.map((r) => ({
+        legId: r.id,
+        confNumber: r.confNumber || null,
+        ticked: false,
+      })),
+    }).returning();
+
+    await transitionContext({
+      ctx,
+      newStatus: "Portal Queued",
+      source: "portal_submission_bulk_create",
+      reason: "Bulk-queued from reviewed-draft filter",
+      actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+      submittedVia: "portal",
+    });
+
+    queuedItems.push({ id: gid, refNumber, submissionId: submission.id });
+  }
+
+  res.json({
+    success: true,
+    queued: queuedItems.length,
+    queuedItems,
+    skipped,
+  });
 }));
 
 export default router;

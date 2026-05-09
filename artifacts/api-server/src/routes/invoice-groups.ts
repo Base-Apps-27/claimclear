@@ -313,6 +313,21 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     }
   }
 
+  // Pre-submit-only sub-filter (Task #631 follow-up). Restricts to
+  // groups whose dispute draft has been marked reviewed (or NOT marked
+  // reviewed when `false`) — i.e. one click away from being queued for
+  // portal submission. Frontend gates the facet on the Pre-submit
+  // (Action Required) tab; the API stays permissive for deep links.
+  const draftReviewedRaw = query.draftReviewed;
+  if (draftReviewedRaw != null && draftReviewedRaw !== "") {
+    const flag = String(draftReviewedRaw).toLowerCase() === "true";
+    conditions.push(
+      flag
+        ? isNotNull(invoiceGroupsTable.draftReviewedAt)
+        : isNull(invoiceGroupsTable.draftReviewedAt),
+    );
+  }
+
   // Missing-service-date facet (Task #353). The sub-reason filter
   // implies the boolean filter, so passing only `missingServiceDateReason`
   // is enough — this matches the contract documented on the openapi

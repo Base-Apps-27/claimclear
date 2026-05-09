@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
 import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -148,6 +148,16 @@ export default function InvoiceGroupsList() {
   // all gated on `activeTab === "Action Required"` below — outside the
   // Pre-submit tab the filter is silently ignored on this page.
   const filterLegSubStatuses = getAll("legSubStatus") as LegSubStatus[];
+  // Pre-submit-only sub-filter (Task #631 follow-up). `reviewed` →
+  // drafts marked reviewed (one click from Submit). `unreviewed` →
+  // drafts that still need the operator's sign-off. Empty → no filter.
+  const filterDraftReviewedRaw = get("draftReviewed");
+  const filterDraftReviewed: "" | "reviewed" | "unreviewed" =
+    filterDraftReviewedRaw === "true"
+      ? "reviewed"
+      : filterDraftReviewedRaw === "false"
+        ? "unreviewed"
+        : "";
   const filterOutcomes = getAll("outcome");
   const filterErrorTypeIds = getAll("errorTypeId");
   const filterErrorDetails = get("errorDetails") as "" | "empty" | "present";
@@ -196,6 +206,10 @@ export default function InvoiceGroupsList() {
   const effectiveLegSubStatuses: LegSubStatus[] = isPreSubmitTab
     ? filterLegSubStatuses
     : [];
+  // Same Pre-submit gate as `legSubStatus` — outside the Action Required
+  // tab the draft-reviewed facet/chip/wire param are all suppressed
+  // (Task #631 follow-up).
+  const effectiveDraftReviewed = isPreSubmitTab ? filterDraftReviewed : "";
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Task #502 — feed `useRowSettle` so a row that leaves the list
@@ -258,6 +272,11 @@ export default function InvoiceGroupsList() {
     missingServiceDate: (filterMissingServiceDate || filterMissingReason ? true : undefined) as ListInvoiceGroupsParams["missingServiceDate"],
     missingServiceDateReason: (filterMissingReason || undefined) as ListInvoiceGroupsParams["missingServiceDateReason"],
     legSubStatus: effectiveLegSubStatuses.length > 0 ? effectiveLegSubStatuses.join(",") : undefined,
+    draftReviewed: (effectiveDraftReviewed === "reviewed"
+      ? true
+      : effectiveDraftReviewed === "unreviewed"
+        ? false
+        : undefined) as ListInvoiceGroupsParams["draftReviewed"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     importBatch: filterImportBatch || undefined,
@@ -272,6 +291,11 @@ export default function InvoiceGroupsList() {
 
   const { data: errorTypesData } = useListErrorTypes();
   const bulkAssign = useBulkAssignInvoiceGroupErrorType();
+  // Task #631 follow-up — bulk-queue reviewed drafts for portal
+  // submission. Toast (`bulkPortalMsg`) mirrors the bulk-assign success
+  // banner so the operator sees the queued / skipped breakdown.
+  const bulkSubmitToPortal = useBulkSubmitInvoiceGroupsToPortal();
+  const [bulkPortalMsg, setBulkPortalMsg] = useState("");
   // Bulk-action shimmer (Task #494): pulse the affected group rows
   // together after a successful bulk assign so the change reads as
   // one confirmed sweep across the table.
@@ -324,14 +348,15 @@ export default function InvoiceGroupsList() {
     // (Task #558) — the facet only makes sense pre-submit and a stale
     // chip in the URL would silently filter to nothing on the wire.
     const nextLegSub = key === "Action Required" ? get("legSubStatus") : null;
-    set({ status: statusValue, legSubStatus: nextLegSub, page: null }, false);
+    const nextDraftReviewed = key === "Action Required" ? get("draftReviewed") : null;
+    set({ status: statusValue, legSubStatus: nextLegSub, draftReviewed: nextDraftReviewed, page: null }, false);
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -356,6 +381,16 @@ export default function InvoiceGroupsList() {
         key: "legSubStatus",
         label: `Leg state: ${effectiveLegSubStatuses.map(legSubStatusLabel).join(", ")}`,
         onRemove: () => set({ legSubStatus: null, page: null }, false),
+      });
+    }
+    if (effectiveDraftReviewed) {
+      result.push({
+        key: "draftReviewed",
+        label:
+          effectiveDraftReviewed === "reviewed"
+            ? "Draft: reviewed (one click to queue)"
+            : "Draft: not yet reviewed",
+        onRemove: () => set({ draftReviewed: null, page: null }, false),
       });
     }
     if (filterOutcomes.length > 0) {
@@ -395,7 +430,7 @@ export default function InvoiceGroupsList() {
       });
     }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab, effectiveLegSubStatuses, filterImportBatch, set]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -439,11 +474,12 @@ export default function InvoiceGroupsList() {
   const deadlineCount = filterExpiring ? 1 : 0;
   const missingServiceDateCount = (filterMissingServiceDate || filterMissingReason) ? 1 : 0;
   const legSubStatusCount = effectiveLegSubStatuses.length;
+  const draftReviewedCount = effectiveDraftReviewed ? 1 : 0;
 
   const totalAppliedFilters =
     statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
     createdDateCount + amountCount + deadlineCount + missingServiceDateCount +
-    legSubStatusCount;
+    legSubStatusCount + draftReviewedCount;
 
   const legSubStatusOptions: FacetOption[] = useMemo(
     () => LEG_SUB_STATUSES.map((s) => ({ id: s, label: legSubStatusLabel(s) })),
@@ -491,6 +527,42 @@ export default function InvoiceGroupsList() {
           }
           testIdPrefix="facet-legSubStatus"
           hint="Pre-submit only — narrow to groups containing legs in the picked stages."
+        />
+      ),
+    } satisfies FacetedFilterCategory] : []),
+    // Draft-reviewed sub-filter (Task #631 follow-up). Same Pre-submit
+    // gate as Leg state — outside Action Required the facet, chip, and
+    // wire param are all suppressed. Single-select because the two
+    // states are mutually exclusive (a draft is either reviewed or not).
+    ...(isPreSubmitTab ? [{
+      id: "draftReviewed",
+      label: "Draft review",
+      icon: FileCheck,
+      appliedCount: draftReviewedCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Dispute draft"
+          exclusive
+          options={[
+            { id: "reviewed", label: "Reviewed (one click to queue)" },
+            { id: "unreviewed", label: "Not yet reviewed" },
+          ]}
+          selected={effectiveDraftReviewed ? [effectiveDraftReviewed] : []}
+          onToggle={(id, next) =>
+            set(
+              {
+                draftReviewed: next
+                  ? id === "reviewed"
+                    ? "true"
+                    : "false"
+                  : null,
+                page: null,
+              },
+              false,
+            )
+          }
+          testIdPrefix="facet-draftReviewed"
+          hint="Pre-submit only — find drafts the operator has signed off on so you can bulk-queue them for portal submission."
         />
       ),
     } satisfies FacetedFilterCategory] : []),
@@ -674,14 +746,14 @@ export default function InvoiceGroupsList() {
     clerk,
     statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
     createdDateCount, amountCount, deadlineCount, missingServiceDateCount,
-    legSubStatusCount,
+    legSubStatusCount, draftReviewedCount,
     statusOptions, outcomeOptions, errorTypeOptions, legSubStatusOptions,
     filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
     filterExpiring,
     filterMissingServiceDate, filterMissingReason,
     filterCreatedFrom, filterCreatedTo,
     filterAmountMin, filterAmountMax,
-    isPreSubmitTab, effectiveLegSubStatuses,
+    isPreSubmitTab, effectiveLegSubStatuses, effectiveDraftReviewed,
     set,
   ]);
 
@@ -734,6 +806,13 @@ export default function InvoiceGroupsList() {
         <div className="bg-green-50 border border-green-200 rounded-md px-4 py-3 flex items-center gap-2" data-testid="bulk-assign-success">
           <CheckCircle2 className="h-4 w-4 text-green-500" />
           <span className="text-sm text-green-800">{bulkAssignSuccess}</span>
+        </div>
+      )}
+
+      {bulkPortalMsg && (
+        <div className="bg-green-50 border border-green-200 rounded-md px-4 py-3 flex items-center gap-2" data-testid="bulk-portal-success">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <span className="text-sm text-green-800">{bulkPortalMsg}</span>
         </div>
       )}
 
@@ -1157,6 +1236,52 @@ export default function InvoiceGroupsList() {
                 disabledReason={!someSelected ? "Select one or more rows first." : undefined}
                 onClick={() => setShowBulkAssign(true)}
                 testId="rail-action-apply-error-type"
+              />
+              {/*
+                Task #631 follow-up — bulk-queue every selected
+                reviewed-draft group for portal submission. Server-side
+                validates each row independently (error type set, draft
+                non-empty, legs resolved, status pre-submit, draft
+                reviewed) and reports per-row reasons in `skipped[]`,
+                so the operator just selects rows and clicks. The
+                "Draft reviewed" facet above is the natural way to
+                line up a clean selection first.
+              */}
+              <ActionRow
+                icon={bulkSubmitToPortal.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                label={someSelected ? `Queue ${selectedIds.size} for portal submission` : "Queue selected for portal submission"}
+                disabled={!someSelected || bulkSubmitToPortal.isPending}
+                disabledReason={!someSelected ? "Select one or more reviewed-draft rows first." : undefined}
+                onClick={async () => {
+                  if (!someSelected || bulkSubmitToPortal.isPending) return;
+                  const ids = Array.from(selectedIds);
+                  try {
+                    const res = await bulkSubmitToPortal.mutateAsync({ data: { groupIds: ids } });
+                    const queued = res.queued ?? 0;
+                    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+                    let msg = `Queued ${queued} for portal submission`;
+                    if (skipped.length > 0) {
+                      const sample = skipped
+                        .slice(0, 3)
+                        .map((s) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .join(", ");
+                      const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+                      msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                    }
+                    setBulkPortalMsg(msg);
+                    const skippedIdSet = new Set(skipped.map((s) => s.id));
+                    rowBreath.triggerForIds(ids.filter((id) => !skippedIdSet.has(id)));
+                    setSelectedIds(new Set());
+                    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                    setTimeout(() => setBulkPortalMsg(""), skipped.length > 0 ? 6000 : 3000);
+                  } catch (err) {
+                    setBulkPortalMsg(
+                      `Couldn't queue: ${err instanceof Error ? err.message : "unknown error"}`,
+                    );
+                    setTimeout(() => setBulkPortalMsg(""), 6000);
+                  }
+                }}
+                testId="rail-action-bulk-submit-portal"
               />
               <ActionRow
                 icon={<X className="w-3.5 h-3.5" />}

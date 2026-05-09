@@ -167,6 +167,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Comma-separated list of derived per-leg sub-status values\n(excluded, duplicate, needs_classification, investigating,\nblocked, ready, dropped, frozen). Restricts the result set to\ngroups that contain at least one leg in any of the named\nsub-statuses. Mirrors the same vocabulary used by the\nper-claim `legSubStatus` filter on `\/claims`. Intended to be\nsurfaced only while the operator is on the Pre-submit\n(Action Required) tab — the post-submit phases bury the\nper-leg detail behind the group-level chip and have nothing\nactionable to scope to.\n",
     ),
+  draftReviewed: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "Pre-submit-only sub-filter. When `true`, restricts the result\nset to groups whose dispute draft has been marked reviewed\n(`draft_reviewed_at IS NOT NULL`) — i.e. one click away from\nbeing queued for portal submission. When `false`, returns\ngroups in pre-submit whose draft has NOT been marked reviewed\nyet (still needs the operator's sign-off). Intended to be\nsurfaced only on the Pre-submit (Action Required) tab; the\nAPI stays permissive so deep links \/ scripts still work.\n",
+    ),
   missingServiceDateReason: zod
     .enum([
       "no_claims",
@@ -5437,6 +5443,61 @@ export const BulkAssignInvoiceGroupErrorTypeResponse = zod.object({
       zod.object({
         id: zod.number(),
         refNumber: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  success: zod.boolean().optional(),
+});
+
+/**
+ * Bulk equivalent of `POST /portal-submissions` that creates a
+pending portal submission row for every group in `groupIds`
+whose dispute draft has already been marked reviewed
+(`draft_reviewed_at IS NOT NULL`). Each accepted group is
+transitioned to `Portal Queued` exactly as the single-group
+endpoint does, so the bot picks them up on the next sweep.
+
+Per-row gates (groups failing any of these are surfaced in
+`skipped` with a stable reason string, not aborted as a batch):
+  * `not_found` — id no longer exists
+  * `not_pre_submit` — group has moved past pre-submit
+  * `not_reviewed` — `draft_reviewed_at` is null
+  * `error_type_unset` — neither the group nor its primary
+    claim has an `error_type_id` set; refused so the bulk path
+    can never silently file an "Other Issue or Question"
+    dispute the operator never picked
+  * `legs_unresolved` — at least one disputed leg lacks a
+    committed disposition
+  * `already_submitted` — group already has an active submission
+  * `draft_empty` — `draft_description_html` is blank
+
+Mirrors the per-row breakdown shape used by
+`POST /invoice-groups/bulk-assign-error-type`, so the UI can
+surface "Queued 12, skipped 3 (#INV-… not_reviewed)".
+
+ * @summary Queue many reviewed-draft groups for portal submission in one shot
+ */
+export const BulkSubmitInvoiceGroupsToPortalBody = zod.object({
+  groupIds: zod.array(zod.number()),
+});
+
+export const BulkSubmitInvoiceGroupsToPortalResponse = zod.object({
+  queued: zod.number(),
+  queuedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        submissionId: zod.number().optional(),
       }),
     )
     .optional(),

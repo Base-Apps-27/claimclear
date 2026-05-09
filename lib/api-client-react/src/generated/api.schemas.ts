@@ -3956,6 +3956,25 @@ export interface BulkAssignResult {
   success?: boolean;
 }
 
+export type BulkSubmitToPortalResultQueuedItemsItem = {
+  id: number;
+  refNumber?: string | null;
+  submissionId?: number;
+};
+
+export type BulkSubmitToPortalResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export interface BulkSubmitToPortalResult {
+  queued: number;
+  queuedItems?: BulkSubmitToPortalResultQueuedItemsItem[];
+  skipped?: BulkSubmitToPortalResultSkippedItem[];
+  success?: boolean;
+}
+
 export type UploadResponseMetadata = {
   name?: string;
   contentType?: string;
@@ -4654,6 +4673,18 @@ actionable to scope to.
  */
   legSubStatus?: string;
   /**
+ * Pre-submit-only sub-filter. When `true`, restricts the result
+set to groups whose dispute draft has been marked reviewed
+(`draft_reviewed_at IS NOT NULL`) — i.e. one click away from
+being queued for portal submission. When `false`, returns
+groups in pre-submit whose draft has NOT been marked reviewed
+yet (still needs the operator's sign-off). Intended to be
+surfaced only on the Pre-submit (Action Required) tab; the
+API stays permissive so deep links / scripts still work.
+
+ */
+  draftReviewed?: boolean;
+  /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all
@@ -4846,6 +4877,10 @@ export type BulkAssignInvoiceGroupErrorTypeBody = {
   groupIds: number[];
   errorTypeId: string;
   errorTypeName?: string;
+};
+
+export type BulkSubmitInvoiceGroupsToPortalBody = {
+  groupIds: number[];
 };
 
 export type ListInvoiceGroupEvidence200 = {
