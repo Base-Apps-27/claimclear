@@ -276,12 +276,14 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const [holdLegOpen, setHoldLegOpen] = useState(false);
   const [holdGroupOpen, setHoldGroupOpen] = useState(false);
   const [forceReview, setForceReview] = useState(false);
+  const [forceWalk, setForceWalk] = useState(false);
   const [gauntletFooterState, setGauntletFooterState] = useState<GauntletFooterState | null>(null);
   const [gauntletDirty, setGauntletDirty] = useState(false);
   const onFooterStateChange = useCallback((s: GauntletFooterState) => setGauntletFooterState(s), []);
 
   useEffect(() => {
     setForceReview(false);
+    setForceWalk(false);
     setGauntletFooterState(null);
   }, [groupId]);
 
@@ -368,9 +370,9 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   let hero: HeroState;
   if (withdrawn) hero = "withdrawn";
   else if (submitted) hero = "submitted";
-  else if (previewGenerated && draftReviewed && !forceReview) hero = "ready";
-  else if (previewGenerated) hero = "review";
-  else if (allWalked && outlook === "has_disputable") hero = "generate";
+  else if (previewGenerated && draftReviewed && !forceReview && !forceWalk) hero = "ready";
+  else if (previewGenerated && !forceWalk) hero = "review";
+  else if (allWalked && outlook === "has_disputable" && !forceWalk) hero = "generate";
   else if (!activeLeg) hero = "empty";
   else if (activeLeg.includedInDispute === false) hero = "resolved";
   else if (resolvedIndex.isLegResolved(activeLeg)) hero = "resolved";
@@ -479,6 +481,17 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         forceReview={forceReview}
         onBackToReview={() => setForceReview(true)}
         onMarkReviewedDone={() => setForceReview(false)}
+        forceWalk={forceWalk}
+        onReopenWalk={() => {
+          setForceWalk(true);
+          setForceReview(false);
+        }}
+        onBackToSubmit={() => {
+          setForceWalk(false);
+          setForceReview(false);
+        }}
+        previewExists={previewGenerated}
+        draftReviewedExists={draftReviewed}
       />
 
       {activeLeg && classifyOpen && (
@@ -2084,6 +2097,11 @@ function PinnedFooter({
   forceReview,
   onBackToReview,
   onMarkReviewedDone,
+  forceWalk,
+  onReopenWalk,
+  onBackToSubmit,
+  previewExists,
+  draftReviewedExists,
 }: {
   phase: PhaseConfig;
   detail: DetailGroup;
@@ -2101,6 +2119,11 @@ function PinnedFooter({
   forceReview: boolean;
   onBackToReview: () => void;
   onMarkReviewedDone: () => void;
+  forceWalk: boolean;
+  onReopenWalk: () => void;
+  onBackToSubmit: () => void;
+  previewExists: boolean;
+  draftReviewedExists: boolean;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -2283,6 +2306,16 @@ function PinnedFooter({
           </Button>
           <Button
             size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={onReopenWalk}
+            data-testid="mini-reopen-walk"
+            title="Go back to per-leg walk to fix a verdict, classification, or evidence"
+          >
+            Reopen walk
+          </Button>
+          <Button
+            size="sm"
             onClick={onSubmit}
             disabled={!enabled || submit.isPending}
             data-testid="mini-submit-cta"
@@ -2347,7 +2380,23 @@ function PinnedFooter({
             >
               {phase.pill.label}
             </span>
-            <span className="cc-meta text-xs flex-1 min-w-0">{phase.helper}</span>
+            <span className="cc-meta text-xs flex-1 min-w-0">
+              {forceWalk && previewExists && draftReviewedExists
+                ? "Walk reopened — fix what you need, then jump back to submit."
+                : phase.helper}
+            </span>
+            {forceWalk && previewExists && draftReviewedExists && !submitted && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={onBackToSubmit}
+                data-testid="mini-back-to-submit"
+                title="Return to the ready-to-send screen without changing anything else"
+              >
+                Back to submit
+              </Button>
+            )}
             {!groupHoldActive && outlook !== "nothing_to_do" && !submitted && (
               <Button
                 size="sm"
