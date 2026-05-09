@@ -134,60 +134,9 @@ function readStoredSort(): SortMode {
 
 export default function ResponsesAwaitingReview() {
   // The list-event subscription stays at the shell level so SSE-driven
-  // invalidation reaches every tab regardless of which one is mounted
-  // (Radix tabs only mount the active TabsContent).
+  // invalidation reaches the verdict-pending workspace whether the
+  // operator landed via the bare path or a deep link.
   useInvoiceGroupsListEvents();
-  const params = useParams<{ id?: string }>();
-  const [, navigate] = useLocation();
-  const { get, set, searchParams } = useUrlParams();
-
-  const selectedId = params.id ? parseInt(params.id, 10) || null : null;
-
-  // Tab routing: `?tab=` is the source of truth. Deep links to a
-  // specific verdict-pending group via `/responses-awaiting-review/:id`
-  // implicitly land on the verdict-pending tab.
-  const tabParam = get("tab");
-  const activeTab: ResponsesTabValue = selectedId
-    ? "verdict-pending"
-    : isResponsesTabValue(tabParam)
-      ? tabParam
-      : "verdict-pending";
-
-  const handleTabChange = (next: string) => {
-    if (!isResponsesTabValue(next)) return;
-    // Switching tabs always lands on the bare workspace path so the
-    // verdict-pending master-list selection from a previous visit
-    // can't leak into the MAS Action / Attestation surfaces.
-    if (selectedId !== null) navigate("/responses-awaiting-review");
-    // Drop the inner attestation selector + any verdict-pending
-    // master-list group hint when leaving / switching tabs so each
-    // tab opens fresh.
-    set(
-      {
-        tab: next === "verdict-pending" ? null : next,
-        group: null,
-        attest: next === "attestation" ? get("attest") || null : null,
-      },
-      false,
-    );
-  };
-
-  // One rollup endpoint, three counts. `responsePending` and
-  // `masActionRequired` were already exposed; `attestationOpen` was
-  // added under Task #560 so the Attestation tab badge can come from
-  // the same call (no per-tab N+1, no separate /attestation/counts
-  // round trip just for the chip).
-  const rollup = useGetMacroPhaseRollup({
-    query: {
-      queryKey: getGetMacroPhaseRollupQueryKey(),
-      refetchInterval: 60_000,
-      refetchOnWindowFocus: true,
-    },
-  });
-  const verdictPendingCount = rollup.data?.counts?.responsePending ?? 0;
-  const masActionCount = rollup.data?.counts?.masActionRequired ?? 0;
-  const attestationCount = rollup.data?.counts?.attestationOpen ?? 0;
-
   return (
     <div className="space-y-5">
       <div className="space-y-1">
@@ -195,65 +144,11 @@ export default function ResponsesAwaitingReview() {
           Responses Awaiting Review
         </h2>
         <p className="text-muted-foreground text-sm">
-          Three buckets, one workspace — pick a verdict on a payor reply,
-          finish MAS work the verdict spawned, then re-attest in the
-          portal. Counts share the same rollup so every tab agrees with
-          the dashboard and sidebar.
+          Pick a verdict on each payor reply. Re-attestation work lives on the
+          dedicated Attestation Queue page.
         </p>
       </div>
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="bg-transparent p-0 h-auto border-b w-full justify-start rounded-none">
-          <TabsTrigger
-            value="verdict-pending"
-            data-testid="responses-tab-verdict-pending"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 text-sm gap-2"
-          >
-            Verdict Pending
-            <span
-              className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground"
-              data-testid="responses-tab-verdict-pending-count"
-            >
-              {verdictPendingCount}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="mas-action"
-            data-testid="responses-tab-mas-action"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 text-sm gap-2"
-          >
-            {macroPhaseLabel("mas-action-required")}
-            <span
-              className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground"
-              data-testid="responses-tab-mas-action-count"
-            >
-              {masActionCount}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="attestation"
-            data-testid="responses-tab-attestation"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 text-sm gap-2"
-          >
-            Attestation
-            <span
-              className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-muted text-[10px] font-semibold text-muted-foreground"
-              data-testid="responses-tab-attestation-count"
-            >
-              {attestationCount}
-            </span>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="verdict-pending" className="mt-4">
-          <VerdictPendingTabContent />
-        </TabsContent>
-        <TabsContent value="mas-action" className="mt-4">
-          <MasActionTabContent />
-        </TabsContent>
-        <TabsContent value="attestation" className="mt-4">
-          <AttestationTabContent />
-        </TabsContent>
-      </Tabs>
+      <VerdictPendingTabContent />
     </div>
   );
 }
@@ -287,11 +182,9 @@ function VerdictPendingTabContent() {
     },
   );
 
-  // This is the Verdict Pending tab body of the three-tab
-  // /responses-awaiting-review workspace. The MAS Action and
-  // Attestation surfaces live in sibling tabs on the same page
-  // (see `MasActionTabContent` and `AttestationTabContent` below);
-  // here we only handle picking verdicts on payor responses.
+  // This page is single-purpose: pick verdicts on payor responses.
+  // Re-attestation work lives on the standalone /attestation-queue
+  // page; MAS-action elevation has been removed entirely.
 
   // Server already restricts to classified groups via `errorTypeAssigned`.
   const baseGroups: InvoiceGroupResponse[] = useMemo(
@@ -1945,186 +1838,3 @@ function InlineResponseFallback({
   );
 }
 
-// ─── Task #560 — MAS Action tab ────────────────────────────────────────
-//
-// Lists every invoice group in the `mas-action-required` macro phase
-// and renders the per-group `<MasActionChecklist />` (via the shared
-// `<GroupActionChecklist />` wrapper that already wires the cancel /
-// re-attest mutations + cache invalidation). Same source-of-truth list
-// query the MAS lane on /queue uses, so the tab badge (sourced from
-// the rollup) and the rendered list can never disagree.
-function MasActionTabContent() {
-  const masActionParams = {
-    macroPhase: "mas-action-required",
-    limit: 500,
-    includeExpired: true,
-  } as const;
-  const list = useListInvoiceGroups(masActionParams, {
-    query: {
-      queryKey: getListInvoiceGroupsQueryKey(masActionParams),
-      refetchOnWindowFocus: true,
-    },
-  });
-  const groups = list.data?.groups ?? [];
-
-  // Fan out one detail fetch per group so each row has the rides /
-  // attestation state the checklist needs. Keys mirror
-  // `useGetInvoiceGroup(g.id)` so the per-row checklist mutations
-  // invalidate exactly what we just hydrated.
-  const detailQueries = useQueries({
-    queries: groups.map((g) => ({
-      queryKey: getGetInvoiceGroupQueryKey(g.id),
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        getInvoiceGroup(g.id, { signal }),
-      staleTime: 30_000,
-    })),
-  });
-
-  return (
-    <div className="space-y-4" data-testid="mas-action-tab-content">
-      <p className="text-xs text-muted-foreground">
-        Per-leg MAS cancels owed by you, and the group-level
-        re-attestation that follows. Finishing a checklist here graduates
-        the group out of this tab — the badge above mirrors the same
-        rollup the dashboard and sidebar use.
-      </p>
-      <SkeletonSwap
-        loading={list.isLoading}
-        skeleton={<Skeleton className="h-[320px] w-full" />}
-      >
-        {list.isError ? (
-          <Card>
-            <CardContent className="py-10 text-center space-y-3">
-              <AlertTriangle className="h-6 w-6 mx-auto text-destructive" />
-              <p className="text-sm text-muted-foreground">
-                Couldn't load MAS-action groups. Try again in a moment.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => list.refetch()}
-              >
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        ) : groups.length === 0 ? (
-          <Card data-testid="mas-action-empty-state">
-            <CardContent className="py-6">
-              <EmptyState
-                icon={CheckCircle}
-                title="Nothing waiting on MAS action"
-                description="As soon as a verdict spawns a per-leg cancel or a group re-attestation owed by you, it'll appear here."
-              />
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {groups.map((g, idx) => {
-              const detail = detailQueries[idx]?.data ?? null;
-              const isLoading =
-                detailQueries[idx]?.isLoading ?? false;
-              return (
-                <Card
-                  key={g.id}
-                  data-testid={`mas-action-group-card-${g.id}`}
-                >
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-                      <Link
-                        href={`/invoice-groups/${g.id}`}
-                        className="hover:underline"
-                        data-testid={`mas-action-group-link-${g.id}`}
-                      >
-                        Invoice {g.invoiceNumber ?? `#${g.id}`}
-                      </Link>
-                      {g.clientNumber && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          Payor {g.clientNumber}
-                        </Badge>
-                      )}
-                      <UrgentTodayBadge isUrgent={g.isUrgent} />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {isLoading || !detail ? (
-                      <Skeleton className="h-32 w-full" />
-                    ) : (
-                      <GroupActionChecklist
-                        detail={detail}
-                        bucketKey={`mas-action-tab-${g.id}`}
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </SkeletonSwap>
-    </div>
-  );
-}
-
-// ─── Task #560 — Attestation tab (embedded /attestation-queue) ─────────
-//
-// Embeds the existing `<QueueWorkspace />` and `<CompletedWorkspace />`
-// components inline. The inner Open / Completed selector reads from
-// `?attest=open|completed` rather than `?tab=` so it doesn't clash with
-// the outer tab router. The legacy /attestation-queue route redirects
-// here and translates its old `?tab=open|completed` deep links to
-// `?attest=…` (see App.tsx).
-const ATTEST_INNER_TABS = ["open", "completed"] as const;
-type AttestInnerTab = (typeof ATTEST_INNER_TABS)[number];
-
-function AttestationTabContent() {
-  const { get, set } = useUrlParams();
-  const raw = get("attest");
-  const inner: AttestInnerTab = (ATTEST_INNER_TABS as readonly string[]).includes(
-    raw,
-  )
-    ? (raw as AttestInnerTab)
-    : "open";
-
-  const onInnerChange = (next: string) => {
-    if (!(ATTEST_INNER_TABS as readonly string[]).includes(next)) return;
-    // Drop the per-bucket `?group=` selection when flipping inner
-    // tabs — the two workspaces use disjoint id spaces.
-    set(
-      { attest: next === "open" ? null : next, group: null },
-      false,
-    );
-  };
-
-  return (
-    <div className="space-y-4" data-testid="attestation-tab-content">
-      <Tabs value={inner} onValueChange={onInnerChange}>
-        <TabsList
-          className="bg-transparent p-0 h-auto border-b w-full justify-start rounded-none"
-          data-testid="attestation-inner-tabs"
-        >
-          <TabsTrigger
-            value="open"
-            data-testid="attestation-inner-tab-open"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 text-sm gap-2"
-          >
-            Open
-          </TabsTrigger>
-          <TabsTrigger
-            value="completed"
-            data-testid="attestation-inner-tab-completed"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 text-sm gap-2"
-          >
-            Completed re-attestations
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="open" className="mt-4">
-          <QueueWorkspace />
-        </TabsContent>
-        <TabsContent value="completed" className="mt-4">
-          <CompletedWorkspace />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
