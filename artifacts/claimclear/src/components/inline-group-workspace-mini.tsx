@@ -15,6 +15,7 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   useStampPreviewGenerated,
+  useConfirmUnderstandingReadback,
   useMarkInvoiceGroupDraftReviewed,
   useCreatePortalSubmission,
   getGetClaimQueryKey,
@@ -819,7 +820,37 @@ function GeneratePreviewHero({
   const qc = useQueryClient();
   const { toast } = useToast();
   const stamp = useStampPreviewGenerated();
+  const confirmReadback = useConfirmUnderstandingReadback();
   const gate = derivePreviewGateState(detail, rides);
+  // Inline readback confirm — without this, the queue-walk operator
+  // hits a dead end here when "readback" is the only missing gate
+  // (the readback UI used to live exclusively on the Full Details
+  // page's submission gauntlet, leaving no in-pane path forward).
+  const [readback, setReadback] = useState(detail.understandingReadback ?? "");
+  useEffect(() => {
+    setReadback(detail.understandingReadback ?? "");
+  }, [detail.understandingReadback]);
+  const readbackMissing = gate.missingGates[0] === "readback";
+  function onConfirmReadback() {
+    confirmReadback.mutate(
+      { id: groupId, data: { readback: readback.trim() } },
+      {
+        onSuccess: (g) => {
+          applyGroupMutationResult(qc, g);
+          successToast({
+            title: "Done",
+            description: "Understanding readback confirmed",
+          });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Readback failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
   function generate() {
     stamp.mutate(
       { id: groupId },
@@ -848,7 +879,43 @@ function GeneratePreviewHero({
           Every leg is walked. Generate the dispute preview, review the
           draft, then submit to the portal.
         </p>
-        {!gate.ok && gate.reason && (
+        {readbackMissing && (
+          <div
+            className="rounded border border-amber-200 bg-amber-50 p-2 space-y-2"
+            data-testid="mini-readback-block"
+          >
+            <p className="text-xs font-medium text-amber-900">
+              Confirm understanding before generating
+            </p>
+            <p className="text-[11px] text-amber-800">
+              Anything the AI write-up should know about the case overall.
+              Leave blank to skip — the AI will use the per-leg findings and
+              the dispute reason on their own.
+            </p>
+            <Textarea
+              value={readback}
+              onChange={(e) => setReadback(e.target.value)}
+              rows={2}
+              placeholder="Optional — leave blank if there's nothing extra to add."
+              data-testid="mini-readback-input"
+            />
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={confirmReadback.isPending}
+                onClick={onConfirmReadback}
+                data-testid="mini-readback-confirm"
+              >
+                {confirmReadback.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                ) : null}
+                Confirm understanding
+              </Button>
+            </div>
+          </div>
+        )}
+        {!gate.ok && !readbackMissing && gate.reason && (
           <p className="text-xs text-amber-700">{gate.reason}</p>
         )}
         {stamp.isError && !stamp.isPending && (
