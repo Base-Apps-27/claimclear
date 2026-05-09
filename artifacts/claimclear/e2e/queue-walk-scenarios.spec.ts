@@ -68,10 +68,12 @@ import { buildDriver } from "./walk-scenarios/walk-driver";
 import type { WalkScenario } from "./walk-scenarios/types";
 import { happyPath } from "./walk-scenarios/scenarios/01-happy-path";
 import { markOneNonIssue } from "./walk-scenarios/scenarios/02-mark-non-issue";
+import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
   markOneNonIssue,
+  allNonIssue,
   // Add new scenarios here.
 ];
 

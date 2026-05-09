@@ -101,6 +101,7 @@ export function buildMockState(args: {
     legs,
     callOrder: [],
     portalSubmissionBody: null,
+    closureReason: null,
     errorTypeIndex,
   };
 }
@@ -152,11 +153,13 @@ function buildGroupListItem(state: WalkMockState) {
   const onHold = state.holdReason != null;
   const status = onHold
     ? "On Hold"
-    : state.phase === "submitted"
-      ? "Submitted"
-      : state.phase === "ready_to_submit"
-        ? "Ready"
-        : "New";
+    : state.phase === "closed"
+      ? "Closed"
+      : state.phase === "submitted"
+        ? "Submitted"
+        : state.phase === "ready_to_submit"
+          ? "Ready"
+          : "New";
   return {
     id: state.groupId,
     invoiceNumber: state.invoiceNumber,
@@ -182,7 +185,7 @@ function buildGroupDetail(state: WalkMockState) {
   return {
     ...buildGroupListItem(state),
     errorDetails: "Smoke harness scenario",
-    closureReason: null,
+    closureReason: state.closureReason,
     closureCategory: null,
     closureCategoryOther: null,
     closureRootCause: null,
@@ -414,6 +417,7 @@ export async function installApiStubs(
         succeeded.push(buildLeg(state, leg));
       }
       state.callOrder.push("group_sop_advance");
+      maybeAutoCloseGroup(state);
       return route.fulfill(jsonResponse(200, { succeeded, skipped: [] }));
     },
   );
@@ -462,6 +466,7 @@ export async function installApiStubs(
       }
       applySopAnswer(leg, body.nodeId ?? null, body.answer ?? "");
       state.callOrder.push(`sop_advance_${legId}`);
+      maybeAutoCloseGroup(state);
       return route.fulfill(jsonResponse(200, buildLeg(state, leg)));
     },
   );
@@ -538,5 +543,36 @@ function applySopAnswer(
   if (outcome) {
     leg.sopOutcome = outcome;
     leg.dropReason = DROP_REASON_BY_OUTCOME[outcome];
+  }
+}
+
+/** Mirrors the server's auto-close cascade: when every active leg has
+ *  landed on a non-disputable terminal (all `non_issue`, all
+ *  `cannot_dispute`, or a mix), the group flips to `closed` with a
+ *  closure reason that names the path taken. The reason for the
+ *  uniform-non-issue path (`non_issue`) is intentionally distinct from
+ *  the uniform-cannot-dispute path (`cannot_dispute`) so smoke
+ *  scenarios can pin the difference. Mixed paths are left for a future
+ *  scenario and are not auto-closed here. */
+function maybeAutoCloseGroup(state: WalkMockState): void {
+  if (state.phase === "closed") return;
+  const active = [...state.legs.values()].filter(
+    (l) => l.includedInDispute !== false,
+  );
+  if (active.length === 0) return;
+  if (active.some((l) => l.sopOutcome == null)) return;
+
+  const allNonIssue = active.every((l) => l.sopOutcome === "non_issue");
+  const allCannotDispute = active.every(
+    (l) => l.sopOutcome === "cannot_dispute",
+  );
+  if (allNonIssue) {
+    state.phase = "closed";
+    state.closureReason = "non_issue";
+    state.callOrder.push("group_close_non_issue");
+  } else if (allCannotDispute) {
+    state.phase = "closed";
+    state.closureReason = "cannot_dispute";
+    state.callOrder.push("group_close_cannot_dispute");
   }
 }

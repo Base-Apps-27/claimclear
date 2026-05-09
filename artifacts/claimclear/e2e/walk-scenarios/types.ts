@@ -75,6 +75,10 @@ export interface WalkMockState {
   callOrder: string[];
   /** Body of the last create-portal-submission POST, for assertions. */
   portalSubmissionBody: unknown;
+  /** Closure reason stamped when the mock auto-closes the group
+   *  (e.g. all legs walked to a non-disputable terminal). Null while
+   *  the group remains open. */
+  closureReason: "non_issue" | "cannot_dispute" | null;
   /** Stash of leg-by-error-type so the SOP player resolves trees. */
   errorTypeIndex: Map<string, { id: string; name: string; tree: DecisionTree }>;
 }
