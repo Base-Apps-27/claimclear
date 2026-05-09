@@ -292,8 +292,8 @@ async function main() {
       // produces a correct (and never-stale) timestamp.
       const upd = await client.query<{ id: number; reattest_completed_at: string }>(
         `UPDATE invoice_groups
-            SET status                = 'Resolved'::group_status,
-                outcome               = 'Approved'::group_outcome,
+            SET status                = 'Resolved'::claim_status,
+                outcome               = 'Approved'::claim_outcome,
                 phase                 = 'closed',
                 phase_entered_at      = COALESCE(phase_entered_at, NOW()),
                 closure_reason        = 'reattested',
@@ -364,8 +364,8 @@ async function main() {
     for (const row of branchB) {
       const upd = await client.query(
         `UPDATE invoice_groups
-            SET status           = 'Resolved'::group_status,
-                outcome          = 'Approved'::group_outcome,
+            SET status           = 'Resolved'::claim_status,
+                outcome          = 'Approved'::claim_outcome,
                 phase            = 'closed',
                 phase_entered_at = COALESCE(phase_entered_at, NOW()),
                 closure_reason   = 'reattested'
