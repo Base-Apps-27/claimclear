@@ -19,8 +19,7 @@ function buildFallbackEmail(
   claim: typeof claimsTable.$inferSelect,
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
-): { subject: string; body: string } {
-  const subject = `Dispute for Claim ${claim.confNumber} - ${claim.errorTypeName || "Rejected Claim"}`;
+): { body: string } {
   const body = `Dear MAS Support Team,
 
 I am writing to dispute the rejection of claim confirmation number ${claim.confNumber}, service date ${claim.date || "N/A"}, for client ${claim.clientNumber || "N/A"}.
@@ -39,7 +38,7 @@ Thank you for your prompt attention to this matter.
 
 Sincerely,
 Transportation Provider`;
-  return { subject, body };
+  return { body };
 }
 
 async function getDefaultDisputeInstructions(): Promise<string> {
@@ -96,10 +95,9 @@ Write a professional, concise dispute email addressed to "MAS Support Team". The
 - Be factual and persuasive without being adversarial
 - Keep a professional but conversational tone
 
-Respond with JSON in this exact format:
-{"subject": "email subject line", "body": "full email body text"}`;
+Return ONLY the email body text. Do not include a subject line, JSON wrapping, or any preamble.`;
 
-  const systemPrompt = "You are a professional NEMT claims dispute specialist writing on behalf of a transportation provider. Write clear, factual, and persuasive dispute emails. Each email should read naturally — vary sentence structure, word choice, and phrasing so no two emails sound identical. Avoid boilerplate or robotic language. Always respond with valid JSON containing subject and body fields.";
+  const systemPrompt = "You are a professional NEMT claims dispute specialist writing on behalf of a transportation provider. Write clear, factual, and persuasive dispute emails. Each email should read naturally — vary sentence structure, word choice, and phrasing so no two emails sound identical. Avoid boilerplate or robotic language. Return only the email body text — never a subject line, JSON wrapper, or preamble.";
 
   return { prompt, systemPrompt };
 }
@@ -109,7 +107,7 @@ async function generateWithLLM(
   errorType: typeof errorTypesTable.$inferSelect | null,
   disputeReason: string,
   promptLegInputs: PromptLegInputsResult,
-): Promise<{ subject: string; body: string }> {
+): Promise<{ body: string }> {
   const defaultInstructions = await getDefaultDisputeInstructions();
   const instructions = errorType?.disputeInstructions || errorType?.emailTemplate || defaultInstructions;
   const { prompt, systemPrompt } = buildPerClaimEmailPrompt({ claim, errorType, disputeReason, instructions, promptLegInputs });
@@ -129,14 +127,13 @@ async function generateWithLLM(
   const textBlock = message.content.find((b: any) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("Empty LLM response");
 
-  let jsonStr = textBlock.text.trim();
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+  let body = textBlock.text.trim();
+  // Defensive: strip optional fenced wrapping if the model added one.
+  const fenced = body.match(/^```(?:text|markdown)?\s*([\s\S]*?)```\s*$/);
+  if (fenced) body = fenced[1].trim();
+  if (!body) throw new Error("Invalid LLM response format");
 
-  const parsed = JSON.parse(jsonStr) as { subject: string; body: string };
-  if (!parsed.subject || !parsed.body) throw new Error("Invalid LLM response format");
-
-  return parsed;
+  return { body };
 }
 
 /**
@@ -264,23 +261,23 @@ router.post("/claims/:id/generate-email", asyncHandler(async (req, res): Promise
   });
 
   try {
-    let subject: string;
     let body: string;
     let generationMethod = "llm";
 
     try {
       const result = await generateWithLLM(claim, errorType, disputeReason, promptLegInputs);
-      subject = result.subject;
       body = result.body;
     } catch {
       const fallback = buildFallbackEmail(claim, errorType, disputeReason);
-      subject = fallback.subject;
       body = fallback.body;
       generationMethod = "template";
     }
 
+    // Per-claim generator no longer authors a subject line. Clear any
+    // stale `generatedEmailSubject` from prior runs so old LLM-authored
+    // subjects don't linger on the row.
     const [updated] = await db.update(claimsTable).set({
-      generatedEmailSubject: subject,
+      generatedEmailSubject: null,
       generatedEmailBody: body,
       generatedEmailAt: new Date().toISOString(),
     }).where(eq(claimsTable.id, id)).returning();
