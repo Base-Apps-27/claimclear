@@ -79,6 +79,15 @@ export function buildMockState(args: {
    *  knob from task #602. */
   failPreviewWith?: number | null;
   payorEmailBounceState?: WalkMockState["payorEmailBounceState"];
+  /** Optional pre-stamped preview timestamp — scenarios that need to
+   *  start in the Review hero (e.g. narrative-edit smokes) set this so
+   *  the mini workspace and the gauntlet both render the draft step on
+   *  first load. */
+  previewGeneratedAt?: string | null;
+  /** Optional AI baseline draft text shown in the gauntlet textarea
+   *  before any operator edit. */
+  aiBaselineSubject?: string | null;
+  aiBaselineDescriptionHtml?: string | null;
 }): WalkMockState {
   const errorTypeIndex = new Map<
     string,
@@ -116,7 +125,8 @@ export function buildMockState(args: {
       args.understandingReadbackAt === undefined
         ? "2026-04-15T12:00:00.000Z"
         : args.understandingReadbackAt,
-    previewGeneratedAt: null,
+    previewGeneratedAt:
+      args.previewGeneratedAt === undefined ? null : args.previewGeneratedAt,
     draftReviewedAt: null,
     holdReason: null,
     groupHoldPlacedAt: null,
@@ -133,6 +143,10 @@ export function buildMockState(args: {
     payorEmailBounceState: args.payorEmailBounceState ?? null,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
     submitFailWith: null,
+    draftSubject: null,
+    draftDescriptionHtml: null,
+    aiBaselineSubject: args.aiBaselineSubject ?? null,
+    aiBaselineDescriptionHtml: args.aiBaselineDescriptionHtml ?? null,
   };
 }
 
@@ -276,6 +290,11 @@ function buildGroupDetail(state: WalkMockState) {
     understandingReadbackAt: state.understandingReadbackAt,
     previewGeneratedAt: state.previewGeneratedAt,
     draftReviewedAt: state.draftReviewedAt,
+    draftSubject: state.draftSubject,
+    draftDescriptionHtml: state.draftDescriptionHtml,
+    aiBaselineSubject: state.aiBaselineSubject,
+    aiBaselineDescriptionHtml: state.aiBaselineDescriptionHtml,
+    useDirectEmail: false,
     rides: [...state.legs.values()].map((l) => buildLeg(state, l)),
     submissions: [],
     notes: [],
@@ -614,6 +633,30 @@ export async function installApiStubs(
       // server contract noted in openapi.yaml.
       state.draftReviewedAt = null;
       state.callOrder.push("stamp_preview");
+      return route.fulfill(jsonResponse(200, buildGroupDetail(state)));
+    },
+  );
+
+  // Operator-edited dispute write-up POST. Mirrors the server
+  // contract: persists subject + description, stamps an "edited"
+  // timestamp (we approximate via the call ledger), and clears any
+  // prior draftReviewedAt because edits invalidate review.
+  await page.route(
+    `**/api/invoice-groups/${state.groupId}/draft*`,
+    async (route: Route, request: Request) => {
+      if (request.method() !== "POST") return route.fallback();
+      let body: { subject?: string | null; descriptionHtml?: string | null } = {};
+      try {
+        body = request.postDataJSON();
+      } catch {
+        // ignore
+      }
+      if (body.subject !== undefined) state.draftSubject = body.subject ?? null;
+      if (body.descriptionHtml !== undefined) {
+        state.draftDescriptionHtml = body.descriptionHtml ?? null;
+      }
+      state.draftReviewedAt = null;
+      state.callOrder.push("save_draft");
       return route.fulfill(jsonResponse(200, buildGroupDetail(state)));
     },
   );

@@ -112,6 +112,15 @@ export interface WalkMockState {
    *  setting it again before each attempt. Used by Smoke #18 to pin
    *  the submit-fails error UI without touching production code. */
   submitFailWith: number | null;
+  /** Operator-edited dispute write-up (Review phase). Persisted by
+   *  POST /api/invoice-groups/:id/draft. `null` until the operator
+   *  saves the first edit; the gauntlet falls back to the AI baseline
+   *  fields below for initial render. */
+  draftSubject: string | null;
+  draftDescriptionHtml: string | null;
+  /** AI baseline fields shown in the textarea before any edit. */
+  aiBaselineSubject: string | null;
+  aiBaselineDescriptionHtml: string | null;
 }
 
 export interface PresenceLedgerEntry {

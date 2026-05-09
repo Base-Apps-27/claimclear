@@ -81,6 +81,7 @@ import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { holdAllResumeOrder } from "./walk-scenarios/scenarios/11-hold-all-resume-order";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
 import { previewFail } from "./walk-scenarios/scenarios/14-preview-fail";
+import { narrativeEditPersist } from "./walk-scenarios/scenarios/16-narrative-edit-persist";
 import { submitFail } from "./walk-scenarios/scenarios/18-submit-fail";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 import { bouncedAddress } from "./walk-scenarios/scenarios/24-bounced-address";
@@ -97,6 +98,7 @@ const SCENARIOS: WalkScenario[] = [
   holdAllResumeOrder,
   twoUserConcurrency,
   previewFail,
+  narrativeEditPersist,
   submitFail,
   zeroEvidence,
   bouncedAddress,
