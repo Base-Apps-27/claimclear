@@ -53,7 +53,13 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     }
     await expect(page.getByTestId("sop-advance-player")).toBeVisible();
     await clickSopOption(optionLabel);
-    await expect(page.getByTestId("sop-include-ready-card")).toBeVisible();
+    // Once the leg lands on a terminal the workspace hero swaps off
+    // `sop` (typically to `resolved`, or to `generate` when this was
+    // the last unwalked leg). The inline `inline-group-workspace-mini`
+    // never mounts the standalone `sop-include-ready-card` surface —
+    // that lives on the full claim-detail page — so key off the hero
+    // attribute the way `markLegNonIssue` does.
+    await expect(workspace()).not.toHaveAttribute("data-hero", "sop");
   }
 
   async function markLegNonIssue(

@@ -343,6 +343,10 @@ export async function installApiStubs(
   await page.route("**/api/macro-phase-rollup*", (route: Route) =>
     route.fulfill(jsonResponse(200, {})),
   );
+  // Dashboard "Urgent today" sparkline — UrgentTodayWhyLine is mounted
+  // by the queue chrome, and the component dereferences
+  // `data.clearedSummary.total` without optional chaining. Returning
+  // an empty-but-shaped payload keeps the harness safe across builds.
   await page.route(
     "**/api/dashboard/urgent-today/transitions*",
     (route: Route) =>
@@ -452,19 +456,53 @@ export async function installApiStubs(
   });
 
   // Invoice-groups list — distinguishes from `/api/invoice-groups/:id`
-  // which always has a slash after `invoice-groups`.
-  await page.route(/\/api\/invoice-groups(?:\?|$)/, (route: Route) =>
-    route.fulfill(
+  // which always has a slash after `invoice-groups`. The lane queries
+  // pass `?status=…` and the queue page reads `data.total` for the
+  // tab badges + the inbox-zero gate. Return the group only when the
+  // status filter matches the synthesized list item; otherwise return
+  // an empty lane so the wrong tab doesn't double-count it.
+  await page.route(/\/api\/invoice-groups(?:\?|$)/, (route: Route, request: Request) => {
+    const url = new URL(request.url());
+    const statusFilter = url.searchParams.get("status");
+    // Closed groups drop off the live queue immediately — mirrors
+    // the production filter the queue page applies. Scenarios use
+    // an empty list as the proxy for "left the queue".
+    if (state.phase === "closed") {
+      return route.fulfill(
+        jsonResponse(200, {
+          groups: [],
+          total: 0,
+          today: new Date().toISOString().slice(0, 10),
+        }),
+      );
+    }
+    const item = buildGroupListItem(state);
+    // Decide which lane should expose the group based on its current
+    // mock-state phase, independent of the cosmetic `status` string.
+    // The queue page renders the inline workspace only when at least
+    // one lane is non-empty (otherwise the inbox-zero EmptyState
+    // replaces the whole tabs-and-workspace block — see queue.tsx
+    // `isInboxZero`). After `portal_submit` flips `state.phase` to
+    // `submitted` we want the group to live in Portal Queued so the
+    // workspace stays mounted and the harness can read the final
+    // `data-hero=submitted`.
+    const laneForState =
+      state.holdReason != null
+        ? "On Hold"
+        : state.phase === "submitted"
+          ? "Portal Queued"
+          : "New";
+    const include =
+      statusFilter == null || statusFilter === "" || statusFilter === laneForState;
+    const groups = include ? [item] : [];
+    return route.fulfill(
       jsonResponse(200, {
-        // Closed groups drop off the live queue immediately — mirrors
-        // the production filter the queue page applies. Scenarios use
-        // an empty list as the proxy for "left the queue".
-        groups: state.phase === "closed" ? [] : [buildGroupListItem(state)],
-        total: state.phase === "closed" ? 0 : 1,
+        groups,
+        total: groups.length,
         today: new Date().toISOString().slice(0, 10),
       }),
-    ),
-  );
+    );
+  });
 
   // Per-group detail GET — registered BEFORE the more specific
   // sub-routes so the last-registered narrower handlers win.
@@ -520,7 +558,7 @@ export async function installApiStubs(
 
   // Stamp-preview-generated POST.
   await page.route(
-    `**/api/invoice-groups/${state.groupId}/stamp-preview-generated*`,
+    `**/api/invoice-groups/${state.groupId}/preview-generated*`,
     async (route: Route, request: Request) => {
       if (request.method() !== "POST") return route.fallback();
       state.previewGeneratedAt = nowIso();
@@ -534,7 +572,7 @@ export async function installApiStubs(
 
   // Mark-draft-reviewed POST.
   await page.route(
-    `**/api/invoice-groups/${state.groupId}/mark-draft-reviewed*`,
+    `**/api/invoice-groups/${state.groupId}/draft/mark-reviewed*`,
     async (route: Route, request: Request) => {
       if (request.method() !== "POST") return route.fallback();
       state.draftReviewedAt = nowIso();
