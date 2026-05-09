@@ -941,15 +941,31 @@ function ReadyHero({
     for (let i = 0; i < rides.length; i++) {
       const leg = rides[i];
       const included = isLegDisputed(leg);
+      const seen = new Set<string>();
       const files = (leg as { evidenceFiles?: { url: string; filename?: string | null }[] | null }).evidenceFiles;
       if (files) {
         for (const f of files) {
+          if (!f?.url || seen.has(f.url)) continue;
+          seen.add(f.url);
           result.push({
             name: f.filename ?? f.url.split("/").pop() ?? "file",
             legIndex: i + 1,
             legIncluded: included,
           });
         }
+      }
+      // Canonical claim_evidence rows for this leg — same source the
+      // bot worker actually submits via collectGroupEvidenceUrls.
+      const rows = (leg as { evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> }).evidence ?? [];
+      for (const r of rows) {
+        const url = r?.imageUrl;
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        result.push({
+          name: r.evidenceTypeName ?? url.split("/").pop() ?? "file",
+          legIndex: i + 1,
+          legIncluded: included,
+        });
       }
     }
     return result;
@@ -1184,7 +1200,19 @@ function ChipStrip({
   legHoldActive: boolean;
 }) {
   const evidenceFiles = leg.evidenceFiles ?? [];
-  const evidenceCount = evidenceFiles.length;
+  // Include canonical claim_evidence rows in the chip count so the
+  // pill matches what the drawer + portal submission actually carry.
+  const legEvidenceRows = (leg as { evidence?: Array<{ imageUrl?: string | null }> }).evidence ?? [];
+  const seenUrls = new Set<string>();
+  for (const f of evidenceFiles) { if (f?.url) seenUrls.add(f.url); }
+  let extraRowCount = 0;
+  for (const r of legEvidenceRows) {
+    if (r?.imageUrl && !seenUrls.has(r.imageUrl)) {
+      seenUrls.add(r.imageUrl);
+      extraRowCount++;
+    }
+  }
+  const evidenceCount = evidenceFiles.length + extraRowCount;
   const inlineNote = (leg.evidenceNotes ?? "").trim();
 
   return (
@@ -1291,6 +1319,7 @@ function ChipDrawerOverlay({
   const evidenceFiles = useMemo(() => {
     const seen = new Set<string>();
     const out: Array<{ url: string; size?: number | null }> = [];
+    // JSONB column on group + leg (legacy / drag-drop attachments).
     for (const f of [...(detail.evidenceFiles ?? []), ...(leg.evidenceFiles ?? [])]) {
       const ref = f as { url?: string; size?: number } | null | undefined;
       const url = ref?.url;
@@ -1298,8 +1327,19 @@ function ChipDrawerOverlay({
       seen.add(url);
       out.push({ url, size: ref?.size ?? null });
     }
+    // Canonical claim_evidence rows attached at group level + this leg.
+    // The bot worker already unions these into the portal submission;
+    // surface them here so the drawer matches what's actually sent.
+    const groupRows = (detail as { groupEvidence?: Array<{ imageUrl?: string | null }> }).groupEvidence ?? [];
+    const legRows = (leg as { evidence?: Array<{ imageUrl?: string | null }> }).evidence ?? [];
+    for (const r of [...groupRows, ...legRows]) {
+      const url = r?.imageUrl;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      out.push({ url, size: null });
+    }
     return out;
-  }, [detail.evidenceFiles, leg.evidenceFiles]);
+  }, [detail.evidenceFiles, leg.evidenceFiles, (detail as { groupEvidence?: unknown }).groupEvidence, (leg as { evidence?: unknown }).evidence]);
   const evidenceUrls = useMemo(() => evidenceFiles.map((f) => f.url), [evidenceFiles]);
   const evidenceSizeMap = useMemo(() => {
     const m = new Map<string, number>();

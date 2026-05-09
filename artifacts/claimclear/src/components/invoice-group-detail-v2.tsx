@@ -1183,54 +1183,73 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 </div>
               </CcCard>
 
-              <CcCard
-                title={
-                  <>
-                    Group evidence
-                    {detail.evidenceFiles && detail.evidenceFiles.length > 0 && (
-                      <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                        · {detail.evidenceFiles.length} file
-                        {detail.evidenceFiles.length === 1 ? "" : "s"}
-                      </span>
-                    )}
-                  </>
-                }
-                icon={<Paperclip className="w-3.5 h-3.5" />}
-                testId="group-evidence-card"
-                padded={false}
-              >
-                {(() => {
-                  const files = detail.evidenceFiles ?? [];
-                  if (files.length === 0) {
-                    return (
+              {(() => {
+                // Show the same union of attachments the bot worker
+                // submits via collectGroupEvidenceUrls: JSONB column +
+                // canonical claim_evidence rows (group-level + per-leg).
+                type FileEntry = { url: string; name?: string | null; legNumber?: number | null };
+                const items: FileEntry[] = [];
+                const seen = new Set<string>();
+                const add = (url: string | null | undefined, name: string | null | undefined, legNumber: number | null) => {
+                  if (!url || seen.has(url)) return;
+                  seen.add(url);
+                  items.push({ url, name: name ?? null, legNumber });
+                };
+                for (const f of (detail.evidenceFiles ?? [])) add(f?.url, f?.name ?? null, null);
+                const groupRows = (detail as { groupEvidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> }).groupEvidence ?? [];
+                for (const r of groupRows) add(r?.imageUrl ?? null, r?.evidenceTypeName ?? null, null);
+                allRides.forEach((ride, idx) => {
+                  const rideAny = ride as { evidenceFiles?: Array<{ url?: string; filename?: string | null; name?: string | null }> | null; evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> };
+                  for (const f of (rideAny.evidenceFiles ?? [])) add(f?.url ?? null, (f as { name?: string | null }).name ?? f?.filename ?? null, idx + 1);
+                  for (const r of (rideAny.evidence ?? [])) add(r?.imageUrl ?? null, r?.evidenceTypeName ?? null, idx + 1);
+                });
+                return (
+                  <CcCard
+                    title={
+                      <>
+                        Group evidence
+                        {items.length > 0 && (
+                          <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
+                            · {items.length} file{items.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </>
+                    }
+                    icon={<Paperclip className="w-3.5 h-3.5" />}
+                    testId="group-evidence-card"
+                    padded={false}
+                  >
+                    {items.length === 0 ? (
                       <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
                         No evidence attached yet.
                       </div>
-                    );
-                  }
-                  return files.map((f, i) => {
-                    const name = f.name || (() => {
-                      try {
-                        const path = new URL(f.url, "http://x").pathname;
-                        const last = path.split("/").filter(Boolean).pop() || f.url;
-                        return decodeURIComponent(last);
-                      } catch {
-                        return f.url;
-                      }
-                    })();
-                    return (
-                      <div
-                        key={`${f.url}-${i}`}
-                        className="px-3 py-1.5 text-xs flex items-center gap-2"
-                        style={{ borderBottom: i < files.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                      >
-                        <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
-                        <span className="font-medium flex-1 truncate">{name}</span>
-                      </div>
-                    );
-                  });
-                })()}
-              </CcCard>
+                    ) : items.map((f, i) => {
+                      const name = f.name || (() => {
+                        try {
+                          const path = new URL(f.url, "http://x").pathname;
+                          const last = path.split("/").filter(Boolean).pop() || f.url;
+                          return decodeURIComponent(last);
+                        } catch {
+                          return f.url;
+                        }
+                      })();
+                      return (
+                        <div
+                          key={`${f.url}-${i}`}
+                          className="px-3 py-1.5 text-xs flex items-center gap-2"
+                          style={{ borderBottom: i < items.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                        >
+                          <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
+                          <span className="font-medium flex-1 truncate">{name}</span>
+                          {f.legNumber != null && (
+                            <span className="cc-pill cc-pill-muted" style={{ fontSize: "9px", padding: "0 0.3rem" }}>L{f.legNumber}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </CcCard>
+                );
+              })()}
             </div>
 
             {/* Rides / legs table */}

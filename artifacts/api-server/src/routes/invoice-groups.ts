@@ -1292,6 +1292,38 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
       verdictMap.set(v.claimId, slot);
     }
   }
+  // Per-leg + group-level evidence rows from the canonical
+  // `claim_evidence` table. The bot worker (collectGroupEvidenceUrls)
+  // already unions these into outbound attachments at submit time;
+  // we surface them here so the Group evidence card, Q5 attachments
+  // rail, and edge-drawer evidence panel can show the same set the
+  // operator's portal submission will carry.
+  const evidenceByClaimId = new Map<number, Array<typeof claimEvidenceTable.$inferSelect>>();
+  const groupLevelEvidence: Array<typeof claimEvidenceTable.$inferSelect> = [];
+  {
+    const whereClause =
+      rideIds.length > 0
+        ? or(
+            eq(claimEvidenceTable.invoiceGroupId, id),
+            inArray(claimEvidenceTable.claimId, rideIds),
+          )
+        : eq(claimEvidenceTable.invoiceGroupId, id);
+    const allEvidence = await db
+      .select()
+      .from(claimEvidenceTable)
+      .where(whereClause)
+      .orderBy(claimEvidenceTable.collectedAt);
+    for (const row of allEvidence) {
+      if (row.claimId != null) {
+        const list = evidenceByClaimId.get(row.claimId) ?? [];
+        list.push(row);
+        evidenceByClaimId.set(row.claimId, list);
+      } else if (row.invoiceGroupId === id) {
+        groupLevelEvidence.push(row);
+      }
+    }
+  }
+
   // Scrub per-ride money for clerks — the rides array would otherwise
   // leak claimAmount even though the top-level group row is scrubbed.
   const ridesWithVerdicts = scrubMoneyFieldsArray(
@@ -1302,6 +1334,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
         latestVerdict: slot?.latest ?? null,
         latestAiSuggestion: slot?.latestAi ?? null,
         latestDraft: slot?.latestDraft ?? null,
+        evidence: evidenceByClaimId.get(r.id) ?? [],
       };
     }),
     req.user,
@@ -1386,6 +1419,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     useDirectEmail,
     earliestDate: serviceDateIso,
     serviceDateReason,
+    groupEvidence: groupLevelEvidence,
   });
 }));
 
