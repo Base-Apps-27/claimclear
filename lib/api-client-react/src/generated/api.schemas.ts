@@ -882,6 +882,11 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
   /** @nullable */
   draftReviewedBy?: string | null;
   /**
+   * User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.
+   * @nullable
+   */
+  draftReviewedByUserId?: string | null;
+  /**
    * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
    * @nullable
    */
@@ -959,6 +964,15 @@ ascending, so the client can iterate in object order.
   byStatus: NeedsClassificationInboxResponseByStatus;
   groups: NeedsClassificationInboxGroup[];
 }
+
+/**
+ * Structured reviewer identity. Null for older groups that pre-date the userId column.
+ * @nullable
+ */
+export type InvoiceGroupDetailResponseReviewedBy = {
+  id?: string;
+  displayName?: string;
+} | null;
 
 export type PortalSubmissionResponseStatus =
   (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
@@ -1386,6 +1400,11 @@ export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
   auditLogs?: AuditLogResponse[];
   responses?: PortalResponseItem[];
   packagingReadiness?: GroupPackagingReadiness;
+  /**
+   * Structured reviewer identity. Null for older groups that pre-date the userId column.
+   * @nullable
+   */
+  reviewedBy?: InvoiceGroupDetailResponseReviewedBy;
 };
 
 export interface InvoiceGroupsListResponse {

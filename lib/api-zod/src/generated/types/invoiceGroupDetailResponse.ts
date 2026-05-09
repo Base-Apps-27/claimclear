@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { AuditLogResponse } from "./auditLogResponse";
 import type { ClaimResponse } from "./claimResponse";
 import type { GroupPackagingReadiness } from "./groupPackagingReadiness";
+import type { InvoiceGroupDetailResponseReviewedBy } from "./invoiceGroupDetailResponseReviewedBy";
 import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
 import type { NoteResponse } from "./noteResponse";
 import type { PortalResponseItem } from "./portalResponseItem";
@@ -28,4 +29,9 @@ export type InvoiceGroupDetailResponse = InvoiceGroupResponse & {
   auditLogs?: AuditLogResponse[];
   responses?: PortalResponseItem[];
   packagingReadiness?: GroupPackagingReadiness;
+  /**
+   * Structured reviewer identity. Null for older groups that pre-date the userId column.
+   * @nullable
+   */
+  reviewedBy?: InvoiceGroupDetailResponseReviewedBy;
 };

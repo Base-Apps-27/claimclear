@@ -5675,6 +5675,9 @@ components:
           description: "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled."
         draftReviewedBy:
           type: ["string", "null"]
+        draftReviewedByUserId:
+          type: ["string", "null"]
+          description: "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response."
         understandingReadback:
           type: ["string", "null"]
           description: "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview."
@@ -5824,6 +5827,14 @@ components:
                 $ref: "#/components/schemas/PortalResponseItem"
             packagingReadiness:
               $ref: "#/components/schemas/GroupPackagingReadiness"
+            reviewedBy:
+              type: ["object", "null"]
+              description: "Structured reviewer identity. Null for older groups that pre-date the userId column."
+              properties:
+                id:
+                  type: string
+                displayName:
+                  type: string
 
     GroupPackagingReadiness:
       type: object

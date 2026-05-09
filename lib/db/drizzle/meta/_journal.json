@@ -239,6 +239,13 @@
       "when": 1778156339330,
       "tag": "0033_reflective_ted_forrester",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1778347021515,
+      "tag": "0034_lazy_eddie_brock",
+      "breakpoints": true
     }
   ]
 }

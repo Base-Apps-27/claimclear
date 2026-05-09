@@ -3095,8 +3095,10 @@ export const useMarkInvoiceGroupDraftReviewed = <
 };
 
 /**
- * Source-state: pre-submit AND `understandingReadbackAt` is set AND
-every disputed leg is resolved.
+ * Source-state: pre-submit AND every disputed leg is resolved.
+The understanding readback is OPTIONAL — if the operator saved
+one it's threaded into the AI prompt, but a missing readback
+is a valid "nothing extra to add" signal and does not gate.
 
  * @summary Stamp that the dispute preview was generated
  */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useConfirmUnderstandingReadback,
@@ -43,26 +43,27 @@ import { derivePreviewGateState } from "@/lib/whats-next-derivation";
 // staged controls. The component owns its own readback draft + submit
 // error state because both are short-lived UI inputs that don't need to
 // hoist into the parent.
+export interface GauntletFooterState {
+  onMarkReviewed: () => void;
+  discardEdits: () => void;
+  draftDirty: boolean;
+  draftBodyEmpty: boolean;
+  markReviewedPending: boolean;
+  saveDraftPending: boolean;
+  draftReviewed: boolean;
+}
+
 interface Props {
   group: InvoiceGroupDetailResponse;
   groupId: number;
-  // Optional callback: when the operator clicks "Jump to next
-  // unprocessed leg" on a gate-failed submit, the gauntlet computes the
-  // next leg id that still owes action and hands it to the parent. The
-  // parent is responsible for expanding/scrolling that row in the
-  // surrounding leg list. When omitted (e.g. the read-only group detail
-  // page), the jump button is hidden.
   onJumpToLeg?: (claimId: number) => void;
-  /**
-   * When true, render only the inner submission body — no Card chrome and no
-   * header. The caller is expected to wrap in their own card. Used by the
-   * densified invoice-group detail surface so the cc-card from the page
-   * provides the chrome.
-   */
   bare?: boolean;
+  footerStateRef?: React.MutableRefObject<GauntletFooterState | null>;
+  onFooterStateChange?: (state: GauntletFooterState) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, bare }: Props) {
+export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, bare, footerStateRef, onFooterStateChange, onDirtyChange }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -183,6 +184,38 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
     (draftSubject || "") !== (group?.draftSubject ?? group?.aiBaselineSubject ?? "") ||
     (draftBody || "") !== (group?.draftDescriptionHtml ?? group?.aiBaselineDescriptionHtml ?? "");
   const draftBodyEmpty = (draftBody || "").trim().length === 0;
+
+  const discardEdits = () => {
+    setDraftSubject(group?.draftSubject ?? group?.aiBaselineSubject ?? "");
+    setDraftBody(group?.draftDescriptionHtml ?? group?.aiBaselineDescriptionHtml ?? "");
+  };
+
+  const markReviewedRef = useRef(onMarkReviewed);
+  markReviewedRef.current = onMarkReviewed;
+  const discardEditsRef = useRef(discardEdits);
+  discardEditsRef.current = discardEdits;
+
+  const footerState: GauntletFooterState = useMemo(() => ({
+    onMarkReviewed: () => markReviewedRef.current(),
+    discardEdits: () => discardEditsRef.current(),
+    draftDirty,
+    draftBodyEmpty,
+    markReviewedPending: markReviewedMutation.isPending,
+    saveDraftPending: saveDraftMutation.isPending,
+    draftReviewed,
+  }), [draftDirty, draftBodyEmpty, markReviewedMutation.isPending, saveDraftMutation.isPending, draftReviewed]);
+
+  if (footerStateRef) {
+    footerStateRef.current = footerState;
+  }
+
+  useEffect(() => {
+    onFooterStateChange?.(footerState);
+  }, [footerState, onFooterStateChange]);
+
+  useEffect(() => {
+    onDirtyChange?.(draftDirty);
+  }, [draftDirty, onDirtyChange]);
 
   function invalidateGroup() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
@@ -571,24 +604,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                     )}
                     Save draft
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={onMarkReviewed}
-                    disabled={
-                      draftBodyEmpty ||
-                      markReviewedMutation.isPending ||
-                      saveDraftMutation.isPending ||
-                      draftReviewed
-                    }
-                    data-testid="draft-mark-reviewed"
-                  >
-                    {markReviewedMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                    ) : (
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                    )}
-                    {draftReviewed ? "Reviewed" : "Mark reviewed"}
-                  </Button>
                 </div>
               </div>
 
@@ -643,62 +658,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                 )}
               </div>
 
-              <Separator />
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <SubmitIcon className="h-4 w-4" />
-                  {submitVerb}
-                </h3>
-                {(() => {
-                  const missingGates: string[] = [];
-                  if (!allResolved) missingGates.push("legs");
-                  if (!draftReviewed) missingGates.push("review");
-                  const submitDisabledReason: string | null =
-                    missingGates.length > 0
-                      ? `Cannot ${isDirectEmail ? "send" : "submit"} — missing gate${missingGates.length > 1 ? "s" : ""}: ${missingGates.join(", ")}.`
-                      : null;
-                  const button = (
-                    <Button
-                      size="sm"
-                      onClick={onSubmitToPortal}
-                      disabled={submitDisabledReason !== null || submitMutation.isPending}
-                      data-testid="submit-to-portal"
-                    >
-                      {submitMutation.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                      ) : (
-                        <SubmitIcon className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      {submitVerb}
-                    </Button>
-                  );
-                  if (submitDisabledReason) {
-                    return (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span tabIndex={0} data-testid="submit-to-portal-disabled-wrapper">
-                              {button}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            data-testid="submit-to-portal-disabled-tooltip"
-                          >
-                            {submitDisabledReason}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    );
-                  }
-                  return button;
-                })()}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {isDirectEmail
-                  ? "Sends the reviewed write-up as a direct email to the configured recipient."
-                  : "Routes the reviewed write-up to the MAS portal as a dispute submission."}
-              </p>
               {submitError && (
                 <div
                   className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 space-y-2"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -38,6 +38,7 @@ import {
   buildLegResolvedIndex,
   deriveLegSubStatus,
 } from "@workspace/leg-state";
+import { legSubStatusLabel } from "@workspace/vocab";
 import {
   Activity,
   AlertTriangle,
@@ -83,9 +84,9 @@ import { EvidenceFileList } from "@/components/evidence-file-list";
 import { ActivityFeed } from "@/components/activity-feed";
 import type { ActionCategory } from "@/lib/audit-action-meta";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
-import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
+import { InvoiceGroupSubmissionGauntlet, type GauntletFooterState } from "@/components/invoice-group-submission-gauntlet";
 import { useUrlParams } from "@/lib/use-url-params";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import {
   deriveInvoiceDisputeOutlook,
@@ -251,6 +252,17 @@ function isPostSubmit(group: DetailGroup): boolean {
   );
 }
 
+type HeroState =
+  | "withdrawn"
+  | "submitted"
+  | "ready"
+  | "review"
+  | "generate"
+  | "classify"
+  | "sop"
+  | "resolved"
+  | "empty";
+
 export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const { get, set } = useUrlParams();
   const legParam = Number.parseInt(get("leg"), 10);
@@ -263,6 +275,15 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const [walkStartedFor, setWalkStartedFor] = useState<number | null>(null);
   const [holdLegOpen, setHoldLegOpen] = useState(false);
   const [holdGroupOpen, setHoldGroupOpen] = useState(false);
+  const [forceReview, setForceReview] = useState(false);
+  const [gauntletFooterState, setGauntletFooterState] = useState<GauntletFooterState | null>(null);
+  const [gauntletDirty, setGauntletDirty] = useState(false);
+  const onFooterStateChange = useCallback((s: GauntletFooterState) => setGauntletFooterState(s), []);
+
+  useEffect(() => {
+    setForceReview(false);
+    setGauntletFooterState(null);
+  }, [groupId]);
 
   const setActiveLegId = (id: number | null) => {
     setWalkStartedFor(null);
@@ -333,16 +354,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
     (activeLeg.holdReason ?? null) != null;
 
   const allWalked = rides.length > 0 && resolvedCount === rides.length;
-  type HeroState =
-    | "withdrawn"
-    | "submitted"
-    | "ready"
-    | "review"
-    | "generate"
-    | "classify"
-    | "sop"
-    | "resolved"
-    | "empty";
   // Ordered priority: terminal phases (submitted) → group-level draft
   // states (ready/review/generate) → per-leg states (sop/classify/
   // resolved). Group-level wins over per-leg so an operator who has
@@ -357,7 +368,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   let hero: HeroState;
   if (withdrawn) hero = "withdrawn";
   else if (submitted) hero = "submitted";
-  else if (previewGenerated && draftReviewed) hero = "ready";
+  else if (previewGenerated && draftReviewed && !forceReview) hero = "ready";
   else if (previewGenerated) hero = "review";
   else if (allWalked && outlook === "has_disputable") hero = "generate";
   else if (!activeLeg) hero = "empty";
@@ -396,16 +407,14 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
       <div aria-live="polite" className="cc-mini-hero">
         {hero === "withdrawn" && <WithdrawnHero detail={detail} />}
         {hero === "submitted" && <SubmittedHero detail={detail} />}
-        {hero === "ready" && <ReadyHero />}
+        {hero === "ready" && (
+          <ReadyHero
+            detail={detail}
+            rides={rides}
+            resolvedIndex={resolvedIndex}
+          />
+        )}
         {(hero === "generate" || hero === "review") && (
-          // Mount the canonical submission gauntlet (readback →
-          // generate → subject/body editor → mark reviewed → submit)
-          // bare so the queue-walk operator can finish end-to-end
-          // without leaving the mini pane. The previous bespoke
-          // GeneratePreviewHero/ReviewHero only exposed buttons and
-          // forced operators to "Open Full details" to read or edit
-          // the AI write-up — a dead end. Reusing the gauntlet keeps
-          // the inline experience identical to the detail page.
           <Card>
             <CardContent className="py-5">
               <InvoiceGroupSubmissionGauntlet
@@ -413,6 +422,8 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
                 group={detail}
                 groupId={groupId}
                 onJumpToLeg={(id) => setActiveLegId(id)}
+                onFooterStateChange={onFooterStateChange}
+                onDirtyChange={setGauntletDirty}
               />
             </CardContent>
           </Card>
@@ -462,13 +473,12 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         previewGenerated={previewGenerated}
         draftReviewed={draftReviewed}
         submitted={submitted}
-        // The submission gauntlet renders its own Submit button when
-        // the operator is in the generate / review / ready hero — the
-        // footer's Submit would be a duplicate sitting six pixels
-        // below it with a slightly different gate calculation. Hide
-        // the footer Submit in those states; the footer still carries
-        // the phase pill, helper copy, and Hold-invoice affordance.
-        hideSubmit={hero === "generate" || hero === "review" || hero === "ready"}
+        hero={hero}
+        gauntletFooterState={gauntletFooterState}
+        gauntletDirty={gauntletDirty}
+        forceReview={forceReview}
+        onBackToReview={() => setForceReview(true)}
+        onMarkReviewedDone={() => setForceReview(false)}
       />
 
       {activeLeg && classifyOpen && (
@@ -900,19 +910,204 @@ function ResolvedHero({ leg }: { leg: ClaimResponse }) {
 // surface inline. The previous bespoke heroes only exposed buttons
 // with no editor, leaving operators with a dead end.
 
-// Ready hero — preview generated AND marked reviewed. Confirms the
-// operator's only remaining action is the footer Submit.
-function ReadyHero() {
+function ReadyHero({
+  detail,
+  rides,
+  resolvedIndex,
+}: {
+  detail: DetailGroup;
+  rides: ClaimResponse[];
+  resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
+}) {
+  const isDirectEmail = detail.useDirectEmail === true;
+  const destinationName = isDirectEmail
+    ? (detail.payorEmail ? `Direct email (${detail.payorEmail})` : "Direct email")
+    : (detail.clientNumber ? `Portal · ${detail.clientNumber}` : "Portal");
+
+  function isLegDisputed(leg: ClaimResponse): boolean {
+    if (leg.includedInDispute === false) return false;
+    const sub = resolvedIndex.subStatusOf(leg);
+    return sub === "ready" || sub === "dropped";
+  }
+
+  const disputedCount = rides.filter(isLegDisputed).length;
+  const filteredCount = rides.length - disputedCount;
+
+  const draftText = detail.draftDescriptionHtml ?? detail.aiBaselineDescriptionHtml ?? "";
+  const draftSubject = detail.draftSubject ?? detail.aiBaselineSubject ?? "";
+
+  const attachments = useMemo(() => {
+    const result: { name: string; legIndex: number; legIncluded: boolean }[] = [];
+    for (let i = 0; i < rides.length; i++) {
+      const leg = rides[i];
+      const included = isLegDisputed(leg);
+      const files = (leg as { evidenceFiles?: { url: string; filename?: string | null }[] | null }).evidenceFiles;
+      if (files) {
+        for (const f of files) {
+          result.push({
+            name: f.filename ?? f.url.split("/").pop() ?? "file",
+            legIndex: i + 1,
+            legIncluded: included,
+          });
+        }
+      }
+    }
+    return result;
+  }, [rides, resolvedIndex]);
+
+  const includedAttachments = attachments.filter((a) => a.legIncluded);
+  const filteredLegsWithAttachments = useMemo(() => {
+    const legSet = new Set<number>();
+    for (const a of attachments) {
+      if (!a.legIncluded) legSet.add(a.legIndex);
+    }
+    return Array.from(legSet).sort((a, b) => a - b);
+  }, [attachments]);
+
   return (
     <Card>
-      <CardContent className="py-5 space-y-2">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <h3 className="text-sm font-semibold">Ready to submit</h3>
+      <CardContent className="py-4 space-y-3">
+        <div
+          className="flex items-center gap-2 flex-wrap"
+          style={{
+            padding: "0.5rem 0.75rem",
+            background: "var(--cc-card)",
+            border: "1px solid var(--cc-border)",
+            borderRadius: "var(--cc-radius)",
+          }}
+          data-testid="ready-destination-header"
+        >
+          <span className="mono text-[12px] font-semibold">{detail.invoiceNumber}</span>
+          <span className="cc-meta text-[11px]">
+            {detail.rideCount} ride{detail.rideCount === 1 ? "" : "s"} · {formatCurrency(detail.totalAmount)}
+          </span>
+          <span className="cc-meta text-[11px] inline-flex items-center gap-1">
+            <Send className="w-3 h-3" />
+            →
+            <strong style={{ color: "var(--foreground)" }}>{destinationName}</strong>
+            · {disputedCount} disputed / {filteredCount} filtered
+          </span>
+          <div className="cc-segmented ml-auto" style={{ fontSize: "10px" }}>
+            <button type="button"><CheckCircle2 className="w-2.5 h-2.5 inline mr-0.5" />Walk ✓</button>
+            <button type="button"><Sparkles className="w-2.5 h-2.5 inline mr-0.5" />Preview ✓</button>
+            <button type="button"><FileText className="w-2.5 h-2.5 inline mr-0.5" />Review ✓</button>
+            <button type="button" className="is-active"><Send className="w-2.5 h-2.5 inline mr-0.5" />Submit</button>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Draft reviewed. Submit to the portal from the footer below.
-        </p>
+
+        <div
+          className="rounded-md border p-3 text-xs"
+          style={{ background: "hsl(var(--cc-amber-bg))", borderColor: "hsl(var(--cc-amber-border))", color: "hsl(var(--cc-amber-fg))" }}
+          data-testid="ready-last-check-banner"
+        >
+          <strong>Last check before this leaves your desk.</strong>{" "}
+          Confirm the destination, the attachments, and the final note.
+          {isDirectEmail
+            ? " Submit sends to the configured recipient; you can't recall a submission once it's sent."
+            : " Submit posts to the MAS portal; you can't recall a submission once it's sent."}
+        </div>
+
+        <div className="flex gap-2 flex-wrap" data-testid="ready-leg-cards">
+          {rides.map((leg, i) => {
+            const included = isLegDisputed(leg);
+            const accent = included ? "hsl(var(--cc-green-fg))" : "hsl(var(--cc-amber-fg))";
+            return (
+              <div
+                key={leg.id}
+                className="flex-1 min-w-0"
+                style={{
+                  background: "var(--cc-card, hsl(var(--card)))",
+                  border: "1px solid var(--cc-border, hsl(var(--border)))",
+                  borderTop: `3px solid ${accent}`,
+                  borderRadius: "var(--cc-radius, 0.5rem)",
+                  padding: "0.5rem 0.75rem",
+                  opacity: included ? 1 : 0.7,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="cc-meta text-[10px] font-semibold uppercase tracking-wider">Leg {i + 1}</span>
+                  <span className="mono text-[11px] font-semibold">{leg.confNumber ?? ""}</span>
+                  <span className="cc-meta text-[11px] ml-auto">{formatCurrency(leg.claimAmount)}</span>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {leg.errorTypeName && <span className="cc-tag">{leg.errorTypeName}</span>}
+                  {included
+                    ? <span className="cc-pill cc-pill-green">In submission</span>
+                    : <span className="cc-pill cc-pill-amber">Filtered out</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: "0.75rem" }}>
+          <div className="flex flex-col gap-1" data-testid="ready-locked-note">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4" style={{ color: "hsl(var(--cc-blue-fg, var(--primary)))" }} />
+              <span className="font-semibold text-sm">Final note · locked</span>
+              <span className="cc-meta text-xs ml-auto">{draftText.length} chars</span>
+            </div>
+            <div
+              style={{
+                padding: "0.75rem 0.875rem",
+                background: "var(--cc-card, hsl(var(--card)))",
+                border: "1px solid var(--cc-border, hsl(var(--border)))",
+                borderLeft: "3px solid hsl(var(--cc-blue-fg, var(--primary)))",
+                borderRadius: "var(--cc-radius, 0.5rem)",
+                fontSize: "0.8125rem",
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                flex: 1,
+                overflow: "auto",
+                maxHeight: 300,
+              }}
+            >
+              {draftSubject && (
+                <div className="text-xs font-semibold mb-1">{draftSubject}</div>
+              )}
+              {draftText}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1" data-testid="ready-attachments-rail">
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-4 h-4" style={{ color: "hsl(var(--cc-blue-fg, var(--primary)))" }} />
+              <span className="font-semibold text-sm">Attachments · {includedAttachments.length}</span>
+            </div>
+            <div
+              style={{
+                padding: "0.5rem 0.625rem",
+                background: "var(--cc-card, hsl(var(--card)))",
+                border: "1px solid var(--cc-border, hsl(var(--border)))",
+                borderRadius: "var(--cc-radius, 0.5rem)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.25rem",
+                flex: 1,
+              }}
+            >
+              {includedAttachments.length === 0 && (
+                <span className="cc-meta text-[11px] italic">No attachments on included legs.</span>
+              )}
+              {includedAttachments.map((a, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  <Paperclip className="w-3 h-3 shrink-0 text-muted-foreground" />
+                  <span className="mono text-[11px] flex-1 min-w-0 truncate">{a.name}</span>
+                  <span className="cc-pill cc-pill-muted" style={{ fontSize: "9px", padding: "0 0.3rem" }}>L{a.legIndex}</span>
+                </div>
+              ))}
+              {filteredLegsWithAttachments.length > 0 && (
+                <div className="cc-meta text-[10px] mt-auto pt-1 inline-flex items-center gap-1" style={{ color: "hsl(var(--cc-amber-fg))" }}>
+                  <AlertTriangle className="w-3 h-3" />
+                  Leg {filteredLegsWithAttachments.join(", ")} attachments excluded (filtered)
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -1069,16 +1264,6 @@ const CHIP_ICON: Record<ChipKey, React.FC<{ className?: string }>> = {
   activity: Activity,
 };
 
-const LEG_SUB_STATUS_LABEL: Record<string, string> = {
-  excluded: "Excluded",
-  duplicate: "Duplicate",
-  needs_classification: "Needs classification",
-  investigating: "Investigating",
-  blocked: "Blocked",
-  ready: "Ready",
-  dropped: "Dropped",
-  frozen: "Frozen",
-};
 
 function ChipDrawerOverlay({
   openChip,
@@ -1128,7 +1313,7 @@ function ChipDrawerOverlay({
   const activeLegIndex = rides.findIndex((r) => r.id === leg.id);
 
   const legSubStatus = deriveLegSubStatus(leg);
-  const legStatusLabel = LEG_SUB_STATUS_LABEL[legSubStatus] ?? legSubStatus;
+  const legStatusLabel = legSubStatusLabel(legSubStatus);
 
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1842,11 +2027,6 @@ function MarkDuplicateDialog({
   );
 }
 
-// ─── Pinned footer (single Submit) ──────────────────────────────────
-// One inline Submit CTA built directly on `useCreatePortalSubmission`
-// + `derivePreviewGateState`. The footer no longer mounts the
-// gauntlet — readiness is the single pill, the helper line owns
-// the explanation, and the button is the one and only submit path.
 function PinnedFooter({
   phase,
   detail,
@@ -1858,7 +2038,12 @@ function PinnedFooter({
   previewGenerated,
   draftReviewed,
   submitted,
-  hideSubmit,
+  hero,
+  gauntletFooterState,
+  gauntletDirty,
+  forceReview,
+  onBackToReview,
+  onMarkReviewedDone,
 }: {
   phase: PhaseConfig;
   detail: DetailGroup;
@@ -1870,22 +2055,19 @@ function PinnedFooter({
   previewGenerated: boolean;
   draftReviewed: boolean;
   submitted: boolean;
-  hideSubmit?: boolean;
+  hero: HeroState;
+  gauntletFooterState: GauntletFooterState | null;
+  gauntletDirty: boolean;
+  forceReview: boolean;
+  onBackToReview: () => void;
+  onMarkReviewedDone: () => void;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const submit = useCreatePortalSubmission();
   const gate = derivePreviewGateState(detail, rides);
-  // Captured when submit fails with 401 + service-token-expired
-  // marker. Distinct from a generic error so we can render a re-auth
-  // CTA inline (rather than the catch-all toast that blames the
-  // operator for a server-side credential refresh problem).
   const [serviceTokenExpired, setServiceTokenExpired] = useState(false);
 
-  // Submit is enabled only when the readback gate is satisfied AND
-  // the operator has progressed through preview + reviewed. Disabled
-  // tooltip text is the gate reason (or a step hint when the gate
-  // is fine but earlier steps haven't been completed).
   const stepReady = previewGenerated && draftReviewed;
   const payorBounced =
     detail.payorEmailBounceState?.kind === "hard_bounced";
@@ -1923,11 +2105,6 @@ function PinnedFooter({
           successToast({ title: "Done", description: "Submitted to the portal" });
         },
         onError: (e: unknown) => {
-          // Service-token expiry — the server has the canonical
-          // marker `code: "token_expired"` on the 401 body. We
-          // surface a dedicated re-auth CTA so the operator knows
-          // it's a credential refresh on our side, not a network
-          // hiccup or a problem with their draft.
           const code =
             e instanceof ApiError && e.data && typeof e.data === "object"
               ? (e.data as { code?: unknown }).code
@@ -1946,31 +2123,124 @@ function PinnedFooter({
     );
   }
 
+  const showReviewFooter =
+    hero === "review" && outlook === "has_disputable" && !submitted;
+  const showReadyFooter =
+    hero === "ready" && outlook === "has_disputable" && !submitted;
+  const showDefaultFooter = !showReviewFooter && !showReadyFooter;
+
+  const gState = gauntletFooterState;
+
+  const markReviewedEnabled =
+    gState != null &&
+    !gState.draftBodyEmpty &&
+    !gState.markReviewedPending &&
+    !gState.saveDraftPending &&
+    !gState.draftReviewed;
+
+  let markReviewedTooltip: string | null = null;
+  if (gState?.draftBodyEmpty) markReviewedTooltip = "Generate or regenerate the draft first.";
+  else if (gState?.saveDraftPending) markReviewedTooltip = "Saving…";
+  else if (gState?.draftReviewed) markReviewedTooltip = "Already reviewed.";
+
+  function handleMarkReviewed() {
+    gState?.onMarkReviewed();
+    onMarkReviewedDone();
+  }
+
   return (
     <div className="space-y-2">
-      <div className="cc-footer-card cc-footer-pinned" data-testid="mini-pinned-footer">
-        <span
-          className={`cc-pill cc-pill-${phase.pill.tone}`}
-          data-testid="mini-phase-pill"
-        >
-          {phase.pill.label}
-        </span>
-        <span className="cc-meta text-xs flex-1 min-w-0">{phase.helper}</span>
-        {!groupHoldActive && outlook !== "nothing_to_do" && !submitted && (
+      {showReviewFooter && (
+        <div className="cc-footer-card cc-footer-pinned" data-testid="mini-pinned-footer" style={{ padding: "0.5rem 0.875rem" }}>
+          {gauntletDirty ? (
+            <span className="cc-pill cc-pill-amber" data-testid="mini-review-status-pill">Unsaved edits</span>
+          ) : (
+            <span className="cc-pill cc-pill-green" data-testid="mini-review-status-pill">Note ready</span>
+          )}
+          <span className="cc-meta text-xs flex-1 min-w-0">
+            Edits stay on this draft only — they do not change the prompt or the underlying inputs.
+          </span>
+          <div className="cc-gauntlet-row" style={{ margin: 0 }}>
+            <span className="cc-gauntlet-step cc-gauntlet-done"><CheckCircle2 className="w-3 h-3" /> Walk</span>
+            <span className="cc-gauntlet-step cc-gauntlet-done"><CheckCircle2 className="w-3 h-3" /> Generate</span>
+            <span className="cc-gauntlet-step cc-gauntlet-active">Review &amp; edit</span>
+            <span className="cc-gauntlet-step"><Send className="w-3 h-3" /> Submit</span>
+          </div>
           <Button
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-xs"
-            onClick={onPlaceGroupHold}
-            data-testid="mini-place-group-hold"
+            disabled={!gauntletDirty}
+            onClick={() => gState?.discardEdits()}
+            data-testid="mini-discard-edits"
           >
-            <PauseCircle className="w-3 h-3 mr-1" />
-            Hold invoice
+            Discard edits
           </Button>
-        )}
-      </div>
-      {outlook === "has_disputable" && !submitted && !hideSubmit && (
-        <div className="flex flex-col gap-1.5">
+          {forceReview && gState?.draftReviewed ? (
+            <Button
+              size="sm"
+              onClick={onMarkReviewedDone}
+              data-testid="mini-return-to-submit"
+            >
+              <Send className="w-3 h-3 mr-1" />
+              Return to submit
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleMarkReviewed}
+              disabled={!markReviewedEnabled}
+              data-testid="mini-mark-reviewed"
+            >
+              {gState?.markReviewedPending ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : (
+                <Send className="w-3 h-3 mr-1" />
+              )}
+              Mark reviewed
+            </Button>
+          )}
+          {!groupHoldActive && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={onPlaceGroupHold}
+              data-testid="mini-place-group-hold"
+            >
+              <PauseCircle className="w-3 h-3 mr-1" />
+              Hold invoice
+            </Button>
+          )}
+          {!forceReview && !markReviewedEnabled && markReviewedTooltip && (
+            <p className="text-[11px] text-muted-foreground w-full" data-testid="mini-mark-reviewed-reason">
+              {markReviewedTooltip}
+            </p>
+          )}
+        </div>
+      )}
+
+      {showReadyFooter && (
+        <div className="cc-footer-card cc-footer-pinned" data-testid="mini-pinned-footer" style={{ padding: "0.5rem 0.875rem" }}>
+          <span className="cc-pill cc-pill-green" data-testid="mini-ready-pill">Ready to send</span>
+          <span className="cc-meta text-[11px] inline-flex items-center gap-1 ml-auto">
+            <Sparkles className="w-3 h-3" />
+            {detail.reviewedBy?.displayName && (
+              <strong style={{ color: "var(--foreground)" }}>{detail.reviewedBy.displayName}</strong>
+            )}
+            {detail.draftReviewedAt && (
+              <span>{detail.reviewedBy?.displayName ? "· " : ""}{formatDateTime(detail.draftReviewedAt)}</span>
+            )}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={onBackToReview}
+            data-testid="mini-back-to-review"
+          >
+            Back to review
+          </Button>
           <Button
             size="sm"
             onClick={onSubmit}
@@ -1982,19 +2252,28 @@ function PinnedFooter({
             ) : (
               <Send className="w-3 h-3 mr-1" />
             )}
-            Submit to portal
+            Queue for Portal
           </Button>
-          {!enabled && disabledReason && (
-            <p
-              className="text-[11px] text-muted-foreground"
-              data-testid="mini-submit-disabled-reason"
+          {!groupHoldActive && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={onPlaceGroupHold}
+              data-testid="mini-place-group-hold"
             >
+              <PauseCircle className="w-3 h-3 mr-1" />
+              Hold invoice
+            </Button>
+          )}
+          {!enabled && disabledReason && (
+            <p className="text-[11px] text-muted-foreground w-full" data-testid="mini-submit-disabled-reason">
               {disabledReason}
             </p>
           )}
           {serviceTokenExpired && (
             <div
-              className="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 flex items-center justify-between gap-2"
+              className="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 flex items-center justify-between gap-2 w-full"
               data-testid="mini-reauth-banner"
               role="alert"
             >
@@ -2014,6 +2293,81 @@ function PinnedFooter({
               >
                 Re-authenticate
               </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showDefaultFooter && (
+        <div className="space-y-2">
+          <div className="cc-footer-card cc-footer-pinned" data-testid="mini-pinned-footer">
+            <span
+              className={`cc-pill cc-pill-${phase.pill.tone}`}
+              data-testid="mini-phase-pill"
+            >
+              {phase.pill.label}
+            </span>
+            <span className="cc-meta text-xs flex-1 min-w-0">{phase.helper}</span>
+            {!groupHoldActive && outlook !== "nothing_to_do" && !submitted && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={onPlaceGroupHold}
+                data-testid="mini-place-group-hold"
+              >
+                <PauseCircle className="w-3 h-3 mr-1" />
+                Hold invoice
+              </Button>
+            )}
+          </div>
+          {outlook === "has_disputable" && !submitted && (
+            <div className="flex flex-col gap-1.5">
+              <Button
+                size="sm"
+                onClick={onSubmit}
+                disabled={!enabled || submit.isPending}
+                data-testid="mini-submit-cta"
+              >
+                {submit.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                ) : (
+                  <Send className="w-3 h-3 mr-1" />
+                )}
+                Submit to portal
+              </Button>
+              {!enabled && disabledReason && (
+                <p
+                  className="text-[11px] text-muted-foreground"
+                  data-testid="mini-submit-disabled-reason"
+                >
+                  {disabledReason}
+                </p>
+              )}
+              {serviceTokenExpired && (
+                <div
+                  className="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 flex items-center justify-between gap-2"
+                  data-testid="mini-reauth-banner"
+                  role="alert"
+                >
+                  <span>
+                    Submit failed because the portal service token expired.
+                    Re-authenticate to refresh it, then submit again.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[11px]"
+                    data-testid="mini-reauth-cta"
+                    onClick={() => {
+                      window.location.href = "/api/login?returnTo=" +
+                        encodeURIComponent(window.location.pathname + window.location.search);
+                    }}
+                  >
+                    Re-authenticate
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

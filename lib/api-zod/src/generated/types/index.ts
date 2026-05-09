@@ -232,6 +232,7 @@ export * from "./includeLegBody";
 export * from "./invoiceGroupConflictResponse";
 export * from "./invoiceGroupConflictResponseExistingGroup";
 export * from "./invoiceGroupDetailResponse";
+export * from "./invoiceGroupDetailResponseReviewedBy";
 export * from "./invoiceGroupResponse";
 export * from "./invoiceGroupResponseClosureReason";
 export * from "./invoiceGroupResponseClosureReviewState";

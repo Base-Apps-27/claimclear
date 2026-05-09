@@ -234,6 +234,11 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
   /** @nullable */
   draftReviewedBy?: string | null;
   /**
+   * User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.
+   * @nullable
+   */
+  draftReviewedByUserId?: string | null;
+  /**
    * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
    * @nullable
    */

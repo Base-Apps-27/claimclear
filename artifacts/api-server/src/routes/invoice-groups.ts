@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable, usersTable } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
@@ -1373,6 +1373,19 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     })),
   );
 
+  let reviewedBy: { id: string; displayName: string } | null = null;
+  if (group.draftReviewedByUserId) {
+    const [reviewer] = await db
+      .select({ id: usersTable.id, firstName: usersTable.firstName, lastName: usersTable.lastName })
+      .from(usersTable)
+      .where(eq(usersTable.id, group.draftReviewedByUserId))
+      .limit(1);
+    if (reviewer) {
+      const name = [reviewer.firstName, reviewer.lastName].filter(Boolean).join(" ") || group.draftReviewedBy || "Unknown";
+      reviewedBy = { id: reviewer.id, displayName: name };
+    }
+  }
+
   res.json({
     ...group,
     rides: ridesWithVerdicts,
@@ -1386,6 +1399,7 @@ router.get("/invoice-groups/:id", asyncHandler(async (req, res): Promise<void> =
     useDirectEmail,
     earliestDate: serviceDateIso,
     serviceDateReason,
+    reviewedBy,
   });
 }));
 
@@ -2855,6 +2869,7 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
       draftEditedBy: req.user?.email ?? null,
       draftReviewedAt: null,
       draftReviewedBy: null,
+      draftReviewedByUserId: null,
     })
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
@@ -2916,9 +2931,9 @@ router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<
   const updateSet: Partial<typeof invoiceGroupsTable.$inferInsert> = {
     draftEditedAt: now,
     draftEditedBy: req.user?.email ?? null,
-    // Any edit invalidates the prior review acknowledgement.
     draftReviewedAt: null,
     draftReviewedBy: null,
+    draftReviewedByUserId: null,
   };
   if (subject !== undefined) updateSet.draftSubject = subject;
   if (descriptionHtml !== undefined) updateSet.draftDescriptionHtml = descriptionHtml;
@@ -3008,6 +3023,7 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
       draftEditedBy: req.user?.email ?? null,
       draftReviewedAt: null,
       draftReviewedBy: null,
+      draftReviewedByUserId: null,
     })
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
@@ -3057,6 +3073,7 @@ router.post("/invoice-groups/:id/draft/mark-reviewed", asyncHandler(async (req, 
     .set({
       draftReviewedAt: now,
       draftReviewedBy: req.user?.email ?? null,
+      draftReviewedByUserId: req.user?.id ?? null,
     })
     .where(eq(invoiceGroupsTable.id, id))
     .returning();

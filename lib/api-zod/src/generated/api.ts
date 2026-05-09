@@ -514,6 +514,12 @@ export const ListInvoiceGroupsResponse = zod.object({
           "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
         ),
       draftReviewedBy: zod.string().nullish(),
+      draftReviewedByUserId: zod
+        .string()
+        .nullish()
+        .describe(
+          "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
@@ -1099,6 +1105,12 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
               "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
             ),
           draftReviewedBy: zod.string().nullish(),
+          draftReviewedByUserId: zod
+            .string()
+            .nullish()
+            .describe(
+              "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+            ),
           understandingReadback: zod
             .string()
             .nullish()
@@ -1891,6 +1903,12 @@ export const GetInvoiceGroupResponse = zod
         "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
       ),
     draftReviewedBy: zod.string().nullish(),
+    draftReviewedByUserId: zod
+      .string()
+      .nullish()
+      .describe(
+        "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+      ),
     understandingReadback: zod
       .string()
       .nullish()
@@ -2730,6 +2748,15 @@ export const GetInvoiceGroupResponse = zod
         .describe(
           'Readiness state for the \"Ready to package\" CTA on an invoice group. `ready=true` means the operator may POST to \/invoice-groups\/{id}\/package right now; `ready=false` means the CTA should render disabled with `reason` as the tooltip. Counts are derived from leg-level state (sop_outcome, hold_reason). See artifacts\/api-server\/src\/lib\/group-packaging.ts.\n',
         ),
+      reviewedBy: zod
+        .object({
+          id: zod.string().optional(),
+          displayName: zod.string().optional(),
+        })
+        .nullish()
+        .describe(
+          "Structured reviewer identity. Null for older groups that pre-date the userId column.",
+        ),
     }),
   );
 
@@ -3087,6 +3114,12 @@ export const UpdateInvoiceGroupResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -3446,6 +3479,12 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -3867,6 +3906,12 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -4233,6 +4278,12 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
         "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
       ),
     draftReviewedBy: zod.string().nullish(),
+    draftReviewedByUserId: zod
+      .string()
+      .nullish()
+      .describe(
+        "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+      ),
     understandingReadback: zod
       .string()
       .nullish()
@@ -4604,6 +4655,12 @@ export const TriageInvoiceGroupResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -4962,6 +5019,12 @@ export const HoldInvoiceGroupResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -5316,6 +5379,12 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -5774,6 +5843,12 @@ export const RecordPayorDenialReasonResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -6152,6 +6227,12 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -7109,6 +7190,12 @@ export const SetGroupContextResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -7470,6 +7557,12 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -7837,6 +7930,12 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -8197,6 +8296,12 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -8554,6 +8659,12 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -8591,8 +8702,10 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
 });
 
 /**
- * Source-state: pre-submit AND `understandingReadbackAt` is set AND
-every disputed leg is resolved.
+ * Source-state: pre-submit AND every disputed leg is resolved.
+The understanding readback is OPTIONAL — if the operator saved
+one it's threaded into the AI prompt, but a missing readback
+is a valid "nothing extra to add" signal and does not gate.
 
  * @summary Stamp that the dispute preview was generated
  */
@@ -8911,6 +9024,12 @@ export const StampPreviewGeneratedResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -9300,6 +9419,12 @@ export const CompleteGroupReattestResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
@@ -9694,6 +9819,12 @@ export const BulkQueueGroupReattestResponse = zod
           "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
         ),
       draftReviewedBy: zod.string().nullish(),
+      draftReviewedByUserId: zod
+        .string()
+        .nullish()
+        .describe(
+          "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
@@ -25839,6 +25970,12 @@ export const GetDashboardSummaryResponse = zod.object({
           "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
         ),
       draftReviewedBy: zod.string().nullish(),
+      draftReviewedByUserId: zod
+        .string()
+        .nullish()
+        .describe(
+          "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
@@ -29001,6 +29138,12 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
       "Set when the operator marks the dispute draft as reviewed. Required before Submit is enabled.",
     ),
   draftReviewedBy: zod.string().nullish(),
+  draftReviewedByUserId: zod
+    .string()
+    .nullish()
+    .describe(
+      "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()

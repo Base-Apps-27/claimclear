@@ -125,26 +125,33 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     await expect(cta).toBeEnabled();
     await cta.click();
     // Hero swaps to `review` once `previewGeneratedAt` is on the
-    // freshly-fetched group.
+    // freshly-fetched group. The Mark reviewed button now lives in the
+    // pinned footer (Q4 wiring).
     await expect(page.getByTestId("mini-mark-reviewed")).toBeVisible();
   }
 
   async function markReviewed(opts: { expectSubmitEnabled?: boolean } = {}): Promise<void> {
+    // Mark reviewed now lives in the pinned footer (Q4 wiring), not
+    // the gauntlet body.
     const cta = page.getByTestId("mini-mark-reviewed");
     await expect(cta).toBeEnabled();
     await cta.click();
-    // Hero swaps to `ready`. The footer Submit becomes enabled in the
-    // happy path, but scenarios that exercise external gates (bounced
-    // payor, expired token) keep it disabled — opt those out with
-    // `expectSubmitEnabled: false` and assert the gate themselves.
+    // Hero swaps to `ready`. The Q5 summary body renders with the
+    // destination header, last-check banner, compact leg cards, locked
+    // final note, and attachments rail. The footer Queue for Portal
+    // CTA becomes enabled in the happy path.
     if (opts.expectSubmitEnabled === false) {
       await expect(workspace()).toHaveAttribute("data-hero", "ready");
     } else {
       await expect(page.getByTestId("mini-submit-cta")).toBeEnabled();
     }
+    await expect(page.getByTestId("ready-destination-header")).toBeVisible();
+    await expect(page.getByTestId("ready-last-check-banner")).toBeVisible();
+    await expect(page.getByTestId("ready-locked-note")).toBeVisible();
   }
 
   async function submit(): Promise<void> {
+    // Queue for Portal CTA in the ready footer (Q5 wiring).
     const cta = page.getByTestId("mini-submit-cta");
     await expect(cta).toBeEnabled();
     await cta.click();
@@ -153,6 +160,20 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     await expect(workspace()).toHaveAttribute("data-hero", "submitted", {
       timeout: 10_000,
     });
+  }
+
+  async function backToReview(): Promise<void> {
+    const cta = page.getByTestId("mini-back-to-review");
+    await expect(cta).toBeVisible();
+    await cta.click();
+    await expect(workspace()).toHaveAttribute("data-hero", "review");
+    await expect(page.getByTestId("mini-return-to-submit")).toBeVisible();
+  }
+
+  async function discardEdits(): Promise<void> {
+    const cta = page.getByTestId("mini-discard-edits");
+    await expect(cta).toBeVisible();
+    await cta.click();
   }
 
   async function queueReattest(): Promise<void> {
@@ -194,6 +215,8 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     releaseLegHold,
     generatePreview,
     markReviewed,
+    backToReview,
+    discardEdits,
     submit,
     queueReattest,
     expectPhase,

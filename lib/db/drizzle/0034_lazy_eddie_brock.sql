@@ -1,0 +1,1 @@
+ALTER TABLE "invoice_groups" ADD COLUMN "draft_reviewed_by_user_id" text;
