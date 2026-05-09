@@ -161,6 +161,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Restrict to groups whose `service_date` is null — i.e. the\nService Date column would render an empty state. Pairs with\n`missingServiceDateReason` to drill into a specific reason.\nSee Task #353 (`<ServiceDateCell \/>` and the\n`serviceDateReason` enum on every list row).\n",
     ),
+  legSubStatus: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of derived per-leg sub-status values\n(excluded, duplicate, needs_classification, investigating,\nblocked, ready, dropped, frozen). Restricts the result set to\ngroups that contain at least one leg in any of the named\nsub-statuses. Mirrors the same vocabulary used by the\nper-claim `legSubStatus` filter on `\/claims`. Intended to be\nsurfaced only while the operator is on the Pre-submit\n(Action Required) tab — the post-submit phases bury the\nper-leg detail behind the group-level chip and have nothing\nactionable to scope to.\n",
+    ),
   missingServiceDateReason: zod
     .enum([
       "no_claims",

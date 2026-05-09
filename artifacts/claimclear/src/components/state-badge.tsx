@@ -59,6 +59,10 @@ export interface StateBadgeProps {
   row?: RowForTone;
   className?: string;
   justTransitioned?: boolean;
+  /** Optional second line appended to the badge tooltip. Used to
+   * surface the underlying status alongside a phase chip when the
+   * raw-status column has been collapsed into the phase pill (Task #558). */
+  tooltipExtra?: string;
   "data-testid"?: string;
 }
 
@@ -258,6 +262,7 @@ export function StateBadge({
   row,
   className,
   justTransitioned,
+  tooltipExtra,
   "data-testid": dataTestId,
 }: StateBadgeProps) {
   const resolvedValue =
@@ -267,9 +272,10 @@ export function StateBadge({
   const label = labelFor(variant, resolvedValue, leg);
   const description = descriptionFor(variant, resolvedValue);
   const tone = toneFor(variant, resolvedValue, row);
-  const tooltip = `${STATE_BADGE_DOMAIN_LABEL[variant]} — ${
+  const baseTooltip = `${STATE_BADGE_DOMAIN_LABEL[variant]} — ${
     description ?? STATE_BADGE_DOMAIN_DEFINITION[variant]
   }`;
+  const tooltip = tooltipExtra ? `${baseTooltip} · ${tooltipExtra}` : baseTooltip;
 
   return (
     <WrapTooltip content={tooltip}>

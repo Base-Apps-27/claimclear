@@ -4486,6 +4486,20 @@ See Task #353 (`<ServiceDateCell />` and the
  */
   missingServiceDate?: boolean;
   /**
+ * Comma-separated list of derived per-leg sub-status values
+(excluded, duplicate, needs_classification, investigating,
+blocked, ready, dropped, frozen). Restricts the result set to
+groups that contain at least one leg in any of the named
+sub-statuses. Mirrors the same vocabulary used by the
+per-claim `legSubStatus` filter on `/claims`. Intended to be
+surfaced only while the operator is on the Pre-submit
+(Action Required) tab — the post-submit phases bury the
+per-leg detail behind the group-level chip and have nothing
+actionable to scope to.
+
+ */
+  legSubStatus?: string;
+  /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all

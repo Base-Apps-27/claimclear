@@ -15,9 +15,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { PreSubmitBreakdown } from "@/components/pre-submit-breakdown";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
-import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
+import { OUTCOMES, outcomeLabel, legSubStatusLabel } from "@workspace/vocab";
 import { SortableHeader } from "@/components/list-table/sortable-header";
 import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { BulkAssignErrorTypeAction } from "@/components/cohesion/bulk-assign-error-type-action";
@@ -91,7 +92,12 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "errorDetails", label: "Error Description" },
   { key: "errorTypeName", label: "Error Type" },
   { key: "totalAmount", label: "Total Amount" },
-  { key: "status", label: "Status" },
+  // Phase chip (Task #558). The standalone raw-status column was
+  // collapsed into the chip — status is now exposed only via the
+  // chip's tooltip. Kept on the same `status` column key so saved
+  // visibility layouts and the CSV export (which reads `status`
+  // server-side) keep working without a migration.
+  { key: "status", label: "Phase" },
   { key: "createdAt", label: "Created" },
   { key: "action", label: "Action", hideable: false },
 ];
@@ -137,6 +143,11 @@ export default function InvoiceGroupsList() {
   const pageSize = (([25, 50, 100, 200].includes(parseInt(get("ps") || "50", 10)) ? parseInt(get("ps") || "50", 10) : 50) as PageSize);
 
   const filterStatuses = getAll("status");
+  // Pre-submit-only sub-filter (Task #558). Read straight from the URL
+  // so deep-links work, but the facet UI / chip / listParams entry are
+  // all gated on `activeTab === "Action Required"` below — outside the
+  // Pre-submit tab the filter is silently ignored on this page.
+  const filterLegSubStatuses = getAll("legSubStatus") as LegSubStatus[];
   const filterOutcomes = getAll("outcome");
   const filterErrorTypeIds = getAll("errorTypeId");
   const filterErrorDetails = get("errorDetails") as "" | "empty" | "present";
@@ -176,6 +187,15 @@ export default function InvoiceGroupsList() {
   const engagementMode = readEngagementMode(get("engagement"));
 
   const activeTab: GroupsTabKey = deriveActiveTab(filterStatuses);
+  // Pre-submit phase is the only tab that should expose the per-leg
+  // sub-status sub-filter (Task #558). Outside this tab the facet
+  // category, the chip, and the wire param are all suppressed so
+  // operators in In Flight / Closed / etc. see the same lean filter
+  // strip they always have.
+  const isPreSubmitTab = activeTab === "Action Required";
+  const effectiveLegSubStatuses: LegSubStatus[] = isPreSubmitTab
+    ? filterLegSubStatuses
+    : [];
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Task #502 — feed `useRowSettle` so a row that leaves the list
@@ -237,6 +257,7 @@ export default function InvoiceGroupsList() {
     expiring: (filterExpiring || undefined) as ListInvoiceGroupsParams["expiring"],
     missingServiceDate: (filterMissingServiceDate || filterMissingReason ? true : undefined) as ListInvoiceGroupsParams["missingServiceDate"],
     missingServiceDateReason: (filterMissingReason || undefined) as ListInvoiceGroupsParams["missingServiceDateReason"],
+    legSubStatus: effectiveLegSubStatuses.length > 0 ? effectiveLegSubStatuses.join(",") : undefined,
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     importBatch: filterImportBatch || undefined,
@@ -299,14 +320,18 @@ export default function InvoiceGroupsList() {
     const tab = GROUP_TABS.find(t => t.key === key);
     if (!tab) return;
     const statusValue = tab.statuses.length > 0 ? tab.statuses.join(",") : null;
-    set({ status: statusValue, page: null }, false);
+    // Drop the leg-sub-status filter when leaving the Pre-submit tab
+    // (Task #558) — the facet only makes sense pre-submit and a stale
+    // chip in the URL would silently filter to nothing on the wire.
+    const nextLegSub = key === "Action Required" ? get("legSubStatus") : null;
+    set({ status: statusValue, legSubStatus: nextLegSub, page: null }, false);
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -325,6 +350,13 @@ export default function InvoiceGroupsList() {
     }
     if (filterStatuses.length > 0 && activeTab === "All") {
       result.push({ key: "status", label: `Status: ${filterStatuses.join(", ")}`, onRemove: () => set({ status: null, page: null }, false) });
+    }
+    if (effectiveLegSubStatuses.length > 0) {
+      result.push({
+        key: "legSubStatus",
+        label: `Leg state: ${effectiveLegSubStatuses.map(legSubStatusLabel).join(", ")}`,
+        onRemove: () => set({ legSubStatus: null, page: null }, false),
+      });
     }
     if (filterOutcomes.length > 0) {
       result.push({ key: "outcome", label: `Outcome: ${filterOutcomes.join(", ")}`, onRemove: () => set({ outcome: null, page: null }, false) });
@@ -363,7 +395,7 @@ export default function InvoiceGroupsList() {
       });
     }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab, effectiveLegSubStatuses, filterImportBatch, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -406,10 +438,17 @@ export default function InvoiceGroupsList() {
   const amountCount = filterAmountMin || filterAmountMax ? 1 : 0;
   const deadlineCount = filterExpiring ? 1 : 0;
   const missingServiceDateCount = (filterMissingServiceDate || filterMissingReason) ? 1 : 0;
+  const legSubStatusCount = effectiveLegSubStatuses.length;
 
   const totalAppliedFilters =
     statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
-    createdDateCount + amountCount + deadlineCount + missingServiceDateCount;
+    createdDateCount + amountCount + deadlineCount + missingServiceDateCount +
+    legSubStatusCount;
+
+  const legSubStatusOptions: FacetOption[] = useMemo(
+    () => LEG_SUB_STATUSES.map((s) => ({ id: s, label: legSubStatusLabel(s) })),
+    [],
+  );
 
   const filterCategories: FacetedFilterCategory[] = useMemo(() => [
     {
@@ -430,6 +469,31 @@ export default function InvoiceGroupsList() {
         />
       ),
     },
+    // Per-leg sub-status sub-filter — only surfaced inside the
+    // Pre-submit (Action Required) tab (Task #558). The post-submit
+    // tabs collapse the per-leg detail behind the group-level chip,
+    // so a top-level facet there would be noise.
+    ...(isPreSubmitTab ? [{
+      id: "legSubStatus",
+      label: "Leg state",
+      icon: Activity,
+      appliedCount: legSubStatusCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Leg sub-status"
+          options={legSubStatusOptions}
+          selected={effectiveLegSubStatuses}
+          onToggle={(id, next) =>
+            setMultiParam(
+              "legSubStatus",
+              toggleMulti(effectiveLegSubStatuses, id, next),
+            )
+          }
+          testIdPrefix="facet-legSubStatus"
+          hint="Pre-submit only — narrow to groups containing legs in the picked stages."
+        />
+      ),
+    } satisfies FacetedFilterCategory] : []),
     {
       id: "outcome",
       label: "Outcome",
@@ -610,12 +674,14 @@ export default function InvoiceGroupsList() {
     clerk,
     statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
     createdDateCount, amountCount, deadlineCount, missingServiceDateCount,
-    statusOptions, outcomeOptions, errorTypeOptions,
+    legSubStatusCount,
+    statusOptions, outcomeOptions, errorTypeOptions, legSubStatusOptions,
     filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
     filterExpiring,
     filterMissingServiceDate, filterMissingReason,
     filterCreatedFrom, filterCreatedTo,
     filterAmountMin, filterAmountMax,
+    isPreSubmitTab, effectiveLegSubStatuses,
     set,
   ]);
 
@@ -824,8 +890,14 @@ export default function InvoiceGroupsList() {
                       {visibleCols.has("status") && (
                         <th className="px-4 py-3 font-medium">
                           <div className="flex items-center gap-1">
-                            <SortableHeader label="Status" sortKey="status" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
-                            <InfoTooltip content="Current stage of the invoice group in the dispute workflow." side="bottom" />
+                            {/* Task #558 — column collapsed into the
+                                phase chip. Sort by underlying status
+                                is preserved so a stale ?sort=status URL
+                                still does the right thing; the header
+                                label reads "Phase" because that's what
+                                the cell now renders. */}
+                            <SortableHeader label="Phase" sortKey="status" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} />
+                            <InfoTooltip content="Lifecycle phase of the invoice group. Hover the chip in each row to see the underlying workflow status." side="bottom" />
                           </div>
                         </th>
                       )}
@@ -918,22 +990,11 @@ export default function InvoiceGroupsList() {
                               <td className={`px-4 ${tdPy}`}>
                                 <div className="flex flex-col gap-1">
                                   <Badge variant="secondary" className="text-xs">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</Badge>
-                                  {group.legSubStatusCounts &&
-                                    (group.status === "New" || group.status === "Needs Evidence") && (
-                                    <div className="flex flex-wrap gap-0.5" data-testid={`leg-breakdown-${group.id}`}>
-                                      {LEG_SUB_STATUSES.map((s) => {
-                                        const counts = group.legSubStatusCounts as Record<string, number> | undefined;
-                                        const n = counts?.[s] ?? 0;
-                                        if (n === 0) return null;
-                                        return (
-                                          <span key={s} className="inline-flex items-center gap-0.5">
-                                            <LegSubStatusPill subStatus={s as LegSubStatus} className="text-[10px] px-1.5 py-0" />
-                                            <span className="text-[10px] tabular-nums text-muted-foreground">{n}</span>
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
+                                  {/* Task #558 — shared Pre-submit
+                                      breakdown atom. Hidden outside
+                                      the Pre-submit phase by the
+                                      component itself. */}
+                                  <PreSubmitBreakdown group={group} />
                                 </div>
                               </td>
                             )}
@@ -956,7 +1017,13 @@ export default function InvoiceGroupsList() {
                               <td className={`px-4 ${tdPy} font-medium tabular-nums whitespace-nowrap`}>{formatCurrency(group.totalAmount)}</td>
                             )}
                             {visibleCols.has("status") && (
-                              <td className={`px-4 ${tdPy}`}><StateBadge variant="status" value={group.status} /></td>
+                              <td className={`px-4 ${tdPy}`}>
+                                <StateBadge
+                                  variant="phase"
+                                  value={group.phase}
+                                  tooltipExtra={`Status: ${group.status}`}
+                                />
+                              </td>
                             )}
                             {visibleCols.has("createdAt") && (
                               <td className={`px-4 ${tdPy} text-muted-foreground whitespace-nowrap`}>{group.createdAt ? formatDate(group.createdAt) : '—'}</td>

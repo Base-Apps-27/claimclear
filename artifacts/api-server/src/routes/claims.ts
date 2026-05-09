@@ -265,7 +265,7 @@ function buildClaimsWhere(
 // bypasses the leg's own state — it asks "does this leg's parent group
 // live past pre-submit?" — and is therefore expressed as an EXISTS subquery
 // against `invoice_groups`.
-function buildLegSubStatusCondition(sub: string): SQL | null {
+export function buildLegSubStatusCondition(sub: string): SQL | null {
   const notExcluded = or(
     isNull(claimsTable.includedInDispute),
     eq(claimsTable.includedInDispute, true),

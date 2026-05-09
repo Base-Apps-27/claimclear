@@ -29,6 +29,7 @@ import {
   PAYOR_DENIAL_REASON_CODES,
 } from "@workspace/payor-denial-reasons";
 import { buildInvoiceGroupExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
+import { buildLegSubStatusCondition } from "./claims";
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
@@ -283,6 +284,33 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   if (macroPhase && typeof macroPhase === "string") {
     const phaseCondition = buildMacroPhaseCondition(macroPhase);
     if (phaseCondition) conditions.push(phaseCondition);
+  }
+
+  // Pre-submit-only sub-filter (Task #558). Restricts the result set
+  // to groups that contain at least one leg in any of the requested
+  // sub-statuses, by wrapping the per-claim predicate from
+  // `buildLegSubStatusCondition` in an EXISTS subquery against the
+  // claims table joined to this group. The frontend only renders the
+  // facet on the Pre-submit (Action Required) tab — the API stays
+  // permissive so other entry points (deep links, scripts) still work.
+  const legSubStatus = query.legSubStatus;
+  if (legSubStatus && typeof legSubStatus === "string") {
+    const subStatuses = legSubStatus.split(",").map(s => s.trim()).filter(Boolean);
+    const subStatusOrs: SQL[] = [];
+    for (const sub of subStatuses) {
+      const cond = buildLegSubStatusCondition(sub);
+      if (cond) {
+        subStatusOrs.push(
+          sql`EXISTS (SELECT 1 FROM ${claimsTable} WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id} AND ${cond})`,
+        );
+      }
+    }
+    if (subStatusOrs.length === 1) {
+      conditions.push(subStatusOrs[0]);
+    } else if (subStatusOrs.length > 1) {
+      const combined = or(...subStatusOrs);
+      if (combined) conditions.push(combined);
+    }
   }
 
   // Missing-service-date facet (Task #353). The sub-reason filter
