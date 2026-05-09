@@ -77,6 +77,7 @@ import { reattestDirect } from "./walk-scenarios/scenarios/04-reattest-direct";
 import { holdResume } from "./walk-scenarios/scenarios/05-hold-resume";
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
+import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
@@ -86,6 +87,7 @@ const SCENARIOS: WalkScenario[] = [
   holdResume,
   allNonIssue,
   twoUserConcurrency,
+  zeroEvidence,
   // Add new scenarios here.
 ];
 
