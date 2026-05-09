@@ -36,6 +36,7 @@ import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useRotatingCaption } from "@/hooks/use-rotating-caption";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { formatRelative as formatRelativeTime, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { RefNumber } from "@/components/ref-number";
@@ -56,22 +57,6 @@ function dotLabelForTone(tone: DashboardActivityEvent["tone"]): string {
   if (tone === "good") return "Positive event";
   if (tone === "bad") return "Negative event";
   return "Neutral event";
-}
-
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return "";
-  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (diffSec < 60) return "just now";
-  const min = Math.round(diffSec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.round(hr / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.round(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 function firstNameFromUser(user: { displayName?: string | null; firstName?: string | null; email?: string | null } | null | undefined): string {
@@ -959,7 +944,7 @@ export default function Dashboard() {
                   )}
                   <span
                     className="text-xs text-muted-foreground flex-shrink-0 tabular-nums"
-                    title={new Date(event.timestamp).toLocaleString()}
+                    title={absoluteTooltip(event.timestamp)}
                   >
                     {formatRelativeTime(event.timestamp)}
                   </span>

@@ -10,6 +10,7 @@ import {
   type ActionCategory,
 } from "@/lib/audit-action-meta";
 import { closureReasonLabel } from "@/lib/closure-reasons";
+import { formatDateTime, absoluteTooltip } from "@/lib/time";
 import { summarizePreflightMetadata } from "@/lib/prompt-context-counters";
 
 type ActivityAuditLog = {
@@ -350,7 +351,7 @@ export function ActivityFeed({
                       )}
                       <p className="text-[10px] text-muted-foreground/60">
                         <span>{item.log.userName || item.log.userEmail || "System"} · </span>
-                        {item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}
+                        {item.timestamp ? <span title={absoluteTooltip(item.timestamp)}>{formatDateTime(item.timestamp)}</span> : ""}
                       </p>
                     </div>
                   </div>
@@ -375,7 +376,7 @@ export function ActivityFeed({
                     <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">{item.note.content}</p>
                     <p className="text-[10px] text-muted-foreground/60">
                       {item.note.author && <span>{item.note.author} · </span>}
-                      {item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}
+                      {item.timestamp ? <span title={absoluteTooltip(item.timestamp)}>{formatDateTime(item.timestamp)}</span> : ""}
                     </p>
                   </div>
                 </div>

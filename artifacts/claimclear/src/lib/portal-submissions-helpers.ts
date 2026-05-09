@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { formatDateTime } from "@/lib/time";
 
 export interface CompletedElsewhereLike {
   submissionId: number;
@@ -38,13 +38,13 @@ export function selectionIsAllDrafts<T extends DraftSelectableLike>(
   return checkedRows.every((r) => r.status === "draft");
 }
 
+// Tooltip text for "Already submitted in run X" pills. Routes through
+// the shared display-TZ formatter so the absolute time matches every
+// other surface in the operator app (#562).
 function safeFormatSubmittedAt(iso: string | null | undefined): string | null {
   if (!iso) return null;
-  try {
-    return format(new Date(iso), "MMM d, yyyy h:mm a");
-  } catch {
-    return null;
-  }
+  const out = formatDateTime(iso);
+  return out === "N/A" ? null : out;
 }
 
 export function formatCompletedElsewhereLabel(ce: CompletedElsewhereLike): string {

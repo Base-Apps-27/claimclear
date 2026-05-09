@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ShieldCheck, Inbox, Check } from "lucide-react";
+import { formatDateTime } from "@/lib/time";
 
 type AttestationPromptProps = {
   claim: ClaimResponse;
@@ -87,7 +88,7 @@ export function AttestationPrompt({ claim, compact, onActionDone }: AttestationP
   };
 
   if (state === "completed") {
-    const when = claim.attestedAt ? new Date(claim.attestedAt).toLocaleString() : null;
+    const when = claim.attestedAt ? formatDateTime(claim.attestedAt) : null;
     return (
       <div
         className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex items-start gap-3"
@@ -114,7 +115,7 @@ export function AttestationPrompt({ claim, compact, onActionDone }: AttestationP
   const subtitle = state === "pending"
     ? "Approved verdicts only become billable once the operator re-attests in the payor portal. We track that step here so it doesn't fall through the cracks."
     : claim.attestationQueuedBy
-      ? `Parked by ${claim.attestationQueuedBy}${claim.attestationQueuedAt ? ` on ${new Date(claim.attestationQueuedAt).toLocaleString()}` : ""}.`
+      ? `Parked by ${claim.attestationQueuedBy}${claim.attestationQueuedAt ? ` on ${formatDateTime(claim.attestationQueuedAt)}` : ""}.`
       : "This claim is waiting for someone with portal access to confirm the re-attestation.";
 
   const wrapClass = tone === "amber"

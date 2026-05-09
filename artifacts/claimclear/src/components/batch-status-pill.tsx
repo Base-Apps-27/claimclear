@@ -64,26 +64,26 @@ function formatCountdown(ms: number): string {
   return `${totalSeconds}s`;
 }
 
+// Time / weekday formatting routes through the shared time module so
+// the batch pill and the rest of the app agree on the display TZ
+// (#562). Previously these helpers hard-coded `America/New_York`,
+// which would have drifted from the rest of the surface if the app
+// TZ were ever reconfigured.
+import {
+  formatTime as formatTimeInDisplayTz,
+  formatWeekday,
+  dayKeyInDisplayTz,
+  getDisplayTimezoneShort,
+} from "@/lib/time";
+
 function formatTimeET(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "America/New_York",
-  });
+  return formatTimeInDisplayTz(iso);
 }
 
 function formatDayTimeET(iso: string): string {
-  const date = new Date(iso);
-  const today = new Date();
-  const sameDay =
-    date.toLocaleDateString("en-US", { timeZone: "America/New_York" }) ===
-    today.toLocaleDateString("en-US", { timeZone: "America/New_York" });
+  const sameDay = dayKeyInDisplayTz(iso) === dayKeyInDisplayTz(new Date());
   if (sameDay) return formatTimeET(iso);
-  const day = date.toLocaleDateString("en-US", {
-    weekday: "short",
-    timeZone: "America/New_York",
-  });
-  return `${day} ${formatTimeET(iso)}`;
+  return `${formatWeekday(iso)} ${formatTimeET(iso)}`;
 }
 
 interface DerivedState {
@@ -150,11 +150,11 @@ function deriveState(status: QueueStatus | undefined, now: number): DerivedState
     progress = Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
   }
 
-  // Outside the cron window: next batch is on a future day.
-  const todayStr = new Date(now).toLocaleDateString("en-US", { timeZone: "America/New_York" });
-  const nextDayStr = status.nextBatchAt
-    ? new Date(status.nextBatchAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })
-    : null;
+  // Outside the cron window: next batch is on a future day. Day-key
+  // comparison routes through the shared time module's display TZ
+  // (#562) so the "after-hours" decision matches every other surface.
+  const todayStr = dayKeyInDisplayTz(new Date(now));
+  const nextDayStr = status.nextBatchAt ? dayKeyInDisplayTz(status.nextBatchAt) : null;
   const afterHours = nextDayStr !== null && nextDayStr !== todayStr;
 
   // Imminent: ≤15min and not after-hours.
@@ -368,7 +368,7 @@ function PopoverContents({ status, onNavigate }: PopoverContentsProps) {
             </p>
           )}
           {status.nextBatchAt && !status.isRunning && (
-            <p>Next sweep at {formatDayTimeET(status.nextBatchAt)} ET.</p>
+            <p>Next sweep at {formatDayTimeET(status.nextBatchAt)} {getDisplayTimezoneShort()}.</p>
           )}
         </div>
       </div>

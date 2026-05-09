@@ -7,8 +7,32 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 const port = Number(process.env.PORT) || 5173;
 const basePath = process.env.BASE_PATH || "/";
 
+// Cross-surface display timezone (#562). The server reads `DISPLAY_TIMEZONE`
+// from `process.env`; we mirror the same env var into the client bundle so
+// a single deployment-level variable controls both surfaces and they
+// cannot drift. A literal `VITE_DISPLAY_TIMEZONE`, if also set, still wins
+// (explicit client override).
+//
+// Implementation: we expose the value as a dedicated compile-time
+// constant `__DISPLAY_TIMEZONE__` via `define`. Reading it through a
+// literal global identifier (rather than dotting into
+// `import.meta.env.VITE_DISPLAY_TIMEZONE`) makes the substitution
+// unambiguous to esbuild/Rollup — there's no optional-chain or
+// dynamic-property-access codepath that could cause the client to
+// silently fall back when only `DISPLAY_TIMEZONE` is set.
+const displayTimezone =
+  process.env.VITE_DISPLAY_TIMEZONE ||
+  process.env.DISPLAY_TIMEZONE ||
+  "America/New_York";
+// Also mirror into VITE_DISPLAY_TIMEZONE so dev-mode `import.meta.env`
+// reflects the value (Vite reads `process.env.VITE_*` at config load).
+process.env.VITE_DISPLAY_TIMEZONE = displayTimezone;
+
 export default defineConfig({
   base: basePath,
+  define: {
+    __DISPLAY_TIMEZONE__: JSON.stringify(displayTimezone),
+  },
   plugins: [
     react(),
     tailwindcss(),

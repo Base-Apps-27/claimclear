@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { formatChartTick, formatWeekday } from "@/lib/time";
 
 // 5-bucket color ramp themed to match the rest of the app. The empty
 // (zero-count) cell uses a low-contrast neutral so it reads as
@@ -31,16 +32,12 @@ function bucketFor(count: number): number {
   return 4;
 }
 
+// Tooltip label for a heatmap cell. `date` is a calendar `YYYY-MM-DD`
+// so we route through the shared time module's calendar-day path —
+// the displayed weekday + month/day always matches the day stored on
+// the wire, in any operator timezone (#562).
 function formatPretty(date: string): string {
-  // `date` is YYYY-MM-DD. Build a Date in local time so the
-  // formatted weekday matches what the operator expects.
-  const [y, m, d] = date.split("-").map(s => parseInt(s, 10));
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return `${formatWeekday(date)} ${formatChartTick(date)}`;
 }
 
 export interface ActivityHeatmapDay {

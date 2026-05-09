@@ -52,6 +52,7 @@ import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
 import { StateBadge } from "@/components/state-badge";
@@ -152,17 +153,13 @@ function Kpi({ label, value, sub, tone = "neutral", testId }: {
 
 /* --------------------------- Helpers ----------------------------------- */
 
-function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return "—";
-  const min = Math.floor(ms / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+// Same contract as claim-detail-v2: every relative-time render uses
+// the shared `lib/time` module, with hover-for-absolute-time tooltip
+// surfaced on the label itself (#562).
+function relativeTime(iso: string | null | undefined): React.ReactNode {
+  if (!iso) return <>—</>;
+  const rel = formatRelative(iso) || "—";
+  return <span title={absoluteTooltip(iso)}>{rel}</span>;
 }
 
 function auditIcon(action: string) {

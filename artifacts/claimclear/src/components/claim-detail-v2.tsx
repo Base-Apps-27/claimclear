@@ -63,6 +63,7 @@ import { ClassifyDialog } from "@/components/classify-dialog";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
@@ -180,17 +181,16 @@ function GoToGroupLink({ groupId, children }: { groupId: number; children: React
   );
 }
 
-function relativeTime(iso: string | Date | null | undefined): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return "—";
-  const min = Math.floor(ms / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+// Relative-time renderer routes through the shared `lib/time` module so
+// every "5m ago" surface in the operator app uses the same tier scale,
+// the same display TZ, and exposes the same hover-for-absolute-time
+// tooltip (#562). Returns a <span> with `title` so the tooltip is on
+// the relative label itself even when the surrounding text isn't.
+function relativeTime(iso: string | Date | null | undefined): React.ReactNode {
+  if (!iso) return <>—</>;
+  const isoStr = typeof iso === "string" ? iso : iso.toISOString();
+  const rel = formatRelative(isoStr) || "—";
+  return <span title={absoluteTooltip(isoStr)}>{rel}</span>;
 }
 
 function authorInitial(name: string | null | undefined): string {

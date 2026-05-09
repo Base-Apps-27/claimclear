@@ -39,6 +39,7 @@ import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } fro
 import { InfoTooltip } from "@/components/info-tooltip";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
+import { formatChartTick } from "@/lib/time";
 import { useRole, HideForClerk } from "@/lib/role";
 
 type RangeKey = "7" | "30" | "90" | "qtd" | "ytd";
@@ -69,15 +70,20 @@ function rangeWindowLabel(key: RangeKey, days: number): string {
   const end = new Date();
   const start = new Date();
   start.setDate(end.getDate() - days);
-  const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  // Render the bracket dates in the operator app's display TZ via the
+  // shared chart-tick formatter, so the bracket and the chart axis can
+  // never disagree on the day boundary (#562).
+  const fmt = (d: Date) => formatChartTick(d.toISOString());
   if (key === "qtd") return `Quarter to date · ${fmt(start)} – ${fmt(end)}`;
   if (key === "ytd") return `Year to date · ${fmt(start)} – ${fmt(end)}`;
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-function formatShortDate(iso: string): string {
-  const d = new Date(iso + "T00:00:00Z");
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+// Calendar-day axis label. Server timeseries returns YYYY-MM-DD keys,
+// which `formatChartTick` renders without TZ conversion so the axis
+// label is always the authored day (#562).
+function formatShortDate(ymd: string): string {
+  return formatChartTick(ymd);
 }
 
 function formatCompactCurrency(value: number): string {

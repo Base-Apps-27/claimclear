@@ -4,17 +4,14 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Eye, Bot, Cog } from "lucide-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import { formatRelative, absoluteTooltip } from "@/lib/time";
 
+// Single source of truth for "5m ago" wording — routes through the
+// shared `lib/time/formatRelative` so presence chips agree with every
+// other relative-time surface in the operator app (#562).
 function timeAgo(dateStr: string | undefined | null): string {
   if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes === 1) return "1 min ago";
-  if (minutes < 60) return `${minutes} mins ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 1) return "1 hour ago";
-  return `${hours} hours ago`;
+  return formatRelative(dateStr);
 }
 
 function useAnimatedVisibility(isActive: boolean) {
@@ -198,7 +195,7 @@ function ViewerAvatar({
       <TooltipContent side="bottom">
         <p className="font-medium">{name}</p>
         {viewer.lastHeartbeat && (
-          <p className="text-xs opacity-80">Viewing since {timeAgo(viewer.lastHeartbeat)}</p>
+          <p className="text-xs opacity-80" title={absoluteTooltip(viewer.lastHeartbeat)}>Viewing since {timeAgo(viewer.lastHeartbeat)}</p>
         )}
       </TooltipContent>
     </Tooltip>
@@ -249,9 +246,13 @@ export function HumanPresenceBanner({
             with the lock behavior; coordinate verbally if you're both
             about to mutate the same group. */}
         <p className="text-xs text-blue-600 dark:text-blue-400">
-          {otherViewers.length === 1 && otherViewers[0].lastHeartbeat
-            ? `Viewing since ${timeAgo(otherViewers[0].lastHeartbeat)} — coordinate so you don't step on each other`
-            : `Heads up — coordinate so you don't step on each other`}
+          {otherViewers.length === 1 && otherViewers[0].lastHeartbeat ? (
+            <span title={absoluteTooltip(otherViewers[0].lastHeartbeat)}>
+              Viewing since {timeAgo(otherViewers[0].lastHeartbeat)} — coordinate so you don't step on each other
+            </span>
+          ) : (
+            "Heads up — coordinate so you don't step on each other"
+          )}
         </p>
       </div>
       <div className="flex -space-x-2 shrink-0">

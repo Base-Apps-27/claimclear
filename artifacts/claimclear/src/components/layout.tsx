@@ -29,6 +29,7 @@ import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
 import { StateLegend } from "@/components/state-legend";
 import { HeaderSearch } from "@/components/header-search";
+import { getDisplayTimezone, getDisplayTimezoneShort } from "@/lib/time";
 import { useAdminTour } from "@/tour/admin-tour";
 import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
@@ -500,6 +501,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="mr-4" />
             <HeaderSearch />
             <div className="ml-auto flex items-center gap-3">
+              <DisplayTimezoneChip />
               <SessionPaceBadge />
               {tourAvailable && <HelpPopover />}
               <BatchStatusPill />
@@ -514,6 +516,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <SessionCountdown />
       </div>
     </SidebarProvider>
+  );
+}
+
+// Display-timezone chip (#562). Tiny header label so operators always
+// know which timezone every date / time / urgency call across the app
+// is rendered in. The whole operator app standardises on one display
+// TZ — see `lib/time/index.ts`.
+function DisplayTimezoneChip() {
+  const tz = getDisplayTimezone();
+  const short = getDisplayTimezoneShort();
+  return (
+    <WrapTooltip
+      content={`All dates, times, and urgency math across this app are rendered in ${tz}. The whole team works from a single display timezone — operators never need to mentally convert between Dashboard, Queue, lists, charts, and the daily brief.`}
+      side="bottom"
+    >
+      <span
+        data-testid="display-tz-chip"
+        aria-label={`Display timezone: ${tz}`}
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 h-7 text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-help"
+      >
+        <Clock className="h-3 w-3" aria-hidden />
+        <span className="tabular-nums">{short}</span>
+      </span>
+    </WrapTooltip>
   );
 }
 

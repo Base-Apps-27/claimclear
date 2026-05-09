@@ -23,7 +23,7 @@ import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, MailX, Activity, Bot, Info, Sparkles, CalendarOff } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 
 const REFRESH_MS = 30_000;
@@ -45,13 +45,13 @@ function statusBadge(status: string) {
   }
 }
 
+// Relative time renders as a hover-aware element: tooltip surfaces the
+// absolute timestamp in the configured display timezone, so operators
+// can always disambiguate "5m ago" without leaving the page (#562).
 function relTime(iso: string | null | undefined) {
-  if (!iso) return "—";
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true });
-  } catch {
-    return iso;
-  }
+  if (!iso) return <>—</>;
+  const rel = formatRelative(iso) || "—";
+  return <span title={absoluteTooltip(iso)}>{rel}</span>;
 }
 
 export default function SystemHealth() {

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { TONE_STYLE, type Tone } from "@/components/cohesion";
 import { cn } from "@/lib/utils";
 import { relativeAge } from "./utils";
+import { absoluteTooltip } from "@/lib/time";
 
 export interface QueueRowProps {
   rowKey: string;
@@ -93,7 +94,7 @@ export function QueueRow({
                 aria-hidden="true"
               />
             )}
-            <span>{age.label}</span>
+            <span title={absoluteTooltip(age.iso)}>{age.label}</span>
           </div>
         ) : null}
       </button>

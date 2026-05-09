@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ListTableHeaderStrip } from "@/components/list-table/faceted-filter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatRelative, absoluteTooltip } from "@/lib/time";
 import {
   Play, Loader2, Clock, AlertTriangle, CheckCircle, FlaskConical, Send, Lock, StopCircle, Ban,
   Search, Tag, Edit2, X, Sparkles, History, Bot, ChevronDown, ChevronRight, MoreVertical,
@@ -139,16 +140,17 @@ function RetryCountdown({ nextRetryAt }: { nextRetryAt: string }) {
   return <span>retry in {s}s</span>;
 }
 
-function timeAgo(iso: string | undefined | null): string {
-  if (!iso) return "";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return "just now";
-  const min = Math.floor(ms / 60_000);
-  if (min < 60) return `${min}m ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+// Single source of truth: route every "5m ago" through the shared
+// `lib/time/formatRelative` so tier wording matches the rest of the
+// operator app (#562). Returns a JSX node carrying a hover-for-
+// absolute-time tooltip on the relative label itself, so portal-
+// submissions surfaces honour the same hover contract as Dashboard,
+// detail views, and the daily brief.
+function timeAgo(iso: string | undefined | null): React.ReactNode {
+  if (!iso) return null;
+  const rel = formatRelative(iso);
+  if (!rel) return null;
+  return <span title={absoluteTooltip(iso)}>{rel}</span>;
 }
 
 export default function PortalSubmissions() {
@@ -1030,7 +1032,7 @@ function SubmissionRow({
           </WrapTooltip>
         )}
         {sub.status === "pending" && sub.nextRetryAt && (
-          <WrapTooltip content={`Next retry at ${new Date(sub.nextRetryAt).toLocaleString()}`}>
+          <WrapTooltip content={`Next retry at ${formatDateTime(sub.nextRetryAt)}`}>
             <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 text-amber-700 border-amber-400">
               <Clock className="h-2.5 w-2.5 mr-1" /><RetryCountdown nextRetryAt={sub.nextRetryAt} />
             </Badge>

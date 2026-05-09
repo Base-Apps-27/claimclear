@@ -15,7 +15,22 @@
 // "Friday" on the spring-forward Sunday, and the cron's idea of "today"
 // stays stable across the boundary).
 
-const DEFAULT_TZ = "America/New_York";
+const FALLBACK_TZ = "America/New_York";
+
+/**
+ * Display timezone for the operator app — every server-rendered "today",
+ * urgency, and `serverTodayKey` decision flows through this so it always
+ * agrees with the client's display TZ (#562). Configurable via the
+ * `DISPLAY_TIMEZONE` env var; defaults to the dispatch operations TZ.
+ */
+export function getServerDisplayTimezone(): string {
+  return process.env.DISPLAY_TIMEZONE || FALLBACK_TZ;
+}
+
+// Captured once at module load — IANA timezone identifiers are immutable
+// for the life of a process, and recomputing on every helper call would
+// hide misconfiguration behind a confusing intermittent symptom.
+const DEFAULT_TZ = getServerDisplayTimezone();
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 /**

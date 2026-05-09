@@ -62,6 +62,7 @@ import { RefNumber } from "@/components/ref-number";
 import { useToast, successToast, toast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { formatCurrency } from "@/lib/format";
+import { formatDate, formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -520,7 +521,7 @@ export function WalkLandingHero({
         {claim.updatedAt && (
           <>
             <span>·</span>
-            <span>Updated {relativeTime(claim.updatedAt)}</span>
+            <span title={claim.updatedAt ? absoluteTooltip(claim.updatedAt) : undefined}>Updated {relativeTime(claim.updatedAt)}</span>
           </>
         )}
       </div>
@@ -837,7 +838,7 @@ export function HoldExitHero({
           </span>
           {placedAt && (
             <span className="cc-meta" style={{ fontSize: "0.6875rem", marginLeft: "auto" }}>
-              Placed {relativeTime(placedAt)}
+              <span title={placedAt ? absoluteTooltip(placedAt) : undefined}>Placed {relativeTime(placedAt)}</span>
             </span>
           )}
         </div>
@@ -1265,20 +1266,12 @@ function SectionCard({
 // helpers
 // ─────────────────────────────────────────────────────────────────────
 
+// Single source of truth for "5m ago" wording across the app — routes
+// through `lib/time/formatRelative` so tier thresholds and the
+// fallback-to-date format match every other surface (#562).
 function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return "";
-  const diffMs = Date.now() - then;
-  const sec = Math.max(0, Math.round(diffMs / 1000));
-  if (sec < 60) return "just now";
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day < 30) return `${day}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatRelative(iso);
 }
 
 function humanizeSubStatus(s: ReturnType<typeof deriveLegSubStatus>): string {

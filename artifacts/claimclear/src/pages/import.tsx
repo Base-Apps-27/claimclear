@@ -36,6 +36,7 @@ import {
   ActionsRail, ActionsRailRecommended, ActionGroup, ActionRow,
 } from "@/components/actions-rail";
 import * as XLSX from "xlsx";
+import { formatDate } from "@/lib/time";
 
 type UploadStage = "idle" | "reading" | "parsing" | "ready" | "classifying" | "confirming" | "importing" | "complete" | "error";
 
@@ -748,7 +749,7 @@ export default function Import() {
             You saved an import session for <span className="font-mono">{resume.fileName}</span>{" "}
             ({resume.rows.length} claim{resume.rows.length === 1 ? "" : "s"})
             {" "}on{" "}
-            {new Date(resume.savedAt).toLocaleDateString()}.
+            {formatDate(new Date(resume.savedAt).toISOString())}.
           </div>
           <Button size="sm" variant="outline" onClick={handleResume} data-testid="button-resume-import">
             Resume

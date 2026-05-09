@@ -1,4 +1,5 @@
 import type { ClaimResponse } from "@workspace/api-client-react";
+import { formatRelative } from "@/lib/time";
 
 /** Pull the headline invoice number off a leg, falling back to "—". */
 export function pickInvoiceNumber(claim: ClaimResponse): string {
@@ -17,27 +18,26 @@ export function firstInvoiceToken(claim: ClaimResponse): string | null {
 }
 
 export interface RelativeAge {
+  /** Origin ISO so callers can attach `absoluteTooltip` on the rendered label (#562). */
+  iso: string;
   label: string;
   isStale: boolean;
 }
 
 /**
- * Render an enteredAt timestamp as a compact "3d old" / "2h old" /
- * "5m old" string. Anything ≥7 days old is flagged stale so the
- * sidebar can paint an amber dot ahead of the label.
+ * Render an enteredAt timestamp as a compact relative-age string
+ * (e.g. "3d ago"). Routes the label through the shared
+ * `lib/time/formatRelative` so attestation queue rows agree with every
+ * other "5m ago" surface in the operator app (#562). The `isStale`
+ * flag is computed alongside so the sidebar can still paint an amber
+ * dot when the leg has been waiting ≥7 days.
  */
 export function relativeAge(iso: string | null | undefined, now: Date = new Date()): RelativeAge | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;
-  const ms = now.getTime() - t;
-  if (ms < 60_000) return { label: "just now", isStale: false };
-  const mins = Math.floor(ms / 60_000);
-  const hours = Math.floor(mins / 60);
-  const days = Math.floor(hours / 24);
-  let label: string;
-  if (days >= 1) label = `${days}d old`;
-  else if (hours >= 1) label = `${hours}h old`;
-  else label = `${mins}m old`;
-  return { label, isStale: days >= 7 };
+  const label = formatRelative(iso, now.getTime());
+  if (!label) return null;
+  const isStale = now.getTime() - t >= 7 * 24 * 60 * 60 * 1000;
+  return { iso, label, isStale };
 }
