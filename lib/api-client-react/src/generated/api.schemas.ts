@@ -192,6 +192,42 @@ export const ClaimResponseMasActionRequired = {
 } as const;
 
 /**
+ * Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.
+ * @nullable
+ */
+export type ClaimResponseGroupPhase =
+  | (typeof ClaimResponseGroupPhase)[keyof typeof ClaimResponseGroupPhase]
+  | null;
+
+export const ClaimResponseGroupPhase = {
+  triage: "triage",
+  ready_to_submit: "ready_to_submit",
+  submitted: "submitted",
+  response_received: "response_received",
+  reviewed: "reviewed",
+  awaiting_reattestation: "awaiting_reattestation",
+  closed: "closed",
+} as const;
+
+/**
+ * Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.
+ * @nullable
+ */
+export type ClaimResponseGroupMacroPhase =
+  | (typeof ClaimResponseGroupMacroPhase)[keyof typeof ClaimResponseGroupMacroPhase]
+  | null;
+
+export const ClaimResponseGroupMacroPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
+} as const;
+
+/**
  * A person referenced from a structured closure (driver/dispatcher).
  */
 export interface ClosurePersonRef {
@@ -428,6 +464,21 @@ export interface ClaimResponse {
   isUrgent?: boolean;
   /** Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel "stuck after submission" badge variant instead of the pre-submit "file today" variant. Only populated by list endpoints. */
   submittedStuck?: boolean;
+  /**
+   * Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.
+   * @nullable
+   */
+  invoiceNumber?: string | null;
+  /**
+   * Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.
+   * @nullable
+   */
+  groupPhase?: ClaimResponseGroupPhase;
+  /**
+   * Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.
+   * @nullable
+   */
+  groupMacroPhase?: ClaimResponseGroupMacroPhase;
 }
 
 export interface ValidTransitionsResponse {
@@ -1408,9 +1459,23 @@ export interface UpdateInvoiceGroupBody {
   evidenceChecklist?: UpdateInvoiceGroupBodyEvidenceChecklist;
 }
 
+/**
+ * Task #557. Per-leg sub-status totals across the *entire* filtered universe (search + error-type, but ignoring the active sub-status tab) so the forensic-search Claims page can render counts on every tab without firing N extra requests. Always populated by the list endpoint.
+ */
+export type ClaimsListResponseLegSubStatusCounts = {
+  needs_classification: number;
+  investigating: number;
+  blocked: number;
+  ready: number;
+  dropped: number;
+  frozen: number;
+};
+
 export interface ClaimsListResponse {
   claims: ClaimResponse[];
   total: number;
+  /** Task #557. Per-leg sub-status totals across the *entire* filtered universe (search + error-type, but ignoring the active sub-status tab) so the forensic-search Claims page can render counts on every tab without firing N extra requests. Always populated by the list endpoint. */
+  legSubStatusCounts: ClaimsListResponseLegSubStatusCounts;
 }
 
 export interface CreateClaimBody {

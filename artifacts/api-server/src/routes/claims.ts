@@ -106,7 +106,10 @@ const CLAIMS_SORTABLE_COLUMNS = {
 // routes/tour.ts.
 const HIDE_TOUR_SAMPLE_CLAIM = eq(claimsTable.isTourSample, false);
 
-function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
+function buildClaimsWhere(
+  query: Record<string, unknown>,
+  opts: { skipLegSubStatus?: boolean } = {},
+): SQL | undefined {
   const { status, outcome, search, errorTypeId } = query;
   const createdFrom = query.createdFrom as string | undefined;
   const createdTo = query.createdTo as string | undefined;
@@ -238,7 +241,7 @@ function buildClaimsWhere(query: Record<string, unknown>): SQL | undefined {
     conditions.push(buildClaimExpiringCondition(expiringMode));
   }
 
-  const legSubStatus = query.legSubStatus;
+  const legSubStatus = opts.skipLegSubStatus ? undefined : query.legSubStatus;
   if (legSubStatus && typeof legSubStatus === "string") {
     const subStatuses = legSubStatus.split(",").map(s => s.trim()).filter(Boolean);
     const subStatusOrs: SQL[] = [];
@@ -365,7 +368,38 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
   const where = buildClaimsWhere(req.query as Record<string, unknown>);
   const orderBy = buildClaimsOrderBy(sort as string, dir as string);
 
+  // Task #557 — counts query for the per-leg sub-status tab strip on
+  // the forensic-search Claims page. Counts respect every other filter
+  // (search, error type, dates, amount, etc.) but DELIBERATELY ignore
+  // the active sub-status tab so each tab shows the size of *its* slice
+  // independent of the current selection. One round trip via SUM(CASE).
+  const whereForCounts = buildClaimsWhere(req.query as Record<string, unknown>, {
+    skipLegSubStatus: true,
+  });
+  const buildCountSql = (sub: string): SQL => {
+    const cond = buildLegSubStatusCondition(sub)!;
+    return sql<number>`COALESCE(SUM(CASE WHEN ${cond} THEN 1 ELSE 0 END), 0)::int`;
+  };
   const [totalResult] = await db.select({ count: count() }).from(claimsTable).where(where);
+  const [countsRow] = await db
+    .select({
+      needs_classification: buildCountSql("needs_classification"),
+      investigating: buildCountSql("investigating"),
+      blocked: buildCountSql("blocked"),
+      ready: buildCountSql("ready"),
+      dropped: buildCountSql("dropped"),
+      frozen: buildCountSql("frozen"),
+    })
+    .from(claimsTable)
+    .where(whereForCounts);
+  const legSubStatusCounts = {
+    needs_classification: countsRow?.needs_classification ?? 0,
+    investigating: countsRow?.investigating ?? 0,
+    blocked: countsRow?.blocked ?? 0,
+    ready: countsRow?.ready ?? 0,
+    dropped: countsRow?.dropped ?? 0,
+    frozen: countsRow?.frozen ?? 0,
+  };
   const claimsRaw = await db.select().from(claimsTable).where(where)
     .orderBy(...orderBy)
     .limit(limitVal)
@@ -382,17 +416,39 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     new Set(claimsRaw.map((c) => c.invoiceGroupId).filter((x): x is number => x != null)),
   );
   const parentDoneById = new Map<number, boolean>();
+  // Task #557 — invoice-first Claims (forensic-search) page mirrors the
+  // parent group's `invoiceNumber`, canonical `phase`, and derived
+  // macro-phase onto each leg row so the per-row phase chip + invoice
+  // click-through render with one fetch.
+  const parentMetaById = new Map<
+    number,
+    { invoiceNumber: string | null; phase: string | null; macroPhase: string | null }
+  >();
   if (parentGroupIds.length > 0) {
     const parents = await db
       .select({
         id: invoiceGroupsTable.id,
+        invoiceNumber: invoiceGroupsTable.invoiceNumber,
         phase: invoiceGroupsTable.phase,
         outcome: invoiceGroupsTable.outcome,
+        status: invoiceGroupsTable.status,
+        reattestRequired: invoiceGroupsTable.reattestRequired,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
       })
       .from(invoiceGroupsTable)
       .where(inArray(invoiceGroupsTable.id, parentGroupIds));
     for (const p of parents) {
       parentDoneById.set(p.id, isGroupOperatorDone({ phase: p.phase, outcome: p.outcome }));
+      parentMetaById.set(p.id, {
+        invoiceNumber: p.invoiceNumber ?? null,
+        phase: p.phase ?? null,
+        macroPhase: getGroupMacroPhase({
+          phase: p.phase,
+          status: p.status,
+          reattestRequired: p.reattestRequired,
+          reattestCompletedAt: p.reattestCompletedAt,
+        }),
+      });
     }
   }
 
@@ -411,8 +467,14 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
       !parentDone &&
       CLAIM_ON_CLOCK_STATUSES.has(claim.status) &&
       isUrgentDeadline(claim.date, today);
+    const meta = claim.invoiceGroupId != null
+      ? parentMetaById.get(claim.invoiceGroupId) ?? null
+      : null;
     return {
       ...claim,
+      invoiceNumber: meta?.invoiceNumber ?? null,
+      groupPhase: meta?.phase ?? null,
+      groupMacroPhase: meta?.macroPhase ?? null,
       effectiveDaysLeft: effectiveDaysRemaining(claim.date, today),
       isUrgent: urgent,
       // Task #352 + #541. Post-submit "stuck" tier — same calendar
@@ -430,7 +492,11 @@ router.get("/claims", asyncHandler(async (req, res): Promise<void> => {
     };
   });
 
-  res.json({ claims: scrubMoneyFieldsArray(claims, req.user), total: totalResult.count });
+  res.json({
+    claims: scrubMoneyFieldsArray(claims, req.user),
+    total: totalResult.count,
+    legSubStatusCounts,
+  });
 }));
 
 router.get("/claims/export-csv", denyClerk, asyncHandler(async (req, res): Promise<void> => {

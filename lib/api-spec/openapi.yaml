@@ -5321,6 +5321,17 @@ components:
         submittedStuck:
           type: boolean
           description: "Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints."
+        invoiceNumber:
+          type: ["string", "null"]
+          description: "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`."
+        groupPhase:
+          type: ["string", "null"]
+          enum: ["triage", "ready_to_submit", "submitted", "response_received", "reviewed", "awaiting_reattestation", "closed", null]
+          description: "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group."
+        groupMacroPhase:
+          type: ["string", "null"]
+          enum: ["pre-submit", "in-flight", "response-pending", "mas-action-required", "awaiting-payout", "closed", "on-hold", null]
+          description: "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group."
       required:
         - id
         - confNumber
@@ -5951,9 +5962,33 @@ components:
             $ref: "#/components/schemas/ClaimResponse"
         total:
           type: integer
+        legSubStatusCounts:
+          type: object
+          description: "Task #557. Per-leg sub-status totals across the *entire* filtered universe (search + error-type, but ignoring the active sub-status tab) so the forensic-search Claims page can render counts on every tab without firing N extra requests. Always populated by the list endpoint."
+          properties:
+            needs_classification:
+              type: integer
+            investigating:
+              type: integer
+            blocked:
+              type: integer
+            ready:
+              type: integer
+            dropped:
+              type: integer
+            frozen:
+              type: integer
+          required:
+            - needs_classification
+            - investigating
+            - blocked
+            - ready
+            - dropped
+            - frozen
       required:
         - claims
         - total
+        - legSubStatusCounts
 
     CreateClaimBody:
       type: object

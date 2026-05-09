@@ -1493,6 +1493,42 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
                   .describe(
                     'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
                   ),
+                invoiceNumber: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+                  ),
+                groupPhase: zod
+                  .union([
+                    zod.literal("triage"),
+                    zod.literal("ready_to_submit"),
+                    zod.literal("submitted"),
+                    zod.literal("response_received"),
+                    zod.literal("reviewed"),
+                    zod.literal("awaiting_reattestation"),
+                    zod.literal("closed"),
+                    zod.literal(null),
+                  ])
+                  .nullish()
+                  .describe(
+                    "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+                  ),
+                groupMacroPhase: zod
+                  .union([
+                    zod.literal("pre-submit"),
+                    zod.literal("in-flight"),
+                    zod.literal("response-pending"),
+                    zod.literal("mas-action-required"),
+                    zod.literal("awaiting-payout"),
+                    zod.literal("closed"),
+                    zod.literal("on-hold"),
+                    zod.literal(null),
+                  ])
+                  .nullish()
+                  .describe(
+                    "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+                  ),
               }),
               attestationOutcome: zod
                 .enum(["attested", "mas_cancelled", "queued", "not_required"])
@@ -2255,6 +2291,42 @@ export const GetInvoiceGroupResponse = zod
               .optional()
               .describe(
                 'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+              ),
+            invoiceNumber: zod
+              .string()
+              .nullish()
+              .describe(
+                "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+              ),
+            groupPhase: zod
+              .union([
+                zod.literal("triage"),
+                zod.literal("ready_to_submit"),
+                zod.literal("submitted"),
+                zod.literal("response_received"),
+                zod.literal("reviewed"),
+                zod.literal("awaiting_reattestation"),
+                zod.literal("closed"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+              ),
+            groupMacroPhase: zod
+              .union([
+                zod.literal("pre-submit"),
+                zod.literal("in-flight"),
+                zod.literal("response-pending"),
+                zod.literal("mas-action-required"),
+                zod.literal("awaiting-payout"),
+                zod.literal("closed"),
+                zod.literal("on-hold"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
               ),
           }),
         )
@@ -6556,6 +6628,42 @@ export const GroupSopAdvanceResponse = zod
             .describe(
               'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
             ),
+          invoiceNumber: zod
+            .string()
+            .nullish()
+            .describe(
+              "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+            ),
+          groupPhase: zod
+            .union([
+              zod.literal("triage"),
+              zod.literal("ready_to_submit"),
+              zod.literal("submitted"),
+              zod.literal("response_received"),
+              zod.literal("reviewed"),
+              zod.literal("awaiting_reattestation"),
+              zod.literal("closed"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+            ),
+          groupMacroPhase: zod
+            .union([
+              zod.literal("pre-submit"),
+              zod.literal("in-flight"),
+              zod.literal("response-pending"),
+              zod.literal("mas-action-required"),
+              zod.literal("awaiting-payout"),
+              zod.literal("closed"),
+              zod.literal("on-hold"),
+              zod.literal(null),
+            ])
+            .nullish()
+            .describe(
+              "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+            ),
         }),
       )
       .describe(
@@ -10376,9 +10484,57 @@ export const ListClaimsResponse = zod.object({
         .describe(
           'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
         ),
+      invoiceNumber: zod
+        .string()
+        .nullish()
+        .describe(
+          "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+        ),
+      groupPhase: zod
+        .union([
+          zod.literal("triage"),
+          zod.literal("ready_to_submit"),
+          zod.literal("submitted"),
+          zod.literal("response_received"),
+          zod.literal("reviewed"),
+          zod.literal("awaiting_reattestation"),
+          zod.literal("closed"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+        ),
+      groupMacroPhase: zod
+        .union([
+          zod.literal("pre-submit"),
+          zod.literal("in-flight"),
+          zod.literal("response-pending"),
+          zod.literal("mas-action-required"),
+          zod.literal("awaiting-payout"),
+          zod.literal("closed"),
+          zod.literal("on-hold"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+        ),
     }),
   ),
   total: zod.number(),
+  legSubStatusCounts: zod
+    .object({
+      needs_classification: zod.number(),
+      investigating: zod.number(),
+      blocked: zod.number(),
+      ready: zod.number(),
+      dropped: zod.number(),
+      frozen: zod.number(),
+    })
+    .describe(
+      "Task #557. Per-leg sub-status totals across the \*entire\* filtered universe (search + error-type, but ignoring the active sub-status tab) so the forensic-search Claims page can render counts on every tab without firing N extra requests. Always populated by the list endpoint.",
+    ),
 });
 
 /**
@@ -10785,6 +10941,42 @@ export const GetClaimResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -11187,6 +11379,42 @@ export const UpdateClaimResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -11583,6 +11811,42 @@ export const UpdateClaimStatusResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -12011,6 +12275,42 @@ export const UpdateClaimOutcomeResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -12383,6 +12683,42 @@ export const ListAttestationPendingResponse = zod.object({
         .optional()
         .describe(
           'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+        ),
+      invoiceNumber: zod
+        .string()
+        .nullish()
+        .describe(
+          "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+        ),
+      groupPhase: zod
+        .union([
+          zod.literal("triage"),
+          zod.literal("ready_to_submit"),
+          zod.literal("submitted"),
+          zod.literal("response_received"),
+          zod.literal("reviewed"),
+          zod.literal("awaiting_reattestation"),
+          zod.literal("closed"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+        ),
+      groupMacroPhase: zod
+        .union([
+          zod.literal("pre-submit"),
+          zod.literal("in-flight"),
+          zod.literal("response-pending"),
+          zod.literal("mas-action-required"),
+          zod.literal("awaiting-payout"),
+          zod.literal("closed"),
+          zod.literal("on-hold"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
         ),
     }),
   ),
@@ -12791,6 +13127,42 @@ export const AttestClaimResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -13158,6 +13530,42 @@ export const QueueAttestationForClaimResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -13524,6 +13932,42 @@ export const ConfirmQueuedAttestationResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -14035,6 +14479,42 @@ export const UpdateClaimEvidenceResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -14414,6 +14894,42 @@ export const PlaceLegOnHoldResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -14776,6 +15292,42 @@ export const RemoveLegHoldResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -15134,6 +15686,42 @@ export const ClearLegHoldResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -15501,6 +16089,42 @@ export const ClassifyLegResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -15871,6 +16495,42 @@ export const SopAdvanceLegResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -16319,6 +16979,42 @@ export const SopBackStepLegResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -16700,6 +17396,42 @@ export const SopJumpLegResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -17078,6 +17810,42 @@ export const SopRestartLegResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -17459,6 +18227,42 @@ export const ExcludeLegResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -17825,6 +18629,42 @@ export const IncludeLegResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -18210,6 +19050,42 @@ export const MarkLegDuplicateResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -18571,6 +19447,42 @@ export const UnmarkLegDuplicateResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -18934,6 +19846,42 @@ export const ReclassifyLegResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -19397,6 +20345,42 @@ export const SetLegContextResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -19773,6 +20757,42 @@ export const ConcludeLegResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -20143,6 +21163,42 @@ export const CompleteLegMasActionResponse = zod.object({
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
     ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
+    ),
 });
 
 /**
@@ -20508,6 +21564,42 @@ export const TriageClaimResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -20877,6 +21969,42 @@ export const PostResponseActionResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -21282,6 +22410,42 @@ export const GenerateClaimEmailResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 
@@ -26995,6 +28159,42 @@ export const UpdateClaimClosureReviewResponse = zod.object({
     .optional()
     .describe(
       'Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel \"stuck after submission\" badge variant instead of the pre-submit \"file today\" variant. Only populated by list endpoints.',
+    ),
+  invoiceNumber: zod
+    .string()
+    .nullish()
+    .describe(
+      "Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.",
+    ),
+  groupPhase: zod
+    .union([
+      zod.literal("triage"),
+      zod.literal("ready_to_submit"),
+      zod.literal("submitted"),
+      zod.literal("response_received"),
+      zod.literal("reviewed"),
+      zod.literal("awaiting_reattestation"),
+      zod.literal("closed"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.",
+    ),
+  groupMacroPhase: zod
+    .union([
+      zod.literal("pre-submit"),
+      zod.literal("in-flight"),
+      zod.literal("response-pending"),
+      zod.literal("mas-action-required"),
+      zod.literal("awaiting-payout"),
+      zod.literal("closed"),
+      zod.literal("on-hold"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.",
     ),
 });
 

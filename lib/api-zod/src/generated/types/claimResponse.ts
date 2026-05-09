@@ -17,6 +17,8 @@ import type { ClaimResponseClosureReviewState } from "./claimResponseClosureRevi
 import type { ClaimResponseDisposition } from "./claimResponseDisposition";
 import type { ClaimResponseDropReason } from "./claimResponseDropReason";
 import type { ClaimResponseEvidenceChecklist } from "./claimResponseEvidenceChecklist";
+import type { ClaimResponseGroupMacroPhase } from "./claimResponseGroupMacroPhase";
+import type { ClaimResponseGroupPhase } from "./claimResponseGroupPhase";
 import type { ClaimResponseMasActionRequired } from "./claimResponseMasActionRequired";
 import type { ClaimResponseOutcome } from "./claimResponseOutcome";
 import type { ClaimResponseSopAnswersItem } from "./claimResponseSopAnswersItem";
@@ -212,4 +214,19 @@ export interface ClaimResponse {
   isUrgent?: boolean;
   /** Task #352. True when the claim has been submitted (status is `Portal Queued` or `Processed`) but the effective filing deadline has slipped without an acknowledgement. By construction `submittedStuck` is a subset of `isUrgent` for claims; the UI uses it to render the parallel "stuck after submission" badge variant instead of the pre-submit "file today" variant. Only populated by list endpoints. */
   submittedStuck?: boolean;
+  /**
+   * Parent invoice group's `invoiceNumber`. Surfaced by list endpoints so the Claims (forensic search) page can render a click-through chip without joining `invoice_groups` on the client. Null for legacy untriaged legs without an `invoiceGroupId`.
+   * @nullable
+   */
+  invoiceNumber?: string | null;
+  /**
+   * Parent invoice group's canonical `phase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can show a phase chip without an extra fetch. Null when the leg has no parent group.
+   * @nullable
+   */
+  groupPhase?: ClaimResponseGroupPhase;
+  /**
+   * Parent invoice group's macro phase, computed via `getGroupMacroPhase`. Mirrored on the leg row by list endpoints so the forensic-search Claims page can render the per-row phase chip with a single fetch. Null when the leg has no parent group.
+   * @nullable
+   */
+  groupMacroPhase?: ClaimResponseGroupMacroPhase;
 }

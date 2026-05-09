@@ -52,20 +52,47 @@ import {
   HideExpiredToggle,
   readEngagementMode,
 } from "@/components/engagement-filter-controls";
-import { type LegSubStatus } from "@workspace/leg-state";
+import { LEG_SUB_STATUSES, type LegSubStatus } from "@workspace/leg-state";
 import { OUTCOMES, outcomeLabel } from "@workspace/vocab";
 import { legSubStatusLabel } from "@/components/leg-sub-status-pill";
 
-// v2 claims-list tab strip: filter chips in display order.
-const CLAIM_LEG_TABS: readonly LegSubStatus[] = [
-  "needs_classification",
-  "investigating",
-  "blocked",
-  "ready",
-  "dropped",
+// Task #557 — display labels for the parent group's macro-phase chip
+// shown next to each leg's status. Mirrors the canonical 7-bucket
+// MacroPhase enum from `api-server/src/lib/macro-phase.ts`. The chip
+// click-throughs to the parent invoice — operators dealing with macro
+// lifecycle should be working invoice-first, not from this list.
+const MACRO_PHASE_LABEL: Record<string, string> = {
+  "pre-submit": "Pre-submit",
+  "in-flight": "In flight",
+  "response-pending": "Response pending",
+  "mas-action-required": "MAS action",
+  "awaiting-payout": "Awaiting payout",
+  "closed": "Closed",
+  "on-hold": "On hold",
+};
+function macroPhaseLabel(p: string | null | undefined): string {
+  return p ? (MACRO_PHASE_LABEL[p] ?? p) : "";
+}
+
+// Task #557 — invoice-first Claims (forensic-search) tab strip. Per the
+// invoice-first contract, the macro lifecycle tabs (Action Required /
+// In Flight / etc.) belong to the *group*, not the leg; this top-level
+// page is forensic search across legs and therefore filters by per-leg
+// sub-status. Source-of-truth: `LEG_SUB_STATUSES` from
+// `@workspace/leg-state`. We project that array minus the two states
+// that are not user-pickable filters: `excluded` (the leg has been
+// taken out of the dispute scope and is not an operator slice) and
+// `duplicate` (sibling-duplicate is a row-internal grouping artifact,
+// not a working state). Labels resolve via `legSubStatusLabel` so
+// "blocked" renders as "On hold" and "dropped" renders as "Non-issue",
+// matching the operator vocabulary.
+const HIDDEN_LEG_SUB_STATUS_TABS: ReadonlySet<LegSubStatus> = new Set([
+  "excluded",
   "duplicate",
-  "frozen",
-];
+]);
+const CLAIM_LEG_TABS: readonly LegSubStatus[] = LEG_SUB_STATUSES.filter(
+  (s) => !HIDDEN_LEG_SUB_STATUS_TABS.has(s),
+);
 
 const STATUSES = [
   "New", "Needs Review", "Needs Evidence", "Portal Queued", "Generating Email",
@@ -537,8 +564,8 @@ export default function ClaimsList() {
   return (
     <div className="space-y-4" data-testid="page-claims">
       <PageHeader
-        title="All Legs"
-        sub={`${total} ${activeTab === "All" ? "active" : activeTab.toLowerCase()} ${total === 1 ? "leg" : "legs"} · granular search across the rides that roll up into invoices`}
+        title="All Legs Across All Invoices"
+        sub={`Forensic search · ${total.toLocaleString()} ${total === 1 ? "leg" : "legs"} matching · this is not a queue. Macro lifecycle (Action Required / In Flight / etc.) lives on the parent invoice — use the sub-status tabs below to slice by per-leg state.`}
         accent="blue"
         actions={
           <Button asChild data-testid="button-create-claim">
@@ -561,30 +588,55 @@ export default function ClaimsList() {
           aria-label="Filter legs by sub-status"
           data-testid="leg-sub-status-tabs"
         >
-          {CLAIM_LEG_TABS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="tab"
-              aria-selected={filterLegSubStatus === s}
-              onClick={() => set({ legSubStatus: s })}
-              className={`px-3 py-1.5 rounded-full border text-sm ${
-                filterLegSubStatus === s
-                  ? "bg-foreground text-background border-foreground"
-                  : "bg-background text-foreground border-border hover:bg-muted"
-              }`}
-              data-testid={`leg-sub-status-tab-${s}`}
-            >
-              {legSubStatusLabel(s)}
-            </button>
-          ))}
+          {CLAIM_LEG_TABS.map((s) => {
+            // Task #557 — counts come from the server side-channel
+            // (`legSubStatusCounts`), which respects every non-tab
+            // filter so each chip shows the size of *its* slice
+            // independent of the active tab.
+            const tabCount = data?.legSubStatusCounts
+              ? (data.legSubStatusCounts as Record<string, number>)[s] ?? 0
+              : null;
+            const active = filterLegSubStatus === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => set({ legSubStatus: s })}
+                className={`px-3 py-1.5 rounded-full border text-sm inline-flex items-center gap-1.5 ${
+                  active
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-background text-foreground border-border hover:bg-muted"
+                }`}
+                data-testid={`leg-sub-status-tab-${s}`}
+              >
+                <span>{legSubStatusLabel(s)}</span>
+                {tabCount !== null && (
+                  <span
+                    className={`text-[11px] tabular-nums px-1.5 rounded-full ${
+                      active
+                        ? "bg-background/20 text-background"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                    data-testid={`leg-sub-status-tab-${s}-count`}
+                  >
+                    {tabCount.toLocaleString()}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <StatusStrip>
         <StatusDot tone="blue" />
+        {/* Task #557 — status strip is now leg-sub-status-first to match
+            the tab strip above. Macro lifecycle (Action Required / In
+            Flight / etc.) is shown elsewhere on the parent invoice. */}
         <span className="font-medium text-foreground">
-          {activeTab === "All" ? "All claims" : activeTab}
+          {filterLegSubStatus ? legSubStatusLabel(filterLegSubStatus) : "All legs"}
         </span>
         <span className="text-muted-foreground">·</span>
         <span className="text-muted-foreground">
@@ -755,10 +807,10 @@ export default function ClaimsList() {
                           ) : (
                             <EmptyState
                               icon={Inbox}
-                              title="No claims yet"
-                              description="Import a MAS report to bring in claims, or create one manually."
-                              primaryAction={{ label: "Import claims", href: "/import" }}
-                              secondaryAction={{ label: "Create a claim", href: "/claims/new" }}
+                              title="No legs in this slice"
+                              description="This is a forensic search across all legs across all invoices — not a queue. Nothing matches the current sub-status tab + filters. Try a different tab, broaden your filters, or import a MAS report to bring in more legs."
+                              primaryAction={{ label: "Import a MAS report", href: "/import" }}
+                              secondaryAction={{ label: "Create a leg manually", href: "/claims/new" }}
                             />
                           )}
                         </td>
@@ -809,7 +861,27 @@ export default function ClaimsList() {
                               <td className={`px-4 ${tdPy} font-medium tabular-nums whitespace-nowrap`}>{formatCurrency(claim.claimAmount)}</td>
                             )}
                             {visibleCols.has("status") && (
-                              <td className={`px-4 ${tdPy}`}><StateBadge variant="status" value={claim.status} row={claim} /></td>
+                              <td className={`px-4 ${tdPy}`}>
+                                <div className="flex flex-col gap-1 items-start">
+                                  <div className="flex items-center gap-1">
+                                    <StateBadge variant="status" value={claim.status} row={claim} />
+                                    <InfoTooltip
+                                      content="Inherited from the parent invoice's phase. Per the invoice-first contract, leg status is a denormalized cache of the group's lifecycle — change it from the invoice, not from here."
+                                      side="bottom"
+                                    />
+                                  </div>
+                                  {claim.invoiceGroupId && claim.groupMacroPhase && (
+                                    <Link
+                                      href={`/invoice-groups/${claim.invoiceGroupId}`}
+                                      className="text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded border border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                                      title={`Open invoice ${claim.invoiceNumber ?? `#${claim.invoiceGroupId}`}`}
+                                      data-testid={`row-claim-${claim.id}-group-phase-chip`}
+                                    >
+                                      {macroPhaseLabel(claim.groupMacroPhase)}
+                                    </Link>
+                                  )}
+                                </div>
+                              </td>
                             )}
                             {visibleCols.has("createdAt") && (
                               <td className={`px-4 ${tdPy} text-muted-foreground whitespace-nowrap`}>{claim.createdAt ? formatDate(claim.createdAt) : '—'}</td>
@@ -878,7 +950,31 @@ export default function ClaimsList() {
                 errorTypes={errorTypes}
                 tone="blue"
                 entityNoun="claim"
-                body="Tag every selected claim with the same error classification — keeps your data clean for filtering and reporting."
+                body={(() => {
+                  // Task #557 — invoice-first explainer surfaced *before*
+                  // submission. Error type lives at the invoice level
+                  // (the per-invoice transition contract), so we
+                  // pre-route the bulk action to the group endpoint and
+                  // tell the operator exactly how the selection will
+                  // collapse: "Editing X invoices instead of Y legs".
+                  // Avoids letting the server's `use_group_endpoint` 409
+                  // hit the operator after they've already clicked.
+                  const selectedLegs = claims.filter(c => selectedIds.has(c.id));
+                  const groupCount = new Set(
+                    selectedLegs
+                      .map(c => c.invoiceGroupId)
+                      .filter((id): id is number => id != null),
+                  ).size;
+                  const skippedCount = selectedLegs.filter(c => c.invoiceGroupId == null).length;
+                  const legCount = selectedLegs.length;
+                  if (groupCount === 0) {
+                    return `These ${legCount} leg${legCount !== 1 ? "s" : ""} aren't attached to any invoice yet — error type can't be assigned until they're triaged into a group.`;
+                  }
+                  const skippedSuffix = skippedCount > 0
+                    ? ` · ${skippedCount} leg${skippedCount !== 1 ? "s" : ""} without an invoice will be skipped.`
+                    : "";
+                  return `Editing ${groupCount} invoice${groupCount !== 1 ? "s" : ""} instead of ${legCount} leg${legCount !== 1 ? "s" : ""} — error type lives at the invoice level, so the change applies to every leg in each parent invoice.${skippedSuffix}`;
+                })()}
                 isPending={bulkAssign.isPending}
                 open={showBulkAssign}
                 onOpenChange={setShowBulkAssign}

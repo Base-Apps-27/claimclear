@@ -12,8 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { ClaimResponse } from "./claimResponse";
+import type { ClaimsListResponseLegSubStatusCounts } from "./claimsListResponseLegSubStatusCounts";
 
 export interface ClaimsListResponse {
   claims: ClaimResponse[];
   total: number;
+  /** Task #557. Per-leg sub-status totals across the *entire* filtered universe (search + error-type, but ignoring the active sub-status tab) so the forensic-search Claims page can render counts on every tab without firing N extra requests. Always populated by the list endpoint. */
+  legSubStatusCounts: ClaimsListResponseLegSubStatusCounts;
 }
