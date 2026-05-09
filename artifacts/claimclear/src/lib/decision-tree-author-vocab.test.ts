@@ -27,7 +27,7 @@ import {
 test("OUTCOME_AUTHOR_OPTIONS is the post-#309 new-author vocabulary", () => {
   // Storage values, in author-rail render order.
   assert.deepEqual([...OUTCOME_AUTHOR_OPTIONS], [
-    "portal_dispute", // displayed as "Ready"
+    "portal_dispute", // displayed as "Mark Ready"
     "hold",
     "cannot_dispute",
     "non_issue",
@@ -39,10 +39,10 @@ test("OUTCOME_AUTHOR_OPTIONS is the post-#309 new-author vocabulary", () => {
   // change, the drift surfaces here before it surfaces to users.
   const labels = OUTCOME_AUTHOR_OPTIONS.map((ot) => OUTCOME_LABELS[ot]);
   assert.deepEqual(labels, [
-    "Ready",
+    "Mark Ready",
     "Place on Hold",
-    "Non-contestable (Withdraw)",
-    "Non-issue",
+    "Drop from Dispute (Non-contestable)",
+    "Drop from Dispute (Non-issue)",
     "Resolve Internally",
   ]);
 
@@ -62,10 +62,11 @@ test("OUTCOME_LABELS keeps legacy keys resolving (read-compat is forever)", () =
   assert.ok(OUTCOME_LABELS.dispute.length > 0);
 
   // The portal_dispute relabel: the legacy enum value is reused as
-  // the storage key for the new "Ready" author option, so its label
-  // MUST be the new vocabulary string, not the old "Submit Portal
-  // Dispute" literal.
-  assert.equal(OUTCOME_LABELS.portal_dispute, "Ready");
+  // the storage key for the new "Mark Ready" author option (Task #556
+  // re-framed the include outcome as the operator's "Mark Ready" move
+  // on Claim Detail), so its label MUST be the new vocabulary string,
+  // not the old "Submit Portal Dispute" literal.
+  assert.equal(OUTCOME_LABELS.portal_dispute, "Mark Ready");
   assert.notEqual(OUTCOME_LABELS.portal_dispute, "Submit Portal Dispute");
 });
 
@@ -77,12 +78,12 @@ test("OUTCOME_LABELS frozen snapshot — every key resolves, no silent drift", (
   // keys is enforced by the literal presence of `portal_dispute`
   // and `dispute` in the snapshot.
   assert.deepEqual({ ...OUTCOME_LABELS }, {
-    portal_dispute: "Ready",
+    portal_dispute: "Mark Ready",
     dispute: "Send Dispute Email",
     internal: "Resolve Internally",
     hold: "Place on Hold",
-    cannot_dispute: "Non-contestable (Withdraw)",
-    non_issue: "Non-issue",
+    cannot_dispute: "Drop from Dispute (Non-contestable)",
+    non_issue: "Drop from Dispute (Non-issue)",
   });
 });
 

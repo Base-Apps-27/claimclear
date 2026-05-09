@@ -28,6 +28,9 @@ import {
   getListClaimEvidenceQueryKey,
   useGetClaimEmailThread,
   getGetClaimEmailThreadQueryKey,
+  useRecordLegVerdict,
+  useClearLegVerdictDraft,
+  useCompleteLegMasAction,
 } from "@workspace/api-client-react";
 import type {
   ErrorTypeResponse,
@@ -69,6 +72,7 @@ import { StateBadge } from "@/components/state-badge";
 import { RefNumber } from "@/components/ref-number";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
+import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import {
@@ -332,6 +336,15 @@ export function ClaimDetailV2({
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();
   const markDuplicateMutation = useMarkLegDuplicate();
+  // Task #556 — per-leg verdict + per-leg MAS-cancel mutations live on
+  // Claim Detail itself (no group hop). The verdict picker writes a
+  // draft via POST /claims/:id/verdict; the MAS cancel checkbox stamps
+  // completion via POST /claims/:id/mas-action/complete. Both endpoints
+  // emit `state_events` server-side so the audit timeline below picks
+  // up the actor + reason without any extra client wiring.
+  const recordVerdictMutation = useRecordLegVerdict();
+  const clearVerdictDraftMutation = useClearLegVerdictDraft();
+  const completeMasActionMutation = useCompleteLegMasAction();
   const unmarkDuplicateMutation = useUnmarkLegDuplicate();
   const createNoteMutation = useCreateClaimNote();
   const deleteNoteMutation = useDeleteNote();
@@ -871,14 +884,34 @@ export function ClaimDetailV2({
                     </span>
                   ) : null}
                 </div>
-                <div className="text-xs mt-1.5" style={{ color: "var(--cc-muted-fg)" }}>
-                  Updated <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{relativeTime(claim.updatedAt)}</span>
+                <div className="text-xs mt-1.5 flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cc-muted-fg)" }}>
+                  <span>
+                    Updated <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{relativeTime(claim.updatedAt)}</span>
+                  </span>
                   {parentGroup?.status ? (
                     <>
-                      {" · "}Group state:{" "}
-                      <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
-                        {parentGroup.status}
-                      </span>
+                      <span>·</span>
+                      <span>Invoice phase:</span>
+                      {/* Task #556 — parent invoice phase is rendered as a
+                          read-only StateBadge that click-jumps back to the
+                          invoice page. The leg surface is per-leg-only;
+                          the parent phase is a context indicator, not a
+                          control. */}
+                      <Link
+                        href={`/invoice-groups/${parentGroup.id}`}
+                        className="hover:underline"
+                        data-testid="leg-header-parent-phase-jump"
+                      >
+                        <StateBadge variant="status" value={parentGroup.status} />
+                      </Link>
+                      {parentGroup.macroPhase ? (
+                        <span
+                          className="text-[11px]"
+                          data-testid="leg-header-parent-macro-phase"
+                        >
+                          ({parentGroup.macroPhase})
+                        </span>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -1414,6 +1447,58 @@ export function ClaimDetailV2({
             </CcCard>
             </div>
 
+            {/* Task #556 — Post-response section. Appears once the
+                parent invoice has reached `response-pending` (or any
+                later phase). Lets the operator record the per-leg
+                verdict that came back from the payor on this specific
+                leg, without leaving Claim Detail. The picker writes
+                an `operator_draft` row via `POST /claims/:id/verdict`;
+                the group-level Step 4 commit (re-attest / queue /
+                closure) on the invoice page is what later promotes
+                drafts to `operator_confirmed`. Sibling-duplicate legs
+                are skipped — their verdict follows the primary. */}
+            {!isDuplicate &&
+              parentGroup &&
+              (parentGroup.macroPhase === "response-pending" ||
+                parentGroup.macroPhase === "mas-action-required" ||
+                parentGroup.macroPhase === "awaiting-payout" ||
+                parentGroup.macroPhase === "closed") && (
+                <div data-testid="claim-detail-post-response">
+                  <CcCard
+                    title="Per-leg verdict"
+                    icon={<Gavel className="w-3.5 h-3.5" />}
+                    testId="leg-post-response-card"
+                    action={
+                      <GoToGroupLink groupId={parentGroup.id}>
+                        Commit on group
+                      </GoToGroupLink>
+                    }
+                  >
+                    <div className="text-xs mb-2" style={{ color: "var(--cc-muted-fg)" }}>
+                      Pick the verdict the payor returned for this leg. Saves a draft;
+                      Step 4 commit on the invoice promotes drafts to a final verdict.
+                    </div>
+                    <PerLegVerdictPicker
+                      claim={claim}
+                      latestVerdict={claim.latestVerdict ?? null}
+                      latestDraft={claim.latestDraft ?? null}
+                      latestSuggestion={claim.latestAiSuggestion ?? null}
+                      onSelect={async (outcome) => {
+                        await recordVerdictMutation.mutateAsync({
+                          id: claim.id,
+                          data: { source: "operator_draft", outcome },
+                        });
+                        invalidateLeg();
+                      }}
+                      onClear={async () => {
+                        await clearVerdictDraftMutation.mutateAsync({ id: claim.id });
+                        invalidateLeg();
+                      }}
+                    />
+                  </CcCard>
+                </div>
+              )}
+
             {/* Submission preview slot — embedded mode (queue inline
                 expansion) drops the group-level submission preview in
                 here so the operator's eye flows worktree → submission
@@ -1786,22 +1871,29 @@ export function ClaimDetailV2({
             </CcCard>
             )}
 
-            {/* MAS action (read-only) */}
+            {/* MAS action — Task #556 made the per-leg cancel checkbox
+                actionable on Claim Detail when the parent invoice is in
+                `mas-action-required`. Outside that phase the card stays
+                read-only (the action would 409 server-side). The group
+                MAS card still aggregates per-leg completion, so we keep
+                the "Manage on group" link. */}
             {masRequired ? (
               <CcCard
                 title="MAS action"
                 icon={<Stamp className="w-3.5 h-3.5" />}
                 testId="leg-mas-card"
                 action={
-                  parentGroup && !masCompleted ? (
-                    <GoToGroupLink groupId={parentGroup.id}>Complete on group</GoToGroupLink>
+                  parentGroup ? (
+                    <GoToGroupLink groupId={parentGroup.id}>
+                      {masCompleted ? "View on group" : "Manage on group"}
+                    </GoToGroupLink>
                   ) : undefined
                 }
               >
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   {masCompleted ? (
                     <>
-                      <TonePill tone="green">MAS completed</TonePill>
+                      <TonePill tone="green">MAS cancel complete</TonePill>
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                         {relativeTime(claim.masActionCompletedAt)}
                       </span>
@@ -1815,11 +1907,68 @@ export function ClaimDetailV2({
                     {claim.masActionNote}
                   </div>
                 ) : null}
-                {!masCompleted && (
+                {parentGroup?.macroPhase === "mas-action-required" ? (
+                  <label
+                    className="flex items-start gap-2 text-xs mt-2 cursor-pointer"
+                    style={{ color: "var(--cc-fg)" }}
+                    data-testid="leg-mas-cancel-checkbox-label"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={masCompleted}
+                      disabled={masCompleted || completeMasActionMutation.isPending}
+                      onChange={async (e) => {
+                        if (!e.target.checked || masCompleted) return;
+                        await completeMasActionMutation.mutateAsync({
+                          id: claim.id,
+                          data: {},
+                        });
+                        invalidateLeg();
+                      }}
+                      data-testid="leg-mas-cancel-checkbox"
+                    />
+                    <span>
+                      I cancelled this trip in MAS for this leg.
+                      {completeMasActionMutation.isPending ? " Saving…" : ""}
+                    </span>
+                  </label>
+                ) : !masCompleted ? (
                   <MutedNote>
-                    Mark MAS complete from the group's MAS card.
+                    Cancel can only be stamped while the invoice is in
+                    MAS Action Required.
                   </MutedNote>
-                )}
+                ) : null}
+              </CcCard>
+            ) : null}
+
+            {/* Task #556 — Attestation status. Once the invoice is
+                `awaiting-payout`, the operator's next move on this leg
+                lives in the attestation queue (per-leg payor portal
+                re-attestation). Read-only here with a click-jump. */}
+            {parentGroup?.macroPhase === "awaiting-payout" ? (
+              <CcCard
+                title="Attestation"
+                icon={<ListChecks className="w-3.5 h-3.5" />}
+                testId="leg-attestation-card"
+                action={
+                  <Link
+                    href="/attestation-queue"
+                    className="text-xs hover:underline inline-flex items-center gap-1"
+                    style={{ color: "var(--cc-blue-fg)" }}
+                    data-testid="leg-attestation-queue-link"
+                  >
+                    Open queue <ArrowUpRight className="w-3 h-3" />
+                  </Link>
+                }
+              >
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <TonePill tone="blue">Awaiting re-attestation</TonePill>
+                </div>
+                <MutedNote>
+                  This leg is queued for portal re-attestation. Take
+                  action from the attestation queue.
+                </MutedNote>
               </CcCard>
             ) : null}
 

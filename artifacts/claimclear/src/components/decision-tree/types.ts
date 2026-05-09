@@ -80,16 +80,21 @@ import { LEG_CONCLUSION } from "@workspace/vocab";
 // Read-compat is forever (Task #309 / Guard #2): the keys
 // `portal_dispute` and `dispute` MUST keep resolving to a string so that
 // legacy trees stored with those outcome types continue to render
-// without crashing anywhere downstream. The label for `portal_dispute`
-// has been relabeled to "Ready" — the runtime label maps to the new
-// vocabulary while preserving the key for back-compat.
+// without crashing anywhere downstream.
+//
+// Task #556 relabel: the per-leg SOP terminal moves are now framed as
+// the three operator-facing actions Claim Detail offers — "Mark Ready"
+// (the include role / portal_dispute key), "Place on Hold" (hold), and
+// "Drop from Dispute" (the two withdraw outcomes, disambiguated by
+// reason). The storage keys are unchanged — only the runtime labels
+// move — so trees authored under the old vocabulary keep rendering.
 export const OUTCOME_LABELS: Record<OutcomeType, string> = {
-  portal_dispute: "Ready",
+  portal_dispute: "Mark Ready",
   dispute: "Send Dispute Email",
   internal: "Resolve Internally",
   hold: "Place on Hold",
-  cannot_dispute: `${LEG_CONCLUSION.cannot_dispute.label} (Withdraw)`,
-  non_issue: LEG_CONCLUSION.non_issue.label,
+  cannot_dispute: `Drop from Dispute (${LEG_CONCLUSION.cannot_dispute.label})`,
+  non_issue: `Drop from Dispute (${LEG_CONCLUSION.non_issue.label})`,
 };
 
 // The set of outcome types that NEW tree options are allowed to author.
