@@ -65,6 +65,7 @@ import {
 import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { LegConclusionList } from "@/components/leg-conclusion-row";
 import { InlineGroupWorkspaceV3 } from "@/components/inline-group-workspace-v3";
+import { InlineGroupWorkspaceMini } from "@/components/inline-group-workspace-mini";
 import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-client-react";
 
@@ -766,7 +767,7 @@ interface QueueProps {
    * same mutations, different chrome. The `/queue-v3` page mounts
    * this component with `variant="v3"`.
    */
-  variant?: "classic" | "v3";
+  variant?: "classic" | "v3" | "mini";
 }
 
 export default function Queue({ variant = "classic" }: QueueProps = {}) {
@@ -1775,7 +1776,9 @@ export default function Queue({ variant = "classic" }: QueueProps = {}) {
                   sticky/height cap, so the panel just flows down the
                   page. */}
               <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                {variant === "v3" ? (
+                {variant === "mini" ? (
+                  <InlineGroupWorkspaceMini groupId={selectedWorkflowId} />
+                ) : variant === "v3" ? (
                   <InlineGroupWorkspaceV3 groupId={selectedWorkflowId} />
                 ) : (
                   <InlineGroupWorkspace groupId={selectedWorkflowId} />

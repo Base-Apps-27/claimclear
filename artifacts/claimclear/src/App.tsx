@@ -16,6 +16,7 @@ import ClaimNew from "@/pages/claim-new";
 import InvoiceNew from "@/pages/invoice-new";
 import Queue from "@/pages/queue";
 import QueueV3 from "@/pages/queue-v3";
+import QueueMini from "@/pages/queue-mini";
 import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
@@ -83,6 +84,7 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={() => <Queue />} />
         <Route path="/queue-v3" component={QueueV3} />
+        <Route path="/queue-mini" component={QueueMini} />
         <Route path="/attestation-queue" component={AttestationQueue} />
         <Route path="/responses-awaiting-review" component={ResponsesAwaitingReview} />
         <Route path="/responses-awaiting-review/:id" component={ResponsesAwaitingReview} />
