@@ -85,6 +85,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import type { ActionCategory } from "@/lib/audit-action-meta";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { InvoiceGroupSubmissionGauntlet, type GauntletFooterState } from "@/components/invoice-group-submission-gauntlet";
+import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
@@ -258,6 +259,8 @@ type HeroState =
   | "ready"
   | "review"
   | "generate"
+  | "reattest"
+  | "closeout"
   | "classify"
   | "sop"
   | "resolved"
@@ -373,6 +376,13 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   else if (previewGenerated && draftReviewed && !forceReview && !forceWalk) hero = "ready";
   else if (previewGenerated && !forceWalk) hero = "review";
   else if (allWalked && outlook === "has_disputable" && !forceWalk) hero = "generate";
+  // After all legs are walked, surface the invoice-level next-step CTA
+  // (Re-attest survivors, or close-out as Withdrawn) right in the hero
+  // slot — same component the full detail page mounts via
+  // InvoiceGroupActionSlot, so the operator gets a first-class exit
+  // instead of just a footer hint.
+  else if (allWalked && outlook === "reattest_only" && !forceWalk) hero = "reattest";
+  else if (allWalked && outlook === "nothing_to_do" && !forceWalk) hero = "closeout";
   else if (!activeLeg) hero = "empty";
   else if (activeLeg.includedInDispute === false) hero = "resolved";
   else if (resolvedIndex.isLegResolved(activeLeg)) hero = "resolved";
@@ -426,6 +436,18 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
                 onJumpToLeg={(id) => setActiveLegId(id)}
                 onFooterStateChange={onFooterStateChange}
                 onDirtyChange={setGauntletDirty}
+              />
+            </CardContent>
+          </Card>
+        )}
+        {(hero === "reattest" || hero === "closeout") && (
+          <Card>
+            <CardContent className="py-5">
+              <InvoiceGroupActionSlot
+                bare
+                group={detail}
+                groupId={groupId}
+                onJumpToLeg={(id) => setActiveLegId(id)}
               />
             </CardContent>
           </Card>
