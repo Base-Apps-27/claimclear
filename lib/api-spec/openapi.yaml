@@ -8735,6 +8735,25 @@ components:
               count:
                 type: integer
             required: [outcome, count]
+        groupOutcomeBreakdown:
+          type: array
+          description: |
+            Invoice-level (not claim-level) outcome rollup, computed
+            from `invoice_groups.outcome` over groups whose
+            `created_at` is in the window. Always returns the same
+            five buckets in this order: `Approved`, `Partially
+            Approved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum
+            values `Pending` and `Non-Issue` both fold into `Mixed`.
+            Counts sum to total invoice groups in the window.
+          items:
+            type: object
+            properties:
+              outcome:
+                type: string
+                enum: [Approved, Partially Approved, Denied, Withdrawn, Mixed]
+              count:
+                type: integer
+            required: [outcome, count]
         errorTypeBreakdown:
           type: array
           items:
@@ -8777,6 +8796,7 @@ components:
         - totalDeniedAmount
         - statusBreakdown
         - outcomeBreakdown
+        - groupOutcomeBreakdown
         - errorTypeBreakdown
         - payorBreakdown
 

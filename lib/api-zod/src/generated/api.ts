@@ -26075,6 +26075,22 @@ export const GetDashboardInsightsResponse = zod
         count: zod.number(),
       }),
     ),
+    groupOutcomeBreakdown: zod
+      .array(
+        zod.object({
+          outcome: zod.enum([
+            "Approved",
+            "Partially Approved",
+            "Denied",
+            "Withdrawn",
+            "Mixed",
+          ]),
+          count: zod.number(),
+        }),
+      )
+      .describe(
+        "Invoice-level (not claim-level) outcome rollup, computed\nfrom `invoice_groups.outcome` over groups whose\n`created_at` is in the window. Always returns the same\nfive buckets in this order: `Approved`, `Partially\nApproved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum\nvalues `Pending` and `Non-Issue` both fold into `Mixed`.\nCounts sum to total invoice groups in the window.\n",
+      ),
     errorTypeBreakdown: zod.array(
       zod.object({
         name: zod

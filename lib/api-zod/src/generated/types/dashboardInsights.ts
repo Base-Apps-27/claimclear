@@ -12,6 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { DashboardInsightsErrorTypeBreakdownItem } from "./dashboardInsightsErrorTypeBreakdownItem";
+import type { DashboardInsightsGroupOutcomeBreakdownItem } from "./dashboardInsightsGroupOutcomeBreakdownItem";
 import type { DashboardInsightsOutcomeBreakdownItem } from "./dashboardInsightsOutcomeBreakdownItem";
 import type { DashboardInsightsPayorBreakdownItem } from "./dashboardInsightsPayorBreakdownItem";
 import type { DashboardInsightsStatusBreakdownItem } from "./dashboardInsightsStatusBreakdownItem";
@@ -41,6 +42,15 @@ Mirrors the dashboard "Reclaimed" KPI definition exactly.
   totalDeniedAmount: string | null;
   statusBreakdown: DashboardInsightsStatusBreakdownItem[];
   outcomeBreakdown: DashboardInsightsOutcomeBreakdownItem[];
+  /** Invoice-level (not claim-level) outcome rollup, computed
+from `invoice_groups.outcome` over groups whose
+`created_at` is in the window. Always returns the same
+five buckets in this order: `Approved`, `Partially
+Approved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum
+values `Pending` and `Non-Issue` both fold into `Mixed`.
+Counts sum to total invoice groups in the window.
+ */
+  groupOutcomeBreakdown: DashboardInsightsGroupOutcomeBreakdownItem[];
   errorTypeBreakdown: DashboardInsightsErrorTypeBreakdownItem[];
   payorBreakdown: DashboardInsightsPayorBreakdownItem[];
 }

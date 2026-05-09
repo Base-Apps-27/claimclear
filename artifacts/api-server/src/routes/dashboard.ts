@@ -765,7 +765,17 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
   // §3.E). Keep on `status`: the chart legend renders status names
   // verbatim, and collapsing onto `phase` would lose the breakdown
   // the operator is reading the chart for.
-  const [statusRows, outcomeRows, errorTypeRows, payorRows] = await Promise.all([
+  // `groupOutcomeBreakdown` is invoice-level, not claim-level — it counts
+  // distinct invoice groups by their stored `invoice_groups.outcome` so
+  // the page's "By outcome" card sums to total invoice groups in the
+  // window, not total claims (Task #583, finishing the per-invoice
+  // re-grounding from #563). Windowed on `invoice_groups.created_at` to
+  // mirror the claim-level breakdowns above. The five display buckets
+  // are Approved / Partially Approved / Denied / Withdrawn / Mixed; the
+  // stored enum's "Pending" and "Non-Issue" values both fold into Mixed
+  // since they're not clean terminal states for the operator.
+  const groupInWindow = and(gte(invoiceGroupsTable.createdAt, start), HIDE_TOUR_SAMPLE_GROUP);
+  const [statusRows, outcomeRows, errorTypeRows, payorRows, groupOutcomeRows] = await Promise.all([
     db
       .select({ key: claimsTable.status, count: count() })
       .from(claimsTable)
@@ -807,7 +817,33 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
       .from(claimsTable)
       .where(inWindow)
       .groupBy(claimsTable.payorEmail),
+    db
+      .select({ key: invoiceGroupsTable.outcome, count: count() })
+      .from(invoiceGroupsTable)
+      .where(groupInWindow)
+      .groupBy(invoiceGroupsTable.outcome),
   ]);
+
+  // Roll the 6-value `claim_outcome` enum into the 5 display buckets
+  // the Insights "By outcome" card renders. Pending + Non-Issue both
+  // collapse into "Mixed" — neither is a clean operator-facing verdict.
+  const GROUP_OUTCOME_BUCKETS = ["Approved", "Partially Approved", "Denied", "Withdrawn", "Mixed"] as const;
+  const groupOutcomeCounts: Record<typeof GROUP_OUTCOME_BUCKETS[number], number> = {
+    "Approved": 0,
+    "Partially Approved": 0,
+    "Denied": 0,
+    "Withdrawn": 0,
+    "Mixed": 0,
+  };
+  for (const r of groupOutcomeRows) {
+    const key = r.key;
+    if (key === "Approved" || key === "Partially Approved" || key === "Denied" || key === "Withdrawn") {
+      groupOutcomeCounts[key] += r.count;
+    } else {
+      // "Pending" and "Non-Issue" both fall in here.
+      groupOutcomeCounts["Mixed"] += r.count;
+    }
+  }
 
   const moneyOrNull = (raw: string) =>
     showAmounts ? parseFloat(raw || "0").toFixed(2) : null;
@@ -820,6 +856,7 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
     totalDeniedAmount: moneyOrNull(totalsRow?.totalDeniedAmount ?? "0"),
     statusBreakdown: statusRows.map(r => ({ status: r.key, count: r.count })),
     outcomeBreakdown: outcomeRows.map(r => ({ outcome: r.key, count: r.count })),
+    groupOutcomeBreakdown: GROUP_OUTCOME_BUCKETS.map(b => ({ outcome: b, count: groupOutcomeCounts[b] })),
     errorTypeBreakdown: errorTypeRows.map(r => ({
       // Match the page's "Unclassified" label so the frontend can
       // render this verbatim instead of normalizing each row again.

@@ -3489,6 +3489,22 @@ export type DashboardInsightsOutcomeBreakdownItem = {
   count: number;
 };
 
+export type DashboardInsightsGroupOutcomeBreakdownItemOutcome =
+  (typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome)[keyof typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome];
+
+export const DashboardInsightsGroupOutcomeBreakdownItemOutcome = {
+  Approved: "Approved",
+  Partially_Approved: "Partially Approved",
+  Denied: "Denied",
+  Withdrawn: "Withdrawn",
+  Mixed: "Mixed",
+} as const;
+
+export type DashboardInsightsGroupOutcomeBreakdownItem = {
+  outcome: DashboardInsightsGroupOutcomeBreakdownItemOutcome;
+  count: number;
+};
+
 export type DashboardInsightsErrorTypeBreakdownItem = {
   /** Error type label, or `"Unclassified"` for claims with no error type. */
   name: string;
@@ -3532,6 +3548,15 @@ Mirrors the dashboard "Reclaimed" KPI definition exactly.
   totalDeniedAmount: string | null;
   statusBreakdown: DashboardInsightsStatusBreakdownItem[];
   outcomeBreakdown: DashboardInsightsOutcomeBreakdownItem[];
+  /** Invoice-level (not claim-level) outcome rollup, computed
+from `invoice_groups.outcome` over groups whose
+`created_at` is in the window. Always returns the same
+five buckets in this order: `Approved`, `Partially
+Approved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum
+values `Pending` and `Non-Issue` both fold into `Mixed`.
+Counts sum to total invoice groups in the window.
+ */
+  groupOutcomeBreakdown: DashboardInsightsGroupOutcomeBreakdownItem[];
   errorTypeBreakdown: DashboardInsightsErrorTypeBreakdownItem[];
   payorBreakdown: DashboardInsightsPayorBreakdownItem[];
 }

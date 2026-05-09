@@ -235,11 +235,12 @@ export default function Insights() {
     for (const r of insights?.statusBreakdown ?? []) m[r.status] = r.count;
     return m;
   }, [insights?.statusBreakdown]);
-  const outcomeBreakdown = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const r of insights?.outcomeBreakdown ?? []) m[r.outcome] = r.count;
-    return m;
-  }, [insights?.outcomeBreakdown]);
+  // Invoice-level rollup (Task #583). The server returns the five
+  // display buckets in a fixed order over invoice groups in the window
+  // — preserve that order in the card so Approved → Mixed reads top
+  // to bottom every render, instead of reshuffling by count.
+  const groupOutcomeBreakdown = insights?.groupOutcomeBreakdown ?? [];
+  const totalGroupOutcomes = groupOutcomeBreakdown.reduce((s, r) => s + r.count, 0);
   const payorBreakdown = useMemo(() => {
     const m: Record<string, { count: number; atRisk: number }> = {};
     for (const r of insights?.payorBreakdown ?? []) {
@@ -783,18 +784,16 @@ export default function Insights() {
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-card p-3.5">
+        <div className="rounded-md border border-border bg-card p-3.5" data-testid="group-outcome-breakdown">
           <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
             By outcome
-            <InfoTooltip content="Distribution of all claims by dispute outcome." />
+            <InfoTooltip content="Distribution of invoice groups by outcome. Counts sum to total invoice groups in the window." />
           </div>
           <div className="text-xs space-y-1">
-            {Object.keys(outcomeBreakdown).length === 0 ? (
+            {totalGroupOutcomes === 0 ? (
               <p className="text-muted-foreground">No outcomes to display</p>
             ) : (
-              Object.entries(outcomeBreakdown)
-                .sort((a, b) => b[1] - a[1])
-                .map(([o, n]) => {
+              groupOutcomeBreakdown.map(({ outcome: o, count: n }) => {
                   const color =
                     o === "Approved" || o === "Partially Approved"
                       ? "hsl(var(--cc-success))"
@@ -813,7 +812,9 @@ export default function Insights() {
                   );
                 })
             )}
-            <div className="text-[10px] text-muted-foreground pt-1">{totalClaims} total claims</div>
+            <div className="text-[10px] text-muted-foreground pt-1">
+              {totalGroupOutcomes} total invoice group{totalGroupOutcomes === 1 ? "" : "s"}
+            </div>
           </div>
         </div>
 

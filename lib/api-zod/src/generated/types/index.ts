@@ -138,6 +138,8 @@ export * from "./dashboardActivityEventActorRole";
 export * from "./dashboardActivityEventTone";
 export * from "./dashboardInsights";
 export * from "./dashboardInsightsErrorTypeBreakdownItem";
+export * from "./dashboardInsightsGroupOutcomeBreakdownItem";
+export * from "./dashboardInsightsGroupOutcomeBreakdownItemOutcome";
 export * from "./dashboardInsightsOutcomeBreakdownItem";
 export * from "./dashboardInsightsPayorBreakdownItem";
 export * from "./dashboardInsightsStatusBreakdownItem";
