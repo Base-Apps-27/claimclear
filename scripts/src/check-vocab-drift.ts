@@ -16,7 +16,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { FORBIDDEN_LITERALS, VOCAB_ALLOW_DIRECTIVE } from "@workspace/vocab";
+import {
+  FORBIDDEN_LITERALS,
+  FORBIDDEN_BADGE_STATE_EXPRS,
+  VOCAB_ALLOW_DIRECTIVE,
+} from "@workspace/vocab";
 
 interface Hit {
   file: string;
@@ -101,6 +105,29 @@ export function scanFile(file: string, contents: string): Hit[] {
     for (const literal of FORBIDDEN_LITERALS) {
       if (codePortion.includes(literal)) {
         hits.push({ file, line: i + 1, text: line.trim(), literal });
+      }
+    }
+    // Broader contract: a `<Badge>` (or any non-StateBadge JSX element)
+    // that renders one of the canonical state-domain expressions is a
+    // state pill in disguise. Flag it so the author either routes
+    // through `<StateBadge>` or marks it `vocab-allow-next-line`.
+    if (codePortion.includes("<Badge") || codePortion.includes(">{")) {
+      for (const expr of FORBIDDEN_BADGE_STATE_EXPRS) {
+        if (codePortion.includes(expr) && !codePortion.includes("<StateBadge")) {
+          // Skip pure read-only comparisons (`x === y`, `if (x.status)`)
+          // by requiring the expression to sit inside JSX text — simplest
+          // heuristic: it's preceded by `>` on the same line, OR the line
+          // also contains `<Badge`.
+          const indexOfExpr = codePortion.indexOf(expr);
+          const before = codePortion.slice(0, indexOfExpr);
+          const looksLikeJsxText =
+            before.includes("<Badge") ||
+            /[>]\s*$/.test(before) ||
+            before.trimEnd().endsWith(">");
+          if (looksLikeJsxText) {
+            hits.push({ file, line: i + 1, text: line.trim(), literal: expr });
+          }
+        }
       }
     }
   }

@@ -64,13 +64,12 @@ import { HideForClerk } from "@/lib/role";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
-import { StatusPill } from "@/components/cohesion";
+import { TonePill } from "@/components/cohesion";
+import { StateBadge } from "@/components/state-badge";
 import { RefNumber } from "@/components/ref-number";
-import type { Tone } from "@/components/cohesion/tone";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
 import { deriveLegSubStatus } from "@workspace/leg-state";
-import { legSubStatusDisplayLabel } from "@workspace/vocab";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import {
   buildTripOverridingErrorTypeIds,
@@ -118,16 +117,6 @@ interface Props {
   // without leaving the surface.
   submissionSlot?: ReactNode;
 }
-
-const SUB_STATUS_TO_TONE: Record<string, Tone> = {
-  needs_classification: "amber",
-  investigating: "amber",
-  ready: "blue",
-  dropped: "muted",
-  blocked: "amber",
-  excluded: "muted",
-  duplicate: "muted",
-};
 
 function CcCard({
   title, action, icon, children, padded = true, testId,
@@ -265,24 +254,6 @@ function buildSizeMap(...sources: Array<EvidenceFileRef[] | null | undefined>): 
   return out;
 }
 
-function groupStatusTone(status: string | undefined): Tone {
-  switch (status) {
-    case "Resolved": return "green";
-    case "Submitted":
-    case "Awaiting Response":
-    case "Awaiting Payout":
-    case "Portal Queued":
-      return "blue";
-    case "Needs Evidence":
-    case "Generating Email":
-    case "Email Generated":
-      return "amber";
-    case "On Hold":
-      return "red";
-    default: return "muted";
-  }
-}
-
 export function ClaimDetailV2({
   claimId,
   embedded = false,
@@ -325,9 +296,6 @@ export function ClaimDetailV2({
     () => (claim ? deriveLegSubStatus(claim) : "needs_classification"),
     [claim],
   );
-  const subStatusTone: Tone = SUB_STATUS_TO_TONE[subStatus] ?? SUB_STATUS_TO_TONE.needs_classification;
-  const subStatusLabel = legSubStatusDisplayLabel(subStatus, claim ?? undefined);
-
   // ─────────────────────────────────────────────────────────────────────
   // "You finished a thing" microinteraction (Task #315). When this leg's
   // top-level status flips to `Processed` while the page is mounted —
@@ -865,9 +833,12 @@ export function ClaimDetailV2({
                   <h1 className="text-xl font-bold mono">
                     {claim.confNumber || `CLM-${claim.id}`}
                   </h1>
-                  <StatusPill tone={subStatusTone} justTransitioned={justProcessed}>
-                    {subStatusLabel}
-                  </StatusPill>
+                  <StateBadge
+                    variant="subStatus"
+                    value={subStatus}
+                    leg={claim ?? undefined}
+                    justTransitioned={justProcessed}
+                  />
                   {claim.errorTypeName ? (
                     <span className="inline-flex items-center gap-1.5">
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
@@ -1304,6 +1275,7 @@ export function ClaimDetailV2({
                       : claim.sopOutcome === "cannot_dispute" || claim.dropReason === "cannot_dispute"
                       ? { label: "Cannot dispute", body: "This leg is non-contestable and has been withdrawn from the dispute.", pill: "cc-pill-amber" }
                       : claim.includedInDispute === false
+                      // vocab-allow-next-line — pre-existing reason-card display label; tracked for follow-up vocab entry, not a state-pill rendered through StateBadge.
                       ? { label: "Excluded", body: "This leg has been excluded from the dispute.", pill: "cc-pill-muted" }
                       : { label: "Closed", body: "This leg has reached a final state and no further SOP work is needed.", pill: "cc-pill-muted" };
                   return (
@@ -1749,7 +1721,7 @@ export function ClaimDetailV2({
                 <div className="space-y-1">
                   <FieldRow
                     label="Group status"
-                    value={<StatusPill tone={groupStatusTone(parentGroup.status)}>{parentGroup.status}</StatusPill>}
+                    value={<StateBadge variant="status" value={parentGroup.status} />}
                   />
                   {parentGroup.macroPhase ? (
                     <FieldRow label="Macro phase" value={parentGroup.macroPhase} />
@@ -1787,9 +1759,7 @@ export function ClaimDetailV2({
               {verdict ? (
                 <>
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <StatusPill tone={verdict.outcome === "Approved" ? "green" : verdict.outcome === "Denied" ? "red" : "muted"}>
-                      {verdict.outcome}
-                    </StatusPill>
+                    <StateBadge variant="verdict" value={verdict.outcome} />
                     <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                       via {verdict.source} · {relativeTime(verdict.createdAt)}
                     </span>
@@ -1803,7 +1773,7 @@ export function ClaimDetailV2({
               ) : (
                 <>
                   <div className="flex items-center gap-2 mb-2">
-                    <StatusPill tone="muted">No verdict yet</StatusPill>
+                    <TonePill tone="muted">No verdict yet</TonePill>
                     <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                       Awaiting submission
                     </span>
@@ -1831,13 +1801,13 @@ export function ClaimDetailV2({
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   {masCompleted ? (
                     <>
-                      <StatusPill tone="green">MAS completed</StatusPill>
+                      <TonePill tone="green">MAS completed</TonePill>
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                         {relativeTime(claim.masActionCompletedAt)}
                       </span>
                     </>
                   ) : (
-                    <StatusPill tone="amber">Cancel required</StatusPill>
+                    <TonePill tone="amber">Cancel required</TonePill>
                   )}
                 </div>
                 {claim.masActionNote ? (

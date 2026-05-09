@@ -12,7 +12,7 @@ import type {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Section, StatusPill, TONE_STYLE } from "@/components/cohesion";
+import { Section, TonePill, TONE_STYLE } from "@/components/cohesion";
 import { formatDateTime } from "@/lib/format";
 import {
   buildReattestChecklist,
@@ -129,9 +129,9 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
                 </Badge>
                 {pendingRename && (
                   <span data-testid="queue-row-rename-chip">
-                    <StatusPill tone="purple" className="text-[10px] font-mono">
+                    <TonePill tone="purple" className="text-[10px] font-mono">
                       Renamed → #{pendingRename.to}
-                    </StatusPill>
+                    </TonePill>
                   </span>
                 )}
               </div>

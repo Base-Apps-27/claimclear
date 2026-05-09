@@ -440,6 +440,7 @@ export function InlineGroupWorkspaceV3({ groupId }: Props) {
   const submitted =
     !!detail.outcome &&
     detail.outcome !== "Withdrawn" &&
+    // vocab-allow-next-line — comparing against the API enum value, not a label.
     detail.outcome !== "Non-Issue" &&
     detail.status !== "New" &&
     detail.status !== "Needs Evidence";
@@ -1023,6 +1024,7 @@ function WalkSopHero({
                   : claim.sopOutcome === "cannot_dispute" || claim.dropReason === "cannot_dispute"
                   ? { label: "Cannot dispute", body: "This leg is non-contestable and has been withdrawn from the dispute.", tone: "amber" as const }
                   : claim.includedInDispute === false
+                  // vocab-allow-next-line — pre-existing reason-card display label; tracked for follow-up vocab entry, not a state-pill rendered through StateBadge.
                   ? { label: "Excluded", body: "This leg has been excluded from the dispute.", tone: "muted" as const }
                   : { label: "Closed", body: "This leg has reached a final state and no further SOP work is needed.", tone: "muted" as const };
               const accentVar =

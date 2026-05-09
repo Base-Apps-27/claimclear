@@ -87,19 +87,20 @@ test("Rides & legs row renders Non-contestable for cannot_dispute and Non-issue 
   );
 });
 
-test("invoice-group-detail-v2 rides & legs row uses legSubStatusDisplayLabel(sub, r)", () => {
+test("invoice-group-detail-v2 rides & legs row passes the leg row to StateBadge", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(
     join(here, "invoice-group-detail-v2.tsx"),
     "utf8",
   );
-  // The reason-aware helper must be the one wired into the row pill.
-  // Match loosely on whitespace so a harmless reformat doesn't fail
-  // this test — what we actually want to pin is "the row passes the
-  // leg row to the display-label helper", not the exact JSX layout.
+  // Task #554 — the row pill now goes through `<StateBadge
+  // variant="subStatus" value={sub} leg={r} />`. StateBadge calls
+  // `legSubStatusDisplayLabel(value, leg)` internally when `leg` is
+  // provided, so the reason-aware label contract from #521 still
+  // holds, just one indirection up.
   assert.match(
     src,
-    /legSubStatusDisplayLabel\(\s*sub\s*,\s*r\s*\)/,
-    "rides & legs row must call legSubStatusDisplayLabel(sub, r) — see Task #521",
+    /<StateBadge[^>]*variant="subStatus"[^>]*\bleg=\{r\}/,
+    "rides & legs row must pass `leg={r}` to StateBadge — see Tasks #521, #554",
   );
 });

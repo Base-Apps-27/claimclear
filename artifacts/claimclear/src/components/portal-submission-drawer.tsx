@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/state-badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, X, Send, Play, ExternalLink, FileText, Image as ImageIcon,
@@ -302,9 +303,7 @@ export function PortalSubmissionDrawer({
                 {submission?.confNumber || `#${submissionId}`}
               </span>
               {submission && (
-                <Badge variant="outline" className={statusPillStyles[submission.status] || ""}>
-                  {statusLabels[submission.status] || submission.status}
-                </Badge>
+                <StateBadge variant="stage" value={submission.status} />
               )}
             </div>
           </div>

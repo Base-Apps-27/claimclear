@@ -54,11 +54,10 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
-import { StatusPill } from "@/components/cohesion";
+import { StateBadge } from "@/components/state-badge";
+import { outcomeLabel } from "@workspace/vocab";
 import { RefNumber } from "@/components/ref-number";
-import type { Tone } from "@/components/cohesion/tone";
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
-import { legSubStatusLabel as glossarySubStatusLabel, legSubStatusDisplayLabel } from "@workspace/vocab";
 import {
   isOfflineReattestNoteValid,
   canSubmitOfflineReattest,
@@ -164,45 +163,6 @@ function relativeTime(iso: string | null | undefined): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   return `${d}d ago`;
-}
-
-function statusTone(status: string | undefined): Tone {
-  switch (status) {
-    case "Resolved":
-      return "green";
-    case "Denied":
-      return "red";
-    case "Submitted":
-    case "Awaiting Response":
-    case "Awaiting Payout":
-      return "blue";
-    case "Generating Email":
-    case "Email Generated":
-    case "Needs Evidence":
-      return "amber";
-    default:
-      return "muted";
-  }
-}
-
-function legSubStatusTone(s: LegSubStatus): Tone {
-  switch (s) {
-    case "ready": return "green";
-    case "investigating": return "amber";
-    case "blocked": return "red";
-    case "excluded":
-    case "dropped":
-      return "muted";
-    case "needs_classification": return "amber";
-    default: return "muted";
-  }
-}
-
-// Thin wrapper around the glossary so existing render call sites
-// (`legSubStatusLabel(sub)`) keep working. See @workspace/vocab for the
-// canonical labels.
-function legSubStatusLabel(s: LegSubStatus): string {
-  return glossarySubStatusLabel(s);
 }
 
 function auditIcon(action: string) {
@@ -776,7 +736,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                       <span>#{group.id}</span>
                     )}
                   </h1>
-                  <StatusPill tone={statusTone(group.status)} justTransitioned={justShipped}>{group.status}</StatusPill>
+                  <StateBadge variant="status" value={group.status} justTransitioned={justShipped} />
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                     {group.errorTypeName ? <>{group.errorTypeName} · </> : null}
@@ -1138,7 +1098,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         </div>
                       )}
                       <div className="col-span-2">
-                        <StatusPill tone={legSubStatusTone(sub)}>{legSubStatusDisplayLabel(sub, r)}</StatusPill>
+                        <StateBadge variant="subStatus" value={sub} leg={r} />
                       </div>
                       <div className={`${isClerk ? "col-span-3" : "col-span-2"} flex items-center justify-end gap-1.5`}>
                         <Link
@@ -1264,9 +1224,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     {group.outcome && group.outcome !== "Pending" ? (
                       <div className="text-sm space-y-1 p-3 rounded" style={{ background: "var(--cc-muted)" }}>
                         <div className="flex items-center gap-2">
-                          <StatusPill tone={statusTone(group.status)}>
-                            <span data-testid="group-verdict-outcome">{group.outcome}</span>
-                          </StatusPill>
+                          <StateBadge
+                            variant="outcome"
+                            value={group.outcome}
+                            data-testid="group-verdict-outcome"
+                          />
                           {group.closureReason && (
                             <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                               · {group.closureReason}
@@ -1878,7 +1840,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               </div>
               {isAlreadyClosed ? (
                 <p className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  Already closed — outcome <strong>{group.outcome}</strong>
+                  Already closed — outcome <strong>{outcomeLabel(group.outcome)}</strong>
                   {group.closureReason ? ` · ${group.closureReason}` : ""}.
                 </p>
               ) : (

@@ -48,7 +48,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { StatusBadge } from "@/components/status-badge";
+import { StateBadge } from "@/components/state-badge";
 import { RefNumber } from "@/components/ref-number";
 import { EmptyState } from "@/components/empty-state";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
@@ -727,7 +727,7 @@ function ListRow({ group, isSelected, onSelect, isSettling = false, isJustSelect
         </div>
 
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-          <StatusBadge status={group.status} />
+          <StateBadge variant="status" value={group.status} />
           {latestResponse ? (
             <span
               className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${getResponseTypePillClass(latestResponse.responseType)}`}

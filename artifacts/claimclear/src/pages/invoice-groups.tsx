@@ -40,9 +40,10 @@ import { useUrlParams } from "@/lib/use-url-params";
 import { CREATED_DATE_PRESETS } from "@/lib/date-presets";
 import {
   PageHeader, FilterStrip, type FilterStripTab,
-  StatusStrip, StatusDot, StatusPillForStatus,
+  StatusStrip, StatusDot,
   Recommended, ToneButton, CrossPageNudge, TONE_STYLE,
 } from "@/components/cohesion";
+import { StateBadge } from "@/components/state-badge";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { RefNumber } from "@/components/ref-number";
@@ -955,7 +956,7 @@ export default function InvoiceGroupsList() {
                               <td className={`px-4 ${tdPy} font-medium tabular-nums whitespace-nowrap`}>{formatCurrency(group.totalAmount)}</td>
                             )}
                             {visibleCols.has("status") && (
-                              <td className={`px-4 ${tdPy}`}><StatusPillForStatus status={group.status} /></td>
+                              <td className={`px-4 ${tdPy}`}><StateBadge variant="status" value={group.status} /></td>
                             )}
                             {visibleCols.has("createdAt") && (
                               <td className={`px-4 ${tdPy} text-muted-foreground whitespace-nowrap`}>{group.createdAt ? formatDate(group.createdAt) : '—'}</td>

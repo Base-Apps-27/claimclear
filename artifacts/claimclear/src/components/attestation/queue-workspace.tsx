@@ -9,7 +9,7 @@ import type {
 } from "@workspace/api-client-react";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { StatusPill } from "@/components/cohesion";
+import { TonePill } from "@/components/cohesion";
 import { ShieldCheck } from "lucide-react";
 import { useUrlParams } from "@/lib/use-url-params";
 import { MasterDetailShell } from "./master-detail-shell";
@@ -178,9 +178,9 @@ export function QueueWorkspace() {
                   <>
                     <span className="truncate">Payor {payor}</span>
                     <span data-testid={`queue-row-summary-${bucket.key}`}>
-                      <StatusPill tone={tone} className="text-[10px] uppercase tracking-wide font-bold">
+                      <TonePill tone={tone} className="text-[10px] uppercase tracking-wide font-bold">
                         {pillLabel}
-                      </StatusPill>
+                      </TonePill>
                     </span>
                   </>
                 }

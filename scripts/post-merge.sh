@@ -9,6 +9,11 @@ pnpm install --frozen-lockfile
 # prod now use the exact same migration path (`pnpm --filter @workspace/db
 # run migrate`) so any drift is caught the moment a task merges.
 pnpm --filter @workspace/db run migrate
+# Task #554 — fail the merge if any operator-facing surface has drifted
+# back to a forbidden display literal (e.g. "Excluded", "Non-Issue").
+# StateBadge + the @workspace/vocab glossary are the single source of
+# truth for state labels; this guardrail keeps that invariant honest.
+pnpm --filter @workspace/scripts run check:vocab-drift
 # Regenerate the OpenAPI client first so downstream type builds see fresh source.
 pnpm --filter @workspace/api-spec run codegen
 # Rebuild composite project declarations so referencing projects don't pick up

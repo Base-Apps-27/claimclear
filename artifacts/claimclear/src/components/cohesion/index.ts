@@ -1,5 +1,5 @@
 export { TONE_STYLE, toneForRow, toneForStatus, type RowForTone, type Tone } from "./tone";
-export { StatusPill, StatusPillForRow, StatusPillForStatus } from "./status-pill";
+export { TonePill } from "./tone-pill";
 export { PageHeader } from "./page-header";
 export { FilterStrip, type FilterStripTab } from "./filter-strip";
 export { StatusStrip, StatusDot, type StatusDotTone } from "./status-strip";

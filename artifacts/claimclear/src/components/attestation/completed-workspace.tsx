@@ -8,7 +8,7 @@ import type {
 } from "@workspace/api-client-react";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { Section, StatusPill } from "@/components/cohesion";
+import { Section, TonePill } from "@/components/cohesion";
 import {
   Select,
   SelectTrigger,
@@ -196,9 +196,9 @@ function CompletedMasterDetail({
                   <span className="truncate">
                     Payor {entry.group.clientNumber ?? "—"}
                   </span>
-                  <StatusPill tone="green" className="text-[10px] uppercase tracking-wide font-bold">
+                  <TonePill tone="green" className="text-[10px] uppercase tracking-wide font-bold">
                     Re-attested
-                  </StatusPill>
+                  </TonePill>
                 </>
               }
               bottomLine={

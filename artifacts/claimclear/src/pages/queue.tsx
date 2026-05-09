@@ -13,7 +13,7 @@ import type {
   NeedsClassificationInboxGroup,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { StatusBadge } from "@/components/status-badge";
+import { StateBadge } from "@/components/state-badge";
 import { RefNumber } from "@/components/ref-number";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1393,7 +1393,7 @@ export default function Queue({ variant = "classic" }: QueueProps = {}) {
               <RefNumber value={group.invoiceNumber} variant="inline" className="font-semibold" />
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
             </div>
-            <StatusBadge status={group.status} />
+            <StateBadge variant="status" value={group.status} />
             {opts.showDeadline && renderDeadlineHint(group)}
           </div>
           <div className="flex items-center gap-4 text-sm min-w-0 justify-between">
@@ -2022,7 +2022,7 @@ function ClassificationInboxRow({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <RefNumber value={group.invoiceNumber} variant="inline" className="font-semibold" />
-            <Badge variant="outline" className="text-[10px]">{group.status}</Badge>
+            <StateBadge variant="status" value={group.status} className="text-[10px]" />
             {group.allBlank ? (
               <Badge
                 variant="outline"

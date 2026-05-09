@@ -3,13 +3,13 @@ import type {
   GroupAttestationHistoryEntry,
   GroupAttestationHistoryLeg,
 } from "@workspace/api-client-react";
-import { Badge } from "@/components/ui/badge";
 import {
   Section,
-  StatusPill,
+  TonePill,
   TONE_STYLE,
   type Tone,
 } from "@/components/cohesion";
+import { StateBadge } from "@/components/state-badge";
 import {
   ExternalLink,
   CheckCircle2,
@@ -82,12 +82,12 @@ export function CompletedDetailPane({
                 <h3 className="font-mono text-xl font-semibold tracking-tight">
                   {group.invoiceNumber}
                 </h3>
-                <StatusPill
+                <TonePill
                   tone="green"
                   className="text-[10px] uppercase tracking-wide font-bold"
                 >
                   Re-attested
-                </StatusPill>
+                </TonePill>
               </div>
               <div className="text-sm text-muted-foreground">
                 Payor{" "}
@@ -189,19 +189,18 @@ function CompletedLegRow({ leg }: { leg: GroupAttestationHistoryLeg }) {
           <span className="font-mono text-sm font-medium">
             {claim.confNumber}
           </span>
-          <Badge
-            variant="outline"
+          <StateBadge
+            variant="outcome"
+            value={claim.outcome}
             className="text-[10px] uppercase tracking-wide font-bold"
-          >
-            {claim.outcome}
-          </Badge>
-          <StatusPill
+          />
+          <TonePill
             tone={meta.tone}
             className="text-[10px] uppercase tracking-wide font-bold"
             data-testid={`completed-leg-outcome-${claim.id}`}
           >
             {meta.label}
-          </StatusPill>
+          </TonePill>
         </div>
         <div className="text-muted-foreground mt-1 space-y-0.5">
           {outcomeAt && (

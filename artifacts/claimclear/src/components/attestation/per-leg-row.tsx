@@ -16,7 +16,7 @@ import type {
 import { successToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { StatusPill } from "@/components/cohesion";
+import { TonePill } from "@/components/cohesion";
 import { CheckCircle2 } from "lucide-react";
 import { TONE_STYLE } from "@/components/cohesion";
 
@@ -101,17 +101,17 @@ export function PerLegRow({
         </Badge>
         {alreadyConfirmed ? (
           <span data-testid={`already-confirmed-${claim.id}`}>
-            <StatusPill tone="green" className="text-[10px]">
+            <TonePill tone="green" className="text-[10px]">
               <CheckCircle2 className="h-3 w-3" /> Already confirmed
-            </StatusPill>
+            </TonePill>
           </span>
         ) : (
-          <StatusPill
+          <TonePill
             tone={state === "queued" ? "blue" : "amber"}
             className="text-[10px]"
           >
             {state === "queued" ? "Parked" : "Owed by you"}
-          </StatusPill>
+          </TonePill>
         )}
       </div>
       {!alreadyConfirmed && (

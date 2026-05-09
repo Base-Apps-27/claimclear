@@ -35,9 +35,10 @@ import { useUrlParams } from "@/lib/use-url-params";
 import { SERVICE_DATE_PRESETS, CREATED_DATE_PRESETS } from "@/lib/date-presets";
 import {
   PageHeader,
-  StatusStrip, StatusDot, StatusPillForRow,
+  StatusStrip, StatusDot,
   Recommended, ToneButton, CrossPageNudge, TONE_STYLE,
 } from "@/components/cohesion";
+import { StateBadge } from "@/components/state-badge";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import {
@@ -808,7 +809,7 @@ export default function ClaimsList() {
                               <td className={`px-4 ${tdPy} font-medium tabular-nums whitespace-nowrap`}>{formatCurrency(claim.claimAmount)}</td>
                             )}
                             {visibleCols.has("status") && (
-                              <td className={`px-4 ${tdPy}`}><StatusPillForRow row={claim} /></td>
+                              <td className={`px-4 ${tdPy}`}><StateBadge variant="status" value={claim.status} row={claim} /></td>
                             )}
                             {visibleCols.has("createdAt") && (
                               <td className={`px-4 ${tdPy} text-muted-foreground whitespace-nowrap`}>{claim.createdAt ? formatDate(claim.createdAt) : '—'}</td>

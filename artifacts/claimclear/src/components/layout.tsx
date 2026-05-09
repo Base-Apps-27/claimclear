@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
+import { StateLegend } from "@/components/state-legend";
 import { HeaderSearch } from "@/components/header-search";
 import { useAdminTour } from "@/tour/admin-tour";
 import { HelpPopover } from "@/tour/help-popover";
@@ -456,6 +457,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                           <span className="flex-1">Take the tour</span>
                         </SidebarMenuButton>
                       </WrapTooltip>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <StateLegend />
                     </SidebarMenuItem>
                   </SidebarMenu>
                 </SidebarGroupContent>

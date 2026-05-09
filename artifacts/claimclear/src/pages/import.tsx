@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
 import {
-  PageHeader, Section, StatusPill, TONE_STYLE, ToneButton, type Tone,
+  PageHeader, Section, TonePill, TONE_STYLE, ToneButton, type Tone,
 } from "@/components/cohesion";
 import { StageStepper, type Stage } from "@/components/stage-stepper";
 import { RefNumber } from "@/components/ref-number";
@@ -1237,7 +1237,7 @@ function ClassifyStep({
                   )}
                 </div>
                 <div>
-                  <StatusPill tone={conf.tone}>{conf.label}</StatusPill>
+                  <TonePill tone={conf.tone}>{conf.label}</TonePill>
                 </div>
                 <div className="text-right">
                   <Button

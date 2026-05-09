@@ -58,6 +58,7 @@ const statusPillClass: Record<string, string> = {
 // through here. Color tokens stay above — they're presentation, not
 // vocabulary.
 import { submissionStageLabel } from "@workspace/vocab";
+import { StateBadge } from "@/components/state-badge";
 
 const statusLabels: Record<string, string> = {
   draft: submissionStageLabel("draft"),
@@ -894,9 +895,7 @@ function StatusGroupCard({
             />
           </WrapTooltip>
         )}
-        <Badge variant="outline" className={statusPillClass[status] || ""}>
-          {statusLabels[status] || status}
-        </Badge>
+        <StateBadge variant="stage" value={status} />
         <span className="text-xs font-medium text-muted-foreground">{rows.length} {rows.length === 1 ? "item" : "items"}</span>
         {status === "draft" && draftsAlreadyDoneElsewhere > 0 && (
           <span
@@ -1015,9 +1014,12 @@ function SubmissionRow({
         })()}
       </span>
 
-      <Badge variant="outline" className={`${statusPillClass[sub._displayStatus] || ""} text-[10px] h-5 px-1.5 flex-shrink-0`} data-testid={`row-status-${sub.id}`}>
-        {statusLabels[sub._displayStatus] || sub._displayStatus}
-      </Badge>
+      <StateBadge
+        variant="stage"
+        value={sub._displayStatus}
+        className="text-[10px] h-5 px-1.5 flex-shrink-0"
+        data-testid={`row-status-${sub.id}`}
+      />
 
       <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
         {(sub.attempts ?? 0) > 0 && (sub.status === "pending" || sub.status === "in_progress" || sub.status === "failed") && (

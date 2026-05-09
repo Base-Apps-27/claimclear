@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PageHeader, StatusPill } from "@/components/cohesion";
+import { PageHeader, TonePill } from "@/components/cohesion";
 import {
   useListAttestationPending,
   useGetInvoiceGroupAttestationHistory,
@@ -43,20 +43,20 @@ export default function AttestationQueue() {
         accent="blue"
         actions={
           <div className="flex items-center gap-2" data-testid="attestation-header-counts">
-            <StatusPill
+            <TonePill
               tone={openCount > 0 ? "amber" : "muted"}
               className="text-[10px] uppercase tracking-wide font-bold"
               data-testid="attestation-header-count-open"
             >
               {openCount} open
-            </StatusPill>
-            <StatusPill
+            </TonePill>
+            <TonePill
               tone="green"
               className="text-[10px] uppercase tracking-wide font-bold"
               data-testid="attestation-header-count-completed"
             >
               {completedCount} completed
-            </StatusPill>
+            </TonePill>
           </div>
         }
       />

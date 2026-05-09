@@ -11,7 +11,58 @@ that exist on purpose.
 > `outcomeLabel`, `legSubStatusDisplayLabel`, `closureReasonLabel`).
 > If you find a hard-coded literal in a `.tsx` file, the CI guardrail
 > `pnpm --filter @workspace/scripts run check:vocab-drift` should
-> reject it.
+> reject it. The drift check runs automatically on every merge via
+> `scripts/post-merge.sh`.
+
+## How to render state in the UI
+
+Operator-facing surfaces render every state pill through a single
+component, `<StateBadge>` (`artifacts/claimclear/src/components/state-badge.tsx`).
+StateBadge is the only place these vocabularies become pixels — it
+sources its label and tooltip from `@workspace/vocab` and its tone
+from the cohesion palette, and it always wraps itself in a tooltip
+that names the domain so an operator can never confuse "Resolved"
+the workflow status with "Resolved" the outcome.
+
+Six variants, one per domain:
+
+| `variant`     | Vocab module                   | Helper                              |
+| ------------- | ------------------------------ | ----------------------------------- |
+| `phase`       | `invoice-phase.ts`             | `invoicePhaseLabel`                 |
+| `status`      | `claim-status.ts`              | `claimStatusLabel`                  |
+| `subStatus`   | `leg-sub-status.ts`            | `legSubStatusDisplayLabel`          |
+| `verdict`     | `verdict-outcome.ts` / `outcome.ts` | `verdictOutcomeLabel` / `outcomeLabel` |
+| `outcome`     | `outcome.ts`                   | `outcomeLabel`                      |
+| `stage`       | `submission-stage.ts`          | `submissionStageLabel`              |
+
+```tsx
+<StateBadge variant="status" value={group.status} />
+<StateBadge variant="status" value={claim.status} row={claim} />  {/* row-aware tone */}
+<StateBadge variant="subStatus" leg={leg} />                       {/* derives value */}
+<StateBadge variant="outcome" value={group.outcome} />
+<StateBadge variant="verdict" value={verdict.outcome} />
+<StateBadge variant="phase" value={group.phase} />
+<StateBadge variant="stage" value={submission.stage} />
+```
+
+Sidebar mounts a `<StateLegend />` popover (link **State legend**
+under the Help group) — operators can skim every domain's definition,
+example pills, and surface list without leaving the page they're on.
+
+### Decorative pills are NOT state
+
+For chips that aren't bound to one of the six domains (counters,
+"DONE" stamps, MAS-action prompts, period markers), use the
+presentational primitive `<TonePill tone="…">…</TonePill>` from
+`@/components/cohesion`. TonePill just renders children with a tone
+background; it intentionally does NOT carry a tooltip or a vocab
+lookup. If you reach for TonePill to render a `claim_status`,
+`outcome`, or other glossary value — stop, that's what `<StateBadge>`
+is for.
+
+The legacy renderers `status-badge.tsx` and `cohesion/status-pill.tsx`
+were deleted in Task #554. See
+`docs/audits/state-pill-inventory.md` for the migration audit.
 
 ---
 

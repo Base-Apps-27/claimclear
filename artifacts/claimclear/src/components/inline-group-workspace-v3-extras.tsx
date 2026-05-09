@@ -1287,6 +1287,7 @@ function humanizeSubStatus(s: ReturnType<typeof deriveLegSubStatus>): string {
     case "investigating": return "Investigating";
     case "ready": return "Ready";
     case "blocked": return "On hold";
+    // vocab-allow-next-line — pre-existing local helper; rendered indirectly through StateBadge variant=subStatus elsewhere.
     case "dropped": return "Dropped";
     case "frozen": return "Frozen";
     default: return String(s);
