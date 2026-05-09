@@ -301,6 +301,7 @@ export * from "./portalResponseItemSource";
 export * from "./portalSubmissionResponse";
 export * from "./portalSubmissionResponseCompletedElsewhere";
 export * from "./portalSubmissionResponseDescriptionHistoryItem";
+export * from "./portalSubmissionResponseGroupMacroPhase";
 export * from "./portalSubmissionResponseLegsItem";
 export * from "./portalSubmissionResponseStatus";
 export * from "./portalUnderstandingPreflightBody";

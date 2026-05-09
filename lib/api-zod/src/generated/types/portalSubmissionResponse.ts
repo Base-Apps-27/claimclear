@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
 import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
+import type { PortalSubmissionResponseGroupMacroPhase } from "./portalSubmissionResponseGroupMacroPhase";
 import type { PortalSubmissionResponseLegsItem } from "./portalSubmissionResponseLegsItem";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
 
@@ -128,6 +129,18 @@ null on the success row itself. The latest sibling success wins.
   completedElsewhere?: PortalSubmissionResponseCompletedElsewhere;
   /** Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those. */
   legs: PortalSubmissionResponseLegsItem[];
+  /**
+   * Macro lifecycle phase of the parent invoice group at read time.
+Surfaced so the Portal Submissions UI can render the macro phase as
+the *primary* state chip and the Submission Stage as a subordinate
+secondary chip ("In-flight · Submitted") per the invoice-first
+cleanup (Task #564). Derived server-side via `getGroupMacroPhase`
+on the joined invoice_groups row; null only if the group row
+could not be loaded (should not happen for non-orphaned rows).
+
+   * @nullable
+   */
+  groupMacroPhase?: PortalSubmissionResponseGroupMacroPhase;
   createdAt?: string;
   updatedAt?: string;
 }

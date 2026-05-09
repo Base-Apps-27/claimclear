@@ -24,7 +24,28 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { absoluteTooltip } from "@/lib/time";
 import { WrapTooltip } from "@/components/info-tooltip";
+import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
+
+// Task #564 — display labels for the parent group's macro-phase chip
+// shown alongside the submission stage. Mirrors the canonical 7-bucket
+// MacroPhase enum from `api-server/src/lib/macro-phase.ts`. The macro
+// phase is the *primary* lifecycle bucket of an invoice group; the
+// submission Stage (draft / pending / submitted / …) is subordinate
+// and renders as a secondary chip in the form "In-flight · Submitted".
+const MACRO_PHASE_LABEL: Record<string, string> = {
+  "pre-submit": "Pre-submit",
+  "in-flight": "In flight",
+  "response-pending": "Response pending",
+  "mas-action-required": "MAS action",
+  "awaiting-payout": "Awaiting payout",
+  "closed": "Closed",
+  "on-hold": "On hold",
+};
+function macroPhaseLabel(p: string | null | undefined): string {
+  return p ? (MACRO_PHASE_LABEL[p] ?? p) : "";
+}
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic"];
 
@@ -194,7 +215,7 @@ export function PortalSubmissionDrawer({
   const canSandbox = submission ? ["draft", "pending", "failed", "dry_run"].includes(submission.status) : false;
   const showProcessNow = !!onProcessNow;
   const processNowReason = !submission ? "Loading…"
-    : submission.status === "draft" ? "Confirm this draft on its claim page first to queue it."
+    : submission.status === "draft" ? "Confirm this draft on the invoice group page first to queue it."
     : submission.status === "in_progress" ? "Already processing."
     : submission.status === "submitted" ? "Already submitted."
     : submission.status === "failed" ? "Failed submissions retry automatically — use Retry from the row menu to override."
@@ -300,33 +321,58 @@ export function PortalSubmissionDrawer({
                 <Send className="h-2.5 w-2.5" /> SUBMISSION
               </Badge>
               <span className="font-mono font-bold text-sm truncate">
-                {submission?.confNumber || `#${submissionId}`}
+                {submission?.invoiceNumber || submission?.confNumber || `#${submissionId}`}
               </span>
-              {submission && (
-                <StateBadge variant="stage" value={submission.status} />
+              {/* Task #564: phase-first chip layout — the macro phase of
+                  the parent invoice group is the *primary* state chip,
+                  the submission Stage is subordinate (rendered as a
+                  smaller secondary chip below), so operators read this
+                  surface invoice-first. */}
+              {submission?.groupMacroPhase && (
+                <StateBadge
+                  variant="phase"
+                  value={submission.groupMacroPhase}
+                  data-testid="drawer-macro-phase-chip"
+                  tooltipExtra={`Stage: ${statusLabels[submission.status] ?? submission.status}`}
+                />
               )}
             </div>
           </div>
           {submission && (
-            <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
-              <span>{formatCurrency(submission.claimAmount || "0")}</span>
-              <span>·</span>
-              <span className="truncate">{submission.issueType || "—"}</span>
-              <span>·</span>
-              <span>attempt {submission.attempts}/{submission.maxAttempts ?? 4}</span>
-              {submission.portalTicketId && (
-                <>
-                  <span>·</span>
-                  {submission.issueType === "Direct Email" ? (
-                    <WrapTooltip content={`Outlook message ID: ${submission.portalTicketId}`}>
-                      <span className="cursor-help">Email Sent</span>
-                    </WrapTooltip>
-                  ) : (
-                    <span className="font-mono">Ticket {submission.portalTicketId}</span>
-                  )}
-                </>
-              )}
-            </div>
+            <>
+              <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                {/* Phase · Stage line — secondary, subordinate to the
+                    primary macro-phase chip above. */}
+                <span data-testid="drawer-phase-stage-summary">
+                  {macroPhaseLabel(submission.groupMacroPhase) || "—"}
+                  <span className="mx-1.5 text-muted-foreground/60">·</span>
+                  <StateBadge
+                    variant="stage"
+                    value={submission.status}
+                    className="text-[10px] h-4 px-1.5 align-middle"
+                  />
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground">
+                <span>{formatCurrency(submission.claimAmount || "0")}</span>
+                <span>·</span>
+                <span className="truncate">{submission.issueType || "—"}</span>
+                <span>·</span>
+                <span>attempt {submission.attempts}/{submission.maxAttempts ?? 4}</span>
+                {submission.portalTicketId && (
+                  <>
+                    <span>·</span>
+                    {submission.issueType === "Direct Email" ? (
+                      <WrapTooltip content={`Outlook message ID: ${submission.portalTicketId}`}>
+                        <span className="cursor-help">Email Sent</span>
+                      </WrapTooltip>
+                    ) : (
+                      <span className="font-mono">Ticket {submission.portalTicketId}</span>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -372,6 +418,26 @@ export function PortalSubmissionDrawer({
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10 min-h-0">
               <TabsContent value="payload" className="m-0 space-y-3 data-[state=inactive]:hidden">
+                {/* Task #564 — invoice context banner. Portal submissions
+                    are group-scoped after the Task #199 cutover; if an
+                    operator landed here looking for invoice context (legs,
+                    deadlines, evidence), surface the parent invoice group
+                    link prominently at the top of the drawer rather than
+                    only as a footer link. */}
+                <Link
+                  href={`/invoice-groups/${submission.invoiceGroupId}`}
+                  className="block rounded border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900 p-2.5 text-[11px] hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                  data-testid="drawer-invoice-context-banner"
+                >
+                  <span className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                    <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="flex-1">
+                      This submission belongs to invoice group <span className="font-mono font-semibold">#{submission.invoiceGroupId}</span>{submission.invoiceNumber ? <> · invoice <span className="font-mono">{submission.invoiceNumber}</span></> : null}. Open it for legs, deadlines, and evidence.
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
+                  </span>
+                </Link>
+
                 <div className="rounded p-2.5 text-[11px] flex items-start gap-2 bg-muted text-muted-foreground">
                   <FileText className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
                   <span>The exact payload the bot will paste into the MAS portal form. Editing here updates the draft — nothing is sent until you click <strong>Process now</strong>.</span>
@@ -492,6 +558,63 @@ export function PortalSubmissionDrawer({
                     <p className="text-[10px] text-muted-foreground mt-2">Last edited by {submission.descriptionEditorName}</p>
                   )}
                 </DrawerSection>
+
+                {/* Task #564 — Ready-at-submission snapshot. The list of
+                    legs that were already in the `ready` sub-status at the
+                    moment this submission was frozen (i.e. claims.ready_at
+                    is non-null AND <= submission.createdAt). These are the
+                    legs that actually went into the dispute payload — the
+                    `Legs` section below shows the broader per-leg breakdown
+                    including any legs added after freeze for visibility,
+                    but the snapshot below is the authoritative "what was
+                    ready when we hit submit" view operators ask for during
+                    response review. Sourced from the per-leg `readyAt`
+                    field added to PortalSubmissionResponse for Task #564. */}
+                {(() => {
+                  const snapshotLegs = (submission.legs ?? []).filter(
+                    (l) => (l as { wasReadyAtSubmission?: boolean }).wasReadyAtSubmission,
+                  );
+                  return (
+                    <DrawerSection
+                      title={`Ready-at-submission snapshot (${snapshotLegs.length})`}
+                    >
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        Legs that were already in the <span className="font-medium">ready</span> sub-status when this submission was frozen at {submission.createdAt ? formatDateTime(submission.createdAt) : "draft time"}.
+                      </p>
+                      {snapshotLegs.length === 0 ? (
+                        <div className="text-xs text-muted-foreground italic" data-testid="drawer-snapshot-empty">
+                          No legs were stamped <span className="font-medium">ready</span> at the moment this submission was frozen.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5" data-testid="drawer-snapshot-list">
+                          {snapshotLegs.map((leg) => {
+                            const readyAt = (leg as { readyAt?: string | null }).readyAt;
+                            return (
+                              <div
+                                key={`snap-${leg.legId}`}
+                                className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted"
+                                data-testid={`drawer-snapshot-leg-${leg.legId}`}
+                              >
+                                <LegSubStatusPill subStatus="ready" className="text-[10px] h-4 px-1.5 flex-shrink-0" />
+                                <span className="font-mono flex-shrink-0">
+                                  {leg.confNumber || `Leg #${leg.legId}`}
+                                </span>
+                                {readyAt && (
+                                  <span
+                                    className="ml-auto text-[10px] text-muted-foreground cursor-help"
+                                    title={absoluteTooltip(readyAt)}
+                                  >
+                                    ready {formatDateTime(readyAt)}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </DrawerSection>
+                  );
+                })()}
 
                 <DrawerSection title={`Legs (${submission.legs?.length ?? 0})`}>
                   {/* Task #485: per-leg breakdown sourced from `legs` JSONB
@@ -701,7 +824,7 @@ export function PortalSubmissionDrawer({
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onOpenChange(false)} data-testid="drawer-close">
                 <X className="h-3.5 w-3.5" /> Cancel
               </Button>
-              <Link href={`/invoice-groups/${submission.invoiceGroupId}`} className="ml-auto text-xs flex items-center gap-1 text-primary hover:underline" data-testid="drawer-open-claim">
+              <Link href={`/invoice-groups/${submission.invoiceGroupId}`} className="ml-auto text-xs flex items-center gap-1 text-primary hover:underline" data-testid="drawer-open-invoice-group">
                 Open invoice group <ChevronRight className="h-3 w-3" />
               </Link>
             </div>

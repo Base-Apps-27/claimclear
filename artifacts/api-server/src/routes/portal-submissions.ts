@@ -684,6 +684,101 @@ async function enrichLegacyLegs<T extends { id: number; invoiceGroupId: number; 
   });
 }
 
+/**
+ * Task #564 — Portal Submissions invoice-first cleanup.
+ *
+ * Bulk-enrich submission rows with:
+ *   - `groupMacroPhase`: derived from the parent invoice_groups row via
+ *     `getGroupMacroPhase`, so the UI can render the macro phase as the
+ *     primary state chip and the Submission Stage as a subordinate chip
+ *     ("In-flight · Submitted").
+ *   - per-leg `readyAt` + `wasReadyAtSubmission`: powers the
+ *     "Ready-at-submission snapshot" panel in the drawer. A leg counts
+ *     as having been `ready` at submission time when claims.ready_at
+ *     is non-null AND <= the submission's createdAt.
+ *
+ * Bulk-fetches claims and groups in single queries so the list endpoint
+ * stays a single round-trip even at scale.
+ */
+async function enrichSnapshotAndPhase<
+  T extends {
+    id: number;
+    invoiceGroupId: number;
+    createdAt: Date | string | null;
+    legs: Array<{ legId: number; confNumber: string | null; ticked: boolean; error?: string | null }>;
+  },
+>(rows: T[]): Promise<Array<T & { groupMacroPhase: string | null; legs: Array<T["legs"][number] & { readyAt: string | null; wasReadyAtSubmission: boolean }> }>> {
+  if (rows.length === 0) return rows as never;
+
+  const groupIds = Array.from(new Set(rows.map((r) => r.invoiceGroupId)));
+  const legIds = Array.from(new Set(rows.flatMap((r) => r.legs.map((l) => l.legId))));
+
+  const [groups, legRows] = await Promise.all([
+    db
+      .select({
+        id: invoiceGroupsTable.id,
+        phase: invoiceGroupsTable.phase,
+        status: invoiceGroupsTable.status,
+        reattestRequired: invoiceGroupsTable.reattestRequired,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+      })
+      .from(invoiceGroupsTable)
+      .where(inArray(invoiceGroupsTable.id, groupIds)),
+    legIds.length > 0
+      ? db
+          .select({ id: claimsTable.id, readyAt: claimsTable.readyAt })
+          .from(claimsTable)
+          .where(inArray(claimsTable.id, legIds))
+      : Promise.resolve([] as Array<{ id: number; readyAt: Date | null }>),
+  ]);
+
+  const phaseByGroup = new Map<number, string>();
+  for (const g of groups) {
+    phaseByGroup.set(g.id, getGroupMacroPhase(g));
+  }
+  const readyAtByLeg = new Map<number, Date | null>();
+  for (const l of legRows) readyAtByLeg.set(l.id, l.readyAt ?? null);
+
+  return rows.map((r) => {
+    const submittedFreezeMs = r.createdAt instanceof Date ? r.createdAt.getTime() : (r.createdAt ? new Date(r.createdAt).getTime() : null);
+    const enrichedLegs = r.legs.map((leg) => {
+      const readyAt = readyAtByLeg.get(leg.legId) ?? null;
+      const readyMs = readyAt ? readyAt.getTime() : null;
+      const wasReadyAtSubmission =
+        readyMs != null && submittedFreezeMs != null && readyMs <= submittedFreezeMs;
+      return {
+        ...leg,
+        readyAt: readyAt ? readyAt.toISOString() : null,
+        wasReadyAtSubmission,
+      };
+    });
+    return {
+      ...r,
+      legs: enrichedLegs,
+      groupMacroPhase: phaseByGroup.get(r.invoiceGroupId) ?? null,
+    };
+  });
+}
+
+/**
+ * Single-row convenience wrapper. Mutation endpoints (create draft,
+ * update, retry, cancel, …) all return a single submission and must
+ * include the schema-required `legs[].wasReadyAtSubmission` field, so
+ * every response site funnels through here.
+ */
+async function enrichOne<
+  T extends {
+    id: number;
+    invoiceGroupId: number;
+    createdAt: Date | string | null;
+    legs: Array<{ legId: number; confNumber: string | null; ticked: boolean; error?: string | null }>;
+  },
+>(row: T) {
+  const [legacyEnriched] = await enrichLegacyLegs([row]);
+  const [enriched] = await enrichSnapshotAndPhase([legacyEnriched]);
+  return enriched;
+}
+
 router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { status } = req.query;
   const statusStr = typeof status === "string" ? status : undefined;
@@ -751,8 +846,9 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
     return { ...s, completedElsewhere };
   });
   const enriched = await enrichLegacyLegs(withSibling);
+  const withSnapshot = await enrichSnapshotAndPhase(enriched);
 
-  res.json(enriched);
+  res.json(withSnapshot);
 }));
 
 /**
@@ -1037,7 +1133,7 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
       { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback },
       req,
     );
-    res.json(submission);
+    res.json(await enrichOne(submission));
   } catch (err) {
     if (err instanceof GroupNotFoundError) {
       res.status(404).json({ error: err.message });
@@ -1160,7 +1256,7 @@ router.put("/portal-submissions/:id/update-draft", asyncHandler(async (req, res)
     });
   }
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 const MAX_DESCRIPTION_HISTORY = 5;
@@ -1251,7 +1347,7 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
     userName: req.user?.displayName ?? null,
   });
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 router.post("/portal-submissions/:id/revert-description", asyncHandler(async (req, res): Promise<void> => {
@@ -1307,7 +1403,7 @@ router.post("/portal-submissions/:id/revert-description", asyncHandler(async (re
     userName: req.user?.displayName ?? null,
   });
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 router.post("/portal-submissions/:id/lint", asyncHandler(async (req, res): Promise<void> => {
@@ -1427,7 +1523,7 @@ router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Pr
     userName: req.user?.displayName ?? null,
   });
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
@@ -1613,7 +1709,7 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     submittedVia: "portal",
   });
 
-  res.status(201).json(submission);
+  res.status(201).json(await enrichOne(submission));
 }));
 
 router.get("/portal-submissions/:id", asyncHandler(async (req, res): Promise<void> => {
@@ -1624,7 +1720,8 @@ router.get("/portal-submissions/:id", asyncHandler(async (req, res): Promise<voi
   if (!sub) { res.status(404).json({ error: "Submission not found" }); return; }
 
   const [enriched] = await enrichLegacyLegs([sub]);
-  res.json(enriched);
+  const [withSnapshot] = await enrichSnapshotAndPhase([enriched]);
+  res.json(withSnapshot);
 }));
 
 router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Promise<void> => {
@@ -1657,7 +1754,7 @@ router.post("/portal-submissions/:id/retry", asyncHandler(async (req, res): Prom
     });
   }
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Promise<void> => {
@@ -1708,7 +1805,7 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
     });
   }
 
-  res.json(sub);
+  res.json(await enrichOne(sub));
 }));
 
 router.post("/portal-submissions/:id/sandbox-run", asyncHandler(async (req, res): Promise<void> => {
@@ -1735,7 +1832,7 @@ router.post("/portal-submissions/:id/sandbox-run", asyncHandler(async (req, res)
 
   const { runSandboxForSubmission } = await import("../lib/batch-processor");
   const updated = await runSandboxForSubmission(id);
-  res.json(updated);
+  res.json(await enrichOne(updated));
 }));
 
 router.get("/portal-submissions/:id/activity", asyncHandler(async (req, res): Promise<void> => {

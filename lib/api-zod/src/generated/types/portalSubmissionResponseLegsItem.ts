@@ -27,4 +27,11 @@ export type PortalSubmissionResponseLegsItem = {
    * @nullable
    */
   error?: string | null;
+  /**
+   * ISO timestamp of when this leg was first stamped `ready` (claims.ready_at). Null if the leg is not — and was not — `ready`. Used together with the submission's createdAt to power the "Ready-at-submission snapshot" panel in the drawer (Task
+   * @nullable
+   */
+  readyAt?: string | null;
+  /** True when this leg's readyAt is non-null AND <= the submission's createdAt — i.e. the leg was already in the `ready` sub-status at the moment the submission draft was frozen. Drives the Ready-at-submission snapshot filter (Task */
+  wasReadyAtSubmission: boolean;
 };

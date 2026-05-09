@@ -512,8 +512,8 @@ export default function PortalSubmissions() {
                   <EmptyState
                     icon={Send}
                     title="No submissions yet"
-                    description="Drafts you create on a claim show up here, ready to submit to the portal."
-                    primaryAction={{ label: "Go to claims", href: "/claims" }}
+                    description="Drafts you create on an invoice group show up here, ready to submit to the portal."
+                    primaryAction={{ label: "Go to invoice groups", href: "/invoice-groups" }}
                   />
                 )}
               </CardContent>
@@ -596,7 +596,7 @@ export default function PortalSubmissions() {
             <Card className="bg-muted/30">
               <CardContent className="p-3 text-xs text-muted-foreground flex items-start gap-2">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>Need to reorder the queue? Cancel and recreate the draft on the claim page.</span>
+                <span>Need to reorder the queue? Cancel and recreate the draft on the invoice group page.</span>
               </CardContent>
             </Card>
           </div>
@@ -1016,12 +1016,35 @@ function SubmissionRow({
         })()}
       </span>
 
-      <StateBadge
-        variant="stage"
-        value={sub._displayStatus}
-        className="text-[10px] h-5 px-1.5 flex-shrink-0"
-        data-testid={`row-status-${sub.id}`}
-      />
+      {/* Task #564 — phase-first row layout. The parent invoice
+          group's macro phase is the primary chip; the submission
+          Stage renders as a subordinate secondary chip alongside it
+          ("In-flight · Submitted"). Macro phase may be null on the
+          rare orphaned row — fall back to stage-only in that case. */}
+      {sub.groupMacroPhase ? (
+        <div className="flex items-center gap-1 flex-shrink-0" data-testid={`row-phase-stage-${sub.id}`}>
+          <StateBadge
+            variant="phase"
+            value={sub.groupMacroPhase}
+            className="text-[10px] h-5 px-1.5"
+            data-testid={`row-phase-${sub.id}`}
+            tooltipExtra={`Stage: ${statusLabels[sub._displayStatus] ?? sub._displayStatus}`}
+          />
+          <StateBadge
+            variant="stage"
+            value={sub._displayStatus}
+            className="text-[10px] h-5 px-1.5 opacity-80"
+            data-testid={`row-status-${sub.id}`}
+          />
+        </div>
+      ) : (
+        <StateBadge
+          variant="stage"
+          value={sub._displayStatus}
+          className="text-[10px] h-5 px-1.5 flex-shrink-0"
+          data-testid={`row-status-${sub.id}`}
+        />
+      )}
 
       <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
         {(sub.attempts ?? 0) > 0 && (sub.status === "pending" || sub.status === "in_progress" || sub.status === "failed") && (
@@ -1032,7 +1055,11 @@ function SubmissionRow({
           </WrapTooltip>
         )}
         {sub.status === "pending" && sub.nextRetryAt && (
-          <WrapTooltip content={`Next retry at ${formatDateTime(sub.nextRetryAt)}`}>
+          // Task #564 — absolute-time tooltip. Use absoluteTooltip so the
+          // hover text matches the rest of the app (date-time + display
+          // timezone) and operators don't have to guess whether the
+          // countdown is wall-clock or server-time.
+          <WrapTooltip content={`Next retry at ${absoluteTooltip(sub.nextRetryAt)}`}>
             <Badge variant="outline" className="cursor-help text-[10px] h-5 px-1.5 text-amber-700 border-amber-400">
               <Clock className="h-2.5 w-2.5 mr-1" /><RetryCountdown nextRetryAt={sub.nextRetryAt} />
             </Badge>
@@ -1118,8 +1145,8 @@ function SubmissionRow({
       {sub.status === "draft" && (
         <div onClick={e => e.stopPropagation()} className="flex items-center gap-1">
           <WrapTooltip content={discardArmed
-            ? "Click again within a few seconds to confirm. The underlying claim is unchanged."
-            : "Removes this draft from the queue. The underlying claim is unchanged."}>
+            ? "Click again within a few seconds to confirm. The underlying invoice group is unchanged."
+            : "Removes this draft from the queue. The underlying invoice group is unchanged."}>
             <Button
               variant={discardArmed ? "destructive" : "ghost"}
               size="sm"

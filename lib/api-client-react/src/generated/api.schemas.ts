@@ -973,6 +973,31 @@ export const PortalSubmissionResponseStatus = {
   dry_run: "dry_run",
 } as const;
 
+/**
+ * Macro lifecycle phase of the parent invoice group at read time.
+Surfaced so the Portal Submissions UI can render the macro phase as
+the *primary* state chip and the Submission Stage as a subordinate
+secondary chip ("In-flight · Submitted") per the invoice-first
+cleanup (Task #564). Derived server-side via `getGroupMacroPhase`
+on the joined invoice_groups row; null only if the group row
+could not be loaded (should not happen for non-orphaned rows).
+
+ * @nullable
+ */
+export type PortalSubmissionResponseGroupMacroPhase =
+  | (typeof PortalSubmissionResponseGroupMacroPhase)[keyof typeof PortalSubmissionResponseGroupMacroPhase]
+  | null;
+
+export const PortalSubmissionResponseGroupMacroPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
+} as const;
+
 export type PortalSubmissionResponseDescriptionHistoryItem = {
   description: string;
   generatedAt: string;
@@ -1027,6 +1052,13 @@ export type PortalSubmissionResponseLegsItem = {
    * @nullable
    */
   error?: string | null;
+  /**
+   * ISO timestamp of when this leg was first stamped `ready` (claims.ready_at). Null if the leg is not — and was not — `ready`. Used together with the submission's createdAt to power the "Ready-at-submission snapshot" panel in the drawer (Task
+   * @nullable
+   */
+  readyAt?: string | null;
+  /** True when this leg's readyAt is non-null AND <= the submission's createdAt — i.e. the leg was already in the `ready` sub-status at the moment the submission draft was frozen. Drives the Ready-at-submission snapshot filter (Task */
+  wasReadyAtSubmission: boolean;
 };
 
 export interface PortalSubmissionResponse {
@@ -1140,6 +1172,18 @@ null on the success row itself. The latest sibling success wins.
   completedElsewhere?: PortalSubmissionResponseCompletedElsewhere;
   /** Per-leg breakdown for this group submission (Task #485). One entry per disputed leg in the group, in the order they were eligible at draft time. Recorded with ticked=false at draft creation and overwritten by the producer with the worker's perLeg outcomes after a real submission run. The list page renders one row per group; the drawer reads this array directly to show the per-leg outcome breakdown. Legacy per-leg rows created before Task #485 will have an empty array — the drawer renders a graceful 'details unavailable' notice for those. */
   legs: PortalSubmissionResponseLegsItem[];
+  /**
+   * Macro lifecycle phase of the parent invoice group at read time.
+Surfaced so the Portal Submissions UI can render the macro phase as
+the *primary* state chip and the Submission Stage as a subordinate
+secondary chip ("In-flight · Submitted") per the invoice-first
+cleanup (Task #564). Derived server-side via `getGroupMacroPhase`
+on the joined invoice_groups row; null only if the group row
+could not be loaded (should not happen for non-orphaned rows).
+
+   * @nullable
+   */
+  groupMacroPhase?: PortalSubmissionResponseGroupMacroPhase;
   createdAt?: string;
   updatedAt?: string;
 }

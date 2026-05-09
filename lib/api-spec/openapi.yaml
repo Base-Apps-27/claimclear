@@ -7855,9 +7855,27 @@ components:
               error:
                 type: ["string", "null"]
                 description: Per-leg error message returned by the worker when ticked=false. Null when the leg was ticked successfully or no run has happened yet.
+              readyAt:
+                type: ["string", "null"]
+                description: ISO timestamp of when this leg was first stamped `ready` (claims.ready_at). Null if the leg is not — and was not — `ready`. Used together with the submission's createdAt to power the "Ready-at-submission snapshot" panel in the drawer (Task #564).
+              wasReadyAtSubmission:
+                type: boolean
+                description: True when this leg's readyAt is non-null AND <= the submission's createdAt — i.e. the leg was already in the `ready` sub-status at the moment the submission draft was frozen. Drives the Ready-at-submission snapshot filter (Task #564).
             required:
               - legId
               - ticked
+              - wasReadyAtSubmission
+        groupMacroPhase:
+          type: ["string", "null"]
+          enum: ["pre-submit", "in-flight", "response-pending", "mas-action-required", "awaiting-payout", "closed", "on-hold", null]
+          description: |
+            Macro lifecycle phase of the parent invoice group at read time.
+            Surfaced so the Portal Submissions UI can render the macro phase as
+            the *primary* state chip and the Submission Stage as a subordinate
+            secondary chip ("In-flight · Submitted") per the invoice-first
+            cleanup (Task #564). Derived server-side via `getGroupMacroPhase`
+            on the joined invoice_groups row; null only if the group row
+            could not be loaded (should not happen for non-orphaned rows).
         createdAt:
           type: string
         updatedAt:
