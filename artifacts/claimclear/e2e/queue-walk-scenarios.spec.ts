@@ -70,11 +70,11 @@ import {
 } from "./walk-scenarios/mock-builder";
 import { buildDriver } from "./walk-scenarios/walk-driver";
 import type { WalkScenario } from "./walk-scenarios/types";
-import { happyPath } from "./walk-scenarios/scenarios/01-happy-path";
 import { markOneNonIssue } from "./walk-scenarios/scenarios/02-mark-non-issue";
 import { noLegsViableClose } from "./walk-scenarios/scenarios/03-no-legs-viable-close";
 import { reattestDirect } from "./walk-scenarios/scenarios/04-reattest-direct";
 import { holdResume } from "./walk-scenarios/scenarios/05-hold-resume";
+import { singleLegNotViable } from "./walk-scenarios/scenarios/07-single-leg-not-viable";
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
@@ -85,6 +85,7 @@ const SCENARIOS: WalkScenario[] = [
   noLegsViableClose,
   reattestDirect,
   holdResume,
+  singleLegNotViable,
   allNonIssue,
   twoUserConcurrency,
   zeroEvidence,
