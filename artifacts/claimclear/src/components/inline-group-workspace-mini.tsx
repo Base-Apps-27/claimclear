@@ -15,6 +15,8 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   useCreatePortalSubmission,
+  useExcludeLeg,
+  useMarkLegDuplicate,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getListClaimNotesQueryKey,
@@ -42,8 +44,10 @@ import {
   CheckCircle2,
   ArrowUpRight,
   Circle,
+  Copy,
   FileText,
   HelpCircle,
+  Link2Off,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -255,6 +259,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
   const [chipOpen, setChipOpen] = useState<ChipKey | null>(null);
   const [classifyOpen, setClassifyOpen] = useState(false);
+  const [markDuplicateOpen, setMarkDuplicateOpen] = useState(false);
   const [walkStartedFor, setWalkStartedFor] = useState<number | null>(null);
   const [holdLegOpen, setHoldLegOpen] = useState(false);
   const [holdGroupOpen, setHoldGroupOpen] = useState(false);
@@ -475,6 +480,16 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         />
       )}
 
+      {activeLeg && markDuplicateOpen && (
+        <MarkDuplicateDialog
+          open={markDuplicateOpen}
+          onOpenChange={setMarkDuplicateOpen}
+          legId={activeLeg.id}
+          groupId={groupId}
+          rides={rides}
+        />
+      )}
+
       {activeLeg && (
         <PlaceLegHoldDialog
           open={holdLegOpen}
@@ -506,6 +521,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
           groupId={groupId}
           onSelectLeg={setActiveLegId}
           onOpenClassify={() => setClassifyOpen(true)}
+          onOpenMarkDuplicate={() => setMarkDuplicateOpen(true)}
           onClose={() => setChipOpen(null)}
         />
       )}
@@ -1046,6 +1062,24 @@ const CHIP_LABEL: Record<ChipKey, string> = {
   activity: "Activity",
 };
 
+const CHIP_ICON: Record<ChipKey, React.FC<{ className?: string }>> = {
+  evidence: Paperclip,
+  notes: StickyNote,
+  comms: MessageSquare,
+  activity: Activity,
+};
+
+const LEG_SUB_STATUS_LABEL: Record<string, string> = {
+  excluded: "Excluded",
+  duplicate: "Duplicate",
+  needs_classification: "Needs classification",
+  investigating: "Investigating",
+  blocked: "Blocked",
+  ready: "Ready",
+  dropped: "Dropped",
+  frozen: "Frozen",
+};
+
 function ChipDrawerOverlay({
   openChip,
   leg,
@@ -1055,6 +1089,7 @@ function ChipDrawerOverlay({
   groupId,
   onSelectLeg,
   onOpenClassify,
+  onOpenMarkDuplicate,
   onClose,
 }: {
   openChip: ChipKey;
@@ -1065,27 +1100,54 @@ function ChipDrawerOverlay({
   groupId: number;
   onSelectLeg: (id: number) => void;
   onOpenClassify: () => void;
+  onOpenMarkDuplicate: () => void;
   onClose: () => void;
 }) {
-  // Evidence lives on BOTH the group payload (`detail.evidenceFiles`)
-  // and the per-leg payload (`leg.evidenceFiles`) — same merge pattern
-  // claim-detail-v2 uses. Reading only the leg field (the bug in the
-  // first overlay cut) showed "No evidence files" for groups whose
-  // evidence was uploaded at the invoice level.
-  const evidenceUrls = useMemo(() => {
+  const evidenceFiles = useMemo(() => {
     const seen = new Set<string>();
-    const out: string[] = [];
+    const out: Array<{ url: string; size?: number | null }> = [];
     for (const f of [...(detail.evidenceFiles ?? []), ...(leg.evidenceFiles ?? [])]) {
-      const url = f?.url;
+      const ref = f as { url?: string; size?: number } | null | undefined;
+      const url = ref?.url;
       if (!url || seen.has(url)) continue;
       seen.add(url);
-      out.push(url);
+      out.push({ url, size: ref?.size ?? null });
     }
     return out;
   }, [detail.evidenceFiles, leg.evidenceFiles]);
+  const evidenceUrls = useMemo(() => evidenceFiles.map((f) => f.url), [evidenceFiles]);
+  const evidenceSizeMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of evidenceFiles) {
+      if (f.size != null && f.size > 0) m.set(f.url, f.size);
+    }
+    return m;
+  }, [evidenceFiles]);
   const inlineNote = (leg.evidenceNotes ?? "").trim();
   const fullHref = `/invoice-groups/${detail.id}?leg=${leg.id}`;
   const activeLegIndex = rides.findIndex((r) => r.id === leg.id);
+
+  const legSubStatus = deriveLegSubStatus(leg);
+  const legStatusLabel = LEG_SUB_STATUS_LABEL[legSubStatus] ?? legSubStatus;
+
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const excludeMutation = useExcludeLeg();
+
+  function onExclude() {
+    excludeMutation.mutate(
+      { id: leg.id, data: { reason: "other" as const, note: "Excluded via drawer" } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+          successToast({ title: "Done", description: "Leg excluded from dispute." });
+        },
+        onError: (e: unknown) =>
+          toast({ title: "Exclude failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" }),
+      },
+    );
+  }
 
   // Esc-to-close. Backdrop click is wired below.
   useEffect(() => {
@@ -1121,7 +1183,7 @@ function ChipDrawerOverlay({
               <a
                 aria-label="Open invoice group in full view"
                 title="Open invoice group in full view"
-                className="inline-flex items-center justify-center w-6 h-6 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+                className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-50 text-blue-600 border border-blue-200 shrink-0 hover:bg-blue-100"
                 data-testid="chip-drawer-open-invoice"
               >
                 <ArrowUpRight className="w-3 h-3" />
@@ -1145,6 +1207,12 @@ function ChipDrawerOverlay({
             </Button>
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+            {(detail as DetailGroup & { payorEmail?: string }).payorEmail && (
+              <>
+                <span className="text-[11px]">{(detail as DetailGroup & { payorEmail?: string }).payorEmail}</span>
+                <span>·</span>
+              </>
+            )}
             <HideForClerk>
               <span className="font-semibold text-foreground text-xs">
                 {formatCurrency(detail.totalAmount)}
@@ -1152,7 +1220,7 @@ function ChipDrawerOverlay({
               <span>·</span>
             </HideForClerk>
             <span>
-              {detail.rideCount} ride{detail.rideCount === 1 ? "" : "s"}
+              {detail.rideCount} leg{detail.rideCount === 1 ? "" : "s"}
             </span>
           </div>
           {rides.length > 0 && (
@@ -1182,10 +1250,10 @@ function ChipDrawerOverlay({
           )}
         </div>
 
-        {/* ── Card 2 — leg context (CLM, classification, actions) ─── */}
+        {/* ── Card 2 — leg context (CLM, classification, $, status, actions) */}
         <div className="rounded-xl border bg-card shadow-2xl p-2.5 flex flex-col gap-1.5 shrink-0">
           <div className="flex items-baseline gap-2 min-w-0">
-            <span className="font-mono text-sm font-bold tracking-tight flex-1 min-w-0 truncate">
+            <span className="font-mono text-[15px] font-bold tracking-tight flex-1 min-w-0 truncate leading-tight">
               {leg.confNumber ?? `Leg ${activeLegIndex + 1}`}
             </span>
             {rides.length > 0 && (
@@ -1197,7 +1265,7 @@ function ChipDrawerOverlay({
           <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
             {leg.errorTypeName ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5">
-                <Tag className="w-3 h-3" />
+                <AlertTriangle className="w-3 h-3" />
                 {leg.errorTypeName}
               </span>
             ) : (
@@ -1206,12 +1274,27 @@ function ChipDrawerOverlay({
                 Unclassified
               </span>
             )}
-            {leg.includedInDispute === false && (
+            {leg.date && (
+              <span className="text-muted-foreground">{leg.date}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+            <HideForClerk>
+              <span className="text-[13px] font-semibold">
+                {formatCurrency(leg.claimAmount ?? "0")}
+              </span>
+            </HideForClerk>
+            <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] ml-auto">
+              {legStatusLabel}
+            </span>
+          </div>
+          {leg.includedInDispute === false && (
+            <div className="flex items-center gap-1.5 text-[11px]">
               <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground border px-2 py-0.5">
                 <XCircle className="w-3 h-3" /> Excluded
               </span>
-            )}
-          </div>
+            </div>
+          )}
           <div className="flex items-center gap-1 flex-wrap">
             <Button
               variant="outline"
@@ -1226,21 +1309,63 @@ function ChipDrawerOverlay({
               <Tag className="w-3 h-3 mr-1" />
               {leg.errorTypeName ? "Reclassify" : "Classify"}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() => {
+                onOpenMarkDuplicate();
+                onClose();
+              }}
+              disabled={!!leg.duplicateOfClaimId}
+              data-testid="chip-drawer-mark-duplicate"
+            >
+              <Copy className="w-3 h-3 mr-1" />
+              Mark duplicate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={onExclude}
+              disabled={excludeMutation.isPending || leg.includedInDispute === false}
+              data-testid="chip-drawer-exclude"
+            >
+              <Link2Off className="w-3 h-3 mr-1" />
+              Exclude
+            </Button>
           </div>
         </div>
 
         {/* ── Card 3 — section (chip-driven body) ──────────────────── */}
         <div className="rounded-xl border bg-card shadow-2xl flex flex-col flex-1 min-h-0 overflow-hidden">
-          <header className="flex items-center justify-between gap-2 border-b px-3 py-1.5 shrink-0">
+          <header className="flex items-center gap-2 border-b px-3 py-1.5 shrink-0">
+            {(() => { const Icon = CHIP_ICON[openChip]; return <Icon className="w-3.5 h-3.5 text-foreground" />; })()}
             <span className="text-xs font-semibold">{CHIP_LABEL[openChip]}</span>
-            {openChip === "evidence" && evidenceUrls.length > 0 && (
-              <span className="text-[11px] text-muted-foreground">
-                {evidenceUrls.length} file{evidenceUrls.length === 1 ? "" : "s"}
-              </span>
-            )}
+            {(() => {
+              let count = 0;
+              if (openChip === "evidence") count = evidenceUrls.length;
+              else if (openChip === "notes") count = (detail.notes ?? []).length + (inlineNote ? 1 : 0);
+              else if (openChip === "activity") count = (detail.auditLogs ?? []).length;
+              return count > 0 ? (
+                <span className="inline-flex items-center justify-center rounded bg-blue-50 text-blue-700 text-[10px] font-semibold px-1.5 py-0.5 leading-none">
+                  {count}
+                </span>
+              ) : null;
+            })()}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 ml-auto shrink-0"
+              onClick={onClose}
+              aria-label="Close section"
+              data-testid="chip-drawer-section-close"
+            >
+              <X className="h-3 w-3" />
+            </Button>
           </header>
           <div className="overflow-auto p-3 flex-1 min-h-0">
-            {openChip === "evidence" && <EvidenceFileList urls={evidenceUrls} />}
+            {openChip === "evidence" && <EvidenceFileList urls={evidenceUrls} sizeMap={evidenceSizeMap} />}
             {openChip === "notes" && (
               <NotesPanel leg={leg} inlineNote={inlineNote} />
             )}
@@ -1619,6 +1744,101 @@ function ReleaseLegHoldButton({ legId }: { legId: number }) {
         </>
       )}
     </Button>
+  );
+}
+
+function MarkDuplicateDialog({
+  open,
+  onOpenChange,
+  legId,
+  groupId,
+  rides,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  legId: number;
+  groupId: number;
+  rides: ClaimResponse[];
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const mutation = useMarkLegDuplicate();
+  const [primaryId, setPrimaryId] = useState("");
+  const [note, setNote] = useState("");
+
+  const siblings = rides.filter((r) => r.id !== legId);
+
+  function submit() {
+    const id = Number(primaryId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    mutation.mutate(
+      { id: legId, data: { primaryClaimId: id, note: note || null } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+          successToast({ title: "Done", description: "Leg marked as duplicate." });
+          onOpenChange(false);
+          setPrimaryId("");
+          setNote("");
+        },
+        onError: (e: unknown) =>
+          toast({ title: "Mark duplicate failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" }),
+      },
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-sm">Mark as sibling duplicate</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div>
+            <label className="font-medium block mb-1">Primary leg (original)</label>
+            {siblings.length > 0 ? (
+              <select
+                className="w-full border rounded px-2 py-1.5 text-xs bg-background"
+                value={primaryId}
+                onChange={(e) => setPrimaryId(e.target.value)}
+              >
+                <option value="">Select a leg…</option>
+                {siblings.map((s, i) => (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.confNumber ?? `Leg ${i + 1}`} (#{s.id})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-muted-foreground">No sibling legs available.</div>
+            )}
+          </div>
+          <div>
+            <label className="font-medium block mb-1">Note (optional)</label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Why is this a duplicate?"
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!primaryId || mutation.isPending}
+          >
+            {mutation.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+            Mark duplicate
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

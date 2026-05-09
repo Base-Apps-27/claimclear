@@ -27,11 +27,18 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-interface EvidenceFileListProps {
-  urls: string[];
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function EvidenceFileList({ urls }: EvidenceFileListProps) {
+interface EvidenceFileListProps {
+  urls: string[];
+  sizeMap?: Map<string, number>;
+}
+
+export function EvidenceFileList({ urls, sizeMap }: EvidenceFileListProps) {
   if (urls.length === 0) {
     return <span className="text-red-500 font-medium">No evidence files</span>;
   }
@@ -44,6 +51,7 @@ export function EvidenceFileList({ urls }: EvidenceFileListProps) {
         {urls.map((url, i) => {
           const name = fileNameFromUrl(url);
           const image = isImageUrl(url);
+          const size = sizeMap?.get(url);
           return (
             <li key={`${url}-${i}`} className="flex items-center gap-2 text-sm">
               {image ? (
@@ -66,20 +74,32 @@ export function EvidenceFileList({ urls }: EvidenceFileListProps) {
                   <FileText className="h-5 w-5 text-muted-foreground" />
                 </div>
               )}
+              <div className="flex-1 min-w-0">
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline truncate flex items-center gap-1 min-w-0"
+                  title={name}
+                >
+                  {image ? (
+                    <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">{name}</span>
+                </a>
+                {size != null && size > 0 && (
+                  <span className="text-[11px] text-muted-foreground">{formatFileSize(size)}</span>
+                )}
+              </div>
               <a
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary hover:underline truncate flex items-center gap-1 min-w-0"
-                title={name}
+                className="text-[11px] text-primary hover:underline shrink-0"
               >
-                {image ? (
-                  <ImageIcon className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span className="truncate">{name}</span>
-                <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                View
               </a>
             </li>
           );
