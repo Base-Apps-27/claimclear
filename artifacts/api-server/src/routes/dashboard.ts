@@ -1233,23 +1233,35 @@ router.get("/dashboard/my-activity-summary", asyncHandler(async (req, res): Prom
   const todayKey = dayKeyInTz(now, tz);
   const startKey = ymdMinusDays(todayKey, ACTIVITY_HEATMAP_DAYS - 1);
 
+  // Inline the (already-validated) tz as a SQL string literal so the
+  // bucket expression is *byte-identical* across SELECT, WHERE, and
+  // GROUP BY. Postgres compares SELECT/GROUP BY expressions by
+  // structural identity — interpolating `tz` via four separate
+  // `sql\`...${tz}...\`` templates binds it as four distinct
+  // parameters (`$1`, `$3`, ...) and the planner then sees them as
+  // *different* expressions, raising "must appear in the GROUP BY
+  // clause". `isValidIanaTz` guarantees no quote characters, so this
+  // is not an injection surface.
+  const tzLiteral = sql.raw(`'${tz}'`);
+  const dayBucket = sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tzLiteral})::date`;
+
   // One grouped scan returns the per-day counts. Bucketing by the
   // user-tz date stays consistent with `/my-processed-today`. The
   // range bound is inclusive on both ends and clamps the scan so the
   // composite `(user_email, timestamp)` index can be used.
   const rows = await db
     .select({
-      day: sql<string>`to_char((${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date, 'YYYY-MM-DD')`,
+      day: sql<string>`to_char(${dayBucket}, 'YYYY-MM-DD')`,
       value: count(),
     })
     .from(auditLogsTable)
     .where(and(
       eq(auditLogsTable.userEmail, userEmail),
       qualifyingActivityPredicate(),
-      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date >= ${startKey}::date`,
-      sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date <= ${todayKey}::date`,
+      sql`${dayBucket} >= ${startKey}::date`,
+      sql`${dayBucket} <= ${todayKey}::date`,
     ))
-    .groupBy(sql`(${auditLogsTable.timestamp} AT TIME ZONE ${tz})::date`);
+    .groupBy(dayBucket);
 
   const countsByDay = new Map<string, number>();
   for (const r of rows) countsByDay.set(r.day, Number(r.value) || 0);
