@@ -83,6 +83,10 @@ export interface WalkMockState {
   callOrder: string[];
   /** Body of the last create-portal-submission POST, for assertions. */
   portalSubmissionBody: unknown;
+  /** When set, the stamp-preview-generated route returns this status
+   *  with an error body instead of advancing the group. Used by
+   *  failure-path scenarios (e.g. preview generation fails). */
+  failPreviewWith: number | null;
   /** Stash of leg-by-error-type so the SOP player resolves trees. */
   errorTypeIndex: Map<string, { id: string; name: string; tree: DecisionTree }>;
   /** Shared presence ledger keyed by `${resourceType}:${resourceId}`,

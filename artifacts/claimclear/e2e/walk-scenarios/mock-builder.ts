@@ -73,6 +73,11 @@ export function buildMockState(args: {
   legs: WalkLegSeed[];
   initialPhase?: InvoicePhase;
   understandingReadbackAt?: string | null;
+  /** Failure-injection: when set, the stamp-preview-generated route
+   *  returns this HTTP status with an error body instead of advancing
+   *  the group. Mirrors the manifest-style `previewGenerate.failWith`
+   *  knob from task #602. */
+  failPreviewWith?: number | null;
 }): WalkMockState {
   const errorTypeIndex = new Map<
     string,
@@ -122,6 +127,7 @@ export function buildMockState(args: {
     legs,
     callOrder: [],
     portalSubmissionBody: null,
+    failPreviewWith: args.failPreviewWith ?? null,
     errorTypeIndex,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
     submitFailWith: null,
@@ -566,6 +572,18 @@ export async function installApiStubs(
     `**/api/invoice-groups/${state.groupId}/preview-generated*`,
     async (route: Route, request: Request) => {
       if (request.method() !== "POST") return route.fallback();
+      // Failure-injection knob — used by the preview-fails scenario
+      // to assert the UI's error banner + Retry CTA, without ever
+      // advancing the group to the review hero.
+      if (state.failPreviewWith != null) {
+        state.callOrder.push("stamp_preview_fail");
+        return route.fulfill(
+          jsonResponse(state.failPreviewWith, {
+            error: "preview_generation_failed",
+            message: "Simulated upstream LLM failure.",
+          }),
+        );
+      }
       state.previewGeneratedAt = nowIso();
       // Any edit invalidates a prior reviewed stamp. Mirrors the
       // server contract noted in openapi.yaml.

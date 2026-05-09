@@ -80,6 +80,7 @@ import { singleLegNotViable } from "./walk-scenarios/scenarios/07-single-leg-not
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { holdAllResumeOrder } from "./walk-scenarios/scenarios/11-hold-all-resume-order";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
+import { previewFail } from "./walk-scenarios/scenarios/14-preview-fail";
 import { submitFail } from "./walk-scenarios/scenarios/18-submit-fail";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 
@@ -94,6 +95,7 @@ const SCENARIOS: WalkScenario[] = [
   allNonIssue,
   holdAllResumeOrder,
   twoUserConcurrency,
+  previewFail,
   submitFail,
   zeroEvidence,
   // Add new scenarios here.

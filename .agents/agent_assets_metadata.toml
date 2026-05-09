@@ -77,3 +77,9 @@ id = "WUGacjcWRGrolw0Aq9Hx3"
 uri = "file://exports/pending-classify-blank-invoices.csv"
 type = "table"
 title = "All Invoice Numbers Needing Classification (95 groups)"
+
+[[outputs]]
+id = "xeHWU6QnXq85P17kSU6kq"
+uri = "file://artifacts/claimclear/test-results/queue-walk-scenarios-queue-c2fad-ss-scenario-14-preview-fail-chromium/test-failed-1.png"
+type = "image"
+title = "Failed test screenshot"

@@ -785,6 +785,33 @@ function GeneratePreviewHero({
         {!gate.ok && gate.reason && (
           <p className="text-xs text-amber-700">{gate.reason}</p>
         )}
+        {stamp.isError && !stamp.isPending && (
+          <div
+            className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+            data-testid="mini-generate-preview-error"
+          >
+            <p className="font-medium">Preview generation failed.</p>
+            <p className="mt-0.5">
+              {stamp.error instanceof Error
+                ? stamp.error.message
+                : "The server rejected the request."}
+            </p>
+            <div className="mt-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={stamp.isPending || !gate.ok}
+                onClick={() => {
+                  stamp.reset();
+                  generate();
+                }}
+                data-testid="mini-generate-preview-retry"
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
         <div>
           <Button
             size="sm"
