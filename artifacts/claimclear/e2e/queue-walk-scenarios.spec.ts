@@ -83,6 +83,7 @@ import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concu
 import { previewFail } from "./walk-scenarios/scenarios/14-preview-fail";
 import { submitFail } from "./walk-scenarios/scenarios/18-submit-fail";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
+import { bouncedAddress } from "./walk-scenarios/scenarios/24-bounced-address";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
@@ -98,6 +99,7 @@ const SCENARIOS: WalkScenario[] = [
   previewFail,
   submitFail,
   zeroEvidence,
+  bouncedAddress,
   // Add new scenarios here.
 ];
 

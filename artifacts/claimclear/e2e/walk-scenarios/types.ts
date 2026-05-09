@@ -89,6 +89,16 @@ export interface WalkMockState {
   failPreviewWith: number | null;
   /** Stash of leg-by-error-type so the SOP player resolves trees. */
   errorTypeIndex: Map<string, { id: string; name: string; tree: DecisionTree }>;
+  /** Optional payor-email bounce state. When set, the group detail
+   *  surfaces a bounce-warning banner and the submit CTA is gated.
+   *  Pinned by scenario-24. The bounce-detection mechanism itself
+   *  lives on the API server and is out of scope for the harness. */
+  payorEmailBounceState: {
+    kind: "hard_bounced";
+    email: string;
+    reason: string;
+    bouncedAt: string;
+  } | null;
   /** Shared presence ledger keyed by `${resourceType}:${resourceId}`,
    *  inner map keyed by lowercased userEmail. Heartbeat upserts an
    *  entry; leave deletes it; the GET handler returns the entries

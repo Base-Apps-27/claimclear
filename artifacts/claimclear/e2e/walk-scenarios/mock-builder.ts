@@ -78,6 +78,7 @@ export function buildMockState(args: {
    *  the group. Mirrors the manifest-style `previewGenerate.failWith`
    *  knob from task #602. */
   failPreviewWith?: number | null;
+  payorEmailBounceState?: WalkMockState["payorEmailBounceState"];
 }): WalkMockState {
   const errorTypeIndex = new Map<
     string,
@@ -129,6 +130,7 @@ export function buildMockState(args: {
     portalSubmissionBody: null,
     failPreviewWith: args.failPreviewWith ?? null,
     errorTypeIndex,
+    payorEmailBounceState: args.payorEmailBounceState ?? null,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
     submitFailWith: null,
   };
@@ -270,6 +272,7 @@ function buildGroupDetail(state: WalkMockState) {
     reattestCompletedBy: null,
     reattestNote: null,
     isPartial: false,
+    payorEmailBounceState: state.payorEmailBounceState,
     understandingReadbackAt: state.understandingReadbackAt,
     previewGeneratedAt: state.previewGeneratedAt,
     draftReviewedAt: state.draftReviewedAt,
@@ -374,6 +377,28 @@ export async function installApiStubs(
   );
   await page.route("**/api/needs-classification-inbox*", (route: Route) =>
     route.fulfill(jsonResponse(200, { groups: [] })),
+  );
+  // Dashboard "urgent today" backing data — the queue page renders the
+  // urgency hero off this endpoint and accesses `clearedSummary.total`
+  // unguarded. The catch-all's empty `{}` would throw on render; ship
+  // a minimal but schema-shaped payload so the queue mounts cleanly.
+  await page.route(
+    "**/api/dashboard/urgent-today/transitions*",
+    (route: Route) =>
+      route.fulfill(
+        jsonResponse(200, {
+          today: "2026-04-15",
+          urgentCount: 0,
+          totalActionable: 0,
+          byStatus: {},
+          wasUrgentToday: false,
+          maxUrgentToday: 0,
+          currentlyUrgent: [],
+          clearedToday: [],
+          clearedSummary: { total: 0, actors: [] },
+          snapshots: [],
+        }),
+      ),
   );
   // Presence wire — the harness backs the real `/api/presence/*`
   // contract with an in-memory ledger on `state.presence` so cross-

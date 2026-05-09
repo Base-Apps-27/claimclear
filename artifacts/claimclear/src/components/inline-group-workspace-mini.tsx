@@ -39,6 +39,7 @@ import {
 } from "@workspace/leg-state";
 import {
   Activity,
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -108,6 +109,16 @@ type DetailGroup = InvoiceGroupDetailResponse & {
   previewGeneratedAt?: string | null;
   draftReviewedAt?: string | null;
   holdReason?: string | null;
+  // Optional bounce signal surfaced when the group's payor email has
+  // a hard-bounce on record. The banner + submit gate read this; the
+  // bounce-detection mechanism itself lives on the API server (see
+  // `lib/bounce-detection.ts`) and is out of scope for this UI.
+  payorEmailBounceState?: {
+    kind: "hard_bounced";
+    email: string;
+    reason: string;
+    bouncedAt: string;
+  } | null;
 };
 
 type ChipKey = "evidence" | "notes" | "comms" | "activity";
@@ -360,6 +371,10 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         />
       )}
 
+      {detail.payorEmailBounceState?.kind === "hard_bounced" && (
+        <PayorBounceBanner bounce={detail.payorEmailBounceState} />
+      )}
+
       <div aria-live="polite" className="cc-mini-hero">
         {hero === "submitted" && <SubmittedHero detail={detail} />}
         {hero === "ready" && <ReadyHero />}
@@ -599,6 +614,47 @@ function GroupHoldBanner({
           "Release hold"
         )}
       </Button>
+    </div>
+  );
+}
+
+// ─── Payor-bounce banner ────────────────────────────────────────────
+// Surfaced when the group's payor email has a hard-bounce on record.
+// The banner explains why we can't send and the PinnedFooter gates
+// the Submit CTA off the same `payorEmailBounceState` field. The
+// bounce-detection mechanism itself is owned by Task #50; this banner
+// only consumes the signal.
+function PayorBounceBanner({
+  bounce,
+}: {
+  bounce: NonNullable<DetailGroup["payorEmailBounceState"]>;
+}) {
+  return (
+    <div
+      className="cc-mini-hold-banner"
+      data-testid="mini-payor-bounce-banner"
+      role="alert"
+    >
+      <AlertTriangle className="w-4 h-4 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-semibold">
+          Payor email has hard-bounced
+        </div>
+        <div
+          className="cc-meta text-xs truncate"
+          data-testid="mini-payor-bounce-email"
+          title={bounce.email}
+        >
+          {bounce.email}
+        </div>
+        <div
+          className="cc-meta text-xs truncate"
+          data-testid="mini-payor-bounce-reason"
+          title={bounce.reason}
+        >
+          {bounce.reason}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1432,9 +1488,12 @@ function PinnedFooter({
   // tooltip text is the gate reason (or a step hint when the gate
   // is fine but earlier steps haven't been completed).
   const stepReady = previewGenerated && draftReviewed;
+  const payorBounced =
+    detail.payorEmailBounceState?.kind === "hard_bounced";
   const enabled =
     !submitted &&
     !groupHoldActive &&
+    !payorBounced &&
     outlook === "has_disputable" &&
     gate.ok &&
     stepReady;
@@ -1442,6 +1501,8 @@ function PinnedFooter({
   let disabledReason: string | null = null;
   if (submitted) disabledReason = "Already submitted.";
   else if (groupHoldActive) disabledReason = "Release the hold first.";
+  else if (payorBounced)
+    disabledReason = `Payor email ${detail.payorEmailBounceState?.email ?? ""} has hard-bounced — won't send.`;
   else if (outlook !== "has_disputable")
     disabledReason = "Nothing to dispute on this invoice.";
   else if (!gate.ok) disabledReason = gate.reason;
