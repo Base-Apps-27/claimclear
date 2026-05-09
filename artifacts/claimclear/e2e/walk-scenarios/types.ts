@@ -81,6 +81,18 @@ export interface WalkMockState {
   closureReason: "non_issue" | "cannot_dispute" | null;
   /** Stash of leg-by-error-type so the SOP player resolves trees. */
   errorTypeIndex: Map<string, { id: string; name: string; tree: DecisionTree }>;
+  /** Shared presence ledger keyed by `${resourceType}:${resourceId}`,
+   *  inner map keyed by lowercased userEmail. Heartbeat upserts an
+   *  entry; leave deletes it; the GET handler returns the entries
+   *  excluding the requester (matches `/api/presence` server contract).
+   *  See scenario-13 for the cross-context concurrency check. */
+  presence: Map<string, Map<string, PresenceLedgerEntry>>;
+}
+
+export interface PresenceLedgerEntry {
+  userEmail: string;
+  userName: string | null;
+  lastHeartbeat: string;
 }
 
 export interface MockLegState {
@@ -162,8 +174,9 @@ export interface WalkScenario {
    *  test to get a fresh `WalkMockState` so scenarios can share
    *  helpers without leaking state between runs. */
   seed: () => WalkMockState;
-  /** Per-test scripted run, invoked with a `WalkDriverApi`. */
-  run: (driver: WalkDriverApi) => Promise<void>;
+  /** Per-test scripted run, invoked with a `WalkDriverApi`. Required
+   *  for single-context scenarios; ignored when `concurrent` is set. */
+  run?: (driver: WalkDriverApi) => Promise<void>;
   /** Optional post-run assertions on the mock-state ledger. Use this
    *  for ordering / call-count invariants the UI alone cannot prove. */
   assert?: (state: WalkMockState) => void;
@@ -172,4 +185,30 @@ export interface WalkScenario {
    *  given order (other unrelated calls between them are fine). The
    *  runner asserts this automatically before invoking `assert`. */
   expectedCallOrder?: string[];
+  /** When set, the runner spins up a second Playwright `BrowserContext`
+   *  with a distinct user identity and invokes `runConcurrent` with
+   *  both drivers wired against the same shared `WalkMockState`.
+   *  Pins the two-users-on-one-claim presence flow (Scenario #13). */
+  concurrent?: ConcurrentScenarioOptions;
+  /** Required when `concurrent` is set. Receives both drivers wired
+   *  to the same shared mock state. */
+  runConcurrent?: (
+    a: WalkDriverApi,
+    b: WalkDriverApi,
+  ) => Promise<void>;
+}
+
+export interface ConcurrentScenarioOptions {
+  /** Identity used for the first browser context. Defaults to the
+   *  built-in OPERATOR_USER. */
+  userA?: HarnessUser;
+  /** Identity used for the second browser context. Defaults to a
+   *  built-in `operator-two@example.test` second operator. */
+  userB?: HarnessUser;
+}
+
+export interface HarnessUser {
+  id: string;
+  email: string;
+  displayName: string;
 }

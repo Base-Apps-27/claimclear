@@ -63,17 +63,23 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { installApiStubs } from "./walk-scenarios/mock-builder";
+import {
+  installApiStubs,
+  OPERATOR_USER,
+  OPERATOR_USER_TWO,
+} from "./walk-scenarios/mock-builder";
 import { buildDriver } from "./walk-scenarios/walk-driver";
 import type { WalkScenario } from "./walk-scenarios/types";
 import { happyPath } from "./walk-scenarios/scenarios/01-happy-path";
 import { markOneNonIssue } from "./walk-scenarios/scenarios/02-mark-non-issue";
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
+import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
   markOneNonIssue,
   allNonIssue,
+  twoUserConcurrency,
   // Add new scenarios here.
 ];
 
@@ -114,11 +120,44 @@ test.describe("queue walk smoke harness", () => {
   });
 
   for (const scenario of SCENARIOS) {
-    test(scenario.name, async ({ page }) => {
+    test(scenario.name, async ({ page, browser }) => {
       const state = scenario.seed();
-      await installApiStubs(page, state);
-      const driver = buildDriver(page, state);
-      await scenario.run(driver);
+
+      if (scenario.concurrent) {
+        // Two-context flow (Scenario #13). User A reuses the
+        // default test fixture page; User B gets a fresh
+        // BrowserContext so cookies/auth/session storage are
+        // fully isolated. Both share the same in-memory
+        // `WalkMockState` so cross-user effects (presence ledger,
+        // call ordering) are observable from either side.
+        if (!scenario.runConcurrent) {
+          throw new Error(
+            `Scenario "${scenario.name}" sets concurrent but has no runConcurrent`,
+          );
+        }
+        const userA = scenario.concurrent.userA ?? OPERATOR_USER;
+        const userB = scenario.concurrent.userB ?? OPERATOR_USER_TWO;
+        await installApiStubs(page, state, { user: userA });
+        const driverA = buildDriver(page, state);
+
+        const contextB = await browser.newContext();
+        const pageB = await contextB.newPage();
+        try {
+          await installApiStubs(pageB, state, { user: userB });
+          const driverB = buildDriver(pageB, state);
+          await scenario.runConcurrent(driverA, driverB);
+        } finally {
+          await contextB.close();
+        }
+      } else {
+        if (!scenario.run) {
+          throw new Error(`Scenario "${scenario.name}" has no run function`);
+        }
+        await installApiStubs(page, state, { user: OPERATOR_USER });
+        const driver = buildDriver(page, state);
+        await scenario.run(driver);
+      }
+
       if (scenario.expectedCallOrder && scenario.expectedCallOrder.length > 0) {
         // Each label must appear in state.callOrder, in the given
         // relative order (additional unrelated calls between them

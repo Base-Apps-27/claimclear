@@ -11,8 +11,10 @@
 
 import type { Page, Route, Request } from "@playwright/test";
 import type {
+  HarnessUser,
   InvoicePhase,
   MockLegState,
+  PresenceLedgerEntry,
   SopOutcome,
   WalkLegSeed,
   WalkMockState,
@@ -36,14 +38,28 @@ const DROP_REASON_BY_OUTCOME: Record<SopOutcome, "non_issue" | "cannot_dispute" 
   hold: null,
 };
 
-const OPERATOR_USER = {
+export const OPERATOR_USER: HarnessUser = {
   id: "user-operator-1",
   email: "operator@example.test",
   displayName: "Operator One",
-  profileImageUrl: null,
-  role: "operator" as const,
-  status: "active" as const,
 };
+
+export const OPERATOR_USER_TWO: HarnessUser = {
+  id: "user-operator-2",
+  email: "operator-two@example.test",
+  displayName: "Operator Two",
+};
+
+function buildAuthUserPayload(user: HarnessUser) {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    profileImageUrl: null,
+    role: "operator" as const,
+    status: "active" as const,
+  };
+}
 
 /** Build a fresh `WalkMockState` seeded from the supplied legs. The
  *  group starts in `triage` (pre-submit) with the readback already
@@ -103,7 +119,26 @@ export function buildMockState(args: {
     portalSubmissionBody: null,
     closureReason: null,
     errorTypeIndex,
+    presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
   };
+}
+
+function presenceKey(resourceType: string, resourceId: number): string {
+  return `${resourceType}:${resourceId}`;
+}
+
+function getPresenceBucket(
+  state: WalkMockState,
+  resourceType: string,
+  resourceId: number,
+): Map<string, PresenceLedgerEntry> {
+  const key = presenceKey(resourceType, resourceId);
+  let bucket = state.presence.get(key);
+  if (!bucket) {
+    bucket = new Map();
+    state.presence.set(key, bucket);
+  }
+  return bucket;
 }
 
 function nowIso(): string {
@@ -261,7 +296,10 @@ function jsonResponse(status: number, body: unknown) {
 export async function installApiStubs(
   page: Page,
   state: WalkMockState,
+  options: { user?: HarnessUser } = {},
 ): Promise<void> {
+  const currentUser: HarnessUser = options.user ?? OPERATOR_USER;
+  const currentEmailLower = currentUser.email.toLowerCase();
   // Catch-all so a stray fetch doesn't 404+retry in a loop.
   await page.route("**/api/**", (route: Route) =>
     route.fulfill(jsonResponse(200, {})),
@@ -279,7 +317,7 @@ export async function installApiStubs(
 
   // Auth / chrome polls.
   await page.route("**/api/auth/user", (route: Route) =>
-    route.fulfill(jsonResponse(200, { user: OPERATOR_USER })),
+    route.fulfill(jsonResponse(200, { user: buildAuthUserPayload(currentUser) })),
   );
   await page.route("**/api/auth/session-info", (route: Route) =>
     route.fulfill(
@@ -304,8 +342,84 @@ export async function installApiStubs(
   await page.route("**/api/needs-classification-inbox*", (route: Route) =>
     route.fulfill(jsonResponse(200, { groups: [] })),
   );
-  await page.route("**/api/presence*", (route: Route) =>
-    route.fulfill(jsonResponse(200, { viewers: [] })),
+  // Presence wire — the harness backs the real `/api/presence/*`
+  // contract with an in-memory ledger on `state.presence` so cross-
+  // context scenarios (#13) can prove that two operators see each
+  // other. Heartbeat upserts the requester; leave deletes them; GET
+  // returns every other viewer (server-side self-exclusion mirror).
+  await page.route(
+    "**/api/presence/heartbeat",
+    async (route: Route, request: Request) => {
+      if (request.method() !== "POST") return route.fallback();
+      let body: { resourceType?: string; resourceId?: number } = {};
+      try {
+        body = request.postDataJSON();
+      } catch {
+        // ignore
+      }
+      if (
+        !body.resourceType ||
+        typeof body.resourceId !== "number" ||
+        !Number.isFinite(body.resourceId)
+      ) {
+        return route.fulfill(
+          jsonResponse(400, { error: "resourceType and resourceId required" }),
+        );
+      }
+      const bucket = getPresenceBucket(state, body.resourceType, body.resourceId);
+      bucket.set(currentEmailLower, {
+        userEmail: currentUser.email,
+        userName: currentUser.displayName,
+        lastHeartbeat: nowIso(),
+      });
+      state.callOrder.push(
+        `presence_heartbeat_${body.resourceType}_${body.resourceId}_${currentEmailLower}`,
+      );
+      return route.fulfill(jsonResponse(200, { success: true }));
+    },
+  );
+  await page.route(
+    "**/api/presence/leave",
+    async (route: Route, request: Request) => {
+      if (request.method() !== "POST") return route.fallback();
+      let body: { resourceType?: string; resourceId?: number } = {};
+      try {
+        body = request.postDataJSON();
+      } catch {
+        // ignore
+      }
+      if (
+        !body.resourceType ||
+        typeof body.resourceId !== "number" ||
+        !Number.isFinite(body.resourceId)
+      ) {
+        return route.fulfill(
+          jsonResponse(400, { error: "resourceType and resourceId required" }),
+        );
+      }
+      const bucket = getPresenceBucket(state, body.resourceType, body.resourceId);
+      bucket.delete(currentEmailLower);
+      state.callOrder.push(
+        `presence_leave_${body.resourceType}_${body.resourceId}_${currentEmailLower}`,
+      );
+      return route.fulfill(jsonResponse(200, { success: true }));
+    },
+  );
+  await page.route(
+    /\/api\/presence\/(claim|invoice_group)\/\d+(?:\?|$)/,
+    (route: Route, request: Request) => {
+      if (request.method() !== "GET") return route.fallback();
+      const url = new URL(request.url());
+      const m = url.pathname.match(
+        /\/api\/presence\/(claim|invoice_group)\/(\d+)$/,
+      );
+      if (!m) return route.fulfill(jsonResponse(200, { viewers: [], botActivity: [] }));
+      const bucket = getPresenceBucket(state, m[1], Number(m[2]));
+      const viewers = [...bucket.values()].filter(
+        (v) => v.userEmail.toLowerCase() !== currentEmailLower,
+      );
+      return route.fulfill(jsonResponse(200, { viewers, botActivity: [] }));
+    },
   );
   await page.route("**/api/notes*", (route: Route) =>
     route.fulfill(jsonResponse(200, [])),
