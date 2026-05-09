@@ -18,7 +18,10 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
+  useGetMacroPhaseRollup,
+  getGetMacroPhaseRollupQueryKey,
 } from "@workspace/api-client-react";
+import { macroPhaseLabel } from "@/lib/lifecycle-phase";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -97,6 +100,39 @@ import {
  */
 
 type SortMode = "oldest_response" | "newest_response" | "urgency" | "amount";
+
+/**
+ * Cross-surface MAS phase chip — sourced from the shared
+ * `/macro-phase/rollup` endpoint so this header chip, the Queue
+ * lane header, the Sidebar sub-badge and the Dashboard tile all
+ * agree on the same count for the "MAS Action Required" macro
+ * phase. Clicking jumps to the filtered Invoice Groups list.
+ * (Task #559 — surfaces share rollup counts and labels.)
+ */
+function ResponsesMasActionChip() {
+  const { data } = useGetMacroPhaseRollup({
+    query: {
+      queryKey: getGetMacroPhaseRollupQueryKey(),
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const count = data?.counts?.masActionRequired ?? 0;
+  if (count <= 0) return null;
+  return (
+    <Link
+      href="/invoice-groups?macroPhase=mas-action-required"
+      data-testid="responses-mas-action-chip"
+    >
+      <Badge
+        variant="outline"
+        className="cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+      >
+        {count} {macroPhaseLabel("mas-action-required")}
+      </Badge>
+    </Link>
+  );
+}
 
 const SORT_OPTIONS: ReadonlyArray<{ value: SortMode; label: string; help: string }> = [
   {
@@ -365,6 +401,7 @@ export default function ResponsesAwaitingReview() {
               {groups.length} verdict pending
             </Badge>
           )}
+          <ResponsesMasActionChip />
         </div>
         <p className="text-muted-foreground text-sm">
           Stage 2 inbox. The payor responded — read what they said, weigh the AI hint, and pick the verdict (continue the dispute, mark paid, or close as denied). Oldest response first.

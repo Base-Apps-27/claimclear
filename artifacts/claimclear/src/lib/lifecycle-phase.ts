@@ -38,6 +38,27 @@ export type LifecyclePhase =
   | "closed"
   | "on-hold";
 
+// Canonical operator-facing labels for each macro phase. Single source
+// of truth for phase chip text everywhere — Dashboard tiles, Queue
+// tabs, Sidebar badges, Responses screens. Routing UI text through
+// here keeps the labels exactly consistent the way `<StateBadge
+// variant="phase">` does for the wire-level `InvoicePhase` enum.
+// (Task #559 — surfaces share rollup counts and labels.)
+export const MACRO_PHASE_LABEL: Record<LifecyclePhase | "awaiting-payout", string> = {
+  "pre-submit": "Pre-submit",
+  "in-flight": "In Flight",
+  "response-pending": "Response Pending",
+  "mas-action-required": "MAS Action Required",
+  "awaiting-payout": "Awaiting Payout",
+  "closed": "Closed",
+  "on-hold": "On Hold",
+};
+
+/** Display label for a macro/lifecycle phase (e.g. "MAS Action Required"). */
+export function macroPhaseLabel(phase: LifecyclePhase | "awaiting-payout"): string {
+  return MACRO_PHASE_LABEL[phase];
+}
+
 // Canonical phase → LifecyclePhase mapping. `reviewed` rolls up to
 // `response-pending` because the operator-facing surface for a
 // fully-verdicted-but-not-MAS-yet invoice is still the response-review

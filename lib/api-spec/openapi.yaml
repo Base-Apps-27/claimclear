@@ -1969,6 +1969,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttestationCountsResponse"
 
+  /macro-phase/rollup:
+    get:
+      operationId: getMacroPhaseRollup
+      tags: [invoiceGroups]
+      summary: Per-macro-phase invoice group counts
+      description: |
+        Returns the live count of invoice groups in each of the seven
+        canonical macro phases (`pre-submit`, `in-flight`,
+        `response-pending`, `mas-action-required`, `awaiting-payout`,
+        `closed`, `on-hold`). One source of truth for the Dashboard
+        tiles, the Queue lane header, the sidebar MAS sub-badge, and
+        the Responses tabs — every consumer reuses
+        `buildMacroPhaseCondition` so the rollup, the Invoice Groups
+        list page (`?macroPhase=…`), the Queue lanes, and the Group
+        Detail header can never disagree about which bucket a row sits
+        in. (Task #559.)
+      responses:
+        "200":
+          description: Per-macro-phase invoice group counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroPhaseRollupResponse"
+
   /responses/awaiting-review/count:
     get:
       operationId: getResponsesAwaitingReviewCount
@@ -7087,6 +7111,43 @@ components:
         queued:
           type: integer
           description: Approved-family claims parked for someone with payor-portal access.
+
+    MacroPhaseRollupResponse:
+      type: object
+      required: [counts]
+      properties:
+        counts:
+          type: object
+          required:
+            - preSubmit
+            - inFlight
+            - responsePending
+            - masActionRequired
+            - awaitingPayout
+            - closed
+            - onHold
+          properties:
+            preSubmit:
+              type: integer
+              description: Groups in the `pre-submit` macro phase (triage / ready-to-submit).
+            inFlight:
+              type: integer
+              description: Groups in the `in-flight` macro phase (submitted, awaiting first payor response).
+            responsePending:
+              type: integer
+              description: Groups in the `response-pending` macro phase (response received / under review).
+            masActionRequired:
+              type: integer
+              description: Groups in the `mas-action-required` macro phase (per-leg MAS cancels and/or group re-attestation owed).
+            awaitingPayout:
+              type: integer
+              description: Groups in the transient `awaiting-payout` macro phase (re-attest recorded, payor not yet booked).
+            closed:
+              type: integer
+              description: Groups in the `closed` macro phase (final state — Resolved or Denied).
+            onHold:
+              type: integer
+              description: Groups parked in the `on-hold` macro phase (status=On Hold).
 
     ResponsesAwaitingReviewCountResponse:
       type: object

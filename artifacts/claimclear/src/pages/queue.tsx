@@ -6,8 +6,13 @@ import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-c
 import {
   useListInvoiceGroups,
   useGetInvoiceGroup,
+  useGetMacroPhaseRollup,
+  getGetMacroPhaseRollupQueryKey,
   getListInvoiceGroupsQueryKey,
+  getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
+import { macroPhaseLabel } from "@/lib/lifecycle-phase";
+import { GroupActionChecklist } from "@/components/attestation/group-action-checklist";
 import type {
   InvoiceGroupResponse,
   NeedsClassificationInboxGroup,
@@ -40,7 +45,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { useRotatingCaption } from "@/hooks/use-rotating-caption";
 import {
   parseExpiringParam,
   filterByExpiringParam,
@@ -72,7 +76,7 @@ import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-c
 // Triage lives in the Classification Inbox above the workflow grid.
 // "Awaiting Response" was removed in Task #232: those groups are still
 // visible on /responses-awaiting-review when something needs a verdict.
-const VALID_TABS = ["actionable", "portal-queued", "on-hold"] as const;
+const VALID_TABS = ["actionable", "mas-action-required", "portal-queued", "on-hold"] as const;
 type QueueTab = typeof VALID_TABS[number];
 const DEFAULT_TAB: QueueTab = "actionable";
 
@@ -711,7 +715,7 @@ function QueueTabEmptyState({
   lane,
   filter,
 }: {
-  lane: "actionable" | "portal-queued" | "on-hold";
+  lane: "actionable" | "mas-action-required" | "portal-queued" | "on-hold";
   filter: ExpiringFilter;
 }) {
   const { set } = useUrlParams();
@@ -772,7 +776,7 @@ export default function Queue() {
   const engagementMode = readEngagementMode(get("engagement"));
   const VISIBLE_TABS: readonly QueueTab[] =
     engagementMode === "needs"
-      ? (["actionable"] as const)
+      ? (["actionable", "mas-action-required"] as const)
       : VALID_TABS;
   const rawTab: QueueTab = (VALID_TABS as readonly string[]).includes(tabParam)
     ? (tabParam as QueueTab)
@@ -817,10 +821,14 @@ export default function Queue() {
   // (tab, urgency, engagement, past-deadline) which all round-trip
   // through the URL.
   const searchActionable = get("qActionable");
+  const searchMasAction = get("qMasAction");
   const searchPortalQueued = get("qPortalQueued");
   const searchOnHold = get("qOnHold");
   const setSearchActionable = (value: string) => {
     set({ qActionable: value === "" ? null : value }, false);
+  };
+  const setSearchMasAction = (value: string) => {
+    set({ qMasAction: value === "" ? null : value }, false);
   };
   const setSearchPortalQueued = (value: string) => {
     set({ qPortalQueued: value === "" ? null : value }, false);
@@ -947,12 +955,27 @@ export default function Queue() {
   const onHoldQuery = useListInvoiceGroups(onHoldParams, {
     query: { queryKey: getListInvoiceGroupsQueryKey(onHoldParams), refetchOnWindowFocus: true },
   });
+  // Task #559 — dedicated MAS Action Required lane. Driven by the
+  // shared `macroPhase=mas-action-required` server filter so the lane,
+  // the Dashboard tile, the sidebar badge, and the Invoice Groups
+  // filter all read from the same `buildMacroPhaseCondition` source
+  // and can never disagree about who's in the bucket.
+  const masActionParams = {
+    macroPhase: "mas-action-required",
+    limit: 500,
+    expiring: expiringForLanes,
+    includeExpired: includeExpiredForLanes,
+  } as const;
+  const masActionQuery = useListInvoiceGroups(masActionParams, {
+    query: { queryKey: getListInvoiceGroupsQueryKey(masActionParams), refetchOnWindowFocus: true },
+  });
 
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
   const generatingEmailGroups = generatingEmailQuery.data?.groups || [];
   const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
+  const masActionGroups = masActionQuery.data?.groups || [];
 
   const actionableTotal =
     (newQuery.data?.total ?? 0) +
@@ -960,6 +983,22 @@ export default function Queue() {
     (generatingEmailQuery.data?.total ?? 0);
   const portalQueuedTotal = portalQueuedQuery.data?.total ?? 0;
   const onHoldTotal = onHoldQuery.data?.total ?? 0;
+  const masActionTotal = masActionQuery.data?.total ?? 0;
+  // Task #559 — the lane header count is sourced from the shared
+  // `/macro-phase/rollup` endpoint so it agrees byte-for-byte with the
+  // sidebar badge and Dashboard tile. The lane query above still
+  // drives the rendered list (it carries the urgency/expired filter
+  // params), but the chip in the tab header is a strict mirror of the
+  // rollup so cross-surface counts can't drift.
+  const macroPhaseRollupQuery = useGetMacroPhaseRollup({
+    query: {
+      queryKey: getGetMacroPhaseRollupQueryKey(),
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const masActionRollupTotal =
+    macroPhaseRollupQuery.data?.counts?.masActionRequired ?? masActionTotal;
 
   // Classification Inbox: piggybacks on `GET /invoice-groups` via
   // `?include=needs_classification`. We pass a tiny status filter
@@ -1015,6 +1054,7 @@ export default function Queue() {
   ]);
   const portalQueuedAll = sortByUrgency(portalQueuedGroups);
   const onHoldAll = sortByUrgency(onHoldGroups);
+  const masActionAll = sortByUrgency(masActionGroups);
 
   // Past-deadline rows + `?expiring=` filtering are server-side for the
   // urgent / soon / stuck modes (the API understands those tokens). The
@@ -1033,6 +1073,9 @@ export default function Queue() {
   const onHoldSorted = needsClientFilter
     ? filterByExpiringParam(onHoldAll, expiringFilter)
     : onHoldAll;
+  const masActionSorted = needsClientFilter
+    ? filterByExpiringParam(masActionAll, expiringFilter)
+    : masActionAll;
 
   // Client-side search overlay — narrows the already-filtered lane
   // sets (urgency / engagement / past-deadline filters stay upstream).
@@ -1059,6 +1102,10 @@ export default function Queue() {
     () => onHoldSorted.filter((g) => matchesSearch(g, searchOnHold)),
     [onHoldSorted, searchOnHold],
   );
+  const masActionVisible = useMemo(
+    () => masActionSorted.filter((g) => matchesSearch(g, searchMasAction)),
+    [masActionSorted, searchMasAction],
+  );
 
   // Task #490 — soften row removal across the three lanes. Each lane
   // tracks its own settling ghosts so a completion in Action Required
@@ -1081,6 +1128,11 @@ export default function Queue() {
     (g) => g.id,
     selectedWorkflowId,
   );
+  const masActionSettle = useRowSettle(
+    masActionVisible,
+    (g) => g.id,
+    selectedWorkflowId,
+  );
 
   // Lane urgent / stuck / soon counts. When an `?expiring=` filter is
   // active and the API understands it, the lane is server-narrowed so
@@ -1096,6 +1148,9 @@ export default function Queue() {
   const onHoldUrgent = expiringFilter === "urgent"
     ? onHoldTotal
     : onHoldAll.filter(g => g.isUrgent).length;
+  const masActionUrgent = expiringFilter === "urgent"
+    ? masActionTotal
+    : masActionAll.filter(g => g.isUrgent).length;
   // Hero count: filing-clock counter, mirrors the Dashboard's
   // "must file today" hero. Portal Queued is intentionally EXCLUDED
   // because the filing clock is satisfied the moment a group is
@@ -1143,13 +1198,19 @@ export default function Queue() {
       : needsClientFilter
         ? onHoldSorted.length
         : 0;
+  const masActionMatchingCount =
+    expiringFilter === "soon"
+      ? masActionTotal
+      : needsClientFilter
+        ? masActionSorted.length
+        : 0;
 
   // Sum of authoritative server totals so the visible-set chip never
   // undercounts when a lane has more matches than the 500-row payload.
   // For the client-side modes we sum the filtered arrays instead.
   const visibleFilteredCount = needsClientFilter
-    ? actionableMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
-    : actionableTotal + portalQueuedTotal + onHoldTotal;
+    ? actionableMatchingCount + masActionMatchingCount + portalQueuedMatchingCount + onHoldMatchingCount
+    : actionableTotal + masActionTotal + portalQueuedTotal + onHoldTotal;
 
   // Today / Tomorrow split for the hero and the multi-chip filter UI
   // under today-tomorrow / tomorrow / urgent. Portal Queued is excluded
@@ -1172,6 +1233,7 @@ export default function Queue() {
 
   const allGroups = [
     ...actionableAll,
+    ...masActionAll,
     ...portalQueuedAll,
     ...onHoldAll,
   ];
@@ -1426,10 +1488,13 @@ export default function Queue() {
     !onHoldQuery.isLoading &&
     inboxTotal === 0 &&
     actionableTotal === 0 &&
+    masActionTotal === 0 &&
     portalQueuedTotal === 0 &&
     onHoldTotal === 0 &&
+    !masActionQuery.isLoading &&
     expiringFilter === null &&
     !searchActionable &&
+    !searchMasAction &&
     !searchPortalQueued &&
     !searchOnHold;
 
@@ -1561,7 +1626,7 @@ export default function Queue() {
             />
             {engagementMode === "needs" && (
               <span className="text-xs text-muted-foreground" data-testid="engagement-hint-queue">
-                Portal Queued &amp; On Hold lanes hidden — press <span className="font-medium text-foreground">All</span> to show them.
+                Portal Queued &amp; On Hold lanes hidden — press <span className="font-medium text-foreground">All</span> to show them. MAS Action Required stays visible because those groups still need engagement.
               </span>
             )}
           </div>
@@ -1577,6 +1642,18 @@ export default function Queue() {
                   testid="tab-badge-actionable"
                 />
               </TabsTrigger>
+              {(VISIBLE_TABS as readonly string[]).includes("mas-action-required") && (
+                <TabsTrigger value="mas-action-required" data-testid="tab-mas-action-required">
+                  {macroPhaseLabel("mas-action-required")}
+                  <TabBadgeSplit
+                    total={masActionRollupTotal}
+                    urgent={masActionUrgent}
+                    matching={masActionMatchingCount}
+                    filterMode={expiringFilter}
+                    testid="tab-badge-mas-action-required"
+                  />
+                </TabsTrigger>
+              )}
               {(VISIBLE_TABS as readonly string[]).includes("portal-queued") && (
                 <TabsTrigger value="portal-queued" data-testid="tab-portal-queued">
                   Portal Queued
@@ -1640,6 +1717,47 @@ export default function Queue() {
                     <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-actionable">
                       {actionableSettle.slots.map((s) => renderGroupRow(s.item, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true, isSettling: s.isSettling, isJustSelected: actionableSettle.isJustSelected(s.item.id) }))}
                     </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="mas-action-required" className="mt-4 space-y-2">
+              <p className="text-xs text-muted-foreground" data-testid="tab-purpose-mas-action-required">
+                <span className="font-medium text-foreground">Approved with per-leg MAS cancels and/or group re-attestation owed.</span> Select a row to walk the checklist inline — the rest of the page becomes the workspace for that group.
+              </p>
+              {masActionSorted.length === 0 ? (
+                <Card>
+                  <CardContent className="py-6">
+                    <QueueTabEmptyState lane="mas-action-required" filter={expiringFilter} />
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <ListTableHeaderStrip
+                    searchValue={searchMasAction}
+                    onSearchChange={setSearchMasAction}
+                    searchPlaceholder="Search invoice #, client #, or error type…"
+                    searchTestId="queue-search-mas-action-required"
+                    matchingCount={masActionVisible.length}
+                    matchingNoun={{ one: "group", other: "groups" }}
+                  />
+                  {masActionVisible.length === 0 ? (
+                    <Card>
+                      <CardContent
+                        className="py-12 text-center text-muted-foreground space-y-3"
+                        data-testid="queue-search-empty-mas-action-required"
+                      >
+                        No groups match “{searchMasAction}” in this tab.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1" data-testid="queue-list-mas-action-required">
+                      {masActionSettle.slots.map((s) => renderGroupRow(s.item, { onSelect: selectWorkflow, selectedId: selectedWorkflowId, showDeadline: true, isSettling: s.isSettling, isJustSelected: masActionSettle.isJustSelected(s.item.id) }))}
+                    </div>
+                  )}
+                  {selectedWorkflowId !== null && (
+                    <MasActionInlineChecklist groupId={selectedWorkflowId} />
                   )}
                 </>
               )}
@@ -2069,3 +2187,42 @@ function ClassificationInboxRow({
   );
 }
 
+/**
+ * Inline MAS checklist for the Queue's MAS Action Required lane
+ * (task #559). Loads the selected group's detail and mounts the
+ * shared `GroupActionChecklist` so the operator can record per-leg
+ * MAS cancels and the group re-attestation without leaving the
+ * queue. The mutations inside `GroupActionChecklist` already
+ * invalidate the macro-phase rollup family, so the row falls out of
+ * the lane on its own once everything's done.
+ */
+function MasActionInlineChecklist({ groupId }: { groupId: number }) {
+  const detailQuery = useGetInvoiceGroup(groupId, {
+    query: { queryKey: getGetInvoiceGroupQueryKey(groupId) },
+  });
+  const detail = detailQuery.data;
+  if (!detail) {
+    return (
+      <Card data-testid={`mas-action-inline-checklist-loading-${groupId}`}>
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          Loading checklist for invoice group #{groupId}…
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card data-testid={`mas-action-inline-checklist-${groupId}`}>
+      <CardHeader>
+        <CardTitle className="text-base">
+          MAS checklist · {detail.invoiceNumber ?? `#${detail.id}`}
+        </CardTitle>
+        <CardDescription>
+          Cancel each approved leg in MAS, then re-attest the group.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <GroupActionChecklist detail={detail} bucketKey={`queue-mas-${detail.id}`} />
+      </CardContent>
+    </Card>
+  );
+}

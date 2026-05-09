@@ -138,6 +138,7 @@ import type {
   ListWithdrawalsParams,
   LookupMappingsBody,
   LookupMappingsResponse,
+  MacroPhaseRollupResponse,
   MarkAwaitingPayorAgainRequest,
   MarkInvoiceGroupMasEligible200,
   MarkInvoiceGroupMasEligibleBody,
@@ -4774,6 +4775,92 @@ export function useGetAttestationCounts<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAttestationCountsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the live count of invoice groups in each of the seven
+canonical macro phases (`pre-submit`, `in-flight`,
+`response-pending`, `mas-action-required`, `awaiting-payout`,
+`closed`, `on-hold`). One source of truth for the Dashboard
+tiles, the Queue lane header, the sidebar MAS sub-badge, and
+the Responses tabs — every consumer reuses
+`buildMacroPhaseCondition` so the rollup, the Invoice Groups
+list page (`?macroPhase=…`), the Queue lanes, and the Group
+Detail header can never disagree about which bucket a row sits
+in. (Task #559.)
+
+ * @summary Per-macro-phase invoice group counts
+ */
+export const getGetMacroPhaseRollupUrl = () => {
+  return `/api/macro-phase/rollup`;
+};
+
+export const getMacroPhaseRollup = async (
+  options?: RequestInit,
+): Promise<MacroPhaseRollupResponse> => {
+  return customFetch<MacroPhaseRollupResponse>(getGetMacroPhaseRollupUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMacroPhaseRollupQueryKey = () => {
+  return [`/api/macro-phase/rollup`] as const;
+};
+
+export const getGetMacroPhaseRollupQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMacroPhaseRollup>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMacroPhaseRollup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMacroPhaseRollupQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMacroPhaseRollup>>
+  > = ({ signal }) => getMacroPhaseRollup({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMacroPhaseRollup>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMacroPhaseRollupQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMacroPhaseRollup>>
+>;
+export type GetMacroPhaseRollupQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-macro-phase invoice group counts
+ */
+
+export function useGetMacroPhaseRollup<
+  TData = Awaited<ReturnType<typeof getMacroPhaseRollup>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMacroPhaseRollup>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMacroPhaseRollupQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -272,6 +272,8 @@ export * from "./listWithdrawalsParams";
 export * from "./listWithdrawalsSort";
 export * from "./lookupMappingsBody";
 export * from "./lookupMappingsResponse";
+export * from "./macroPhaseRollupResponse";
+export * from "./macroPhaseRollupResponseCounts";
 export * from "./mappingPieceResult";
 export * from "./mappingResult";
 export * from "./markAwaitingPayorAgainRequest";

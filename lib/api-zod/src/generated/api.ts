@@ -14020,6 +14020,58 @@ export const GetAttestationCountsResponse = zod.object({
 });
 
 /**
+ * Returns the live count of invoice groups in each of the seven
+canonical macro phases (`pre-submit`, `in-flight`,
+`response-pending`, `mas-action-required`, `awaiting-payout`,
+`closed`, `on-hold`). One source of truth for the Dashboard
+tiles, the Queue lane header, the sidebar MAS sub-badge, and
+the Responses tabs — every consumer reuses
+`buildMacroPhaseCondition` so the rollup, the Invoice Groups
+list page (`?macroPhase=…`), the Queue lanes, and the Group
+Detail header can never disagree about which bucket a row sits
+in. (Task #559.)
+
+ * @summary Per-macro-phase invoice group counts
+ */
+export const GetMacroPhaseRollupResponse = zod.object({
+  counts: zod.object({
+    preSubmit: zod
+      .number()
+      .describe(
+        "Groups in the `pre-submit` macro phase (triage \/ ready-to-submit).",
+      ),
+    inFlight: zod
+      .number()
+      .describe(
+        "Groups in the `in-flight` macro phase (submitted, awaiting first payor response).",
+      ),
+    responsePending: zod
+      .number()
+      .describe(
+        "Groups in the `response-pending` macro phase (response received \/ under review).",
+      ),
+    masActionRequired: zod
+      .number()
+      .describe(
+        "Groups in the `mas-action-required` macro phase (per-leg MAS cancels and\/or group re-attestation owed).",
+      ),
+    awaitingPayout: zod
+      .number()
+      .describe(
+        "Groups in the transient `awaiting-payout` macro phase (re-attest recorded, payor not yet booked).",
+      ),
+    closed: zod
+      .number()
+      .describe(
+        "Groups in the `closed` macro phase (final state — Resolved or Denied).",
+      ),
+    onHold: zod
+      .number()
+      .describe("Groups parked in the `on-hold` macro phase (status=On Hold)."),
+  }),
+});
+
+/**
  * Returns the live count of invoice groups visible on the
 `/responses-awaiting-review` page — i.e., groups in the
 `response-pending` macro phase (status ∈ {Ready to Review,

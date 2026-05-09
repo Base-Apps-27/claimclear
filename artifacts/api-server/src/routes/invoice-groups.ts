@@ -439,7 +439,14 @@ function buildMacroPhaseCondition(phase: string): SQL | undefined {
     );
   }
   if (phase === "awaiting-payout") {
-    return isNotNull(invoiceGroupsTable.reattestCompletedAt);
+    // Mirror getGroupMacroPhase(): re-attest is recorded but the row
+    // hasn't yet flipped to phase=closed. Without the `phase != closed`
+    // guard, a closed-and-paid group would double-count under both the
+    // `awaiting-payout` and `closed` rollup buckets.
+    return and(
+      isNotNull(invoiceGroupsTable.reattestCompletedAt),
+      ne(invoiceGroupsTable.phase, "closed"),
+    );
   }
   if (phase === "on-hold") {
     return eq(invoiceGroupsTable.status, "On Hold");
@@ -2244,6 +2251,47 @@ router.patch("/invoice-groups/:id/closure-review", asyncHandler(async (req, res)
 // when the page's empty state renders, and vice versa — celebrating
 // the empty state without a count of zero (or vice versa) is now
 // impossible without changing both sides of this contract together.
+// Task #559 — single rollup endpoint returning per-macro-phase invoice
+// group counts. One source of truth for the Dashboard tiles ("MAS Action
+// Required" / "Awaiting Payout"), the Queue lane header, the sidebar
+// MAS sub-badge, and the Responses tabs. Each bucket reuses
+// `buildMacroPhaseCondition` so the rollup, the Invoice Groups list
+// page (`?macroPhase=…`), the Queue lanes, and the Group Detail
+// header can never disagree about which bucket a row sits in.
+const MACRO_PHASE_ROLLUP_KEYS = [
+  "preSubmit",
+  "inFlight",
+  "responsePending",
+  "masActionRequired",
+  "awaitingPayout",
+  "closed",
+  "onHold",
+] as const;
+const MACRO_PHASE_ROLLUP_TO_FILTER: Record<typeof MACRO_PHASE_ROLLUP_KEYS[number], string> = {
+  preSubmit: "pre-submit",
+  inFlight: "in-flight",
+  responsePending: "response-pending",
+  masActionRequired: "mas-action-required",
+  awaitingPayout: "awaiting-payout",
+  closed: "closed",
+  onHold: "on-hold",
+};
+
+router.get("/macro-phase/rollup", asyncHandler(async (_req, res): Promise<void> => {
+  const entries = await Promise.all(
+    MACRO_PHASE_ROLLUP_KEYS.map(async (key) => {
+      const condition = buildMacroPhaseCondition(MACRO_PHASE_ROLLUP_TO_FILTER[key]);
+      const [row] = await db
+        .select({ value: count() })
+        .from(invoiceGroupsTable)
+        .where(condition!);
+      return [key, row?.value ?? 0] as const;
+    }),
+  );
+  const counts = Object.fromEntries(entries) as Record<typeof MACRO_PHASE_ROLLUP_KEYS[number], number>;
+  res.json({ counts });
+}));
+
 router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): Promise<void> => {
   const responsePendingPredicate = buildMacroPhaseCondition("response-pending");
   const [row] = await db

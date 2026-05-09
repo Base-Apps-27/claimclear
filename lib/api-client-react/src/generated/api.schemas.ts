@@ -2522,6 +2522,27 @@ export interface AttestationCountsResponse {
   queued: number;
 }
 
+export type MacroPhaseRollupResponseCounts = {
+  /** Groups in the `pre-submit` macro phase (triage / ready-to-submit). */
+  preSubmit: number;
+  /** Groups in the `in-flight` macro phase (submitted, awaiting first payor response). */
+  inFlight: number;
+  /** Groups in the `response-pending` macro phase (response received / under review). */
+  responsePending: number;
+  /** Groups in the `mas-action-required` macro phase (per-leg MAS cancels and/or group re-attestation owed). */
+  masActionRequired: number;
+  /** Groups in the transient `awaiting-payout` macro phase (re-attest recorded, payor not yet booked). */
+  awaitingPayout: number;
+  /** Groups in the `closed` macro phase (final state — Resolved or Denied). */
+  closed: number;
+  /** Groups parked in the `on-hold` macro phase (status=On Hold). */
+  onHold: number;
+};
+
+export interface MacroPhaseRollupResponse {
+  counts: MacroPhaseRollupResponseCounts;
+}
+
 export interface ResponsesAwaitingReviewCountResponse {
   /** Number of invoice groups visible on the Responses Awaiting
 Review page — `response-pending` macro phase (status ∈
