@@ -10,9 +10,11 @@
 //     The Re-attest CTA is surfaced for any group whose dispute outlook
 //     resolves to `reattest_only` (zero disputable legs, ≥1 survivor
 //     leg). The CTA's server gate (POST /reattest/queue,
-//     /reattest/complete) requires:
-//       (macro = "response-pending" AND status = "Needs Review")
+//     /reattest/complete) requires (post-Hotfix #635, 2026-05-09):
+//       macro = "response-pending"  (covers both legacy `Needs Review`
+//                                    and post-#547 `Ready to Review`)
 //       OR macro = "mas-action-required"
+//       OR outlook = reattest_only from any non-terminal/non-on-hold phase
 //     Any group satisfying outlook=reattest_only but failing the gate
 //     would surface a 409 to the operator. This is the May-8 incident
 //     class the canonical lifecycle map exists to prevent.
@@ -106,7 +108,10 @@ function reattestGateAccepts(group: GroupRow, legs: LegRow[]): boolean {
     reattestCompletedAt: group.reattest_completed_at,
   });
   if (macro === "mas-action-required") return true;
-  if (macro === "response-pending" && group.status === "Needs Review") return true;
+  // Hotfix #635 (2026-05-09): drop the `status === "Needs Review"`
+  // sub-check; the macro-phase already covers both legacy `Needs Review`
+  // and post-#547 `Ready to Review`.
+  if (macro === "response-pending") return true;
   // Early Re-attest (Task #476) — the server now accepts the call
   // when outlook=reattest_only from any non-terminal/non-on-hold
   // phase. Mirrors invoice-groups.ts L3826-3905.

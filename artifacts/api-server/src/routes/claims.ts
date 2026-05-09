@@ -821,8 +821,14 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
   const isPositive = latestResponseType ? positiveTypes.includes(latestResponseType) : false;
   const isNegative = latestResponseType ? negativeTypes.includes(latestResponseType) : false;
 
+  // Hotfix #635 (2026-05-09): broaden the per-leg gate to accept both
+  // legacy `Needs Review` and post-#547 `Ready to Review`. The matcher
+  // calls `transitionClaimStatus` with MATCHER_CLASSIFIED_TARGET_STATUS
+  // ("Ready to Review") on every classified payor reply, so a strict
+  // `claim.status === "Needs Review"` check dead-gated the per-leg
+  // post-response action set on every modern claim.
   let postResponseActions: string[] = [];
-  if (hasResponses && claim.status === "Needs Review") {
+  if (hasResponses && (claim.status === "Needs Review" || claim.status === "Ready to Review")) {
     if (isPositive) {
       postResponseActions = ["resolve_reattest", "resolve_new_invoice"];
     } else if (isNegative) {

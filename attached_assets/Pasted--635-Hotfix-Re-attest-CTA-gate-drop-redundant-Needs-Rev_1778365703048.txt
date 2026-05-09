@@ -1,0 +1,55 @@
+#635 - Hotfix: Re-attest CTA gate — drop redundant Needs-Review check
+What & Why
+The Re-attest CTA on the response-review page is permanently disabled even after operators record all leg verdicts on a payor reply. "Finalized" count is frozen because nothing can call /reattest/complete while the CTA is dead. Both symptoms have one root cause.
+
+Three gates each gate on macro === "response-pending" AND status === "Needs Review":
+
+artifacts/claimclear/src/lib/whats-next-derivation.ts:288 — client CTA enable
+artifacts/api-server/src/routes/invoice-groups.ts:4047 — server /reattest/queue
+artifacts/api-server/src/scripts/audit-state-divergence.ts:109 — audit predicate
+Since Task #547, the response matcher writes status = "Ready to Review" (not "Needs Review") for every classified payor reply — the 62-row heal moved historical rows in the same direction. The three gates above were never updated to follow. The macro-phase check already correctly identifies "response-pending"; the secondary status === "Needs Review" clause is dead weight that excludes every modern row.
+
+Two adjacent gates on the same response surface fail the same way and must move with it:
+
+artifacts/api-server/src/routes/invoice-groups.ts:2002 — payor-denial-reason
+artifacts/api-server/src/routes/invoice-groups.ts:2071 — awaiting-payor-again flip
+Done looks like
+After all leg verdicts are recorded on a payor response, the Re-attest CTA enables without operator intervention, refresh, or context switch.
+Server POST /invoice-groups/:id/reattest/queue accepts the same set of groups the client now offers — no client/server divergence.
+Operators can record a payor denial reason and flip "I replied — wait for payor again" on response-pending groups regardless of whether the row's status reads "Ready to Review" or "Needs Review".
+The "finalized" count moves on its own once operators click the now-enabled CTAs on the existing backlog. (No backfill needed — this is unreached UI, not bad data.)
+The audit script's reattestGateAccepts predicate matches the production gate. Running the audit reports 0 cases of reattest_cta_would_409.
+A regression test stands the full flow up: response tagged → all verdicts recorded → CTA enabled → /reattest/queue accepts → legs flip to attestationState='queued' → /reattest/complete stamps reattest_completed_at. Test seeds the group with the actual status the matcher writes (MATCHER_CLASSIFIED_TARGET_STATUS), not a hardcoded literal.
+Out of scope
+DB heal of existing rows. They are correctly stored as (response_received, Ready to Review); they were stuck in the UI, not in the data.
+The pre-response auto-advance at routes/invoice-groups.ts:1484 (becameClassified hook). That gate's previous.status === "Needs Review" is in macro triage and is correct as-is — broadening it would auto-promote response-pending rows on errorTypeId edits.
+Reader-side cleanup of the other 14 audit-listed §B.1/§C.1 sites (audits, dashboard tiles, list filters, status-pill renders). They are display-axis or reader-axis surfaces with the writer-lockstep guarantee under them; they are NOT the reattest path. Defer until they actually break.
+Vocabulary collapse, phase/disposition schema work, lint rule, DB triggers — see the separate "schema-drift + lint" task and the deferred Wave B+C reference task.
+Steps
+Re-attest queue gate (server). At routes/invoice-groups.ts:4044-4101, drop the && group.status === "Needs Review" clause from the isResponsePending predicate. The sourcePhase === "response-pending" check above it already gates correctly; the legacy combined check excludes all post-#547 rows. Update the 409 message and expectedState string to match.
+
+Re-attest CTA gate (client). At whats-next-derivation.ts:288, do the same: if (macro === "response-pending") return { ok: true }; (drop the && group.status === "Needs Review"). Update the explanatory comment and the trailing "hasn't been routed for review yet" fallback message that no longer applies.
+
+Audit predicate. At scripts/audit-state-divergence.ts:109, mirror the change so the audit reports the same set the production gate accepts.
+
+Adjacent same-class gates. At routes/invoice-groups.ts:2002 and :2071, broaden from status === "Needs Review" to "macro is response-pending" via getGroupMacroPhase — same fix shape, same justification.
+
+Per-leg version. Audit routes/claims.ts:1416 (/claims/:id/post-response-action) and the related postResponseActions derivation at :825 and routes/invoice-groups.ts:1935. If they gate on status === "Needs Review" while the parent group is response-pending, broaden them on the same macro-phase basis. Don't broaden if they're checking the per-leg status independent of group macro.
+
+End-to-end test. Single integration test: seed a group with MATCHER_CLASSIFIED_TARGET_STATUS and a payor approval response, record verdicts on every leg, assert CTA is enabled, hit /reattest/queue, assert legs flip to attestationState='queued', hit /reattest/complete, assert reattest_completed_at is stamped. Must fail on main before the gate edits and pass after.
+
+Run the audit script post-merge against prod to confirm 0 reattest_cta_would_409 cases. Capture the count of groups currently in (response_received, Ready to Review, all legs verdicted, reattest_completed_at IS NULL) before and after the operator backlog clears so we can see "finalized" move from 9 to its true value.
+
+Relevant files
+artifacts/claimclear/src/lib/whats-next-derivation.ts:275-325
+artifacts/api-server/src/routes/invoice-groups.ts:4030-4109
+artifacts/api-server/src/routes/invoice-groups.ts:1934-1962
+artifacts/api-server/src/routes/invoice-groups.ts:1977-2099
+artifacts/api-server/src/routes/claims.ts:818-846
+artifacts/api-server/src/routes/claims.ts:1416-1494
+artifacts/api-server/src/lib/response-matcher.ts:23
+artifacts/api-server/src/lib/macro-phase.ts:54
+artifacts/api-server/src/scripts/audit-state-divergence.ts:109
+artifacts/api-server/src/scripts/oneshot-heal-needs-review-after-payor-reply-2026-05-08.ts
+artifacts/api-server/src/__tests__/group-reattest-queue.test.ts
+artifacts/api-server/src/__tests__/response-matcher-target-status.test.ts

@@ -1993,8 +1993,13 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
   const latestResponseType = latestResponse.length > 0 ? latestResponse[0].responseType : null;
   const hasResponse = await groupHasResponse(id);
 
+  // Hotfix #635 (2026-05-09): broaden from `status === "Needs Review"`
+  // to the macro-phase check. Post-Task #547 the response matcher writes
+  // `Ready to Review` for every classified payor reply, both of which
+  // bucket into the `response-pending` macro-phase.
   let postResponseActions: string[] = [];
-  if (group.status === "Needs Review" && latestResponseType) {
+  const groupMacroPhase = getGroupMacroPhase(group);
+  if (groupMacroPhase === "response-pending" && latestResponseType) {
     if (["approval", "partial_approval"].includes(latestResponseType)) {
       postResponseActions = ["resolve_reattest", "resolve_new_invoice"];
     } else if (latestResponseType === "denial") {
@@ -2061,11 +2066,15 @@ router.post("/invoice-groups/:id/payor-denial-reason", asyncHandler(async (req, 
   const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  if (group.status !== "Needs Review") {
+  // Hotfix #635 (2026-05-09): gate on macro-phase, not legacy status
+  // string. Both `Needs Review` (legacy) and `Ready to Review` (post-#547)
+  // bucket into `response-pending`. Pre-#635 this was a `status ===`
+  // check that dead-gated every modern row.
+  if (getGroupMacroPhase(group) !== "response-pending") {
     res.status(409).json({
       error: "Payor denial reason can only be recorded while the group is awaiting review.",
-      expectedState: "status=Needs Review",
-      actualState: `status=${group.status}`,
+      expectedState: "macroPhase=response-pending",
+      actualState: `status=${group.status}, phase=${group.phase}`,
     });
     return;
   }
@@ -2130,11 +2139,14 @@ router.post("/invoice-groups/:id/awaiting-payor-again", asyncHandler(async (req,
   const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  if (group.status !== "Needs Review") {
+  // Hotfix #635 (2026-05-09): gate on macro-phase, not legacy status
+  // string. Both `Needs Review` (legacy) and `Ready to Review`
+  // (post-#547) bucket into `response-pending`.
+  if (getGroupMacroPhase(group) !== "response-pending") {
     res.status(409).json({
-      error: "Group can only be flipped back to awaiting-payor-again while it is in Needs Review.",
-      expectedState: "status=Needs Review",
-      actualState: `status=${group.status}`,
+      error: "Group can only be flipped back to awaiting-payor-again while it is awaiting review (response-pending).",
+      expectedState: "macroPhase=response-pending",
+      actualState: `status=${group.status}, phase=${group.phase}`,
     });
     return;
   }
@@ -4077,11 +4089,17 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
 
   // Source-state contract. Three valid entry conditions:
   //
-  //   * `response-pending` (status=Needs Review) — the original
-  //     "park the response review for the portal user" path. Requires
-  //     an inbound payor response on file (otherwise there's nothing
-  //     to be reviewing) and stamps `awaitingPayorAgainAt` so the
-  //     group drops off Responses Awaiting Review.
+  //   * `response-pending` (legacy status `Needs Review` OR post-#547
+  //     `Ready to Review` — both bucket into the same macro-phase) —
+  //     the original "park the response review for the portal user"
+  //     path. Requires an inbound payor response on file (otherwise
+  //     there's nothing to be reviewing) and stamps
+  //     `awaitingPayorAgainAt` so the group drops off Responses
+  //     Awaiting Review. Hotfix #635 (2026-05-09): the redundant
+  //     `status === "Needs Review"` sub-check was dropped — post-#547
+  //     the matcher writes `Ready to Review` for every classified
+  //     payor reply, and the macro-phase check above already covers
+  //     both legacy values.
   //
   //   * `mas-action-required` (status=MAS Eligible / phase=
   //     awaiting_reattestation) — the standard MAS-Eligible path:
@@ -4105,8 +4123,7 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
   // closed invoice or an on-hold one would be incoherent regardless
   // of leg state.
   const sourcePhase = getGroupMacroPhase(group);
-  const isResponsePending = sourcePhase === "response-pending"
-    && group.status === "Needs Review";
+  const isResponsePending = sourcePhase === "response-pending";
   const isMasActionRequired = sourcePhase === "mas-action-required";
   // Compute reattest_only outlook by inspecting the group's legs.
   // Mirrors `deriveInvoiceDisputeOutlook` (frontend) and
@@ -4155,8 +4172,8 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
     && sourcePhase !== "on-hold";
   if (!isResponsePending && !isMasActionRequired && !isEarlyReattest) {
     res.status(409).json({
-      error: "Group can only be bulk-queued for re-attestation while it is in Needs Review, MAS Eligible, or has zero disputable legs with at least one survivor (Early Re-attest).",
-      expectedState: "phase in (response-pending with status=Needs Review, mas-action-required) OR outlook=reattest_only",
+      error: "Group can only be bulk-queued for re-attestation while it is awaiting review (response-pending), MAS Eligible, or has zero disputable legs with at least one survivor (Early Re-attest).",
+      expectedState: "macroPhase in (response-pending, mas-action-required) OR outlook=reattest_only",
       actualState: `phase=${sourcePhase}, status=${group.status}, reattestOnlyOutlook=${isReattestOnlyOutlook}`,
     });
     return;

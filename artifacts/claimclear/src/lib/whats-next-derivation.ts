@@ -243,8 +243,13 @@ export function isAwaitingPayorAgain(group: InvoiceGroupResponse): boolean {
 // therefore mis-classify a re-attested group as eligible.
 //
 // Eligible iff:
-//   - macroPhase = "response-pending" AND status = "Needs Review", OR
+//   - macroPhase = "response-pending" (covers both legacy `Needs Review`
+//     and post-#547 `Ready to Review` landing statuses — the matcher
+//     writes the latter, so a `status === "Needs Review"` clause here
+//     would dead-gate every modern row)
 //   - macroPhase = "mas-action-required"
+//   - outlook = reattest_only from any non-terminal/non-on-hold phase
+//     (Early Re-attest, Task #476)
 // ─────────────────────────────────────────────────────────────────────
 
 type ReattestEligibility =
@@ -285,9 +290,13 @@ export function canQueueOrCompleteReattest(
 ): ReattestEligibility {
   const macro = deriveServerMacroPhase(group);
   if (macro === "mas-action-required") return { ok: true };
-  if (macro === "response-pending" && group.status === "Needs Review") {
-    return { ok: true };
-  }
+  // Hotfix #635 (2026-05-09): drop the legacy `status === "Needs Review"`
+  // sub-check. Post-Task #547 the response matcher writes
+  // `Ready to Review` for every classified payor reply; the macro-phase
+  // check above (which buckets BOTH legacy values into `response-pending`)
+  // is the canonical gate. Keeping the status sub-check here was
+  // dead-gating the Re-attest CTA on every modern row.
+  if (macro === "response-pending") return { ok: true };
   // Early Re-attest: zero disputable legs + ≥1 survivor. Allowed
   // from any non-terminal/non-on-hold phase. The terminal cases
   // (closed, on-hold) still block below for the same reason the
@@ -316,11 +325,14 @@ export function canQueueOrCompleteReattest(
   if (macro === "pre-submit") {
     return { ok: false, reason: "This invoice hasn't been submitted to the payor yet." };
   }
-  // response-pending but status is "Ready to Review" — the response
-  // has landed but hasn't been picked up for human review yet.
+  // Defensive fallback: every macro value is enumerated above. If we
+  // reach here the group is in an unexpected phase — surface a generic
+  // explanation rather than a stale "hasn't been routed for review" one
+  // (which was misleading post-#635 since response-pending now always
+  // accepts).
   return {
     ok: false,
-    reason: "The payor response hasn't been routed for review yet — refresh in a moment, or pick it up from the Responses Awaiting Review page.",
+    reason: "Re-attestation isn't available from this invoice's current phase.",
   };
 }
 

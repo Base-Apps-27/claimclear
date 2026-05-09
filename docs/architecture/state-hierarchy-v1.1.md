@@ -5,7 +5,7 @@
 **Predecessors:**
 - `docs/architecture/state-hierarchy-v1.md` — the v1 plan; this doc folds in prerequisites and corrections found during the 2026-05-09 adversarial review
 - `docs/audits/state-readers-writers-2026-05-08-v2.md` — the audit that motivated this work
-- `.local/tasks/reader-lockstep-finish.md` — the active hotfix shipping ahead of this plan
+- `.local/tasks/reader-lockstep-finish.md` — Hotfix #635, **shipped 2026-05-09** (see §0 amendment below). Closed the Re-attest CTA outage caused by the post-#547 status-string drift on six gate sites: client whats-next derivation, server `/reattest/queue`, audit script `reattestGateAccepts`, server `/payor-denial-reason`, server `/awaiting-payor-again`, the per-group `postResponseActions` derivation, and the per-leg `postResponseActions` derivation.
 
 ---
 
@@ -23,6 +23,28 @@ v1 was correct in shape but had five hidden prerequisites and two unresolved con
 8. **Adds lock-ordering contract.** v1's `transitionInvoice` and `setClaimDisposition` both lock the parent invoice; without a documented ordering, concurrent operators on different claims of the same invoice can deadlock. v1.1 names a single helper as the canonical lock acquirer.
 9. **Adds rollback procedure for Wave D.** v1 admits Wave D is "one-way operationally" and stops there. v1.1 requires Wave D to ship behind a feature flag with both code paths live for at least one operator-week before the cache file is deleted.
 10. **Adds continuous conformance worker.** v1's check is a CLI script. v1.1 promotes it to a 5-minute cron during the entire migration window.
+
+### 0.1 Amendment 2026-05-09 — Hotfix #635 shipped ahead of plan
+
+Status: **shipped on main**, no flag, no migration, no DB heal.
+
+The Re-attest CTA was permanently dead on every payor reply landing post-Task #547 (which moved the matcher's classified-status target from `Needs Review` → `Ready to Review`). Six reader/gate sites still hard-checked the legacy literal:
+
+| File | Line (pre-fix) | Symptom |
+| --- | --- | --- |
+| `artifacts/claimclear/src/lib/whats-next-derivation.ts` | 288 | client CTA stayed disabled |
+| `artifacts/api-server/src/routes/invoice-groups.ts` | 4109 (`/reattest/queue`) | server 409 even when CTA was forced |
+| `artifacts/api-server/src/scripts/audit-state-divergence.ts` | 109 | audit predicate drifted from prod gate |
+| `artifacts/api-server/src/routes/invoice-groups.ts` | 1997 (per-group `postResponseActions`) | empty action list on the response surface |
+| `artifacts/api-server/src/routes/invoice-groups.ts` | 2064 (`/payor-denial-reason`) | denial-reason capture 409'd |
+| `artifacts/api-server/src/routes/invoice-groups.ts` | 2133 (`/awaiting-payor-again`) | "wait for payor again" flip 409'd |
+| `artifacts/api-server/src/routes/claims.ts` | 825 (per-leg `postResponseActions`) | empty per-leg action list |
+
+All six were broadened to gate on `getGroupMacroPhase(group) === "response-pending"` (or, on the per-leg site, `claim.status ∈ {Needs Review, Ready to Review}`). The two preserved status-string checks — `routes/invoice-groups.ts:1546` (becameClassified auto-advance) and `routes/claims.ts:735` (per-claim auto-advance) — are macro=triage transition gates and are correct as-is; broadening them would auto-promote response-pending rows on errorTypeId edits.
+
+Regression coverage: `artifacts/api-server/src/__tests__/group-reattest-queue.test.ts` now defaults `seedGroup()` to the matcher's actual landing status (`MATCHER_CLASSIFIED_TARGET_STATUS = "Ready to Review"`), and adds two named tests asserting the gate accepts both the post-#547 and legacy literals.
+
+**Implication for this plan:** the hotfix demonstrates the failure mode the plan is designed to eliminate — a writer changes its target literal and N reader sites silently dead-gate. The hotfix patches the immediate damage but does *not* prevent recurrence; that protection still requires Pre-Wave-B (operational alert), the lint rule from `single-writer-enforcement.md`, and ultimately Wave D.5 (rewriting `whats-next-derivation.ts` to read from the transition table instead of string-matching status). Section §8 wave risks are unchanged.
 
 The seven phases (§1), claim dispositions (§2), and transition API (§3) from v1 are unchanged. What follows replaces v1 §5 (schema diff), §7 (execution plan), and §10 (risk/reversibility).
 

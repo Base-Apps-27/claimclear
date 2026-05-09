@@ -33,6 +33,7 @@ import { eq, desc } from "drizzle-orm";
 
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
+import { MATCHER_CLASSIFIED_TARGET_STATUS } from "../lib/response-matcher";
 import {
   db,
   pool,
@@ -187,13 +188,22 @@ async function seedGroup(
   opts: { withResponse?: boolean; status?: string; phase?: string } = {},
 ): Promise<typeof invoiceGroupsTable.$inferSelect> {
   const invoiceNumber = `T-BULKQ-G-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
-  const status = opts.status ?? "Needs Review";
+  // Default to the actual status the response matcher writes today
+  // (MATCHER_CLASSIFIED_TARGET_STATUS, currently "Ready to Review"),
+  // not the pre-#547 `Needs Review` literal. Hotfix #635 regression
+  // coverage: the gate must accept this status without any further
+  // configuration. We import the literal from the matcher source so a
+  // future change to the matcher's target status flows here automatically
+  // — no second-source-of-truth drift.
+  const status = opts.status ?? MATCHER_CLASSIFIED_TARGET_STATUS;
   // The canonical `phase` column drives getGroupMacroPhase. Pick a
   // sensible default per status so seedGroup() callers don't all have
   // to pass it explicitly.
   const phase = opts.phase ?? (() => {
     switch (status) {
-      case "Needs Review": return "response_received";
+      case "Needs Review":
+      case "Ready to Review":
+        return "response_received";
       case "MAS Eligible": return "awaiting_reattestation";
       case "Awaiting Response": return "submitted";
       default: return "triage";
@@ -420,7 +430,7 @@ test("returns 409 when the group has no eligible legs (defense in depth)", async
   }
 });
 
-test("returns 409 when the group is in a phase outside Needs Review / MAS Eligible", async () => {
+test("returns 409 when the group is in a phase outside response-pending / MAS Eligible", async () => {
   // `Awaiting Response` is the in-flight phase — neither
   // `response-pending` nor `mas-action-required`, so the bulk-queue
   // contract rejects it.
@@ -432,7 +442,10 @@ test("returns 409 when the group is in a phase outside Needs Review / MAS Eligib
       { method: "POST", body: {} },
     );
     assert.equal(res.status, 409);
-    assert.match(res.json.error, /Needs Review, MAS Eligible, or has zero disputable legs/i);
+    // Hotfix #635: error copy now describes the gate in macro-phase
+    // terms ("awaiting review (response-pending)") instead of the
+    // legacy status literal.
+    assert.match(res.json.error, /response-pending|MAS Eligible|zero disputable legs/i);
   } finally {
     await cleanupGroup(group.id);
   }
@@ -578,6 +591,57 @@ test("succeeds from MAS Eligible (Early Re-attest) without an inbound payor resp
     assert.ok(umbrella, "umbrella audit row must be written on the Early Re-attest path too");
     assert.equal((umbrella!.metadata as any).sourcePhase, "mas-action-required");
     assert.equal((umbrella!.metadata as any).newAwaitingPayorAgainAt, null);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+// ---- Hotfix #635 regression --------------------------------------------
+// End-to-end coverage for the dropped `status === "Needs Review"` clause.
+// Pre-fix: a group seeded at the matcher's actual landing status
+// ("Ready to Review") would 409 the reattest queue endpoint despite
+// being in macro-phase response-pending. Post-fix: the gate accepts.
+//
+// Note: the default seedGroup() now uses MATCHER_CLASSIFIED_TARGET_STATUS
+// ("Ready to Review"), so every happy-path test in this file already
+// implicitly exercises this regression. This test makes the assertion
+// explicit so a future revert of the gate trips a named, obvious failure.
+
+test("Hotfix #635: /reattest/queue accepts a group whose status is the post-#547 'Ready to Review' (matcher's actual landing status), not just the legacy 'Needs Review'", async () => {
+  const group = await seedGroup({ status: MATCHER_CLASSIFIED_TARGET_STATUS });
+  const leg = await seedLeg(group.id, { attestationState: "not_required" });
+  try {
+    const res = await fetchJson<{
+      group: { awaitingPayorAgainAt: string | null };
+      queuedLegIds: number[];
+    }>(`/api/invoice-groups/${group.id}/reattest/queue`, {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(
+      res.status,
+      200,
+      `Hotfix #635 regression: expected 200 with status='Ready to Review', got ${res.status} (${JSON.stringify(res.json)}). The gate is once again checking 'status === Needs Review' instead of macro-phase.`,
+    );
+    assert.deepEqual(res.json.queuedLegIds, [leg.id]);
+    assert.ok(res.json.group.awaitingPayorAgainAt,
+      "awaiting_payor_again_at must still be stamped on the 'Ready to Review' path");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("Hotfix #635: legacy 'Needs Review' status still works (back-compat for unmigrated rows)", async () => {
+  const group = await seedGroup({ status: "Needs Review" });
+  const leg = await seedLeg(group.id, { attestationState: "not_required" });
+  try {
+    const res = await fetchJson<{ queuedLegIds: number[] }>(
+      `/api/invoice-groups/${group.id}/reattest/queue`,
+      { method: "POST", body: {} },
+    );
+    assert.equal(res.status, 200,
+      "legacy 'Needs Review' rows must still pass the gate after Hotfix #635");
+    assert.deepEqual(res.json.queuedLegIds, [leg.id]);
   } finally {
     await cleanupGroup(group.id);
   }
