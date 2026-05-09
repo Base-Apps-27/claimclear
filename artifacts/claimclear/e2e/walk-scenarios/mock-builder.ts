@@ -124,6 +124,7 @@ export function buildMockState(args: {
     portalSubmissionBody: null,
     errorTypeIndex,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
+    submitFailWith: null,
   };
 }
 
@@ -664,6 +665,21 @@ export async function installApiStubs(
         state.portalSubmissionBody = request.postDataJSON();
       } catch {
         state.portalSubmissionBody = request.postData();
+      }
+      // Smoke #18 hook: when a scenario primes `submitFailWith`, the
+      // POST is rejected with that HTTP status and the group stays in
+      // its pre-submit phase. Clear the flag after one shot so the
+      // operator's retry lands on the success branch unless the
+      // scenario re-arms it.
+      if (state.submitFailWith != null) {
+        const status = state.submitFailWith;
+        state.submitFailWith = null;
+        state.callOrder.push(`portal_submit_fail_${status}`);
+        return route.fulfill(
+          jsonResponse(status, {
+            error: `Portal submission failed with status ${status}`,
+          }),
+        );
       }
       state.phase = "submitted";
       state.callOrder.push("portal_submit");

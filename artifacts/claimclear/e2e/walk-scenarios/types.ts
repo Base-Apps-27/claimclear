@@ -91,6 +91,13 @@ export interface WalkMockState {
    *  excluding the requester (matches `/api/presence` server contract).
    *  See scenario-13 for the cross-context concurrency check. */
   presence: Map<string, Map<string, PresenceLedgerEntry>>;
+  /** When set, the next portal-submission POST is rejected with this
+   *  HTTP status (and a JSON error body) instead of flipping the
+   *  group to `submitted`. Cleared automatically after one failure so
+   *  scenarios can stage "fail then retry succeeds" sequences by
+   *  setting it again before each attempt. Used by Smoke #18 to pin
+   *  the submit-fails error UI without touching production code. */
+  submitFailWith: number | null;
 }
 
 export interface PresenceLedgerEntry {
