@@ -14,6 +14,8 @@ import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
+import { broadcastGroupEvent } from "../lib/sse";
+import { loadGroupReadiness, readyToGenerateSqlConditions } from "../lib/group-packaging";
 import { buildPromptLegInputs, loadDecisionTreesForLegs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
 
 function sanitizeHtml(html: string): string {
@@ -968,15 +970,29 @@ export interface GeneratePortalDraftResult {
   descriptionHtml: string;
 }
 
-export async function generatePortalDraftForGroup(
+interface PreparedDraftContent {
+  ctx: GroupContext;
+  filtered: Awaited<ReturnType<typeof filterRidesForSubmission>>;
+  totalLegs: number;
+  isPartialSubmission: boolean;
+  settings: PortalSettings;
+  errorType: typeof errorTypesTable.$inferSelect | null;
+  reason: string;
+  issueType: string;
+  snap: ReturnType<typeof buildSnapshot>;
+  promptLegInputs: PromptLegInputsResult;
+  generatedDescription: string;
+  attachmentUrls: string[];
+  gpsBreadcrumbs: string;
+  trimmedSpecial: string;
+  trimmedReadback: string;
+}
+
+async function preparePortalDraftContent(
   opts: GeneratePortalDraftOpts,
-  req: { user?: { email?: string | null; displayName?: string | null } | null },
-): Promise<GeneratePortalDraftResult> {
+): Promise<PreparedDraftContent> {
   const trimmedSpecial = (opts.specialCircumstances || "").trim();
   const trimmedReadback = (opts.understandingReadback || "").trim();
-  // Understanding readback is OPTIONAL — when the operator has nothing
-  // extra to add about the case overall, an empty readback is a valid
-  // signal and the AI prompt simply omits that section.
 
   const rawCtx = await resolveContext({ invoiceGroupId: opts.invoiceGroupId });
   if (!rawCtx) throw new GroupNotFoundError();
@@ -984,8 +1000,6 @@ export async function generatePortalDraftForGroup(
   const groupId = rawCtx.group.id;
   const totalLegs = rawCtx.rides.length;
 
-  // Filter held legs and already-submitted legs out of the snapshot so the
-  // submission only covers the legs the user actually wants to file right now.
   const filtered = await filterRidesForSubmission(rawCtx.rides, groupId);
   if (filtered.rides.length === 0) {
     const heldCount = filtered.excludedHeld.length;
@@ -1005,28 +1019,12 @@ export async function generatePortalDraftForGroup(
   const ctx: GroupContext = { group: rawCtx.group, rides: filtered.rides, primaryClaim: filtered.rides[0] };
   const isPartialSubmission = filtered.rides.length < totalLegs;
 
-  const existingDrafts = await db.select().from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.invoiceGroupId, groupId),
-      eq(portalSubmissionsTable.status, "draft"),
-    ));
-  for (const draft of existingDrafts) {
-    await db.update(portalSubmissionsTable).set({ status: "cancelled" })
-      .where(eq(portalSubmissionsTable.id, draft.id));
-  }
-
   const settings = await getPortalSettings();
   const errorType = await loadErrorTypeForContext(ctx);
   const reason = opts.disputeReason || "";
   const issueType = determineIssueType(errorType);
   const snap = buildSnapshot(ctx);
 
-  // Task #307 guard #10: an inconsistent group surfaces loud here (before
-  // the LLM call) rather than being masked by retry. Task #398: there is
-  // no silent template fallback for LLM failures — a persistent outage
-  // bubbles up `LLMUnavailableError` so route handlers can return 502 to
-  // the UI rather than hand the operator a thin write-up they didn't ask
-  // for.
   const rides = ctx.rides as PromptLegRowInput[];
   const treesByLegId = await loadDecisionTreesForLegs(rides);
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
@@ -1047,9 +1045,26 @@ export async function generatePortalDraftForGroup(
     hasSpecialCircumstances: trimmedSpecial.length > 0,
   }, "Portal draft: evidence and GPS resolved");
 
-  const [submission] = await db.insert(portalSubmissionsTable).values({
+  return {
+    ctx, filtered, totalLegs, isPartialSubmission, settings, errorType,
+    reason, issueType, snap, promptLegInputs, generatedDescription,
+    attachmentUrls, gpsBreadcrumbs, trimmedSpecial, trimmedReadback,
+  };
+}
+
+function buildPortalDraftWriteData(
+  prepared: PreparedDraftContent,
+  req: { user?: { email?: string | null; displayName?: string | null } | null },
+) {
+  const {
+    ctx, filtered, totalLegs, isPartialSubmission, snap, issueType,
+    generatedDescription, attachmentUrls, gpsBreadcrumbs, trimmedSpecial,
+    trimmedReadback, reason, promptLegInputs, settings,
+  } = prepared;
+
+  const submissionValues = {
     invoiceGroupId: ctx.group.id,
-    status: "draft",
+    status: "draft" as const,
     issueType,
     subject: snap.subjectFallback,
     requesterEmail: settings.contactEmail,
@@ -1076,25 +1091,21 @@ export async function generatePortalDraftForGroup(
     evidenceNotes: snap.evidenceNotes,
     evidenceFiles: snap.evidenceFiles,
     attempts: 0,
-    // Task #485: record one entry per disputed leg at draft time so the list
-    // page can render an "N legs" pill and the drawer can show the per-leg
-    // breakdown. `ticked` starts false on every leg; the producer overwrites
-    // this column with worker outcomes after a real submission run.
     legs: ctx.rides.map((r) => ({
       legId: r.id,
       confNumber: r.confNumber || null,
       ticked: false,
     })),
-  }).returning();
+  };
 
   const partialSuffix = isPartialSubmission
     ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted, ${filtered.excludedNonContestable.length} non-contestable)`
     : "";
   const contextSuffix = trimmedSpecial ? " — with operator special circumstances" : "";
-  await db.insert(auditLogsTable).values({
+  const auditValues = {
     claimId: ctx.primaryClaim.id,
     invoiceGroupId: ctx.group.id,
-    action: "portal_draft_created",
+    action: "portal_draft_created" as const,
     details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}${contextSuffix}`,
     metadata: {
       hasSpecialCircumstances: trimmedSpecial.length > 0,
@@ -1108,12 +1119,36 @@ export async function generatePortalDraftForGroup(
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
-  });
+  };
+
+  return { submissionValues, auditValues };
+}
+
+export async function generatePortalDraftForGroup(
+  opts: GeneratePortalDraftOpts,
+  req: { user?: { email?: string | null; displayName?: string | null } | null },
+): Promise<GeneratePortalDraftResult> {
+  const prepared = await preparePortalDraftContent(opts);
+
+  const existingDrafts = await db.select().from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.invoiceGroupId, prepared.ctx.group.id),
+      eq(portalSubmissionsTable.status, "draft"),
+    ));
+  for (const draft of existingDrafts) {
+    await db.update(portalSubmissionsTable).set({ status: "cancelled" })
+      .where(eq(portalSubmissionsTable.id, draft.id));
+  }
+
+  const { submissionValues, auditValues } = buildPortalDraftWriteData(prepared, req);
+
+  const [submission] = await db.insert(portalSubmissionsTable).values(submissionValues).returning();
+  await db.insert(auditLogsTable).values(auditValues);
 
   return {
     submission,
-    subject: submission.subject ?? snap.subjectFallback,
-    descriptionHtml: generatedDescription,
+    subject: submission.subject ?? prepared.snap.subjectFallback,
+    descriptionHtml: prepared.generatedDescription,
   };
 }
 
@@ -2003,6 +2038,184 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
     success: true,
     queued: queuedItems.length,
     queuedItems,
+    skipped,
+  });
+}));
+
+// POST /invoice-groups/bulk-generate-and-review — Task #641.
+// Bulk equivalent of the single-group Gauntlet flow: for each group
+// in `groupIds`:
+//   1. Gates on packageability via `loadGroupReadiness` (same gate the
+//      Gauntlet's Generate Preview button uses).
+//   2. Calls `generatePortalDraftForGroup` (same AI generation the
+//      single-group `/invoice-groups/:id/preview-generated` route uses).
+//   3. Stamps `previewGeneratedAt`/`previewGeneratedBy` + draft/baseline
+//      fields (mirrors the preview-generated route exactly).
+//   4. Stamps `draftReviewedAt`/`draftReviewedBy` (mirrors the
+//      `/invoice-groups/:id/draft/mark-reviewed` route).
+//   5. Writes both `group_preview_generated` AND `group_draft_reviewed`
+//      audit events + state events (same events the Gauntlet writes).
+//
+// Each group is gated independently; failures land in `skipped` with a
+// stable reason string. Processes sequentially to respect the AI
+// provider's rate limits. Resumable — re-running only processes groups
+// that still need it (already-reviewed groups are skipped).
+router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    res.status(400).json({ error: "groupIds array is required" });
+    return;
+  }
+
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Generated = { id: number; refNumber: string | null };
+  type Skipped = { id: number; refNumber: string | null; reason: string };
+  const generated: Generated[] = [];
+  const skipped: Skipped[] = [];
+
+  const sseActor = {
+    userName: req.user?.displayName ?? null,
+    userEmail: req.user?.email ?? null,
+  };
+
+  for (const gid of requestedIds) {
+    const ctx = await resolveContext({ invoiceGroupId: gid });
+    if (!ctx) {
+      skipped.push({ id: gid, refNumber: null, reason: "not_found" });
+      continue;
+    }
+    const refNumber = ctx.group.invoiceNumber;
+
+    if (ctx.group.draftReviewedAt != null) {
+      skipped.push({ id: gid, refNumber, reason: "already_reviewed" });
+      continue;
+    }
+
+    const readiness = await loadGroupReadiness(gid);
+    if (!readiness || !readiness.ready) {
+      skipped.push({
+        id: gid,
+        refNumber,
+        reason: readiness ? `not_packageable: ${readiness.reason}` : "not_found",
+      });
+      continue;
+    }
+
+    try {
+      const prepared = await preparePortalDraftContent({
+        invoiceGroupId: gid,
+        understandingReadback: ctx.group.understandingReadback ?? null,
+      });
+
+      const { submissionValues, auditValues } = buildPortalDraftWriteData(prepared, req);
+
+      const now = new Date();
+      const eligibilityGuard = and(
+        eq(invoiceGroupsTable.id, gid),
+        ...readyToGenerateSqlConditions(),
+      );
+
+      const result = await db.transaction(async (tx) => {
+        const [previewRow] = await tx
+          .update(invoiceGroupsTable)
+          .set({
+            previewGeneratedAt: now,
+            previewGeneratedBy: req.user?.email ?? null,
+            draftSubject: prepared.snap.subjectFallback,
+            draftDescriptionHtml: prepared.generatedDescription,
+            aiBaselineSubject: prepared.snap.subjectFallback,
+            aiBaselineDescriptionHtml: prepared.generatedDescription,
+            draftEditedAt: now,
+            draftEditedBy: req.user?.email ?? null,
+            draftReviewedAt: now,
+            draftReviewedBy: req.user?.email ?? null,
+          })
+          .where(eligibilityGuard)
+          .returning({ id: invoiceGroupsTable.id });
+
+        if (!previewRow) return null;
+
+        const existingDrafts = await tx.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
+          .where(and(
+            eq(portalSubmissionsTable.invoiceGroupId, gid),
+            eq(portalSubmissionsTable.status, "draft"),
+          ));
+        for (const d of existingDrafts) {
+          await tx.update(portalSubmissionsTable).set({ status: "cancelled" })
+            .where(eq(portalSubmissionsTable.id, d.id));
+        }
+
+        const [submission] = await tx.insert(portalSubmissionsTable).values(submissionValues).returning();
+        await tx.insert(auditLogsTable).values(auditValues);
+
+        await tx.insert(auditLogsTable).values({
+          invoiceGroupId: gid,
+          action: "group_preview_generated",
+          details: `Dispute preview generated (bulk, Task #641)`,
+          metadata: {
+            bulk: true,
+            sourceSubmissionId: submission.id,
+            descriptionLength: prepared.generatedDescription.length,
+          },
+          userEmail: req.user?.email ?? null,
+          userName: req.user?.displayName ?? null,
+        });
+        await tx.insert(auditLogsTable).values({
+          invoiceGroupId: gid,
+          action: "group_draft_reviewed",
+          details: `Dispute draft marked reviewed (bulk, Task #641)`,
+          metadata: { bulk: true },
+          userEmail: req.user?.email ?? null,
+          userName: req.user?.displayName ?? null,
+        });
+
+        return { submissionId: submission.id };
+      });
+
+      if (!result) {
+        skipped.push({ id: gid, refNumber, reason: "became_ineligible_during_run" });
+        continue;
+      }
+
+      await emitStateEvent({
+        eventKey: "group.preview_generated",
+        invoiceGroupId: gid,
+        actorUserId: req.user?.email ?? null,
+        metadata: { bulk: true, sourceSubmissionId: result.submissionId },
+      });
+      broadcastGroupEvent({
+        type: "preview_generated",
+        invoiceGroupId: gid,
+        ...sseActor,
+        timestamp: now.toISOString(),
+      });
+      await emitStateEvent({
+        eventKey: "group.draft_reviewed",
+        invoiceGroupId: gid,
+        actorUserId: req.user?.email ?? null,
+        metadata: { bulk: true },
+      });
+      broadcastGroupEvent({
+        type: "draft_reviewed",
+        invoiceGroupId: gid,
+        ...sseActor,
+        timestamp: now.toISOString(),
+      });
+
+      generated.push({ id: gid, refNumber });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "generation_failed";
+      skipped.push({ id: gid, refNumber, reason: `generation_failed: ${reason}` });
+    }
+  }
+
+  res.json({
+    success: true,
+    generated: generated.length,
+    generatedItems: generated,
     skipped,
   });
 }));

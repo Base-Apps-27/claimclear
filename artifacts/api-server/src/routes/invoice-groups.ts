@@ -5,7 +5,7 @@ import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubm
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
-import { computeGroupReadiness } from "../lib/group-packaging";
+import { computeGroupReadiness, readyToGenerateSqlConditions } from "../lib/group-packaging";
 import { refreshGroupDerivedFields, refreshClaimDenormalizedCache } from "../lib/denormalized-cache";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -400,6 +400,14 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
       conditions.push(sql`NOT (${hasSurvivor})`);
       conditions.push(sql`EXISTS (SELECT 1 FROM claims c WHERE c.invoice_group_id = ${invoiceGroupsTable.id})`);
     }
+  }
+
+  // "Ready to generate" predicate (Task #641). Uses the shared SQL
+  // conditions co-located with `computeGroupReadiness` in
+  // `group-packaging.ts` so both predicates stay in lockstep.
+  const readyToGenerateFlag = String(query.readyToGenerate ?? "").toLowerCase() === "true";
+  if (readyToGenerateFlag) {
+    conditions.push(...readyToGenerateSqlConditions());
   }
 
   // Missing-service-date facet (Task #353). The sub-reason filter

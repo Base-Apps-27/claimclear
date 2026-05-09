@@ -157,6 +157,17 @@ the result set to groups matching the named outlook bucket:
  */
   outlook?: ListInvoiceGroupsOutlook;
   /**
+ * When `true`, restricts the result set to groups whose legs are
+all in a resolved/packageable state (every non-held, non-duplicate
+leg has a terminal disposition, at least one contested leg, status
+in {New, Needs Evidence}) AND whose AI writeup has not yet been
+generated or has been generated but not yet marked reviewed.
+Mirrors `computeGroupReadiness` from `group-packaging.ts` so
+the filter stays in lockstep with the Gauntlet's gate.
+
+ */
+  readyToGenerate?: boolean;
+  /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all

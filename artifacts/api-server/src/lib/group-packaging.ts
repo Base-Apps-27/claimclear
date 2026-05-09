@@ -21,7 +21,7 @@
 // legacy `Resolved` fallthrough; Wave D will narrow this once the
 // writer rewire lands).
 
-import { eq } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { db, claimsTable, invoiceGroupsTable, type Claim, type InvoiceGroup } from "@workspace/db";
 import type { DbExecutor } from "./claim-transitions";
 
@@ -266,6 +266,81 @@ export function computeGroupReadiness(
     reason: "Ready to package",
     ...baseCounts,
   };
+}
+
+/**
+ * SQL conditions for the "ready to generate" filter (Task #641).
+ *
+ * Co-located with `computeGroupReadiness` so both predicates are
+ * maintained together and stay in lockstep. The SQL mirrors the four
+ * gates of `computeGroupReadiness` plus a draft-reviewed check:
+ *
+ *   Gate 1: status ∈ PACKAGEABLE_GROUP_STATUSES
+ *   Gate 2+4: ≥1 contested (processed) leg exists
+ *   Gate 3: every non-held, non-duplicate leg is terminally disposed
+ *     (uses the same isHeld semantics: holdReason, disposition='blocked',
+ *      sopOutcome='hold' all map to the "held" bucket and are excluded
+ *      from the unprocessed count)
+ *   Gate 3b: every sibling-duplicate has a resolved primary
+ *   Draft gate: draftReviewedAt IS NULL (captures both "no draft" and
+ *     "draft exists but not yet reviewed")
+ *
+ * Returns an array of SQL fragments to be ANDed into a WHERE clause.
+ * The caller must reference `invoiceGroupsTable` as the main table.
+ */
+export function readyToGenerateSqlConditions(): SQL[] {
+  return [
+    sql`${invoiceGroupsTable.status} IN ('New', 'Needs Evidence')`,
+    sql`${invoiceGroupsTable.draftReviewedAt} IS NULL`,
+    sql`EXISTS (
+      SELECT 1 FROM ${claimsTable} c
+      WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+        AND c.duplicate_of_claim_id IS NULL
+        AND (
+          c.disposition IN ('disposed_portal', 'disposed_email')
+          OR (
+            (c.disposition IS NULL OR c.disposition = 'unclassified')
+            AND c.sop_outcome IN ('portal_dispute', 'dispute')
+          )
+        )
+    )`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${claimsTable} c
+      WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+        AND c.duplicate_of_claim_id IS NULL
+        AND c.hold_reason IS NULL
+        AND c.disposition IS DISTINCT FROM 'blocked'
+        AND c.sop_outcome IS DISTINCT FROM 'hold'
+        AND NOT (
+          c.disposition IN ('disposed_portal', 'disposed_email')
+          OR (
+            (c.disposition IS NULL OR c.disposition = 'unclassified')
+            AND c.sop_outcome IN ('portal_dispute', 'dispute')
+          )
+          OR c.disposition IN ('disposed_withdraw', 'disposed_nonissue')
+          OR (
+            (c.disposition IS NULL OR c.disposition = 'unclassified')
+            AND c.sop_outcome IN ('cannot_dispute', 'non_issue')
+          )
+        )
+    )`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${claimsTable} dup
+      WHERE dup.invoice_group_id = ${invoiceGroupsTable.id}
+        AND dup.duplicate_of_claim_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM ${claimsTable} pri
+          WHERE pri.id = dup.duplicate_of_claim_id
+            AND (
+              pri.disposition IN ('disposed_portal', 'disposed_email', 'disposed_withdraw', 'disposed_nonissue')
+              OR (
+                (pri.disposition IS NULL OR pri.disposition = 'unclassified')
+                AND pri.sop_outcome IN ('portal_dispute', 'dispute', 'cannot_dispute', 'non_issue')
+              )
+            )
+        )
+    )`,
+  ];
 }
 
 /**

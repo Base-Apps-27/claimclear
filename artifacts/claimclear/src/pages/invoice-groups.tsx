@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, useBulkReattestInvoiceGroups, useBulkCloseInvoiceGroups, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, useBulkReattestInvoiceGroups, useBulkCloseInvoiceGroups, useBulkGenerateAndReviewInvoiceGroups, listInvoiceGroups, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
 import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useRole } from "@/lib/role";
 import { Link, useLocation } from "wouter";
-import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock, RefreshCw, XCircle } from "lucide-react";
+import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock, RefreshCw, XCircle, Sparkles } from "lucide-react";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -188,6 +188,11 @@ export default function InvoiceGroupsList() {
       ? (filterMissingReasonRaw as MissingReason)
       : "";
 
+  // "Ready to generate" filter (Task #641). When active, the listing
+  // shows only groups whose legs are all packageable but whose AI
+  // writeup hasn't been generated or marked reviewed yet.
+  const filterReadyToGenerate = get("readyToGenerate") === "true";
+
   // `?importBatch=<id>` is the link payload from the Import flow's
   // post-upload right rail ("View invoice groups"). Scopes the list to
   // just the groups the user created in their most recent import so
@@ -285,6 +290,7 @@ export default function InvoiceGroupsList() {
       : effectiveDraftReviewed === "unreviewed"
         ? false
         : undefined) as ListInvoiceGroupsParams["draftReviewed"],
+    readyToGenerate: filterReadyToGenerate || undefined,
     outlook: (isPreSubmitTab && filterOutlook ? filterOutlook : undefined) as ListInvoiceGroupsParams["outlook"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
@@ -306,7 +312,12 @@ export default function InvoiceGroupsList() {
   const bulkSubmitToPortal = useBulkSubmitInvoiceGroupsToPortal();
   const bulkReattest = useBulkReattestInvoiceGroups();
   const bulkClose = useBulkCloseInvoiceGroups();
+  const bulkGenerateAndReview = useBulkGenerateAndReviewInvoiceGroups();
   const [bulkPortalMsg, setBulkPortalMsg] = useState("");
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  type BulkGenResult = { id: number; refNumber: string | null; status: "generated" | "skipped" | "failed"; reason?: string };
+  const [bulkGenResults, setBulkGenResults] = useState<BulkGenResult[] | null>(null);
+  const [bulkGenProcessing, setBulkGenProcessing] = useState(false);
   // Bulk-action shimmer (Task #494): pulse the affected group rows
   // together after a successful bulk assign so the change reads as
   // one confirmed sweep across the table.
@@ -365,10 +376,11 @@ export default function InvoiceGroupsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, outlook: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, outlook: null, readyToGenerate: null, page: null }, false);
+    setSelectAllMatching(false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed || !!filterOutlook;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed || !!filterOutlook || filterReadyToGenerate;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -453,8 +465,15 @@ export default function InvoiceGroupsList() {
         onRemove: () => set({ missingServiceDate: null, missingServiceDateReason: null, page: null }, false),
       });
     }
+    if (filterReadyToGenerate) {
+      result.push({
+        key: "readyToGenerate",
+        label: "Ready to generate",
+        onRemove: () => set({ readyToGenerate: null, page: null }, false),
+      });
+    }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, filterOutlook, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, set]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, filterOutlook, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, filterReadyToGenerate, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -872,6 +891,28 @@ export default function InvoiceGroupsList() {
           accent="purple"
           ariaLabel="Filter invoice groups by status"
         />
+        {isPreSubmitTab && !clerk && (
+          <Button
+            variant={filterReadyToGenerate ? "default" : "outline"}
+            size="sm"
+            onClick={() =>
+              set(
+                { readyToGenerate: filterReadyToGenerate ? null : "true", page: null },
+                false,
+              )
+            }
+            data-testid="filter-ready-to-generate"
+            className="gap-1.5"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Ready to generate
+            {filterReadyToGenerate && total > 0 && (
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                {total}
+              </Badge>
+            )}
+          </Button>
+        )}
       </div>
 
       <StatusStrip>
@@ -935,8 +976,71 @@ export default function InvoiceGroupsList() {
           <Card data-tour="invoice-groups-table">
             <FilterChipStrip
               chips={chips}
-              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, page: null }, false); }}
+              onClearAll={() => { set({ q: null, status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, readyToGenerate: null, page: null }, false); }}
             />
+
+            {filterReadyToGenerate && !clerk && allSelected && !selectAllMatching && total > groups.length && (
+              <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm text-blue-800 flex items-center gap-2" data-testid="select-all-matching-banner">
+                <span>All {groups.length} groups on this page are selected.</span>
+                <button
+                  className="font-medium underline hover:text-blue-900"
+                  onClick={() => setSelectAllMatching(true)}
+                >
+                  Select all {total} matching groups
+                </button>
+              </div>
+            )}
+            {filterReadyToGenerate && selectAllMatching && (
+              <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm text-blue-800 flex items-center gap-2" data-testid="all-matching-selected-banner">
+                <span>All {total} groups matching this filter are selected.</span>
+                <button
+                  className="font-medium underline hover:text-blue-900"
+                  onClick={() => { setSelectAllMatching(false); setSelectedIds(new Set(groups.map(g => g.id))); }}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+
+            {bulkGenResults && (
+              <div className="border-b border-muted bg-muted/30 px-4 py-3 space-y-2" data-testid="bulk-gen-results-panel">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">
+                    {bulkGenProcessing ? "Generating writeups…" : "Bulk generation results"}
+                  </span>
+                  {!bulkGenProcessing && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                      onClick={() => setBulkGenResults(null)}
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-48 overflow-auto space-y-1">
+                  {bulkGenResults.map((r) => (
+                    <div key={r.id} className={`text-xs flex items-center gap-2 px-2 py-1 rounded ${
+                      r.status === "generated" ? "bg-green-50 text-green-800" :
+                      r.status === "skipped" ? "bg-amber-50 text-amber-800" :
+                      "bg-red-50 text-red-800"
+                    }`}>
+                      {r.status === "generated" ? <CheckCircle2 className="h-3 w-3 shrink-0" /> :
+                       r.status === "skipped" ? <AlertCircle className="h-3 w-3 shrink-0" /> :
+                       <XCircle className="h-3 w-3 shrink-0" />}
+                      <span className="font-medium">{r.refNumber || `#${r.id}`}</span>
+                      <span className="text-muted-foreground">—</span>
+                      <span>{r.status === "generated" ? "Generated & marked for approval" : r.reason || r.status}</span>
+                    </div>
+                  ))}
+                </div>
+                {bulkGenProcessing && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>{bulkGenResults.length} processed so far…</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <CardContent className="p-0">
               <SkeletonSwap
@@ -1331,6 +1435,75 @@ export default function InvoiceGroupsList() {
                 }}
                 testId="rail-action-bulk-submit-portal"
               />
+              {filterReadyToGenerate && (
+              <ActionRow
+                icon={bulkGenProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                label={
+                  selectAllMatching
+                    ? `Generate & mark all ${total} for approval`
+                    : someSelected
+                      ? `Generate & mark ${selectedIds.size} for approval`
+                      : "Generate & mark for approval"
+                }
+                disabled={(!someSelected && !selectAllMatching) || bulkGenProcessing}
+                disabledReason={(!someSelected && !selectAllMatching) ? "Select groups from the list first, or use Select all matching." : undefined}
+                onClick={async () => {
+                  if (bulkGenProcessing) return;
+
+                  setBulkGenProcessing(true);
+                  setBulkGenResults([]);
+                  setBulkPortalMsg("");
+
+                  let ids: number[];
+                  if (selectAllMatching) {
+                    try {
+                      const allMatchingData = await listInvoiceGroups({
+                        ...listParams,
+                        limit: 10000,
+                        offset: 0,
+                      });
+                      ids = (allMatchingData.groups ?? []).map((g) => g.id);
+                    } catch {
+                      setBulkGenResults([{ id: 0, refNumber: null, status: "failed", reason: "Failed to fetch matching groups" }]);
+                      setBulkGenProcessing(false);
+                      return;
+                    }
+                  } else {
+                    ids = Array.from(selectedIds);
+                  }
+
+                  const results: BulkGenResult[] = [];
+                  const successIds: number[] = [];
+                  for (let i = 0; i < ids.length; i++) {
+                    try {
+                      const res = await bulkGenerateAndReview.mutateAsync({ data: { groupIds: [ids[i]] } });
+                      for (const item of (res.generatedItems ?? [])) {
+                        results.push({ id: item.id, refNumber: item.refNumber ?? null, status: "generated" });
+                        successIds.push(item.id);
+                      }
+                      for (const item of (res.skipped ?? [])) {
+                        results.push({ id: item.id, refNumber: item.refNumber ?? null, status: "skipped", reason: item.reason });
+                      }
+                    } catch (err) {
+                      results.push({
+                        id: ids[i],
+                        refNumber: null,
+                        status: "failed",
+                        reason: err instanceof Error ? err.message : "request_failed",
+                      });
+                    }
+                    setBulkGenResults([...results]);
+                  }
+
+                  rowBreath.triggerForIds(successIds);
+                  setSelectedIds(new Set());
+                  setSelectAllMatching(false);
+                  setBulkGenProcessing(false);
+                  queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                }}
+                testId="rail-action-bulk-generate-and-review"
+              />
+              )}
               <ActionRow
                 icon={bulkReattest.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                 label={someSelected ? `Re-attest ${selectedIds.size} groups` : "Re-attest selected groups"}

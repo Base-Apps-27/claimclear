@@ -179,6 +179,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Server-side equivalent of `deriveInvoiceDisputeOutlook`. Restricts\nthe result set to groups matching the named outlook bucket:\n  \* `ready_to_review` — has_disputable outlook AND every disputed\n    leg is in a resolved sub-status (ready\/dropped\/excluded).\n    These groups are one operator action away from generating a\n    submission preview.\n  \* `reattest_only` — zero disputable legs but at least one\n    survivor leg (non-issue or approved) that still needs portal\n    re-attestation. The group can be bulk-queued for re-attest\n    without filing a portal dispute.\n  \* `nothing_to_do` — zero disputable legs AND zero survivors.\n    Every leg is cannot_dispute, denied, or excluded. The group\n    can be bulk-closed as Withdrawn.\n",
     ),
+  readyToGenerate: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When `true`, restricts the result set to groups whose legs are\nall in a resolved\/packageable state (every non-held, non-duplicate\nleg has a terminal disposition, at least one contested leg, status\nin {New, Needs Evidence}) AND whose AI writeup has not yet been\ngenerated or has been generated but not yet marked reviewed.\nMirrors `computeGroupReadiness` from `group-packaging.ts` so\nthe filter stays in lockstep with the Gauntlet's gate.\n",
+    ),
   missingServiceDateReason: zod
     .enum([
       "no_claims",
@@ -5590,6 +5596,50 @@ export const BulkCloseInvoiceGroupsBody = zod.object({
 export const BulkCloseInvoiceGroupsResponse = zod.object({
   closed: zod.number(),
   closedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  success: zod.boolean().optional(),
+});
+
+/**
+ * Bulk equivalent of the single-group Gauntlet flow. For each group
+in `groupIds`, runs the AI preview generation (populating
+`draftSubject` / `draftDescriptionHtml` and the AI baseline fields),
+then stamps `draftReviewedAt` so the group is ready for the portal
+queue. Processes sequentially to respect the AI provider.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `already_reviewed` — draft already has `draftReviewedAt` set
+  * `not_packageable: <reason>` — group fails readiness gate
+  * `generation_failed: <msg>` — AI generation error
+
+Resumable — re-running only processes groups that still need it.
+Groups that already have a reviewed draft are skipped.
+
+ * @summary Bulk generate AI writeup and mark reviewed for packageable groups
+ */
+export const BulkGenerateAndReviewInvoiceGroupsBody = zod.object({
+  groupIds: zod.array(zod.number()).describe("List of group IDs to process."),
+});
+
+export const BulkGenerateAndReviewInvoiceGroupsResponse = zod.object({
+  generated: zod.number(),
+  generatedItems: zod
     .array(
       zod.object({
         id: zod.number(),

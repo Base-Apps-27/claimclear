@@ -320,6 +320,18 @@ paths:
           schema:
             type: string
             enum: [ready_to_review, reattest_only, nothing_to_do]
+        - name: readyToGenerate
+          in: query
+          description: |
+            When `true`, restricts the result set to groups whose legs are
+            all in a resolved/packageable state (every non-held, non-duplicate
+            leg has a terminal disposition, at least one contested leg, status
+            in {New, Needs Evidence}) AND whose AI writeup has not yet been
+            generated or has been generated but not yet marked reviewed.
+            Mirrors `computeGroupReadiness` from `group-packaging.ts` so
+            the filter stays in lockstep with the Gauntlet's gate.
+          schema:
+            type: boolean
         - name: missingServiceDateReason
           in: query
           description: |
@@ -948,6 +960,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkCloseResult"
+
+  /invoice-groups/bulk-generate-and-review:
+    post:
+      operationId: bulkGenerateAndReviewInvoiceGroups
+      tags: [invoice-groups]
+      summary: Bulk generate AI writeup and mark reviewed for packageable groups
+      description: |
+        Bulk equivalent of the single-group Gauntlet flow. For each group
+        in `groupIds`, runs the AI preview generation (populating
+        `draftSubject` / `draftDescriptionHtml` and the AI baseline fields),
+        then stamps `draftReviewedAt` so the group is ready for the portal
+        queue. Processes sequentially to respect the AI provider.
+
+        Per-row gates (groups failing any are surfaced in `skipped`):
+          * `not_found` — id no longer exists
+          * `already_reviewed` — draft already has `draftReviewedAt` set
+          * `not_packageable: <reason>` — group fails readiness gate
+          * `generation_failed: <msg>` — AI generation error
+
+        Resumable — re-running only processes groups that still need it.
+        Groups that already have a reviewed draft are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupIds:
+                  type: array
+                  items:
+                    type: integer
+                  description: List of group IDs to process.
+              required:
+                - groupIds
+      responses:
+        "200":
+          description: Bulk generate and review result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkGenerateAndReviewResult"
 
   /invoice-groups/{id}/valid-transitions:
     get:
@@ -9772,6 +9826,40 @@ components:
           type: boolean
       required:
         - closed
+
+    BulkGenerateAndReviewResult:
+      type: object
+      properties:
+        generated:
+          type: integer
+        generatedItems:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, reason]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        success:
+          type: boolean
+      required:
+        - generated
 
     UploadResponse:
       type: object

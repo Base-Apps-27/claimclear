@@ -49,6 +49,8 @@ import type {
   BulkAssignResult,
   BulkCloseInvoiceGroupsBody,
   BulkCloseResult,
+  BulkGenerateAndReviewInvoiceGroupsBody,
+  BulkGenerateAndReviewResult,
   BulkQueueGroupReattestBody,
   BulkQueueGroupReattestResponse,
   BulkReattestInvoiceGroupsBody,
@@ -2248,6 +2250,114 @@ export const useBulkCloseInvoiceGroups = <
   TContext
 > => {
   return useMutation(getBulkCloseInvoiceGroupsMutationOptions(options));
+};
+
+/**
+ * Bulk equivalent of the single-group Gauntlet flow. For each group
+in `groupIds`, runs the AI preview generation (populating
+`draftSubject` / `draftDescriptionHtml` and the AI baseline fields),
+then stamps `draftReviewedAt` so the group is ready for the portal
+queue. Processes sequentially to respect the AI provider.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `already_reviewed` — draft already has `draftReviewedAt` set
+  * `not_packageable: <reason>` — group fails readiness gate
+  * `generation_failed: <msg>` — AI generation error
+
+Resumable — re-running only processes groups that still need it.
+Groups that already have a reviewed draft are skipped.
+
+ * @summary Bulk generate AI writeup and mark reviewed for packageable groups
+ */
+export const getBulkGenerateAndReviewInvoiceGroupsUrl = () => {
+  return `/api/invoice-groups/bulk-generate-and-review`;
+};
+
+export const bulkGenerateAndReviewInvoiceGroups = async (
+  bulkGenerateAndReviewInvoiceGroupsBody: BulkGenerateAndReviewInvoiceGroupsBody,
+  options?: RequestInit,
+): Promise<BulkGenerateAndReviewResult> => {
+  return customFetch<BulkGenerateAndReviewResult>(
+    getBulkGenerateAndReviewInvoiceGroupsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkGenerateAndReviewInvoiceGroupsBody),
+    },
+  );
+};
+
+export const getBulkGenerateAndReviewInvoiceGroupsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkGenerateAndReviewInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkGenerateAndReviewInvoiceGroupsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkGenerateAndReviewInvoiceGroups"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>,
+    { data: BodyType<BulkGenerateAndReviewInvoiceGroupsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkGenerateAndReviewInvoiceGroups(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkGenerateAndReviewInvoiceGroupsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>
+>;
+export type BulkGenerateAndReviewInvoiceGroupsMutationBody =
+  BodyType<BulkGenerateAndReviewInvoiceGroupsBody>;
+export type BulkGenerateAndReviewInvoiceGroupsMutationError =
+  ErrorType<unknown>;
+
+/**
+ * @summary Bulk generate AI writeup and mark reviewed for packageable groups
+ */
+export const useBulkGenerateAndReviewInvoiceGroups = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkGenerateAndReviewInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkGenerateAndReviewInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkGenerateAndReviewInvoiceGroupsBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkGenerateAndReviewInvoiceGroupsMutationOptions(options),
+  );
 };
 
 /**
