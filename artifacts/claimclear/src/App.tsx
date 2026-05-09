@@ -118,6 +118,19 @@ function SessionInterceptor() {
   return null;
 }
 
+// Expose the shared QueryClient on `window` so the Playwright walk
+// harness can drive cache invalidation from inside `page.evaluate`
+// without round-tripping through the URL or React state. This mirrors
+// the SSE-driven `useInvoiceGroupEvents` invalidation that the harness
+// intentionally aborts to stay hermetic — see scenario-25
+// (`25-claim-withdrawn-elsewhere.ts`) for the canonical caller. The
+// hook is harmless in production: it's a single property assignment
+// on `window` and the QueryClient is already a long-lived singleton.
+if (typeof window !== "undefined") {
+  (window as unknown as { __ccQueryClient?: QueryClient }).__ccQueryClient =
+    queryClient;
+}
+
 function App() {
   // Easter egg (Task #494): Konami code (↑↑↓↓←→←→BA) toggles dark
   // mode. Mount-once, no UI; silently no-ops while typing in inputs

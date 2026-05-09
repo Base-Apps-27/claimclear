@@ -85,6 +85,7 @@ import { narrativeEditPersist } from "./walk-scenarios/scenarios/16-narrative-ed
 import { submitFail } from "./walk-scenarios/scenarios/18-submit-fail";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 import { bouncedAddress } from "./walk-scenarios/scenarios/24-bounced-address";
+import { claimWithdrawnElsewhere } from "./walk-scenarios/scenarios/25-claim-withdrawn-elsewhere";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
@@ -102,6 +103,7 @@ const SCENARIOS: WalkScenario[] = [
   submitFail,
   zeroEvidence,
   bouncedAddress,
+  claimWithdrawnElsewhere,
   // Add new scenarios here.
 ];
 

@@ -324,6 +324,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
   const allWalked = rides.length > 0 && resolvedCount === rides.length;
   type HeroState =
+    | "withdrawn"
     | "submitted"
     | "ready"
     | "review"
@@ -337,8 +338,15 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   // resolved). Group-level wins over per-leg so an operator who has
   // walked everything sees the "generate / review / submit" pre-flight
   // instead of a stale resolved-leg card.
+  // Distinguish a closed-while-walking group from a real portal
+  // submission. Both fold into the post-submit lane (no submit CTA,
+  // no walk affordances), but a withdrawn group needs a banner that
+  // tells the operator their walk has been short-circuited rather
+  // than the misleading "Submitted to the portal" copy.
+  const withdrawn = detail.phase === "closed";
   let hero: HeroState;
-  if (submitted) hero = "submitted";
+  if (withdrawn) hero = "withdrawn";
+  else if (submitted) hero = "submitted";
   else if (previewGenerated && draftReviewed) hero = "ready";
   else if (previewGenerated) hero = "review";
   else if (allWalked && outlook === "has_disputable") hero = "generate";
@@ -376,6 +384,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
       )}
 
       <div aria-live="polite" className="cc-mini-hero">
+        {hero === "withdrawn" && <WithdrawnHero detail={detail} />}
         {hero === "submitted" && <SubmittedHero detail={detail} />}
         {hero === "ready" && <ReadyHero />}
         {hero === "review" && (
@@ -407,7 +416,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         )}
       </div>
 
-      {activeLeg && hero !== "submitted" && (
+      {activeLeg && hero !== "submitted" && hero !== "withdrawn" && (
         <ChipStrip
           leg={activeLeg}
           groupId={groupId}
@@ -993,6 +1002,40 @@ function ReadyHero() {
         </div>
         <p className="text-xs text-muted-foreground">
           Draft reviewed. Submit to the portal from the footer below.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WithdrawnHero({ detail }: { detail: DetailGroup }) {
+  // Surfaced when the group has been closed (typically withdrawn) by
+  // someone — or some external process — *while* this user was still
+  // walking the claim. Submit CTA is already gone because `submitted`
+  // covers `phase==="closed"`; this banner is the explicit signal
+  // that there is nothing left to do here, so navigating away is the
+  // only path forward. Pins Smoke #25.
+  const reason = detail.closureReason ?? null;
+  const reasonLabel =
+    reason === "non_issue"
+      ? "Non-issue"
+      : reason === "cannot_dispute"
+        ? "Cannot dispute"
+        : reason === "denied_by_payor"
+          ? "Denied by payor"
+          : null;
+  return (
+    <Card data-testid="mini-withdrawn-banner">
+      <CardContent className="py-5 space-y-2">
+        <div className="flex items-center gap-2">
+          <XCircle className="w-4 h-4 text-amber-600" />
+          <h3 className="text-sm font-semibold">Claim withdrawn</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          This invoice has been closed
+          {reasonLabel ? ` (${reasonLabel})` : ""} elsewhere. Your walk
+          is no longer valid — open Full details to review, or pick a
+          different claim from the queue.
         </p>
       </CardContent>
     </Card>

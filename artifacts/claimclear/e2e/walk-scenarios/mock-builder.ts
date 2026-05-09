@@ -664,7 +664,8 @@ export async function installApiStubs(
   // Mark-draft-reviewed POST. The generated client posts to
   // `/draft/mark-reviewed` (see getMarkInvoiceGroupDraftReviewedUrl);
   // matching that exact path keeps the mutation from falling through
-  // to the catch-all and stamping nothing.
+  // to the catch-all and stamping nothing. Registered AFTER the broad
+  // `/draft*` route so it wins under Playwright's LIFO route order.
   await page.route(
     `**/api/invoice-groups/${state.groupId}/draft/mark-reviewed*`,
     async (route: Route, request: Request) => {

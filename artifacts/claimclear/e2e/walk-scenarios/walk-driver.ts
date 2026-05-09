@@ -53,20 +53,15 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     }
     await expect(page.getByTestId("sop-advance-player")).toBeVisible();
     await clickSopOption(optionLabel);
-    // Two valid post-conditions: (a) the SOP player is still mounted
-    // for the just-walked leg and renders the include-ready card —
-    // happens when other legs remain in triage so the workspace hero
-    // stays on `sop`; (b) this was the last leg, the workspace hero
-    // advances off `sop` (typically to `generate`) and the player
-    // unmounts entirely. Waiting for either keeps single-leg and
-    // multi-leg scenarios on the same verb.
-    await expect
-      .poll(async () => {
-        if (await page.getByTestId("sop-include-ready-card").count()) return "include";
-        const hero = await workspace().getAttribute("data-hero");
-        return hero && hero !== "sop" ? "advanced" : "pending";
-      })
-      .not.toBe("pending");
+    // After the SOP option commits, the leg's sopOutcome flips to
+    // `portal_dispute`, which makes the workspace's resolved-index
+    // treat it as resolved and swap the SOP player out for either
+    // the resolved hero (this leg) or the generate-preview hero
+    // (last leg). Either way `data-hero` flips off `sop` — that is
+    // the cross-cut signal we wait on instead of the now-fleeting
+    // include-ready card (which renders inside the SOP player and
+    // unmounts with it the instant the workspace re-derives).
+    await expect(workspace()).not.toHaveAttribute("data-hero", "sop");
   }
 
   async function markLegNonIssue(

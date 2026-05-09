@@ -1421,6 +1421,16 @@ export default function Queue() {
   // tabs / workspace block is replaced by a single "all caught up"
   // EmptyState card so the operator never stares at a wall of empty
   // tabs.
+  //
+  // Task #608 — also gate on `selectedWorkflowId == null`. If an
+  // operator has a workspace open (URL has `?group=`) and the group
+  // closes underneath them (e.g. an external withdraw flips the group
+  // to `closed` and it drops out of every lane via the queue list
+  // filter), we must NOT yank their open workspace and replace it with
+  // an "all caught up" card — they're mid-walk and need to see the
+  // resulting state (the withdrawn banner) so they know why their
+  // submit CTA went away. Smoke #25
+  // (`scenario-25-claim-withdrawn-elsewhere`) pins this exact path.
   const isInboxZero =
     !inboxQuery.isLoading &&
     !newQuery.isLoading &&
@@ -1435,7 +1445,8 @@ export default function Queue() {
     expiringFilter === null &&
     !searchActionable &&
     !searchPortalQueued &&
-    !searchOnHold;
+    !searchOnHold &&
+    selectedWorkflowId == null;
 
   return (
     <div className="space-y-6">

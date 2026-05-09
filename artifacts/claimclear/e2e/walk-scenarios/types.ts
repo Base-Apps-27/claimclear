@@ -34,6 +34,7 @@ export type WalkStage =
   | "review"
   | "ready"
   | "submitted"
+  | "withdrawn"
   | "empty";
 
 /** SOP terminal outcome stamped on a leg by `/sop-advance`. The mock

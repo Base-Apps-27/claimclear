@@ -83,3 +83,9 @@ id = "xeHWU6QnXq85P17kSU6kq"
 uri = "file://artifacts/claimclear/test-results/queue-walk-scenarios-queue-c2fad-ss-scenario-14-preview-fail-chromium/test-failed-1.png"
 type = "image"
 title = "Failed test screenshot"
+
+[[outputs]]
+id = "TKaw3HhaCIn-YrKa19649"
+uri = "file://artifacts/claimclear/test-results/queue-walk-scenarios-queue-ca212-th-·-2-viable-legs-→-portal-chromium/test-failed-1.png"
+type = "image"
+title = "happy-path failure screenshot"

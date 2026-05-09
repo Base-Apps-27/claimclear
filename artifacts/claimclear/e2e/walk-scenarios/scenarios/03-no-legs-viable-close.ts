@@ -117,15 +117,26 @@ export const noLegsViableClose: WalkScenario = {
     await expect(submit).toBeEnabled();
     await submit.click();
 
-    // Assertion #4 setup — once the PATCH resolves, the group flips to
-    // phase=closed and the queue list filter drops it. Re-navigate to
-    // the queue and assert the workspace no longer mounts for this
-    // group id (the queue page renders an empty state instead).
+    // Assertion #4 setup — once the PATCH resolves, the group flips
+    // to phase=closed and the queue list filter drops it. Navigate
+    // back to /queue (without `?group=`, since the operator is now
+    // done with this group) and assert the queue collapses to its
+    // inbox-zero state — no row for the just-closed group, no
+    // workspace mounted. A regression that re-includes closed groups
+    // on the live queue would trip the `queue-inbox-zero` expectation.
+    //
+    // Per Task #608's isInboxZero fix in `pages/queue.tsx`, the
+    // empty-state card is suppressed whenever `?group=` is present
+    // (so an open workspace is never yanked out from under an
+    // operator); navigating to bare `/queue` is therefore the right
+    // way to assert the lane-empty posture.
     await expect(dialog).toBeHidden({ timeout: 10_000 });
-    await page.goto(`/queue?group=${d.state.groupId}`);
+    await page.goto("/queue");
+    await expect(page.getByTestId("queue-inbox-zero")).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByTestId("inline-group-workspace-mini")).toHaveCount(
       0,
-      { timeout: 10_000 },
     );
   },
   // Both legs walk → group_close. No stamp_preview / mark_reviewed /
