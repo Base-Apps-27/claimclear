@@ -7126,6 +7126,7 @@ components:
             - awaitingPayout
             - closed
             - onHold
+            - attestationOpen
           properties:
             preSubmit:
               type: integer
@@ -7148,6 +7149,14 @@ components:
             onHold:
               type: integer
               description: Groups parked in the `on-hold` macro phase (status=On Hold).
+            attestationOpen:
+              type: integer
+              description: |
+                Open attestation work — Approved-family / MAS-Eligible legs in
+                `attestation_state ∈ {pending, queued}`. Drives the Attestation
+                tab badge on the Responses Awaiting Review workspace so all
+                three tabs read counts from the same rollup endpoint
+                (Task #560).
 
     ResponsesAwaitingReviewCountResponse:
       type: object

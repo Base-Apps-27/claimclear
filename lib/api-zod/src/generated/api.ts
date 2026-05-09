@@ -14068,6 +14068,11 @@ export const GetMacroPhaseRollupResponse = zod.object({
     onHold: zod
       .number()
       .describe("Groups parked in the `on-hold` macro phase (status=On Hold)."),
+    attestationOpen: zod
+      .number()
+      .describe(
+        "Open attestation work — Approved-family \/ MAS-Eligible legs in\n`attestation_state ∈ {pending, queued}`. Drives the Attestation\ntab badge on the Responses Awaiting Review workspace so all\nthree tabs read counts from the same rollup endpoint\n(Task #560).\n",
+      ),
   }),
 });
 

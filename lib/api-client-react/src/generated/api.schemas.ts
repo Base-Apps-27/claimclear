@@ -2537,6 +2537,13 @@ export type MacroPhaseRollupResponseCounts = {
   closed: number;
   /** Groups parked in the `on-hold` macro phase (status=On Hold). */
   onHold: number;
+  /** Open attestation work — Approved-family / MAS-Eligible legs in
+`attestation_state ∈ {pending, queued}`. Drives the Attestation
+tab badge on the Responses Awaiting Review workspace so all
+three tabs read counts from the same rollup endpoint
+(Task #560).
+ */
+  attestationOpen: number;
 };
 
 export interface MacroPhaseRollupResponse {

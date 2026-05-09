@@ -2278,17 +2278,44 @@ const MACRO_PHASE_ROLLUP_TO_FILTER: Record<typeof MACRO_PHASE_ROLLUP_KEYS[number
 };
 
 router.get("/macro-phase/rollup", asyncHandler(async (_req, res): Promise<void> => {
-  const entries = await Promise.all(
-    MACRO_PHASE_ROLLUP_KEYS.map(async (key) => {
-      const condition = buildMacroPhaseCondition(MACRO_PHASE_ROLLUP_TO_FILTER[key]);
-      const [row] = await db
-        .select({ value: count() })
-        .from(invoiceGroupsTable)
-        .where(condition!);
-      return [key, row?.value ?? 0] as const;
-    }),
-  );
-  const counts = Object.fromEntries(entries) as Record<typeof MACRO_PHASE_ROLLUP_KEYS[number], number>;
+  const [phaseEntries, attestationOpenRow] = await Promise.all([
+    Promise.all(
+      MACRO_PHASE_ROLLUP_KEYS.map(async (key) => {
+        const condition = buildMacroPhaseCondition(MACRO_PHASE_ROLLUP_TO_FILTER[key]);
+        const [row] = await db
+          .select({ value: count() })
+          .from(invoiceGroupsTable)
+          .where(condition!);
+        return [key, row?.value ?? 0] as const;
+      }),
+    ),
+    // Task #560 — Attestation tab badge on the Responses Awaiting
+    // Review workspace reads from the same rollup so all three tab
+    // counts (Verdict Pending / MAS Action / Attestation) come from
+    // one endpoint. Mirror of the admit predicate in
+    // GET /attestation/counts (claims.ts) — Approved-family verdict
+    // legs OR MAS-Eligible-routed legs that still sit in
+    // attestation_state ∈ {pending, queued}.
+    db
+      .select({ value: count() })
+      .from(claimsTable)
+      .where(and(
+        or(
+          inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+          eq(claimsTable.status, "MAS Eligible"),
+        ),
+        inArray(claimsTable.attestationState, ["pending", "queued"]),
+      ))
+      .then((rows) => rows[0]),
+  ]);
+  const phaseCounts = Object.fromEntries(phaseEntries) as Record<
+    typeof MACRO_PHASE_ROLLUP_KEYS[number],
+    number
+  >;
+  const counts = {
+    ...phaseCounts,
+    attestationOpen: attestationOpenRow?.value ?? 0,
+  };
   res.json({ counts });
 }));
 
