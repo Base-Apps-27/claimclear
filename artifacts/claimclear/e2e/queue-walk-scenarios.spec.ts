@@ -72,12 +72,14 @@ import { buildDriver } from "./walk-scenarios/walk-driver";
 import type { WalkScenario } from "./walk-scenarios/types";
 import { happyPath } from "./walk-scenarios/scenarios/01-happy-path";
 import { markOneNonIssue } from "./walk-scenarios/scenarios/02-mark-non-issue";
+import { holdResume } from "./walk-scenarios/scenarios/05-hold-resume";
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
   markOneNonIssue,
+  holdResume,
   allNonIssue,
   twoUserConcurrency,
   // Add new scenarios here.
