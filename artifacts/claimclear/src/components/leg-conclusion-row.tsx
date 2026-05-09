@@ -12,6 +12,7 @@ import {
   useConcludeLeg,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type { ClaimResponse } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -197,7 +198,7 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
       qc.invalidateQueries({
         queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
       });
-      qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+      qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
     }
 
     function onConclude(reason: "non_issue" | "cannot_dispute") {

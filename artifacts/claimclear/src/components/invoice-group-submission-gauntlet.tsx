@@ -9,6 +9,7 @@ import {
   useMarkInvoiceGroupDraftReviewed,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -178,7 +179,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   function invalidateGroup() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
-    qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   }
 
   function onConfirmReadback() {

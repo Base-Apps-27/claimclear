@@ -111,7 +111,6 @@ export function QueueNeedsReviewPanel({
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(inboxGroup.id) });
     // The inbox endpoint is keyed off the back-compat query key.
     queryClient.invalidateQueries({ queryKey: ["needs-classification-inbox"] });
-    queryClient.invalidateQueries({ queryKey: ["invoice-groups"] });
   }
 
   // Prefer live claim rows from the group detail (sub-status reflects

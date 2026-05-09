@@ -31,6 +31,7 @@ import {
   useRecordLegVerdict,
   useClearLegVerdictDraft,
   useCompleteLegMasAction,
+  getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ErrorTypeResponse,
@@ -503,11 +504,10 @@ export function ClaimDetailV2({
     qc.invalidateQueries({ queryKey: getGetClaimQueryKey(claimId) });
     qc.invalidateQueries({ queryKey: getListClaimNotesQueryKey(claimId) });
     qc.invalidateQueries({ queryKey: getListClaimAuditLogsQueryKey(claimId) });
-    qc.invalidateQueries({ queryKey: ["claims"] });
     if (parentGroupId) {
       qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(parentGroupId) });
-      qc.invalidateQueries({ queryKey: ["invoice-groups"] });
     }
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   }
 
   function onReclassify() {

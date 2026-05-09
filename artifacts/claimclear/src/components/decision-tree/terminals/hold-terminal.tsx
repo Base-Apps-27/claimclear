@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, PauseCircle, Play } from "lucide-react";
 import { OUTCOME_COLORS, OUTCOME_LABELS } from "../types";
 import { toast } from "@/hooks/use-toast";
+import { invalidateLegCache } from "@/lib/apply-mutation-result";
 import type { TerminalCommonProps } from "./types";
 
 function apiBase(): string {
@@ -44,12 +45,7 @@ export function HoldTerminal({
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["claim", leg.id] });
-      qc.invalidateQueries({ queryKey: ["claims"] });
-      if (leg.invoiceGroupId != null) {
-        qc.invalidateQueries({ queryKey: ["invoice-group", leg.invoiceGroupId] });
-        qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-      }
+      invalidateLegCache(qc, leg.id, leg.invoiceGroupId);
       onAdvanced?.({ isTerminal: false, sopOutcome: null });
     },
     onError: (err: Error) => {

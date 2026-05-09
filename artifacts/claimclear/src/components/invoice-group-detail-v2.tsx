@@ -35,6 +35,7 @@ import {
   useMarkInvoiceGroupMasEligible,
   useUpdateInvoiceGroupStatus,
   useCompleteLegMasAction,
+  getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -545,7 +546,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   function invalidateGroup() {
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
     qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
-    qc.invalidateQueries({ queryKey: ["invoice-groups"] });
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   }
 
   // Task #265 removed onSaveGroupContext — the group-aggregate-context

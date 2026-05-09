@@ -110,12 +110,10 @@ export function SiblingDuplicatePrompt({
         onSuccess: () => {
           successToast({ title: "__VERB__", description: "Leg marked as Sibling Duplicate" });
           qc.invalidateQueries({ queryKey: getGetClaimQueryKey(legId) });
-          qc.invalidateQueries({ queryKey: ["claims"] });
           if (invoiceGroupId != null) {
             qc.invalidateQueries({
               queryKey: getGetInvoiceGroupQueryKey(invoiceGroupId),
             });
-            qc.invalidateQueries({ queryKey: ["invoice-groups"] });
           }
         },
         onError: (err: unknown) => {

@@ -86,6 +86,7 @@ import {
   useReclassifyLeg,
   getGetSopRewindImpactQueryKey,
 } from "@workspace/api-client-react";
+import { invalidateLegCache } from "@/lib/apply-mutation-result";
 import type {
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -542,13 +543,8 @@ export function SopAdvancePlayer(props: Props) {
       // group so the rest of the v2 surface (Aggregate Context, Legs
       // Queue, group preview gate, evidence list) reflects the new
       // server state on next render.
-      qc.invalidateQueries({ queryKey: ["claim", leg.id] });
-      qc.invalidateQueries({ queryKey: ["claims"] });
+      invalidateLegCache(qc, leg.id, leg.invoiceGroupId);
       qc.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(leg.id) });
-      if (leg.invoiceGroupId != null) {
-        qc.invalidateQueries({ queryKey: ["invoice-group", leg.invoiceGroupId] });
-        qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-      }
       onAdvanced?.({ isTerminal, sopOutcome: updated.sopOutcome });
     },
     onError: (err: Error) => {
@@ -581,20 +577,15 @@ export function SopAdvancePlayer(props: Props) {
           markLocalAction(`group:${leg.invoiceGroupId}`);
         }
         if (currentNode) clearPendingForNode(currentNode.id);
-        qc.invalidateQueries({ queryKey: ["claim", leg.id] });
-        qc.invalidateQueries({ queryKey: ["claims"] });
+        invalidateLegCache(qc, leg.id, leg.invoiceGroupId);
         qc.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(leg.id) });
-        if (leg.invoiceGroupId != null) {
-          qc.invalidateQueries({ queryKey: ["invoice-group", leg.invoiceGroupId] });
-          qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-        }
         const succeeded = result.succeeded ?? [];
         // Invalidate every affected sibling leg's detail+evidence keys so
         // open detail views in other tabs/panels reflect the new state
         // without a manual refresh.
         for (const c of succeeded as ClaimResponse[]) {
           if (c.id === leg.id) continue;
-          qc.invalidateQueries({ queryKey: ["claim", c.id] });
+          invalidateLegCache(qc, c.id, leg.invoiceGroupId);
           qc.invalidateQueries({ queryKey: getListClaimEvidenceQueryKey(c.id) });
         }
         const skipped = result.skipped ?? [];
@@ -683,20 +674,13 @@ export function SopAdvancePlayer(props: Props) {
 
   const invalidateAfterRewind = useCallback(() => {
     if (isPreview) return;
-    qc.invalidateQueries({ queryKey: ["claim", leg.id] });
-    qc.invalidateQueries({ queryKey: ["claims"] });
+    invalidateLegCache(qc, leg.id, leg.invoiceGroupId);
     qc.invalidateQueries({
       queryKey: getListClaimEvidenceQueryKey(leg.id),
     });
     qc.invalidateQueries({
       queryKey: getGetSopRewindImpactQueryKey(leg.id),
     });
-    if (leg.invoiceGroupId != null) {
-      qc.invalidateQueries({
-        queryKey: ["invoice-group", leg.invoiceGroupId],
-      });
-      qc.invalidateQueries({ queryKey: ["invoice-groups"] });
-    }
   }, [isPreview, leg.id, leg.invoiceGroupId, qc]);
 
   function handleRewindError(err: unknown) {
