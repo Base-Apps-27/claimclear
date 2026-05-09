@@ -38,6 +38,7 @@ import {
   buildLegResolvedIndex,
   deriveLegSubStatus,
 } from "@workspace/leg-state";
+import { siblingPromptEligibilityFor } from "@/lib/sop-sibling-eligibility";
 import { legSubStatusLabel } from "@workspace/vocab";
 import {
   Activity,
@@ -386,19 +387,21 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   else if (!activeLeg) hero = "empty";
   else if (activeLeg.includedInDispute === false) hero = "resolved";
   // SOP-terminal legs (cannot_dispute / dispute / portal_dispute /
-  // internal) used to land on the passive ResolvedHero card, which
-  // gave the operator no way back if they hit the wrong terminal by
-  // mistake. Route them to the SOP hero instead — `SopHero` will
-  // mount `SopAdvancePlayer` (its terminal screen exposes
-  // "Change my answer" / "Restart walk" / "Reclassify the leg",
-  // which all call the existing /sop-back-step / /sop-restart /
-  // reclassify endpoints). `includedInDispute === false` (caught
-  // above) keeps non-SOP exclusions like classify-non_issue on the
-  // passive card — those have no SOP walk to rewind.
+  // internal / hold) used to land on the passive ResolvedHero card,
+  // which gave the operator no way back if they hit the wrong terminal
+  // by mistake. Route them to the SOP hero instead — `SopHero` will
+  // mount `SopAdvancePlayer` whose terminal screens expose
+  // "Change my answer" / "Restart walk" / "Reclassify the leg" (closed)
+  // and "Resume from hold" (hold), all of which call the existing
+  // /sop-back-step / /sop-restart / reclassify / clear-hold endpoints.
+  // `includedInDispute === false` (caught above) keeps non-SOP
+  // exclusions like classify-non_issue on the passive card — those
+  // have no SOP walk to rewind. Hold-terminal legs (Task #647) used
+  // to be excluded here and also fell through to ResolvedHero, leaving
+  // the operator with no Resume affordance from the queue.
   else if (
     resolvedIndex.isLegResolved(activeLeg)
     && activeLeg.sopOutcome != null
-    && activeLeg.sopOutcome !== "hold"
   ) {
     hero = "sop";
   }
@@ -486,6 +489,8 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         {hero === "sop" && activeLeg && (
           <SopHero
             leg={activeLeg}
+            rides={rides}
+            groupMacroPhase={detail.macroPhase ?? null}
             walkStartedFor={walkStartedFor}
             onStartWalk={() => setWalkStartedFor(activeLeg.id)}
           />
@@ -859,10 +864,19 @@ function ClassifyHero({
 
 function SopHero({
   leg,
+  rides,
+  groupMacroPhase,
   walkStartedFor,
   onStartWalk,
 }: {
   leg: ClaimResponse;
+  /** Sibling rides in the same invoice group — used to compute the
+   *  bulk-apply count and the in-SOP sibling-detection prompt so the
+   *  queue's per-leg workspace mirrors the Leg Details surface (Task #647). */
+  rides: ClaimResponse[];
+  /** Pre-submit gate for the sibling prompt. Forwarded from the parent
+   *  invoice group so the helper can short-circuit on post-submit groups. */
+  groupMacroPhase: string | null;
   walkStartedFor: number | null;
   onStartWalk: () => void;
 }) {
@@ -880,6 +894,37 @@ function SopHero({
     if (!raw || !raw.nodes || !raw.rootId) return null;
     return raw;
   }, [errorType]);
+
+  // Task #647 — parity with claim-detail-v2's Investigation walk.
+  // Surfacing the "Apply to all matching legs" bulk checkbox and the
+  // in-SOP sibling-detection prompt requires feeding the same inputs
+  // the leg detail page computes. Eligibility is enforced server-side;
+  // these counts only gate whether the affordances render at all.
+  const bulkSiblingCount = useMemo(() => {
+    if (!live || live.invoiceGroupId == null) return 0;
+    if (!live.sopNodeId || live.sopOutcome != null) return 0;
+    return rides.filter(
+      (r) =>
+        r.id !== live.id &&
+        r.sopNodeId === live.sopNodeId &&
+        r.sopOutcome == null &&
+        r.includedInDispute === true &&
+        r.duplicateOfClaimId == null,
+    ).length;
+  }, [live, rides]);
+
+  const siblingPromptCandidate = useMemo(() => {
+    return siblingPromptEligibilityFor({
+      selfClaimId: live.id,
+      selfErrorTypeId: live.errorTypeId ?? null,
+      selfDuplicateOfClaimId: live.duplicateOfClaimId ?? null,
+      groupMacroPhase,
+      rides,
+      errorTypes: (errorTypes ?? []) as Array<
+        ErrorTypeResponse & { tripOverriding?: boolean }
+      >,
+    });
+  }, [live, rides, groupMacroPhase, errorTypes]);
 
   const hasProgress = !!live.sopNodeId || live.sopOutcome != null;
   const showLanding =
@@ -931,6 +976,19 @@ function SopHero({
           leg={live}
           tree={tree}
           errorType={errorType}
+          bulkSiblingCount={bulkSiblingCount}
+          siblingPrompt={
+            siblingPromptCandidate
+              ? {
+                  primaryClaimId: siblingPromptCandidate.primary.id,
+                  primaryConfNumber:
+                    siblingPromptCandidate.primary.confNumber ||
+                    `CLM-${siblingPromptCandidate.primary.id}`,
+                  primaryErrorTypeName:
+                    siblingPromptCandidate.primary.errorTypeName ?? null,
+                }
+              : null
+          }
         />
       </CardContent>
     </Card>
