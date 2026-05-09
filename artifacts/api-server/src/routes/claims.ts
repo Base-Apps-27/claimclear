@@ -1222,12 +1222,17 @@ router.delete("/claims/:id/hold", asyncHandler(async (req, res): Promise<void> =
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  const subStatus = deriveLegSubStatus(leg);
-  if (subStatus !== "blocked" || !leg.holdReason) {
+  // Gate on the column we're actually clearing. The legacy "subStatus
+  // must be blocked" check is too strict: deriveLegSubStatus
+  // short-circuits via `disposition` when it's set (Wave-C+), so a
+  // leg can carry holdReason while subStatus comes back as
+  // `investigating`/`ready`. The release endpoint's purpose is to
+  // clear hold_reason — refuse only when there's nothing to clear.
+  if (!leg.holdReason) {
     res.status(409).json({
       error: "Leg is not on hold",
-      expectedState: "blocked",
-      actualState: subStatus,
+      expectedState: "holdReason set",
+      actualState: deriveLegSubStatus(leg),
     });
     return;
   }
@@ -1267,12 +1272,12 @@ router.post("/claims/:id/clear-hold", asyncHandler(async (req, res): Promise<voi
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
 
-  const subStatus = deriveLegSubStatus(leg);
-  if (subStatus !== "blocked" || !leg.holdReason) {
+  // Same relaxed gate as DELETE /claims/:id/hold — see comment there.
+  if (!leg.holdReason) {
     res.status(409).json({
       error: "Leg is not on hold",
-      expectedState: "blocked",
-      actualState: subStatus,
+      expectedState: "holdReason set",
+      actualState: deriveLegSubStatus(leg),
     });
     return;
   }
