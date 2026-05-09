@@ -1793,15 +1793,7 @@ export default function Queue() {
                   past the viewport. On smaller breakpoints there's no
                   sticky/height cap, so the panel just flows down the
                   page. */}
-              {/* Workspace owns its own scroll now: the V3 edge-drawer
-                  layout splits the right pane into a center column
-                  (banners → hero → footer, scrolls) and a 360px right
-                  rail of floating cards (invoice + chip section,
-                  vertically centered around the hero). The outer pane
-                  must be a height-constrained flex child but must NOT
-                  add its own overflow — the inner CSS Grid manages
-                  scroll per region. */}
-              <div className="lg:flex-1 lg:min-h-0">
+              <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
                 <InlineGroupWorkspaceMini groupId={selectedWorkflowId} />
               </div>
             </div>
