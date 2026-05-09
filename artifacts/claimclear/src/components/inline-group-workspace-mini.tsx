@@ -385,6 +385,23 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   else if (allWalked && outlook === "nothing_to_do" && !forceWalk) hero = "closeout";
   else if (!activeLeg) hero = "empty";
   else if (activeLeg.includedInDispute === false) hero = "resolved";
+  // SOP-terminal legs (cannot_dispute / dispute / portal_dispute /
+  // internal) used to land on the passive ResolvedHero card, which
+  // gave the operator no way back if they hit the wrong terminal by
+  // mistake. Route them to the SOP hero instead — `SopHero` will
+  // mount `SopAdvancePlayer` (its terminal screen exposes
+  // "Change my answer" / "Restart walk" / "Reclassify the leg",
+  // which all call the existing /sop-back-step / /sop-restart /
+  // reclassify endpoints). `includedInDispute === false` (caught
+  // above) keeps non-SOP exclusions like classify-non_issue on the
+  // passive card — those have no SOP walk to rewind.
+  else if (
+    resolvedIndex.isLegResolved(activeLeg)
+    && activeLeg.sopOutcome != null
+    && activeLeg.sopOutcome !== "hold"
+  ) {
+    hero = "sop";
+  }
   else if (resolvedIndex.isLegResolved(activeLeg)) hero = "resolved";
   else if (deriveLegSubStatus(activeLeg) === "needs_classification") hero = "classify";
   else hero = "sop";

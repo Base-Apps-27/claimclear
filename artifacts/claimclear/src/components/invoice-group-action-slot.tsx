@@ -80,7 +80,15 @@ export function InvoiceGroupActionSlot({
     // because the invoice has not been submitted to the payor yet.
     // Render the reason inline instead of an active CTA the operator
     // would just bounce off.
-    const eligibility = canQueueOrCompleteReattest(group);
+    //
+    // Pass outlook so the helper takes the Early Re-attest branch
+    // (Task #476) — without it the helper falls past the
+    // outlook==="reattest_only" case and reports a stale
+    // "not submitted yet" reason even though the server's
+    // /reattest/queue endpoint explicitly accepts pre-submit phases
+    // when the leg shape is reattest_only. See invoice-groups.ts
+    // L4015-4023 and the matching branch in canQueueOrCompleteReattest.
+    const eligibility = canQueueOrCompleteReattest(group, "reattest_only");
     if (!eligibility.ok) {
       return (
         <Card className={bare ? "border-0 shadow-none" : undefined}>
@@ -144,10 +152,13 @@ function ReattestOnlyCta({
   const survivorCount = survivors.length;
   const droppedCount = dropped.length;
   // Server-side bulk-queue / complete-reattest both 409 unless the
-  // group is in `response-pending`+Needs Review or `mas-action-required`.
-  // Mirror that gate so the operator sees an actionable explanation
-  // instead of submitting and catching a destructive toast.
-  const reattestEligibility = canQueueOrCompleteReattest(group);
+  // group is in `response-pending`+Needs Review or `mas-action-required`
+  // — OR the leg shape is `reattest_only` from any non-terminal phase
+  // (Early Re-attest, Task #476, invoice-groups.ts L4015-4023). This
+  // component is only mounted via that exact dispatcher branch, so
+  // we forward the literal so the helper takes the Early Re-attest
+  // path instead of reporting a stale "not submitted yet" reason.
+  const reattestEligibility = canQueueOrCompleteReattest(group, "reattest_only");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
