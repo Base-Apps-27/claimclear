@@ -350,23 +350,23 @@ export function ReparentDialogBody({
 }) {
   const blocked = request.blockReason !== null;
   return (
-    <div data-testid="sop-reparent-dialog">
+    <div data-testid="sop-reparent-dialog" className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col space-y-1.5 text-center sm:text-left">
         <h2 className="text-lg font-semibold leading-none tracking-tight">Re-parent children before deleting?</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground break-words">
           {`"${request.question}" has ${request.orphans.length} ${request.orphans.length === 1 ? "branch" : "branches"} underneath it.`}
           {" "}The rest of the tree below stays intact — we'll just attach those branches to the parent question.
         </p>
       </div>
 
-      <div className="space-y-3 py-2">
+      <div className="-mx-1 mt-3 flex-1 min-h-0 space-y-3 overflow-y-auto px-1 py-1">
         <div className="rounded-md border bg-slate-50 p-3 space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Branches that will move</p>
           <ul className="space-y-1.5" data-testid="sop-reparent-orphan-list">
             {request.orphans.map((o) => (
               <li key={o.childId} className="flex items-start justify-between gap-3 text-xs">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-700 truncate">
+                  <p className="font-medium text-slate-700 break-words [overflow-wrap:anywhere] line-clamp-3">
                     <span className="text-slate-400">{o.optionLabel} →</span> {o.childQuestion || "(empty question)"}
                   </p>
                 </div>
@@ -379,13 +379,13 @@ export function ReparentDialogBody({
         </div>
 
         {blocked && request.blockReason === "no_parent" && (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900" data-testid="sop-reparent-blocked-no-parent">
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 break-words" data-testid="sop-reparent-blocked-no-parent">
             This question has no parent in the tree, so its children have nowhere to attach. To remove it, first add an alternate path or use Clear to remove the whole tree.
           </div>
         )}
 
         {blocked && request.blockReason === "no_available_slot" && (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900" data-testid="sop-reparent-blocked-no-slot">
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 break-words" data-testid="sop-reparent-blocked-no-slot">
             The parent question doesn't have enough open option slots to receive {request.orphans.length} {request.orphans.length === 1 ? "branch" : "branches"} ({request.receivableSlots.length} available). Add more options to the parent first, or remove one of the branches before deleting.
           </div>
         )}
@@ -393,15 +393,15 @@ export function ReparentDialogBody({
         {!blocked && request.parent && (
           <div className="rounded-md border bg-white p-3 space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">New parent</p>
-            <p className="text-xs font-medium text-slate-700 truncate">{request.parent.question || "(empty question)"}</p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs font-medium text-slate-700 break-words [overflow-wrap:anywhere] line-clamp-4">{request.parent.question || "(empty question)"}</p>
+            <p className="text-[11px] text-slate-500 break-words">
               Filling option {request.receivableSlots.slice(0, request.orphans.length).map(i => `"${request.parent!.options[i]?.label ?? `#${i + 1}`}"`).join(", ")}
             </p>
           </div>
         )}
       </div>
 
-      <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+      <div className="mt-4 flex flex-col-reverse gap-2 border-t pt-3 sm:flex-row sm:justify-end sm:gap-0 sm:space-x-2">
         <Button variant="outline" onClick={onCancel} data-testid="sop-reparent-cancel-btn">
           Cancel
         </Button>
@@ -432,7 +432,7 @@ function ReparentDialog({
 }) {
   return (
     <Dialog open={request !== null} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-4 sm:p-6">
         {request && (
           <ReparentDialogBody request={request} onCancel={onCancel} onConfirm={onConfirm} />
         )}
