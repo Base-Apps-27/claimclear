@@ -35,6 +35,7 @@ import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
+import { derivePreviewGateState } from "@/lib/whats-next-derivation";
 
 // Submission gauntlet — readback → preview → submit, extracted from
 // invoice-group-detail-v2 so the inline queue workspace renders the same
@@ -149,6 +150,15 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   const readbackConfirmed = !!group?.understandingReadbackAt;
   const previewGenerated = !!group?.previewGeneratedAt;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
+
+  // Task #555 — single source of truth for the Generate Submission
+  // Preview gate. Mirrors the api-server's preview gate exactly so the
+  // disabled-state tooltip can name the blocking reason without the UI
+  // and the server drifting.
+  const previewGate = useMemo(
+    () => derivePreviewGateState(group, allRides),
+    [group, allRides],
+  );
 
   // Channel-aware Submit. The errorTypesTable.useDirectEmail flag,
   // joined into the GET handler in Task #265, decides whether the
@@ -333,7 +343,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-semibold">Understanding notes</h3>
-              <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
+              <Badge variant="outline" className="text-[10px] font-normal">Required</Badge>
               {/* Surface what the AI prompt sees on top of the dispute
                    reason: per-leg findings + sibling-duplicate rollups
                    (Task #311). Hidden when neither counter is non-zero. */}
@@ -389,32 +399,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Generate preview</h3>
             {(() => {
-              const previewDisabledReason: string | null = !isPreSubmit
-                ? `Disabled because the group is past pre-submit (${group.status}).`
-                : rides.length === 0
-                  ? "Disabled because this group has no legs included in the dispute."
-                  : !allResolved
-                    ? (() => {
-                        // Bucket unresolved legs by their derived
-                        // sub-status. A `duplicate` leg that resolves
-                        // via a terminal primary has already been
-                        // filtered out by `unresolvedRides`, so it
-                        // won't show up here as "owing action" — only
-                        // duplicates whose primary is still mid-walk
-                        // (or missing) remain.
-                        const counts = unresolvedRides.reduce<Record<string, number>>(
-                          (acc, r) => {
-                            const s = resolvedIndex.subStatusOf(r);
-                            return { ...acc, [s]: (acc[s] ?? 0) + 1 };
-                          },
-                          {},
-                        );
-                        const summary = Object.entries(counts)
-                          .map(([s, n]) => `${n} ${s.replace("_", " ")}`)
-                          .join(", ");
-                        return `Disabled because ${unresolvedRides.length} leg${unresolvedRides.length === 1 ? "" : "s"} still owe action (${summary}).`;
-                      })()
-                    : null;
+              const previewDisabledReason = previewGate.ok ? null : previewGate.reason;
               const button = (
                 <Button
                   size="sm"
@@ -462,11 +447,12 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                 ? `All legs reached a conclusion — ${conclusionCounts.sop} SOP, ${conclusionCounts.excluded} excluded`
                 : "All legs reached a conclusion"}
             </li>
-            {readbackConfirmed && (
-              <li className="text-green-700">
-                ✓ Understanding notes saved (optional)
-              </li>
-            )}
+            <li
+              className={readbackConfirmed ? "text-green-700" : "text-muted-foreground"}
+              data-testid="gate-row-readback"
+            >
+              {readbackConfirmed ? "✓" : "○"} Understanding notes confirmed
+            </li>
             {previewGenerated && (
               <li className="text-green-700">
                 ✓ Preview generated {group.previewGeneratedAt ? formatDateTime(group.previewGeneratedAt) : ""}

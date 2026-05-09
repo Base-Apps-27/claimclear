@@ -7,6 +7,17 @@ import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
 import { useTransientFlag } from "@/hooks/use-transient-flag";
 import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed } from "@/lib/lifecycle-phase";
+import { partitionTransitions } from "@/lib/transitions-partition";
+import { deriveGroupOutcomeFromLegs } from "@/lib/group-outcome";
+import { MasActionChecklist } from "@/components/mas-action-checklist";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   useGetInvoiceGroup,
   getGetInvoiceGroupQueryKey,
@@ -21,6 +32,9 @@ import {
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
   useCompleteGroupReattest,
+  useMarkInvoiceGroupMasEligible,
+  useUpdateInvoiceGroupStatus,
+  useCompleteLegMasAction,
 } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -329,6 +343,16 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
   const holdMutation = useHoldInvoiceGroup();
   const removeHoldMutation = useRemoveInvoiceGroupHold();
+  // Task #555 — phase action: Mark MAS Eligible. Status overrides
+  // dropdown (admin-only) routes through useUpdateInvoiceGroupStatus.
+  // Per-leg MAS-action completion (cancel) routes through
+  // useCompleteLegMasAction; the group-level re-attest stamp routes
+  // through useCompleteGroupReattest. Both feed the new
+  // <MasActionChecklist> mounted on the right rail in place of the
+  // old "go to RAR" pointer panel.
+  const markMasEligibleMutation = useMarkInvoiceGroupMasEligible();
+  const updateStatusMutation = useUpdateInvoiceGroupStatus();
+  const completeLegMasActionMutation = useCompleteLegMasAction();
   // MAS re-attest mutation — used by the admin "recorded offline"
   // override modal in the right rail (Task #333). The standard
   // checklist-driven completion now lives on Responses Awaiting Review
@@ -386,11 +410,22 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
   const detail = group as InvoiceGroupDetailResponse | undefined;
   const allRides: ClaimResponse[] = detail?.rides ?? [];
+  // Task #555 — the Legs Queue's default surface is "actionable":
+  // legs that are *both* in the dispute and not a sibling-duplicate
+  // pointer. Excluded rows (Non-issue / withdrawn from dispute) and
+  // duplicates of another leg in the same group both collapse behind
+  // the "+N hidden" disclosure so the operator's primary view stays
+  // focused on legs that actually need a decision.
   const disputedRides = useMemo(
-    () => allRides.filter((r) => r.includedInDispute !== false),
+    () =>
+      allRides.filter(
+        (r) =>
+          r.includedInDispute !== false &&
+          (r.duplicateOfClaimId == null),
+      ),
     [allRides],
   );
-  const excludedCount = allRides.length - disputedRides.length;
+  const hiddenCount = allRides.length - disputedRides.length;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
 
   useActorCausedTransition<string>({
@@ -460,7 +495,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
      silently dropped. The KPI strip and group header both claim N legs
      exist, so the table needs to match. The operator can still toggle
      "Disputed only" to focus the table on actionable legs. */
-  const [disputedOnly, setDisputedOnly] = useState(false);
+  // Task #555 — Legs Queue defaults to disputed-only; the disclosure
+  // surfaces excluded / sibling-duplicate rows on demand.
+  const [disputedOnly, setDisputedOnly] = useState(true);
   const visibleRides = disputedOnly ? disputedRides : allRides;
 
   /* ---- Notes / Audit (from detail payload) ---- */
@@ -733,7 +770,44 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                       <span>#{group.id}</span>
                     )}
                   </h1>
-                  <StateBadge variant="status" value={group.status} justTransitioned={justShipped} />
+                  {/* Task #555 — phase chip is now the primary state
+                       affordance on this surface; the database-stored
+                       `status` is demoted to a small "(cached)" sub-
+                       label so operators can still spot drift between
+                       the computed phase and the persisted column
+                       without it dominating the header. */}
+                  <StateBadge
+                    variant="phase"
+                    value={(group as { phase?: string }).phase ?? "triage"}
+                    justTransitioned={justShipped}
+                    data-testid="header-phase-chip"
+                  />
+                  <span
+                    className="text-[10px] font-normal"
+                    style={{ color: "var(--cc-muted-fg)" }}
+                    data-testid="header-status-cached"
+                  >
+                    (cached: {group.status})
+                  </span>
+                  {/* Task #555 — computed group outcome lives in the
+                       header so the operator's first glance answers
+                       "where did this dispute land?" without scrolling
+                       to the verdict card. The value is recomputed
+                       from per-leg verdicts on every render via the
+                       shared helper; the persisted `group.outcome`
+                       column is intentionally NOT read here so a stale
+                       row never misleads the surface. */}
+                  {(() => {
+                    const computed = deriveGroupOutcomeFromLegs(allRides).outcome;
+                    if (!computed) return null;
+                    return (
+                      <StateBadge
+                        variant="outcome"
+                        value={computed}
+                        data-testid="header-computed-outcome"
+                      />
+                    );
+                  })()}
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
                   <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                     {group.errorTypeName ? <>{group.errorTypeName} · </> : null}
@@ -773,32 +847,179 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {group?.status === "On Hold" ? (
-                <button
-                  className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
-                  style={{ border: "1px solid var(--cc-border)" }}
-                  onClick={onClearHold}
-                  disabled={removeHoldMutation.isPending}
-                  data-testid="header-clear-hold-button"
-                >
-                  {removeHoldMutation.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <PauseCircle className="w-3.5 h-3.5" />
-                  )}
-                  Clear hold
-                </button>
-              ) : (
-                <button
-                  className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
-                  style={{ border: "1px solid var(--cc-border)" }}
-                  onClick={() => setHoldOpen(true)}
-                  disabled={holdMutation.isPending}
-                  data-testid="header-hold-button"
-                >
-                  <PauseCircle className="w-3.5 h-3.5" /> Place group on hold
-                </button>
-              )}
+              {/* Task #555 — single sectioned "Transitions" dropdown.
+                   Top section is *Phase actions* (Submit dispute,
+                   Mark MAS Eligible, Place on hold / Clear hold) —
+                   visible to every operator and gated by the server's
+                   valid-transitions response. Bottom section is
+                   *Status overrides* — admin-only, lists every
+                   server-allowed status (typically backwards
+                   transitions) so non-admins never see the raw enum.
+                   Submit itself still lives inside the gauntlet because
+                   that's where the readback / leg-resolution gates
+                   live; the menu item scrolls to the gauntlet so the
+                   operator lands on the actual submit button with all
+                   its context. */}
+              {(() => {
+                // Task #555 — partition the server's `validStatuses`
+                // into Phase actions vs Status overrides by comparing
+                // each candidate's lifecycle phase against the
+                // group's current phase using PHASE_ORDER:
+                //   • Forward / same-phase / on-hold  → phase action
+                //     (the operational menu every operator sees)
+                //   • Backward in phase order         → status override
+                //     (admin-only escape hatch — typically un-doing
+                //     a transition the workflow already advanced past)
+                // Hold and Clear hold both flow through this filter
+                // — the server only lists "On Hold" while clearing is
+                // possible and only lists the un-hold target while
+                // already on hold, so we don't need to second-guess
+                // it with hardcoded current-status checks. Submit
+                // itself is not a status (it's a side-effecting
+                // action that emits a status change), so we surface
+                // it whenever the current phase is pre-submit.
+                const allowed = validTransitions?.validStatuses ?? [];
+                const { phaseActionStatuses, overrideStatuses } =
+                  partitionTransitions(group?.status, allowed, !!isAdmin);
+                const showMarkMas = phaseActionStatuses.includes("MAS Eligible");
+                const showHold = phaseActionStatuses.includes("On Hold");
+                const showClearHold =
+                  group?.status === "On Hold" &&
+                  allowed.some((s) => s !== "On Hold");
+                const showSubmit = isPreSubmitFn(group?.status);
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
+                        style={{ border: "1px solid var(--cc-border)" }}
+                        data-testid="header-transitions-trigger"
+                      >
+                        Transitions
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[220px]">
+                      <DropdownMenuLabel data-testid="transitions-section-phase">
+                        Phase actions
+                      </DropdownMenuLabel>
+                      {showSubmit && (
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            const el = document.querySelector(
+                              '[data-testid="generate-preview"]',
+                            );
+                            if (el && "scrollIntoView" in el) {
+                              (el as HTMLElement).scrollIntoView({
+                                behavior: "smooth",
+                                block: "center",
+                              });
+                              (el as HTMLElement).focus?.();
+                            }
+                          }}
+                          data-testid="header-phase-submit"
+                        >
+                          Submit dispute (open gauntlet)
+                        </DropdownMenuItem>
+                      )}
+                      {showMarkMas && (
+                        <DropdownMenuItem
+                          disabled={markMasEligibleMutation.isPending}
+                          onSelect={() =>
+                            markMasEligibleMutation.mutate(
+                              { id: groupId, data: {} },
+                              {
+                                onSuccess: () => {
+                                  invalidateGroup();
+                                  successToast({
+                                    title: "__VERB__",
+                                    description: "Group marked MAS Eligible.",
+                                    duration: 3000,
+                                  });
+                                },
+                                onError: (e: unknown) =>
+                                  toast({
+                                    title: "Could not mark MAS Eligible",
+                                    description:
+                                      e instanceof Error ? e.message : String(e),
+                                    variant: "destructive",
+                                  }),
+                              },
+                            )
+                          }
+                          data-testid="header-phase-mark-mas-eligible"
+                        >
+                          Mark MAS Eligible
+                        </DropdownMenuItem>
+                      )}
+                      {showHold && (
+                        <DropdownMenuItem
+                          disabled={holdMutation.isPending}
+                          onSelect={() => setHoldOpen(true)}
+                          data-testid="header-phase-place-on-hold"
+                        >
+                          Place group on hold
+                        </DropdownMenuItem>
+                      )}
+                      {showClearHold && (
+                        <DropdownMenuItem
+                          disabled={removeHoldMutation.isPending}
+                          onSelect={onClearHold}
+                          data-testid="header-phase-clear-hold"
+                        >
+                          Clear hold
+                        </DropdownMenuItem>
+                      )}
+                      {!showSubmit && !showMarkMas && !showHold && !showClearHold && (
+                        <DropdownMenuItem
+                          disabled
+                          data-testid="header-phase-empty"
+                        >
+                          No phase actions available
+                        </DropdownMenuItem>
+                      )}
+                      {overrideStatuses.length > 0 && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel data-testid="transitions-section-overrides">
+                            Status overrides (admin)
+                          </DropdownMenuLabel>
+                          {overrideStatuses.map((s) => (
+                            <DropdownMenuItem
+                              key={s}
+                              disabled={updateStatusMutation.isPending}
+                              onSelect={() =>
+                                updateStatusMutation.mutate(
+                                  { id: groupId, data: { status: s } },
+                                  {
+                                    onSuccess: () => {
+                                      invalidateGroup();
+                                      successToast({
+                                        title: "__VERB__",
+                                        description: `Status set to ${s}.`,
+                                        duration: 3000,
+                                      });
+                                    },
+                                    onError: (e: unknown) =>
+                                      toast({
+                                        title: "Could not update status",
+                                        description:
+                                          e instanceof Error ? e.message : String(e),
+                                        variant: "destructive",
+                                      }),
+                                  },
+                                )
+                              }
+                              data-testid={`header-status-override-${s}`}
+                            >
+                              {s}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -889,7 +1110,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
             <Kpi
               label="Non-issue"
               value={formatCurrency(excludedAmount.toFixed(2))}
-              sub={excludedCount > 0 ? `${excludedCount} leg${excludedCount === 1 ? "" : "s"}` : "—"}
+              sub={hiddenCount > 0 ? `${hiddenCount} leg${hiddenCount === 1 ? "" : "s"}` : "—"}
               testId="kpi-excluded"
             />
             <Kpi
@@ -1024,32 +1245,29 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               icon={<ListChecks className="w-3.5 h-3.5" />}
               testId="rides-legs-card"
               action={
-                <div className="flex items-center gap-1.5">
+                /* Task #555 — Legs Queue defaults to disputed-only;
+                    operators don't routinely care about excluded /
+                    sibling-duplicate rows but want to be able to
+                    expand them. Replaces the symmetric All/Disputed
+                    toggle with a "+N hidden" disclosure that flips
+                    back when the operator's done. */
+                hiddenCount > 0 ? (
                   <button
+                    type="button"
                     className="cc-btn text-xs px-2 py-1"
                     style={
                       disputedOnly
-                        ? { border: "1px solid var(--cc-border)" }
+                        ? { border: "1px solid var(--cc-border)", color: "var(--cc-muted-fg)" }
                         : { background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }
                     }
-                    onClick={() => setDisputedOnly(false)}
-                    data-testid="filter-all"
+                    onClick={() => setDisputedOnly(!disputedOnly)}
+                    data-testid="legs-hidden-disclosure"
                   >
-                    All
+                    {disputedOnly
+                      ? `+${hiddenCount} hidden — show`
+                      : "Hide excluded / duplicates"}
                   </button>
-                  <button
-                    className="cc-btn text-xs px-2 py-1"
-                    style={
-                      disputedOnly
-                        ? { background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }
-                        : { border: "1px solid var(--cc-border)" }
-                    }
-                    onClick={() => setDisputedOnly(true)}
-                    data-testid="filter-disputed"
-                  >
-                    Disputed only
-                  </button>
-                </div>
+                ) : null
               }
               padded={false}
             >
@@ -1218,12 +1436,20 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                     <div className="text-xs uppercase tracking-wide font-semibold" style={{ color: "var(--cc-muted-fg)" }}>
                       Group verdict
                     </div>
-                    {group.outcome && group.outcome !== "Pending" ? (
+                    {(() => {
+                      // Task #555 — never trust `group.outcome`; the
+                      // canonical verdict is computed from per-leg
+                      // verdicts via the shared helper so the rail's
+                      // outcome cannot drift behind a leg edit.
+                      const computedOutcome =
+                        deriveGroupOutcomeFromLegs(allRides).outcome;
+                      return computedOutcome !== "Pending";
+                    })() ? (
                       <div className="text-sm space-y-1 p-3 rounded" style={{ background: "var(--cc-muted)" }}>
                         <div className="flex items-center gap-2">
                           <StateBadge
                             variant="outcome"
-                            value={group.outcome}
+                            value={deriveGroupOutcomeFromLegs(allRides).outcome}
                             data-testid="group-verdict-outcome"
                           />
                           {group.closureReason && (
@@ -1343,20 +1569,30 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   </div>
                 ) : (
                   <div data-testid="group-reattest-pending" className="space-y-3">
-                    <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                      Cancel each affected leg in MAS, re-attest with the
-                      corrected info, then confirm completion from the response
-                      workspace so the dashboard and audit trail line up.
-                    </p>
-                    <Link
-                      href="/responses-awaiting-review"
-                      className="text-xs font-medium inline-flex items-center gap-1 hover:underline"
-                      style={{ color: "var(--cc-blue-fg)" }}
-                      data-testid="link-reattest-go-to-rar"
-                    >
-                      Open in Responses Awaiting Review
-                      <ChevronRight className="w-3 h-3" />
-                    </Link>
+                    {/* Task #555 — mount the full per-leg cancel +
+                         group re-attest checklist directly here
+                         instead of the old quiet "go to RAR" pointer.
+                         The detail page is now the single macro
+                         workflow surface for the group; operators
+                         shouldn't have to bounce to another workspace
+                         to act on the MAS playbook. */}
+                    <MasActionChecklist
+                      group={group}
+                      onCompleteLegMasAction={async (claimId, body) => {
+                        await completeLegMasActionMutation.mutateAsync({
+                          id: claimId,
+                          data: body,
+                        });
+                        invalidateGroup();
+                      }}
+                      onCompleteGroupReattest={async (body) => {
+                        await completeReattestMutation.mutateAsync({
+                          id: groupId,
+                          data: body,
+                        });
+                        invalidateGroup();
+                      }}
+                    />
                     {canShowOfflineReattestOverride({
                       isAdmin,
                       reattestRequired: !!group.reattestRequired,

@@ -1,5 +1,10 @@
-import type { ClaimResponse, InvoiceGroupResponse, PortalResponseItem } from "@workspace/api-client-react";
-import { outcomeRole } from "@workspace/leg-state";
+import type {
+  ClaimResponse,
+  InvoiceGroupResponse,
+  PortalResponseItem,
+} from "@workspace/api-client-react";
+import { buildLegResolvedIndex, outcomeRole } from "@workspace/leg-state";
+import { getGroupLifecyclePhaseFromGroup } from "./lifecycle-phase";
 
 /**
  * Per-leg verdict derivation for the "What's next?" surface on the
@@ -364,6 +369,106 @@ export interface InvoiceDisputeOutlookResult {
   survivors: ClaimResponse[];
   /** Legs the operator should cancel in the portal (modal `deniedLegs`). */
   dropped: ClaimResponse[];
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #555 — Generate Submission Preview gate state.
+//
+// The Generate Submission Preview CTA on invoice-group-detail-v2 is
+// gated on FOUR conditions, in priority order:
+//
+//   1. `phase`        — group must still be in pre-submit. Mirrors the
+//                       backend gate; once submitted the preview is
+//                       moot. Reads `group.phase` via the canonical
+//                       lifecycle-phase derivation.
+//   2. `legs`         — at least one disputed leg must exist (the
+//                       submission has nothing to write up otherwise).
+//   3. `resolved`     — every disputed leg resolved (ready / dropped /
+//                       excluded; sibling-duplicate legs follow their
+//                       primary). Driven by the shared
+//                       `buildLegResolvedIndex` so the UI gate cannot
+//                       drift from the api-server's
+//                       `evaluateDisputedLegsResolved`.
+//   4. `readback`     — the operator has confirmed an understanding
+//                       readback (#168). Required because the AI prompt
+//                       relies on it to interpret the dispute reason.
+//
+// Returned object:
+//   - `ok`               — green: every gate satisfied
+//   - `missingGates`     — ordered list (highest-priority first) of
+//                          gate keys that failed
+//   - `reason`           — operator-facing tooltip copy naming the
+//                          single highest-priority blocker
+//   - `unresolvedSummary`— when the legs gate fails, a comma-separated
+//                          breakdown of how many legs sit in each
+//                          unresolved sub-status (drives the existing
+//                          tooltip "(2 investigating, 1 blocked)")
+// ─────────────────────────────────────────────────────────────────────
+
+export type PreviewGateKey = "phase" | "legs" | "resolved" | "readback";
+
+export interface PreviewGateState {
+  ok: boolean;
+  missingGates: PreviewGateKey[];
+  reason: string | null;
+  unresolvedSummary?: string;
+  unresolvedCount: number;
+}
+
+interface PreviewGateGroup {
+  status?: string | null;
+  phase?: string | null;
+  understandingReadbackAt?: string | null;
+  reattestCompletedAt?: string | null;
+}
+
+export function derivePreviewGateState(
+  group: PreviewGateGroup,
+  allLegs: readonly ClaimResponse[],
+): PreviewGateState {
+  const phase = getGroupLifecyclePhaseFromGroup(group);
+  const disputed = allLegs.filter((r) => r.includedInDispute !== false);
+  const resolvedIndex = buildLegResolvedIndex(allLegs);
+  const unresolved = disputed.filter((r) => !resolvedIndex.isLegResolved(r));
+  const readbackConfirmed = !!group.understandingReadbackAt;
+
+  const missingGates: PreviewGateKey[] = [];
+  if (phase !== "pre-submit") missingGates.push("phase");
+  if (disputed.length === 0) missingGates.push("legs");
+  if (unresolved.length > 0) missingGates.push("resolved");
+  if (!readbackConfirmed) missingGates.push("readback");
+
+  let unresolvedSummary: string | undefined;
+  if (unresolved.length > 0) {
+    const counts = unresolved.reduce<Record<string, number>>((acc, r) => {
+      const s = resolvedIndex.subStatusOf(r);
+      acc[s] = (acc[s] ?? 0) + 1;
+      return acc;
+    }, {});
+    unresolvedSummary = Object.entries(counts)
+      .map(([s, n]) => `${n} ${s.replace("_", " ")}`)
+      .join(", ");
+  }
+
+  let reason: string | null = null;
+  const top = missingGates[0];
+  if (top === "phase") {
+    reason = `Disabled because the group is past pre-submit (${group.status ?? "unknown status"}).`;
+  } else if (top === "legs") {
+    reason = "Disabled because this group has no legs included in the dispute.";
+  } else if (top === "resolved") {
+    reason = `Disabled because ${unresolved.length} leg${unresolved.length === 1 ? "" : "s"} still owe action (${unresolvedSummary ?? ""}).`;
+  } else if (top === "readback") {
+    reason = "Disabled because the understanding readback has not been confirmed yet.";
+  }
+
+  return {
+    ok: missingGates.length === 0,
+    missingGates,
+    reason,
+    unresolvedSummary,
+    unresolvedCount: unresolved.length,
+  };
 }
 
 export function deriveInvoiceDisputeOutlook(

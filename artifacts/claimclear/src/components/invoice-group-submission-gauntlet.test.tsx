@@ -97,16 +97,25 @@ function claim(over: Partial<ClaimResponse> & { id: number }): ClaimResponse {
   } as unknown as ClaimResponse;
 }
 
-function group(rides: ClaimResponse[]): InvoiceGroupDetailResponse {
+function group(
+  rides: ClaimResponse[],
+  over: Partial<InvoiceGroupDetailResponse> = {},
+): InvoiceGroupDetailResponse {
   return {
     id: 42,
     confNumber: "GRP-42",
     status: "New", // → isPreSubmit, so the gate is live
+    phase: "triage",
+    // Task #555: the preview gate now also requires the operator-confirmed
+    // understanding readback (#168). Pin it on the fixture so the gate
+    // tests focus on the leg-resolution rule.
+    understandingReadbackAt: "2026-01-01T00:00:00Z",
     rides,
     submissions: [],
     notes: [],
     auditLogs: [],
     responses: [],
+    ...over,
   } as unknown as InvoiceGroupDetailResponse;
 }
 
