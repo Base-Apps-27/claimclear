@@ -100,6 +100,12 @@ export interface WalkMockState {
     reason: string;
     bouncedAt: string;
   } | null;
+  /** Optional canned failure for the next portal-submission POST.
+   *  When set, the mock returns the supplied HTTP status with a JSON
+   *  body of `{ error, code }` instead of flipping the group to
+   *  `submitted`. Used by Scenario #20 to pin the
+   *  service-token-expired re-auth flow. */
+  submitFailure: { status: number; code: string; error?: string } | null;
   /** Shared presence ledger keyed by `${resourceType}:${resourceId}`,
    *  inner map keyed by lowercased userEmail. Heartbeat upserts an
    *  entry; leave deletes it; the GET handler returns the entries

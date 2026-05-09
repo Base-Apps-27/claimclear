@@ -23,6 +23,7 @@ import {
   getGetInvoiceGroupEmailThreadQueryKey,
   getGetInvoiceGroupQueryKey,
   getListInvoiceGroupsQueryKey,
+  ApiError,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -1525,6 +1526,11 @@ function PinnedFooter({
   const { toast } = useToast();
   const submit = useCreatePortalSubmission();
   const gate = derivePreviewGateState(detail, rides);
+  // Captured when submit fails with 401 + service-token-expired
+  // marker. Distinct from a generic error so we can render a re-auth
+  // CTA inline (rather than the catch-all toast that blames the
+  // operator for a server-side credential refresh problem).
+  const [serviceTokenExpired, setServiceTokenExpired] = useState(false);
 
   // Submit is enabled only when the readback gate is satisfied AND
   // the operator has progressed through preview + reviewed. Disabled
@@ -1554,6 +1560,7 @@ function PinnedFooter({
   else if (!draftReviewed) disabledReason = "Mark the draft reviewed first.";
 
   function onSubmit() {
+    setServiceTokenExpired(false);
     submit.mutate(
       { data: { invoiceGroupId: groupId } },
       {
@@ -1565,12 +1572,26 @@ function PinnedFooter({
           qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
           successToast({ title: "Done", description: "Submitted to the portal" });
         },
-        onError: (e: unknown) =>
+        onError: (e: unknown) => {
+          // Service-token expiry — the server has the canonical
+          // marker `code: "token_expired"` on the 401 body. We
+          // surface a dedicated re-auth CTA so the operator knows
+          // it's a credential refresh on our side, not a network
+          // hiccup or a problem with their draft.
+          const code =
+            e instanceof ApiError && e.data && typeof e.data === "object"
+              ? (e.data as { code?: unknown }).code
+              : undefined;
+          if (e instanceof ApiError && e.status === 401 && code === "token_expired") {
+            setServiceTokenExpired(true);
+            return;
+          }
           toast({
             title: "Submit failed",
             description: e instanceof Error ? e.message : String(e),
             variant: "destructive",
-          }),
+          });
+        },
       },
     );
   }
@@ -1620,6 +1641,30 @@ function PinnedFooter({
             >
               {disabledReason}
             </p>
+          )}
+          {serviceTokenExpired && (
+            <div
+              className="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 flex items-center justify-between gap-2"
+              data-testid="mini-reauth-banner"
+              role="alert"
+            >
+              <span>
+                Submit failed because the portal service token expired.
+                Re-authenticate to refresh it, then submit again.
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                data-testid="mini-reauth-cta"
+                onClick={() => {
+                  window.location.href = "/api/login?returnTo=" +
+                    encodeURIComponent(window.location.pathname + window.location.search);
+                }}
+              >
+                Re-authenticate
+              </Button>
+            </div>
           )}
         </div>
       )}

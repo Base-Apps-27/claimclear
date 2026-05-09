@@ -83,6 +83,7 @@ import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concu
 import { previewFail } from "./walk-scenarios/scenarios/14-preview-fail";
 import { narrativeEditPersist } from "./walk-scenarios/scenarios/16-narrative-edit-persist";
 import { submitFail } from "./walk-scenarios/scenarios/18-submit-fail";
+import { tokenExpired } from "./walk-scenarios/scenarios/20-token-expired";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 import { bouncedAddress } from "./walk-scenarios/scenarios/24-bounced-address";
 import { claimWithdrawnElsewhere } from "./walk-scenarios/scenarios/25-claim-withdrawn-elsewhere";
@@ -101,6 +102,7 @@ const SCENARIOS: WalkScenario[] = [
   previewFail,
   narrativeEditPersist,
   submitFail,
+  tokenExpired,
   zeroEvidence,
   bouncedAddress,
   claimWithdrawnElsewhere,

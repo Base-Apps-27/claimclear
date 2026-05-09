@@ -368,13 +368,28 @@ export async function customFetch<T = unknown>(
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
+    const errorData = await parseErrorBody(response, method);
     if (response.status === 401 && _onSessionExpired) {
       const url = resolveUrl(input);
-      if (!url.includes("/auth/user") && !url.includes("/login") && !url.includes("/callback")) {
+      // Service-token expiry (e.g. portal-submission worker) is
+      // signalled with `code: "token_expired"` on the body. That is
+      // a server-side credential, not the operator's web session,
+      // so we must NOT clear the user's auth or redirect them to
+      // login — the UI shows a dedicated re-auth CTA instead.
+      const code =
+        errorData && typeof errorData === "object"
+          ? (errorData as { code?: unknown }).code
+          : undefined;
+      const isServiceTokenExpiry = code === "token_expired";
+      if (
+        !isServiceTokenExpiry &&
+        !url.includes("/auth/user") &&
+        !url.includes("/login") &&
+        !url.includes("/callback")
+      ) {
         _onSessionExpired();
       }
     }
-    const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }
 

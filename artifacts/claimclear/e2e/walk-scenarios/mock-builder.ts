@@ -88,6 +88,7 @@ export function buildMockState(args: {
    *  before any operator edit. */
   aiBaselineSubject?: string | null;
   aiBaselineDescriptionHtml?: string | null;
+  submitFailure?: { status: number; code: string; error?: string } | null;
 }): WalkMockState {
   const errorTypeIndex = new Map<
     string,
@@ -141,6 +142,7 @@ export function buildMockState(args: {
     failPreviewWith: args.failPreviewWith ?? null,
     errorTypeIndex,
     payorEmailBounceState: args.payorEmailBounceState ?? null,
+    submitFailure: args.submitFailure ?? null,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
     submitFailWith: null,
     draftSubject: null,
@@ -511,9 +513,24 @@ export async function installApiStubs(
   // pass `?status=…` and the queue page reads `data.total` for the
   // tab badges + the inbox-zero gate. Return the group only when the
   // status filter matches the synthesized list item; otherwise return
-  // an empty lane so the wrong tab doesn't double-count it.
+  // an empty lane so the wrong tab doesn't double-count it. The
+  // queue chrome also fans out a `?include=needs_classification`
+  // probe whose response embeds a `needsClassificationInbox` payload;
+  // serve an empty inbox so the chrome doesn't fall back to its
+  // inbox-zero EmptyState (which would unmount the workspace).
   await page.route(/\/api\/invoice-groups(?:\?|$)/, (route: Route, request: Request) => {
-    const url = new URL(request.url());
+    const rawUrl = request.url();
+    const url = new URL(rawUrl);
+    if (rawUrl.includes("include=needs_classification")) {
+      return route.fulfill(
+        jsonResponse(200, {
+          groups: [],
+          total: 0,
+          today: new Date().toISOString().slice(0, 10),
+          needsClassificationInbox: { groups: [], total: 0, byStatus: {} },
+        }),
+      );
+    }
     const statusFilter = url.searchParams.get("status");
     // Closed groups drop off the live queue immediately — mirrors
     // the production filter the queue page applies. Scenarios use
@@ -524,6 +541,7 @@ export async function installApiStubs(
           groups: [],
           total: 0,
           today: new Date().toISOString().slice(0, 10),
+          needsClassificationInbox: { groups: [], total: 0, byStatus: {} },
         }),
       );
     }
@@ -551,6 +569,7 @@ export async function installApiStubs(
         groups,
         total: groups.length,
         today: new Date().toISOString().slice(0, 10),
+        needsClassificationInbox: { groups: [], total: 0, byStatus: {} },
       }),
     );
   });
@@ -759,6 +778,20 @@ export async function installApiStubs(
         state.portalSubmissionBody = request.postDataJSON();
       } catch {
         state.portalSubmissionBody = request.postData();
+      }
+      // Canned failure path — used by Scenario #20 to simulate the
+      // server's downstream service token expiring mid-submit.
+      // Phase stays where it is so the operator can re-auth and
+      // retry without losing their reviewed draft.
+      if (state.submitFailure) {
+        const f = state.submitFailure;
+        state.callOrder.push(`portal_submit_failed_${f.status}_${f.code}`);
+        return route.fulfill(
+          jsonResponse(f.status, {
+            error: f.error ?? "Service token expired",
+            code: f.code,
+          }),
+        );
       }
       // Smoke #18 hook: when a scenario primes `submitFailWith`, the
       // POST is rejected with that HTTP status and the group stays in
