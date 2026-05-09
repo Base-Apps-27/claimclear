@@ -47,8 +47,12 @@ import type {
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
+  BulkCloseInvoiceGroupsBody,
+  BulkCloseResult,
   BulkQueueGroupReattestBody,
   BulkQueueGroupReattestResponse,
+  BulkReattestInvoiceGroupsBody,
+  BulkReattestResult,
   BulkSopAdvanceBody,
   BulkSopAdvanceResponse,
   BulkSubmitInvoiceGroupsToPortalBody,
@@ -2039,6 +2043,211 @@ export const useBulkSubmitInvoiceGroupsToPortal = <
   return useMutation(
     getBulkSubmitInvoiceGroupsToPortalMutationOptions(options),
   );
+};
+
+/**
+ * Bulk equivalent of the Early Re-attest path on
+`POST /invoice-groups/:id/reattest/queue`. Each group in `groupIds`
+is checked for `outlook=reattest_only` (no disputable legs, at least
+one survivor needing re-attestation). Accepted groups have their
+survivor legs queued for attestation and the group transitioned to
+MAS Eligible / awaiting_reattestation.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `tour_sample` — tour sample row
+  * `terminal_phase` — group is closed or on-hold
+  * `has_disputable_legs` — group still has disputable legs
+  * `no_survivors` — no survivor legs to queue
+  * `no_eligible_legs` — survivors exist but already queued/completed
+  * `transaction_error` — write failed
+
+ * @summary Bulk queue reattest_only groups for re-attestation
+ */
+export const getBulkReattestInvoiceGroupsUrl = () => {
+  return `/api/invoice-groups/bulk-reattest`;
+};
+
+export const bulkReattestInvoiceGroups = async (
+  bulkReattestInvoiceGroupsBody: BulkReattestInvoiceGroupsBody,
+  options?: RequestInit,
+): Promise<BulkReattestResult> => {
+  return customFetch<BulkReattestResult>(getBulkReattestInvoiceGroupsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkReattestInvoiceGroupsBody),
+  });
+};
+
+export const getBulkReattestInvoiceGroupsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkReattestInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkReattestInvoiceGroupsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkReattestInvoiceGroups"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>,
+    { data: BodyType<BulkReattestInvoiceGroupsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkReattestInvoiceGroups(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkReattestInvoiceGroupsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>
+>;
+export type BulkReattestInvoiceGroupsMutationBody =
+  BodyType<BulkReattestInvoiceGroupsBody>;
+export type BulkReattestInvoiceGroupsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk queue reattest_only groups for re-attestation
+ */
+export const useBulkReattestInvoiceGroups = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkReattestInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkReattestInvoiceGroupsBody> },
+  TContext
+> => {
+  return useMutation(getBulkReattestInvoiceGroupsMutationOptions(options));
+};
+
+/**
+ * Bulk close groups whose outlook is `nothing_to_do` (every leg is
+cannot_dispute, denied, or excluded — no disputable legs and no
+survivors). Each accepted group is transitioned to Resolved /
+Withdrawn with closureReason=cannot_dispute via
+`transitionGroupStatusAndOutcome`.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `tour_sample` — tour sample row
+  * `already_closed` — group is already closed
+  * `no_legs` — group has no claims
+  * `has_disputable_legs` — group still has disputable legs
+  * `has_survivors` — group has survivors (use bulk-reattest instead)
+  * `transition_error: <msg>` — status transition failed
+
+ * @summary Bulk close nothing_to_do groups as Withdrawn
+ */
+export const getBulkCloseInvoiceGroupsUrl = () => {
+  return `/api/invoice-groups/bulk-close`;
+};
+
+export const bulkCloseInvoiceGroups = async (
+  bulkCloseInvoiceGroupsBody: BulkCloseInvoiceGroupsBody,
+  options?: RequestInit,
+): Promise<BulkCloseResult> => {
+  return customFetch<BulkCloseResult>(getBulkCloseInvoiceGroupsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkCloseInvoiceGroupsBody),
+  });
+};
+
+export const getBulkCloseInvoiceGroupsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkCloseInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkCloseInvoiceGroupsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkCloseInvoiceGroups"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>,
+    { data: BodyType<BulkCloseInvoiceGroupsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkCloseInvoiceGroups(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkCloseInvoiceGroupsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>
+>;
+export type BulkCloseInvoiceGroupsMutationBody =
+  BodyType<BulkCloseInvoiceGroupsBody>;
+export type BulkCloseInvoiceGroupsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk close nothing_to_do groups as Withdrawn
+ */
+export const useBulkCloseInvoiceGroups = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkCloseInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkCloseInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkCloseInvoiceGroupsBody> },
+  TContext
+> => {
+  return useMutation(getBulkCloseInvoiceGroupsMutationOptions(options));
 };
 
 /**

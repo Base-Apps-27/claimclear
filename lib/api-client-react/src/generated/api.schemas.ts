@@ -3975,6 +3975,43 @@ export interface BulkSubmitToPortalResult {
   success?: boolean;
 }
 
+export type BulkReattestResultQueuedItemsItem = {
+  id: number;
+  refNumber?: string | null;
+  queuedLegCount?: number;
+};
+
+export type BulkReattestResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export interface BulkReattestResult {
+  queued: number;
+  queuedItems?: BulkReattestResultQueuedItemsItem[];
+  skipped?: BulkReattestResultSkippedItem[];
+  success?: boolean;
+}
+
+export type BulkCloseResultClosedItemsItem = {
+  id: number;
+  refNumber?: string | null;
+};
+
+export type BulkCloseResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export interface BulkCloseResult {
+  closed: number;
+  closedItems?: BulkCloseResultClosedItemsItem[];
+  skipped?: BulkCloseResultSkippedItem[];
+  success?: boolean;
+}
+
 export type UploadResponseMetadata = {
   name?: string;
   contentType?: string;
@@ -4685,6 +4722,23 @@ API stays permissive so deep links / scripts still work.
  */
   draftReviewed?: boolean;
   /**
+ * Server-side equivalent of `deriveInvoiceDisputeOutlook`. Restricts
+the result set to groups matching the named outlook bucket:
+  * `ready_to_review` — has_disputable outlook AND every disputed
+    leg is in a resolved sub-status (ready/dropped/excluded).
+    These groups are one operator action away from generating a
+    submission preview.
+  * `reattest_only` — zero disputable legs but at least one
+    survivor leg (non-issue or approved) that still needs portal
+    re-attestation. The group can be bulk-queued for re-attest
+    without filing a portal dispute.
+  * `nothing_to_do` — zero disputable legs AND zero survivors.
+    Every leg is cannot_dispute, denied, or excluded. The group
+    can be bulk-closed as Withdrawn.
+
+ */
+  outlook?: ListInvoiceGroupsOutlook;
+  /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all
@@ -4755,6 +4809,15 @@ export const ListInvoiceGroupsMacroPhase = {
   "awaiting-payout": "awaiting-payout",
   closed: "closed",
   "on-hold": "on-hold",
+} as const;
+
+export type ListInvoiceGroupsOutlook =
+  (typeof ListInvoiceGroupsOutlook)[keyof typeof ListInvoiceGroupsOutlook];
+
+export const ListInvoiceGroupsOutlook = {
+  ready_to_review: "ready_to_review",
+  reattest_only: "reattest_only",
+  nothing_to_do: "nothing_to_do",
 } as const;
 
 export type ListInvoiceGroupsMissingServiceDateReason =
@@ -4880,6 +4943,14 @@ export type BulkAssignInvoiceGroupErrorTypeBody = {
 };
 
 export type BulkSubmitInvoiceGroupsToPortalBody = {
+  groupIds: number[];
+};
+
+export type BulkReattestInvoiceGroupsBody = {
+  groupIds: number[];
+};
+
+export type BulkCloseInvoiceGroupsBody = {
   groupIds: number[];
 };
 

@@ -798,6 +798,8 @@ export default function Queue() {
     set({ expiring: next == null ? null : next }, false);
   const clearExpiringFilter = () => setExpiringFilter(null);
 
+  const readyToReviewFilter = get("readyToReview") === "true";
+
   // URL-persisted: which workflow group is open in the inline workspace,
   // whether the Classification Inbox is expanded, and which triage row's
   // modal is open. `?triage=<id>` mirrors `?group=` so a refresh, hot
@@ -925,8 +927,9 @@ export default function Queue() {
     expiringFilter === "today-tomorrow"
       ? true
       : undefined;
-  const newParams = { status: "New", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
-  const needsEvidenceParams = { status: "Needs Evidence", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
+  const outlookForLanes = readyToReviewFilter ? ("ready_to_review" as const) : undefined;
+  const newParams = { status: "New", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes, outlook: outlookForLanes } as const;
+  const needsEvidenceParams = { status: "Needs Evidence", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes, outlook: outlookForLanes } as const;
   // `Generating Email` is a real, pre-submit, on-clock invoice-group
   // status. The dedicated package CTA was retired — the submission
   // gauntlet's preview/submit path is now the only writer that flips a
@@ -934,7 +937,7 @@ export default function Queue() {
   // the rare future writer) still need to fold into Action Required so
   // the Dashboard can never count an urgent group the operator has
   // nowhere to act on.
-  const generatingEmailParams = { status: "Generating Email", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
+  const generatingEmailParams = { status: "Generating Email", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes, outlook: outlookForLanes } as const;
   const portalQueuedParams = { status: "Portal Queued", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
   const onHoldParams = { status: "On Hold", limit: 500, expiring: expiringForLanes, includeExpired: includeExpiredForLanes } as const;
   const newQuery = useListInvoiceGroups(newParams, {
@@ -1640,6 +1643,24 @@ export default function Queue() {
                 <span className="font-semibold" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.7 }}>≤3d</span> = 2–3 days out,{" "}
                 <span className="font-semibold text-muted-foreground">≤7d</span> = within a week, neutral = anything past a week. Every row shows its tier.
               </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant={readyToReviewFilter ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => set({ readyToReview: readyToReviewFilter ? null : "true" }, false)}
+                  data-testid="queue-ready-to-review-toggle"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                  Ready to review
+                  {readyToReviewFilter && <span className="ml-1 font-semibold">({actionableTotal})</span>}
+                </Button>
+                {readyToReviewFilter && (
+                  <span className="text-xs text-muted-foreground">
+                    All disputed legs resolved — generate submission preview to continue.
+                  </span>
+                )}
+              </div>
               {actionableGroups.length === 0 ? (
                 <Card>
                   <CardContent className="py-6">

@@ -173,6 +173,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Pre-submit-only sub-filter. When `true`, restricts the result\nset to groups whose dispute draft has been marked reviewed\n(`draft_reviewed_at IS NOT NULL`) — i.e. one click away from\nbeing queued for portal submission. When `false`, returns\ngroups in pre-submit whose draft has NOT been marked reviewed\nyet (still needs the operator's sign-off). Intended to be\nsurfaced only on the Pre-submit (Action Required) tab; the\nAPI stays permissive so deep links \/ scripts still work.\n",
     ),
+  outlook: zod
+    .enum(["ready_to_review", "reattest_only", "nothing_to_do"])
+    .optional()
+    .describe(
+      "Server-side equivalent of `deriveInvoiceDisputeOutlook`. Restricts\nthe result set to groups matching the named outlook bucket:\n  \* `ready_to_review` — has_disputable outlook AND every disputed\n    leg is in a resolved sub-status (ready\/dropped\/excluded).\n    These groups are one operator action away from generating a\n    submission preview.\n  \* `reattest_only` — zero disputable legs but at least one\n    survivor leg (non-issue or approved) that still needs portal\n    re-attestation. The group can be bulk-queued for re-attest\n    without filing a portal dispute.\n  \* `nothing_to_do` — zero disputable legs AND zero survivors.\n    Every leg is cannot_dispute, denied, or excluded. The group\n    can be bulk-closed as Withdrawn.\n",
+    ),
   missingServiceDateReason: zod
     .enum([
       "no_claims",
@@ -5498,6 +5504,96 @@ export const BulkSubmitInvoiceGroupsToPortalResponse = zod.object({
         id: zod.number(),
         refNumber: zod.string().nullish(),
         submissionId: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  success: zod.boolean().optional(),
+});
+
+/**
+ * Bulk equivalent of the Early Re-attest path on
+`POST /invoice-groups/:id/reattest/queue`. Each group in `groupIds`
+is checked for `outlook=reattest_only` (no disputable legs, at least
+one survivor needing re-attestation). Accepted groups have their
+survivor legs queued for attestation and the group transitioned to
+MAS Eligible / awaiting_reattestation.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `tour_sample` — tour sample row
+  * `terminal_phase` — group is closed or on-hold
+  * `has_disputable_legs` — group still has disputable legs
+  * `no_survivors` — no survivor legs to queue
+  * `no_eligible_legs` — survivors exist but already queued/completed
+  * `transaction_error` — write failed
+
+ * @summary Bulk queue reattest_only groups for re-attestation
+ */
+export const BulkReattestInvoiceGroupsBody = zod.object({
+  groupIds: zod.array(zod.number()),
+});
+
+export const BulkReattestInvoiceGroupsResponse = zod.object({
+  queued: zod.number(),
+  queuedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        queuedLegCount: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    )
+    .optional(),
+  success: zod.boolean().optional(),
+});
+
+/**
+ * Bulk close groups whose outlook is `nothing_to_do` (every leg is
+cannot_dispute, denied, or excluded — no disputable legs and no
+survivors). Each accepted group is transitioned to Resolved /
+Withdrawn with closureReason=cannot_dispute via
+`transitionGroupStatusAndOutcome`.
+
+Per-row gates (groups failing any are surfaced in `skipped`):
+  * `not_found` — id no longer exists
+  * `tour_sample` — tour sample row
+  * `already_closed` — group is already closed
+  * `no_legs` — group has no claims
+  * `has_disputable_legs` — group still has disputable legs
+  * `has_survivors` — group has survivors (use bulk-reattest instead)
+  * `transition_error: <msg>` — status transition failed
+
+ * @summary Bulk close nothing_to_do groups as Withdrawn
+ */
+export const BulkCloseInvoiceGroupsBody = zod.object({
+  groupIds: zod.array(zod.number()),
+});
+
+export const BulkCloseInvoiceGroupsResponse = zod.object({
+  closed: zod.number(),
+  closedItems: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
       }),
     )
     .optional(),

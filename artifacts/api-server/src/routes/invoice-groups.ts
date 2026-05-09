@@ -328,6 +328,60 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     );
   }
 
+  // Outlook filter — server-side equivalent of deriveInvoiceDisputeOutlook
+  // (whats-next-derivation.ts). Three mutually-exclusive buckets that let
+  // the UI surface stranded groups the operator can bulk-action:
+  //   ready_to_review  — has_disputable outlook + every disputed leg resolved
+  //   reattest_only    — no disputable legs, has survivor needing re-attest
+  //   nothing_to_do    — no disputable legs, no survivors → ready to close
+  const outlookRaw = typeof query.outlook === "string" ? query.outlook : "";
+  if (outlookRaw === "ready_to_review" || outlookRaw === "reattest_only" || outlookRaw === "nothing_to_do") {
+    const disputablePredicate = sql`(
+      c.included_in_dispute = true
+      AND c.duplicate_of_claim_id IS NULL
+      AND NOT (c.disposition IN ('disposed_withdraw','final_withdrawn') OR c.sop_outcome = 'cannot_dispute')
+      AND NOT (c.disposition IN ('disposed_nonissue','final_nonissue') OR c.sop_outcome = 'non_issue')
+      AND (c.outcome IS DISTINCT FROM 'Denied')
+    )`;
+    const hasDisputable = sql`EXISTS (
+      SELECT 1 FROM claims c
+      WHERE c.invoice_group_id = ${invoiceGroupsTable.id} AND ${disputablePredicate}
+    )`;
+    const noDisputable = sql`NOT EXISTS (
+      SELECT 1 FROM claims c
+      WHERE c.invoice_group_id = ${invoiceGroupsTable.id} AND ${disputablePredicate}
+    )`;
+    const hasSurvivor = sql`EXISTS (
+      SELECT 1 FROM claims c
+      WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+        AND (c.sop_outcome = 'non_issue'
+             OR c.disposition IN ('disposed_nonissue','final_nonissue')
+             OR c.outcome IN ('Approved','Partially Approved'))
+    )`;
+
+    if (outlookRaw === "ready_to_review") {
+      conditions.push(hasDisputable);
+      conditions.push(sql`NOT EXISTS (
+        SELECT 1 FROM claims c
+        WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+          AND c.included_in_dispute = true
+          AND c.duplicate_of_claim_id IS NULL
+          AND (c.error_type_id IS NULL
+            OR c.hold_reason IS NOT NULL
+            OR c.sop_outcome = 'hold'
+            OR c.sop_outcome IS NULL
+            OR c.sop_outcome NOT IN ('portal_dispute','dispute','non_issue','cannot_dispute'))
+      )`);
+    } else if (outlookRaw === "reattest_only") {
+      conditions.push(noDisputable);
+      conditions.push(hasSurvivor);
+    } else {
+      conditions.push(noDisputable);
+      conditions.push(sql`NOT (${hasSurvivor})`);
+      conditions.push(sql`EXISTS (SELECT 1 FROM claims c WHERE c.invoice_group_id = ${invoiceGroupsTable.id})`);
+    }
+  }
+
   // Missing-service-date facet (Task #353). The sub-reason filter
   // implies the boolean filter, so passing only `missingServiceDateReason`
   // is enough — this matches the contract documented on the openapi
@@ -4389,6 +4443,331 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
   await refreshGroupDerivedFields(id);
 
   res.json({ group: updatedGroup, queuedLegIds: eligibleLegs.map((l) => l.id) });
+}));
+
+// POST /invoice-groups/bulk-reattest — bulk queue stranded reattest_only
+// groups for re-attestation. Mirrors the Early Re-attest path of
+// POST /invoice-groups/:id/reattest/queue but loops over multiple groups,
+// collecting per-row results in a queued/skipped breakdown so the UI can
+// surface "Queued 12, skipped 3 (#INV-… reason)".
+router.post("/invoice-groups/bulk-reattest", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    res.status(400).json({ error: "groupIds array is required" });
+    return;
+  }
+
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Skipped = { id: number; refNumber: string | null; reason: string };
+  type Queued = { id: number; refNumber: string | null; queuedLegCount: number };
+  const skipped: Skipped[] = [];
+  const queuedItems: Queued[] = [];
+
+  const actor = actorFromReq(req);
+  const actorIdentity = actor.userEmail || actor.userName || "unknown";
+
+  for (const gid of requestedIds) {
+    const [group] = await db.select().from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, gid));
+    if (!group) {
+      skipped.push({ id: gid, refNumber: null, reason: "not_found" });
+      continue;
+    }
+    if (group.isTourSample) {
+      skipped.push({ id: gid, refNumber: group.invoiceNumber, reason: "tour_sample" });
+      continue;
+    }
+
+    const refNumber = group.invoiceNumber;
+    const sourcePhase = getGroupMacroPhase(group);
+    if (sourcePhase === "closed" || sourcePhase === "on-hold") {
+      skipped.push({ id: gid, refNumber, reason: "terminal_phase" });
+      continue;
+    }
+
+    const outlookLegs = await db
+      .select({
+        id: claimsTable.id,
+        includedInDispute: claimsTable.includedInDispute,
+        duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+        sopOutcome: claimsTable.sopOutcome,
+        disposition: claimsTable.disposition,
+        outcome: claimsTable.outcome,
+        attestationState: claimsTable.attestationState,
+      })
+      .from(claimsTable)
+      .where(eq(claimsTable.invoiceGroupId, gid));
+
+    let hasDisputable = false;
+    let hasSurvivor = false;
+    for (const leg of outlookLegs) {
+      const isDuplicate = leg.duplicateOfClaimId != null;
+      const isNonIssue = leg.disposition === "disposed_nonissue"
+        || leg.disposition === "final_nonissue"
+        || leg.sopOutcome === "non_issue";
+      const isCannotDispute = leg.disposition === "disposed_withdraw"
+        || leg.disposition === "final_withdrawn"
+        || leg.sopOutcome === "cannot_dispute";
+      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
+      const isDenied = leg.outcome === "Denied";
+      if (isNonIssue || isApproved) hasSurvivor = true;
+      if (leg.includedInDispute === true && !isDuplicate && !isCannotDispute && !isNonIssue && !isDenied) {
+        hasDisputable = true;
+      }
+    }
+    if (hasDisputable || !hasSurvivor) {
+      skipped.push({ id: gid, refNumber, reason: hasDisputable ? "has_disputable_legs" : "no_survivors" });
+      continue;
+    }
+
+    const eligibleLegs: typeof outlookLegs = [];
+    for (const leg of outlookLegs) {
+      if (leg.attestationState === "completed" || leg.attestationState === "queued") continue;
+      if (leg.duplicateOfClaimId != null) continue;
+      const isNonIssue = leg.disposition === "disposed_nonissue"
+        || leg.disposition === "final_nonissue"
+        || leg.sopOutcome === "non_issue";
+      if (isNonIssue) { eligibleLegs.push(leg); continue; }
+      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
+      if (!isApproved) continue;
+      const [latestVerdict] = await db
+        .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
+        .from(claimVerdictTable)
+        .where(eq(claimVerdictTable.claimId, leg.id))
+        .orderBy(desc(claimVerdictTable.createdAt))
+        .limit(1);
+      if (
+        latestVerdict
+        && latestVerdict.source === "operator_confirmed"
+        && (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
+      ) {
+        eligibleLegs.push(leg);
+      }
+    }
+
+    if (eligibleLegs.length === 0) {
+      skipped.push({ id: gid, refNumber, reason: "no_eligible_legs" });
+      continue;
+    }
+
+    const now = new Date();
+    try {
+      await db.transaction(async (tx) => {
+        for (const leg of eligibleLegs) {
+          await tx.update(claimsTable)
+            .set({
+              attestationState: "queued",
+              attestationQueuedAt: now,
+              attestationQueuedBy: actorIdentity,
+            })
+            .where(eq(claimsTable.id, leg.id));
+
+          await tx.insert(auditLogsTable).values({
+            claimId: leg.id,
+            action: "attestation_queued",
+            details: `Queued for re-attestation by ${actorIdentity} (bulk-reattest via group #${gid})`,
+            metadata: {
+              from: leg.attestationState,
+              to: "queued",
+              bulk: true,
+              source: "bulk_reattest",
+              invoiceGroupId: gid,
+            },
+            userEmail: actor.userEmail,
+            userName: actor.userName,
+          });
+
+          await emitStateEvent({
+            eventKey: "leg.attestation_queued",
+            claimId: leg.id,
+            invoiceGroupId: gid,
+            actorUserId: actor.userEmail,
+            metadata: {
+              from: leg.attestationState,
+              to: "queued",
+              bulk: true,
+              source: "bulk_reattest",
+            },
+          }, tx);
+        }
+
+        await tx.update(invoiceGroupsTable)
+          .set({
+            phase: "awaiting_reattestation",
+            status: "MAS Eligible",
+            reattestRequired: true,
+          })
+          .where(eq(invoiceGroupsTable.id, gid));
+
+        const queuedLegIds = eligibleLegs.map((l) => l.id);
+        await tx.insert(auditLogsTable).values({
+          invoiceGroupId: gid,
+          action: "group_reattest_queued_bulk",
+          details: `${actorIdentity} queued ${queuedLegIds.length} leg${queuedLegIds.length === 1 ? "" : "s"} for re-attestation (bulk-reattest, early re-attest path).`,
+          metadata: {
+            queuedLegIds,
+            legCount: queuedLegIds.length,
+            sourcePhase,
+            source: "bulk_reattest",
+          },
+          userEmail: actor.userEmail,
+          userName: actor.userName,
+        });
+
+        await emitStateEvent({
+          eventKey: "group.reattest_queued_bulk",
+          invoiceGroupId: gid,
+          actorUserId: actor.userEmail,
+          metadata: {
+            queuedLegIds,
+            legCount: queuedLegIds.length,
+            sourcePhase,
+            source: "bulk_reattest",
+          },
+        }, tx);
+      });
+    } catch (err) {
+      skipped.push({ id: gid, refNumber, reason: "transaction_error" });
+      continue;
+    }
+
+    for (const leg of eligibleLegs) {
+      broadcastClaimEvent({
+        type: "attestation_updated",
+        claimId: leg.id,
+        userName: req.user?.displayName ?? null,
+        userEmail: req.user?.email ?? null,
+        timestamp: now.toISOString(),
+      });
+    }
+    emitGroupEvent(gid, "group_reattest_queued_bulk", req);
+    await refreshGroupDerivedFields(gid);
+
+    queuedItems.push({ id: gid, refNumber, queuedLegCount: eligibleLegs.length });
+  }
+
+  res.json({
+    success: true,
+    queued: queuedItems.length,
+    queuedItems,
+    skipped,
+  });
+}));
+
+// POST /invoice-groups/bulk-close — bulk close stranded nothing_to_do
+// groups as Withdrawn (cannot_dispute). Mirrors the PATCH /:id/outcome
+// Withdrawn path via transitionGroupStatusAndOutcome, collecting
+// per-row results in a closed/skipped breakdown.
+router.post("/invoice-groups/bulk-close", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    res.status(400).json({ error: "groupIds array is required" });
+    return;
+  }
+
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Skipped = { id: number; refNumber: string | null; reason: string };
+  type Closed = { id: number; refNumber: string | null };
+  const skipped: Skipped[] = [];
+  const closedItems: Closed[] = [];
+
+  const actor = actorFromReq(req);
+
+  for (const gid of requestedIds) {
+    const [group] = await db.select().from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, gid));
+    if (!group) {
+      skipped.push({ id: gid, refNumber: null, reason: "not_found" });
+      continue;
+    }
+    if (group.isTourSample) {
+      skipped.push({ id: gid, refNumber: group.invoiceNumber, reason: "tour_sample" });
+      continue;
+    }
+
+    const refNumber = group.invoiceNumber;
+    const sourcePhase = getGroupMacroPhase(group);
+    if (sourcePhase === "closed") {
+      skipped.push({ id: gid, refNumber, reason: "already_closed" });
+      continue;
+    }
+
+    const legs = await db
+      .select({
+        includedInDispute: claimsTable.includedInDispute,
+        duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+        sopOutcome: claimsTable.sopOutcome,
+        disposition: claimsTable.disposition,
+        outcome: claimsTable.outcome,
+      })
+      .from(claimsTable)
+      .where(eq(claimsTable.invoiceGroupId, gid));
+
+    if (legs.length === 0) {
+      skipped.push({ id: gid, refNumber, reason: "no_legs" });
+      continue;
+    }
+
+    let hasDisputable = false;
+    let hasSurvivor = false;
+    for (const leg of legs) {
+      const isDuplicate = leg.duplicateOfClaimId != null;
+      const isNonIssue = leg.disposition === "disposed_nonissue"
+        || leg.disposition === "final_nonissue"
+        || leg.sopOutcome === "non_issue";
+      const isCannotDispute = leg.disposition === "disposed_withdraw"
+        || leg.disposition === "final_withdrawn"
+        || leg.sopOutcome === "cannot_dispute";
+      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
+      const isDenied = leg.outcome === "Denied";
+      if (isNonIssue || isApproved) hasSurvivor = true;
+      if (leg.includedInDispute === true && !isDuplicate && !isCannotDispute && !isNonIssue && !isDenied) {
+        hasDisputable = true;
+      }
+    }
+    if (hasDisputable) {
+      skipped.push({ id: gid, refNumber, reason: "has_disputable_legs" });
+      continue;
+    }
+    if (hasSurvivor) {
+      skipped.push({ id: gid, refNumber, reason: "has_survivors" });
+      continue;
+    }
+
+    try {
+      await transitionGroupStatusAndOutcome({
+        groupId: gid,
+        newStatus: "Resolved" as any,
+        newOutcome: "Withdrawn",
+        source: "bulk_close_nothing_to_do",
+        reason: "All legs cannot_dispute — bulk-closed as Withdrawn",
+        actor,
+        closureReason: "cannot_dispute" as any,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "unknown";
+      skipped.push({ id: gid, refNumber, reason: `transition_error: ${msg}` });
+      continue;
+    }
+
+    emitGroupEvent(gid, "group_closed", req);
+    await refreshGroupDerivedFields(gid);
+
+    closedItems.push({ id: gid, refNumber });
+  }
+
+  res.json({
+    success: true,
+    closed: closedItems.length,
+    closedItems,
+    skipped,
+  });
 }));
 
 export default router;

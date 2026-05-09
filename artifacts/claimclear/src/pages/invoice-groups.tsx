@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, useBulkReattestInvoiceGroups, useBulkCloseInvoiceGroups, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
 import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useRole } from "@/lib/role";
 import { Link, useLocation } from "wouter";
-import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock } from "lucide-react";
+import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock, RefreshCw, XCircle } from "lucide-react";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -171,6 +171,14 @@ export default function InvoiceGroupsList() {
   // "Missing service date" facet (Task #353). The boolean lights the
   // facet up; the optional reason narrows to a specific empty-state
   // branch (no_claims, no_dated_claims, parse_failed, all_dated_legs_excluded).
+  const filterOutlookRaw = get("outlook");
+  const OUTLOOK_VALUES = ["ready_to_review", "reattest_only", "nothing_to_do"] as const;
+  type OutlookValue = typeof OUTLOOK_VALUES[number];
+  const filterOutlook: OutlookValue | "" =
+    (OUTLOOK_VALUES as readonly string[]).includes(filterOutlookRaw)
+      ? (filterOutlookRaw as OutlookValue)
+      : "";
+
   const filterMissingServiceDate = get("missingServiceDate") === "true";
   const filterMissingReasonRaw = get("missingServiceDateReason");
   const MISSING_REASONS = ["no_claims", "no_dated_claims", "parse_failed", "all_dated_legs_excluded"] as const;
@@ -277,6 +285,7 @@ export default function InvoiceGroupsList() {
       : effectiveDraftReviewed === "unreviewed"
         ? false
         : undefined) as ListInvoiceGroupsParams["draftReviewed"],
+    outlook: (isPreSubmitTab && filterOutlook ? filterOutlook : undefined) as ListInvoiceGroupsParams["outlook"],
     sort: (sortCol || undefined) as typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort] | undefined,
     dir: (sortDir || undefined) as typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir] | undefined,
     importBatch: filterImportBatch || undefined,
@@ -295,6 +304,8 @@ export default function InvoiceGroupsList() {
   // submission. Toast (`bulkPortalMsg`) mirrors the bulk-assign success
   // banner so the operator sees the queued / skipped breakdown.
   const bulkSubmitToPortal = useBulkSubmitInvoiceGroupsToPortal();
+  const bulkReattest = useBulkReattestInvoiceGroups();
+  const bulkClose = useBulkCloseInvoiceGroups();
   const [bulkPortalMsg, setBulkPortalMsg] = useState("");
   // Bulk-action shimmer (Task #494): pulse the affected group rows
   // together after a successful bulk assign so the change reads as
@@ -349,14 +360,15 @@ export default function InvoiceGroupsList() {
     // chip in the URL would silently filter to nothing on the wire.
     const nextLegSub = key === "Action Required" ? get("legSubStatus") : null;
     const nextDraftReviewed = key === "Action Required" ? get("draftReviewed") : null;
-    set({ status: statusValue, legSubStatus: nextLegSub, draftReviewed: nextDraftReviewed, page: null }, false);
+    const nextOutlook = key === "Action Required" ? get("outlook") : null;
+    set({ status: statusValue, legSubStatus: nextLegSub, draftReviewed: nextDraftReviewed, outlook: nextOutlook, page: null }, false);
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, outlook: null, page: null }, false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed || !!filterOutlook;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -415,6 +427,18 @@ export default function InvoiceGroupsList() {
       const label = filterExpiring === "urgent" ? "Must file today" : "Expiring soon (≤ 10 days)";
       result.push({ key: "expiring", label, onRemove: () => set({ expiring: null, page: null }, false) });
     }
+    if (filterOutlook) {
+      const outlookLabel: Record<OutlookValue, string> = {
+        ready_to_review: "Outlook: Ready to review",
+        reattest_only: "Outlook: Needs re-attestation",
+        nothing_to_do: "Outlook: Ready to close",
+      };
+      result.push({
+        key: "outlook",
+        label: outlookLabel[filterOutlook],
+        onRemove: () => set({ outlook: null, page: null }, false),
+      });
+    }
     if (filterMissingServiceDate || filterMissingReason) {
       const reasonLabel: Record<MissingReason | "", string> = {
         "": "Missing service date",
@@ -430,7 +454,7 @@ export default function InvoiceGroupsList() {
       });
     }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, set]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, filterOutlook, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -475,11 +499,12 @@ export default function InvoiceGroupsList() {
   const missingServiceDateCount = (filterMissingServiceDate || filterMissingReason) ? 1 : 0;
   const legSubStatusCount = effectiveLegSubStatuses.length;
   const draftReviewedCount = effectiveDraftReviewed ? 1 : 0;
+  const outlookCount = filterOutlook ? 1 : 0;
 
   const totalAppliedFilters =
     statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
     createdDateCount + amountCount + deadlineCount + missingServiceDateCount +
-    legSubStatusCount + draftReviewedCount;
+    legSubStatusCount + draftReviewedCount + outlookCount;
 
   const legSubStatusOptions: FacetOption[] = useMemo(
     () => LEG_SUB_STATUSES.map((s) => ({ id: s, label: legSubStatusLabel(s) })),
@@ -563,6 +588,29 @@ export default function InvoiceGroupsList() {
           }
           testIdPrefix="facet-draftReviewed"
           hint="Pre-submit only — find drafts the operator has signed off on so you can bulk-queue them for portal submission."
+        />
+      ),
+    } satisfies FacetedFilterCategory] : []),
+    ...(isPreSubmitTab ? [{
+      id: "outlook",
+      label: "Outlook",
+      icon: Activity,
+      appliedCount: outlookCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Dispute outlook"
+          exclusive
+          options={[
+            { id: "ready_to_review", label: "Ready to review (has disputable legs, all resolved)" },
+            { id: "reattest_only", label: "Needs re-attestation (no disputable, has survivors)" },
+            { id: "nothing_to_do", label: "Ready to close (no disputable, no survivors)" },
+          ]}
+          selected={filterOutlook ? [filterOutlook] : []}
+          onToggle={(id, next) =>
+            set({ outlook: next ? id : null, page: null }, false)
+          }
+          testIdPrefix="facet-outlook"
+          hint="Pre-submit only — categorise groups by what action they need next."
         />
       ),
     } satisfies FacetedFilterCategory] : []),
@@ -746,10 +794,10 @@ export default function InvoiceGroupsList() {
     clerk,
     statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
     createdDateCount, amountCount, deadlineCount, missingServiceDateCount,
-    legSubStatusCount, draftReviewedCount,
+    legSubStatusCount, draftReviewedCount, outlookCount,
     statusOptions, outcomeOptions, errorTypeOptions, legSubStatusOptions,
     filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
-    filterExpiring,
+    filterExpiring, filterOutlook,
     filterMissingServiceDate, filterMissingReason,
     filterCreatedFrom, filterCreatedTo,
     filterAmountMin, filterAmountMax,
@@ -1282,6 +1330,78 @@ export default function InvoiceGroupsList() {
                   }
                 }}
                 testId="rail-action-bulk-submit-portal"
+              />
+              <ActionRow
+                icon={bulkReattest.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                label={someSelected ? `Re-attest ${selectedIds.size} groups` : "Re-attest selected groups"}
+                disabled={!someSelected || bulkReattest.isPending}
+                disabledReason={!someSelected ? "Select reattest-only groups first." : undefined}
+                onClick={async () => {
+                  if (!someSelected || bulkReattest.isPending) return;
+                  const ids = Array.from(selectedIds);
+                  try {
+                    const res = await bulkReattest.mutateAsync({ data: { groupIds: ids } });
+                    const queued = res.queued ?? 0;
+                    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+                    let msg = `Queued ${queued} for re-attestation`;
+                    if (skipped.length > 0) {
+                      const sample = skipped
+                        .slice(0, 3)
+                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .join(", ");
+                      const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+                      msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                    }
+                    setBulkPortalMsg(msg);
+                    const skippedIdSet = new Set(skipped.map((s: any) => s.id));
+                    rowBreath.triggerForIds(ids.filter((id) => !skippedIdSet.has(id)));
+                    setSelectedIds(new Set());
+                    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                    setTimeout(() => setBulkPortalMsg(""), skipped.length > 0 ? 6000 : 3000);
+                  } catch (err) {
+                    setBulkPortalMsg(
+                      `Couldn't re-attest: ${err instanceof Error ? err.message : "unknown error"}`,
+                    );
+                    setTimeout(() => setBulkPortalMsg(""), 6000);
+                  }
+                }}
+                testId="rail-action-bulk-reattest"
+              />
+              <ActionRow
+                icon={bulkClose.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                label={someSelected ? `Close ${selectedIds.size} groups` : "Close selected groups"}
+                disabled={!someSelected || bulkClose.isPending}
+                disabledReason={!someSelected ? "Select nothing-to-do groups first." : undefined}
+                onClick={async () => {
+                  if (!someSelected || bulkClose.isPending) return;
+                  const ids = Array.from(selectedIds);
+                  try {
+                    const res = await bulkClose.mutateAsync({ data: { groupIds: ids } });
+                    const closed = res.closed ?? 0;
+                    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+                    let msg = `Closed ${closed} groups as Withdrawn`;
+                    if (skipped.length > 0) {
+                      const sample = skipped
+                        .slice(0, 3)
+                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .join(", ");
+                      const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+                      msg += ` · skipped ${skipped.length} (${sample}${more})`;
+                    }
+                    setBulkPortalMsg(msg);
+                    const skippedIdSet = new Set(skipped.map((s: any) => s.id));
+                    rowBreath.triggerForIds(ids.filter((id) => !skippedIdSet.has(id)));
+                    setSelectedIds(new Set());
+                    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+                    setTimeout(() => setBulkPortalMsg(""), skipped.length > 0 ? 6000 : 3000);
+                  } catch (err) {
+                    setBulkPortalMsg(
+                      `Couldn't close: ${err instanceof Error ? err.message : "unknown error"}`,
+                    );
+                    setTimeout(() => setBulkPortalMsg(""), 6000);
+                  }
+                }}
+                testId="rail-action-bulk-close"
               />
               <ActionRow
                 icon={<X className="w-3.5 h-3.5" />}

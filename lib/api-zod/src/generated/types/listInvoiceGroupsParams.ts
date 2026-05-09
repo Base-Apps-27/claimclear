@@ -17,6 +17,7 @@ import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
 import type { ListInvoiceGroupsInboxHiddenBucket } from "./listInvoiceGroupsInboxHiddenBucket";
 import type { ListInvoiceGroupsMacroPhase } from "./listInvoiceGroupsMacroPhase";
 import type { ListInvoiceGroupsMissingServiceDateReason } from "./listInvoiceGroupsMissingServiceDateReason";
+import type { ListInvoiceGroupsOutlook } from "./listInvoiceGroupsOutlook";
 import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
 
 export type ListInvoiceGroupsParams = {
@@ -138,6 +139,23 @@ API stays permissive so deep links / scripts still work.
 
  */
   draftReviewed?: boolean;
+  /**
+ * Server-side equivalent of `deriveInvoiceDisputeOutlook`. Restricts
+the result set to groups matching the named outlook bucket:
+  * `ready_to_review` — has_disputable outlook AND every disputed
+    leg is in a resolved sub-status (ready/dropped/excluded).
+    These groups are one operator action away from generating a
+    submission preview.
+  * `reattest_only` — zero disputable legs but at least one
+    survivor leg (non-issue or approved) that still needs portal
+    re-attestation. The group can be bulk-queued for re-attest
+    without filing a portal dispute.
+  * `nothing_to_do` — zero disputable legs AND zero survivors.
+    Every leg is cannot_dispute, denied, or excluded. The group
+    can be bulk-closed as Withdrawn.
+
+ */
+  outlook?: ListInvoiceGroupsOutlook;
   /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
