@@ -9,6 +9,7 @@ import { getLastWorkerRun, isWorkerRunInProgress } from "../lib/batch-processor"
 import { humanizeAuditRow } from "../lib/activity-humanizer";
 import { getOverdueCount } from "../lib/overdue-submissions";
 import { qualifyingActivityPredicate } from "../lib/qualifying-activity";
+import { getMacroPhase, type MacroPhase } from "../lib/macro-phase";
 
 // Always exclude the global "tour sample" rows from every aggregate
 // query — that pair exists only so the in-app guided tour can navigate
@@ -832,6 +833,169 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
       count: r.count,
       atRiskAmount: moneyOrNull(r.atRisk),
     })),
+  });
+}));
+
+// ─────────────────────────────────────────────────────────────────────
+// /dashboard/time-in-phase  (Task #563)
+//
+// Time-in-phase histogram for the Insights page. Sourced from the
+// `audit_logs` `group_status_changed` history rather than an
+// in-memory snapshot of `phase_entered_at` so the rollup includes
+// finished transitions across the whole window — every status change
+// inside the window contributes one duration sample equal to the time
+// spent in the *previous* status, computed via `LAG()` over the
+// per-group transition stream.
+//
+// Each (group, transition) sample is mapped to a `MacroPhase` via the
+// canonical `getMacroPhase()` table. For each macro phase we return:
+//   • count   — number of completed transitions out of that phase
+//   • medianMs / p90Ms — distribution of durations spent in the phase
+//   • overdueCount — for `mas-action-required` only, how many of those
+//                    sat in the phase longer than the 7-day SLA.
+//
+// The top-p90 macro phase (count >= 3, ignoring `closed` and
+// `on-hold`) is also returned as `bottleneck` so the page can render
+// the "biggest hold-up last 30d" row card without a follow-up call.
+// ─────────────────────────────────────────────────────────────────────
+const MAS_ACTION_OVERDUE_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface TimeInPhaseRow {
+  phase: MacroPhase;
+  count: number;
+  medianMs: number;
+  p90Ms: number;
+  overdueCount?: number;
+}
+
+function quantile(sorted: readonly number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const idx = (sorted.length - 1) * q;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const frac = idx - lo;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
+}
+
+router.get("/dashboard/time-in-phase", asyncHandler(async (req, res): Promise<void> => {
+  const days = parseDays(req.query.days, 30);
+  const start = startOfWindow(days);
+
+  // Compute per-group transition durations via a window LAG over the
+  // *full* per-group history — the prior transition can predate `start`
+  // by an arbitrary amount, and a fixed back-history window would
+  // silently drop those long-tail samples (exactly the ones a "biggest
+  // hold-up" report needs to surface). The CTE filter restricts the
+  // expensive scan to the set of groups that actually moved in the
+  // window AND aren't tour-sample noise — same exclusion every other
+  // aggregate in this file uses (`HIDE_TOUR_SAMPLE_GROUP`).
+  const rows = await db.execute<{
+    invoice_group_id: number;
+    timestamp: Date;
+    prev_ts: Date | null;
+    prev_to: string | null;
+  }>(sql`
+    WITH in_window_groups AS (
+      SELECT DISTINCT al.invoice_group_id
+      FROM audit_logs al
+      JOIN invoice_groups ig ON ig.id = al.invoice_group_id
+      WHERE al.action = 'group_status_changed'
+        AND al.timestamp >= ${start}
+        AND ig.is_tour_sample = false
+        AND al.invoice_group_id IS NOT NULL
+    ),
+    ordered AS (
+      SELECT
+        al.invoice_group_id,
+        al.timestamp,
+        LAG(al.timestamp) OVER w AS prev_ts,
+        LAG(al.metadata ->> 'to') OVER w AS prev_to
+      FROM audit_logs al
+      WHERE al.action = 'group_status_changed'
+        AND al.invoice_group_id IN (SELECT invoice_group_id FROM in_window_groups)
+      WINDOW w AS (PARTITION BY al.invoice_group_id ORDER BY al.timestamp)
+    )
+    SELECT invoice_group_id, timestamp, prev_ts, prev_to
+    FROM ordered
+    WHERE timestamp >= ${start}
+      AND prev_ts IS NOT NULL
+      AND prev_to IS NOT NULL
+    ORDER BY invoice_group_id, timestamp
+  `);
+
+  // Each in-window row carries its own baseline (`prev_ts` / `prev_to`)
+  // computed over the full per-group history — no JS-side LAG needed.
+  // The duration we attribute is the time the group spent in
+  // `prev_to` before this row's transition moved it out.
+  const samplesByPhase = new Map<MacroPhase, number[]>();
+  // drizzle's db.execute returns `{ rows: [...] }` for raw SQL.
+  const rowList: ReadonlyArray<{
+    invoice_group_id: number;
+    timestamp: Date | string;
+    prev_ts: Date | string | null;
+    prev_to: string | null;
+  }> = (rows as unknown as { rows: typeof rowList }).rows ?? (rows as unknown as typeof rowList);
+
+  for (const row of rowList) {
+    const prevTo = row.prev_to;
+    const prevTs = row.prev_ts;
+    if (prevTo == null || prevTs == null) continue;
+    const tsMs = (row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp)).getTime();
+    const prevMs = (prevTs instanceof Date ? prevTs : new Date(prevTs)).getTime();
+    const durMs = tsMs - prevMs;
+    if (!Number.isFinite(durMs) || durMs <= 0) continue;
+    const phase = getMacroPhase(prevTo);
+    let arr = samplesByPhase.get(phase);
+    if (!arr) {
+      arr = [];
+      samplesByPhase.set(phase, arr);
+    }
+    arr.push(durMs);
+  }
+
+  const phases: TimeInPhaseRow[] = [];
+  for (const [phase, samples] of samplesByPhase.entries()) {
+    samples.sort((a, b) => a - b);
+    const row: TimeInPhaseRow = {
+      phase,
+      count: samples.length,
+      medianMs: Math.round(quantile(samples, 0.5)),
+      p90Ms: Math.round(quantile(samples, 0.9)),
+    };
+    if (phase === "mas-action-required") {
+      row.overdueCount = samples.filter(ms => ms > MAS_ACTION_OVERDUE_MS).length;
+    }
+    phases.push(row);
+  }
+
+  // Stable phase ordering matches the lifecycle the operator reads top
+  // to bottom on the Group Detail header.
+  const ORDER: MacroPhase[] = [
+    "pre-submit",
+    "in-flight",
+    "response-pending",
+    "mas-action-required",
+    "awaiting-payout",
+    "on-hold",
+    "closed",
+  ];
+  phases.sort((a, b) => ORDER.indexOf(a.phase) - ORDER.indexOf(b.phase));
+
+  // Bottleneck = top non-terminal phase by p90, requiring >= 3 samples
+  // so a single freak value can't crown a winner. `closed`/`on-hold`
+  // aren't actionable bottlenecks.
+  const bottleneckCandidates = phases.filter(
+    p => p.count >= 3 && p.phase !== "closed" && p.phase !== "on-hold",
+  );
+  bottleneckCandidates.sort((a, b) => b.p90Ms - a.p90Ms);
+  const bottleneck = bottleneckCandidates[0] ?? null;
+
+  res.json({
+    days,
+    phases,
+    bottleneck,
   });
 }));
 

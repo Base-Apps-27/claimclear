@@ -81,6 +81,7 @@ import type {
   DashboardInsights,
   DashboardRepeatOffenders,
   DashboardSummary,
+  DashboardTimeInPhase,
   DashboardTimeseries,
   DashboardUserProductivity,
   EmailBouncesResponse,
@@ -102,6 +103,7 @@ import type {
   GetDashboardActivityParams,
   GetDashboardInsightsParams,
   GetDashboardRepeatOffendersParams,
+  GetDashboardTimeInPhaseParams,
   GetDashboardTimeseriesParams,
   GetDashboardUserProductivityParams,
   GetInvoiceGroupAttestationHistoryParams,
@@ -10750,6 +10752,121 @@ export function useGetDashboardInsights<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDashboardInsightsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Histogram of how long invoice groups spent in each macro phase
+before transitioning out of it, computed over the requested
+window from the `audit_logs` `group_status_changed` stream
+(Task #563). One sample per (group, transition); each is
+attributed to the macro phase the group was leaving.
+
+For `mas-action-required`, `overdueCount` reports how many
+samples breached the 7-day SLA. The top non-terminal phase by
+p90 (with at least three samples, excluding `closed` and
+`on-hold`) is returned as `bottleneck` so the page can render
+the "biggest hold-up" row card without a follow-up call.
+
+ * @summary Time-in-phase distribution (median + p90) per macro phase
+ */
+export const getGetDashboardTimeInPhaseUrl = (
+  params?: GetDashboardTimeInPhaseParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/time-in-phase?${stringifiedParams}`
+    : `/api/dashboard/time-in-phase`;
+};
+
+export const getDashboardTimeInPhase = async (
+  params?: GetDashboardTimeInPhaseParams,
+  options?: RequestInit,
+): Promise<DashboardTimeInPhase> => {
+  return customFetch<DashboardTimeInPhase>(
+    getGetDashboardTimeInPhaseUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDashboardTimeInPhaseQueryKey = (
+  params?: GetDashboardTimeInPhaseParams,
+) => {
+  return [`/api/dashboard/time-in-phase`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDashboardTimeInPhaseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardTimeInPhase>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardTimeInPhaseParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardTimeInPhase>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardTimeInPhaseQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardTimeInPhase>>
+  > = ({ signal }) =>
+    getDashboardTimeInPhase(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardTimeInPhase>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardTimeInPhaseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardTimeInPhase>>
+>;
+export type GetDashboardTimeInPhaseQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Time-in-phase distribution (median + p90) per macro phase
+ */
+
+export function useGetDashboardTimeInPhase<
+  TData = Awaited<ReturnType<typeof getDashboardTimeInPhase>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDashboardTimeInPhaseParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardTimeInPhase>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardTimeInPhaseQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

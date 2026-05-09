@@ -61,6 +61,19 @@ export {
   type LegForSubStatus,
 } from "./per-leg-sub-status";
 
+// Per-invoice outcome rollup (Task #563). Shared between the React
+// Group Detail page, the Insights page, and the api-server dashboard
+// rollups so the displayed group outcome is computed exactly once and
+// can never disagree across surfaces.
+export {
+  deriveGroupOutcomeFromLegs,
+  type DerivedGroupOutcome,
+  type DerivedGroupOutcome_Outcome,
+  type GroupOutcomeBuckets,
+  type LegForGroupOutcome,
+  type VerdictLike,
+} from "./group-outcome";
+
 // Hold-reason vocabulary, mirrored from `@workspace/db`'s `LEG_HOLD_REASONS`.
 // Re-exported here so the React client can pick from the same list without
 // pulling drizzle/pg into the browser bundle.

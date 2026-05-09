@@ -26115,6 +26115,104 @@ export const GetDashboardInsightsResponse = zod
   );
 
 /**
+ * Histogram of how long invoice groups spent in each macro phase
+before transitioning out of it, computed over the requested
+window from the `audit_logs` `group_status_changed` stream
+(Task #563). One sample per (group, transition); each is
+attributed to the macro phase the group was leaving.
+
+For `mas-action-required`, `overdueCount` reports how many
+samples breached the 7-day SLA. The top non-terminal phase by
+p90 (with at least three samples, excluding `closed` and
+`on-hold`) is returned as `bottleneck` so the page can render
+the "biggest hold-up" row card without a follow-up call.
+
+ * @summary Time-in-phase distribution (median + p90) per macro phase
+ */
+export const getDashboardTimeInPhaseQueryDaysDefault = 30;
+export const getDashboardTimeInPhaseQueryDaysMax = 365;
+
+export const GetDashboardTimeInPhaseQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getDashboardTimeInPhaseQueryDaysMax)
+    .default(getDashboardTimeInPhaseQueryDaysDefault),
+});
+
+export const GetDashboardTimeInPhaseResponse = zod
+  .object({
+    days: zod.number(),
+    phases: zod.array(
+      zod.object({
+        phase: zod.enum([
+          "pre-submit",
+          "in-flight",
+          "response-pending",
+          "mas-action-required",
+          "awaiting-payout",
+          "closed",
+          "on-hold",
+        ]),
+        count: zod
+          .number()
+          .describe(
+            "Number of completed transitions out of this phase in the window.",
+          ),
+        medianMs: zod
+          .number()
+          .describe("Median duration spent in this phase, milliseconds."),
+        p90Ms: zod
+          .number()
+          .describe(
+            "90th-percentile duration spent in this phase, milliseconds.",
+          ),
+        overdueCount: zod
+          .number()
+          .optional()
+          .describe(
+            "Number of samples that breached the 7-day SLA. Only set for\n`mas-action-required`; omitted for every other phase.\n",
+          ),
+      }),
+    ),
+    bottleneck: zod
+      .object({
+        phase: zod.enum([
+          "pre-submit",
+          "in-flight",
+          "response-pending",
+          "mas-action-required",
+          "awaiting-payout",
+          "closed",
+          "on-hold",
+        ]),
+        count: zod
+          .number()
+          .describe(
+            "Number of completed transitions out of this phase in the window.",
+          ),
+        medianMs: zod
+          .number()
+          .describe("Median duration spent in this phase, milliseconds."),
+        p90Ms: zod
+          .number()
+          .describe(
+            "90th-percentile duration spent in this phase, milliseconds.",
+          ),
+        overdueCount: zod
+          .number()
+          .optional()
+          .describe(
+            "Number of samples that breached the 7-day SLA. Only set for\n`mas-action-required`; omitted for every other phase.\n",
+          ),
+      })
+      .nullable(),
+  })
+  .describe(
+    "Time-in-phase histogram for the Insights page. Sourced from the\n`audit_logs` `group_status_changed` stream — see Task #563.\n",
+  );
+
+/**
  * @summary Per-user productivity counts over a window
  */
 export const getDashboardUserProductivityQueryDaysDefault = 30;

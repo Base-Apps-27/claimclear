@@ -22,6 +22,7 @@ import {
   useGetDashboardTimeseries,
   useGetDashboardUserProductivity,
   useGetDashboardRepeatOffenders,
+  useGetDashboardTimeInPhase,
   getExportClaimsCsvUrl,
 } from "@workspace/api-client-react";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
@@ -30,17 +31,42 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   CartesianGrid,
   Tooltip,
   XAxis,
   YAxis,
+  Legend,
 } from "recharts";
 import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } from "@/components/cohesion";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
-import { formatChartTick } from "@/lib/time";
+import { formatChartTick, getDisplayTimezoneShort } from "@/lib/time";
 import { useRole, HideForClerk } from "@/lib/role";
+
+// Macro-phase display labels — keep in lockstep with the
+// `MacroPhase` enum in api-server `lib/macro-phase.ts`.
+const PHASE_LABELS: Record<string, string> = {
+  "pre-submit": "Pre-submit",
+  "in-flight": "In flight",
+  "response-pending": "Response pending",
+  "mas-action-required": "MAS action",
+  "awaiting-payout": "Awaiting payout",
+  "closed": "Closed",
+  "on-hold": "On hold",
+};
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0m";
+  const min = ms / 60000;
+  if (min < 60) return `${Math.round(min)}m`;
+  const hr = min / 60;
+  if (hr < 36) return `${hr.toFixed(hr < 10 ? 1 : 0)}h`;
+  const days = hr / 24;
+  return `${days.toFixed(days < 10 ? 1 : 0)}d`;
+}
 
 type RangeKey = "7" | "30" | "90" | "qtd" | "ytd";
 const RANGE_TABS: FilterStripTab<RangeKey>[] = [
@@ -134,6 +160,27 @@ export default function Insights() {
   const { data: timeseries, isLoading: tsLoading } = useGetDashboardTimeseries({ days });
   const { data: productivity, isLoading: prodLoading } = useGetDashboardUserProductivity({ days });
   const { data: repeat, isLoading: repeatLoading } = useGetDashboardRepeatOffenders({ days, limit: 5 });
+  // Task #563 — time-in-phase rollups powering the Bottleneck row,
+  // Time-in-Phase chart, and Time-in-MAS-Action sub-stats.
+  const { data: tip, isLoading: tipLoading } = useGetDashboardTimeInPhase({ days });
+
+  const phaseChartData = useMemo(() => {
+    return (tip?.phases ?? [])
+      .filter(p => p.phase !== "closed" && p.count > 0)
+      .map(p => ({
+        phase: PHASE_LABELS[p.phase] ?? p.phase,
+        rawPhase: p.phase,
+        median: Math.round(p.medianMs / 3600000 * 10) / 10,
+        p90: Math.round(p.p90Ms / 3600000 * 10) / 10,
+        count: p.count,
+      }));
+  }, [tip?.phases]);
+
+  const masPhase = useMemo(() => {
+    return (tip?.phases ?? []).find(p => p.phase === "mas-action-required") ?? null;
+  }, [tip?.phases]);
+  const bottleneck = tip?.bottleneck ?? null;
+  const tzShort = getDisplayTimezoneShort();
 
   const totalClaims = insights?.totalClaims ?? 0;
   const totalClaimed = parseFloat(insights?.totalClaimedAmount ?? "0") || 0;
@@ -257,7 +304,7 @@ export default function Insights() {
   if (summaryLoading) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Insights" sub="Loading…" accent="green" actions={headerActions} />
+        <PageHeader title="Insights" sub={`Loading… · times in ${tzShort}`} accent="green" actions={headerActions} />
         <SkeletonSwap
           loading
           skeleton={
@@ -290,10 +337,39 @@ export default function Insights() {
     <div className="space-y-5 pb-8">
       <PageHeader
         title="Insights"
-        sub="Recovery analytics and pattern detection"
+        sub={`Recovery analytics and pattern detection · times shown in ${tzShort}`}
         accent="green"
         actions={headerActions}
       />
+
+      {/* Task #563 — Bottleneck row card. Top non-terminal macro phase
+          by p90 over the selected window, with a click-through to the
+          queue filtered to that phase. Hidden when there isn't enough
+          signal (need >= 3 samples on a non-terminal phase). */}
+      {bottleneck && (
+        <Link
+          href={`/invoice-groups?phase=${encodeURIComponent(bottleneck.phase)}`}
+          className="block"
+          data-testid="insights-bottleneck-row"
+        >
+          <div
+            className="rounded-md border bg-card p-3.5 flex items-center gap-3 text-sm hover:bg-muted/40 transition-colors"
+            style={{ borderColor: "hsl(var(--cc-amber-border))" }}
+          >
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: "hsl(var(--cc-warning))" }} />
+            <span>
+              <strong>Biggest hold-up:</strong>{" "}
+              <span className="font-medium">{PHASE_LABELS[bottleneck.phase] ?? bottleneck.phase}</span>{" "}
+              <span className="text-muted-foreground">
+                · p90 <strong className="text-foreground">{formatDuration(bottleneck.p90Ms)}</strong>{" "}
+                · median {formatDuration(bottleneck.medianMs)}{" "}
+                · {bottleneck.count} transition{bottleneck.count === 1 ? "" : "s"} in last {days}d
+              </span>
+            </span>
+            <ArrowUpRight className="w-4 h-4 ml-auto text-muted-foreground" />
+          </div>
+        </Link>
+      )}
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <FilterStrip
@@ -372,6 +448,87 @@ export default function Insights() {
             </SkeletonSwap>
           </div>
         </div>
+      </Section>
+
+      {/* Task #563 — Time in Phase chart + MAS-Action sub-stats. Sourced
+          from the audit_logs `group_status_changed` stream rolled up
+          server-side; one sample per (group, transition). */}
+      <Section
+        title={`Time in phase · last ${days}d`}
+        icon={<Activity className="w-4 h-4" />}
+      >
+        <SkeletonSwap loading={tipLoading} skeleton={<Skeleton className="h-40 w-full" />}>
+          {phaseChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No phase transitions in this window.</p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+              <div className="lg:col-span-2 h-44" data-testid="time-in-phase-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={phaseChartData}
+                    margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="phase" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis
+                      tick={{ fontSize: 10 }}
+                      stroke="hsl(var(--muted-foreground))"
+                      width={36}
+                      tickFormatter={(v: number) => `${v}h`}
+                    />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(v: number, name: string) => [`${v}h`, name === "median" ? "Median" : "p90"]}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="median" name="Median" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="p90" name="p90" fill="hsl(var(--cc-warning))" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div
+                className="rounded-md border border-border bg-card p-3.5"
+                data-testid="time-in-mas-action"
+              >
+                <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                  Time in MAS action
+                  <InfoTooltip content="How long invoices wait in the MAS-action-required phase before the operator clears the cancel queue. Overdue threshold is 7 days." />
+                </div>
+                {masPhase ? (
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Median</span>
+                      <span className="font-mono tabular-nums">{formatDuration(masPhase.medianMs)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">p90</span>
+                      <span className="font-mono tabular-nums">{formatDuration(masPhase.p90Ms)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Transitions</span>
+                      <span className="font-mono tabular-nums">{masPhase.count}</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-border mt-1">
+                      <span className="text-muted-foreground">Overdue (&gt;7d)</span>
+                      <span
+                        className="font-mono tabular-nums"
+                        style={{
+                          color: (masPhase.overdueCount ?? 0) > 0
+                            ? "hsl(var(--destructive))"
+                            : "hsl(var(--muted-foreground))",
+                        }}
+                      >
+                        {masPhase.overdueCount ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No MAS-action transitions in this window.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </SkeletonSwap>
       </Section>
 
       {/* Repeat offenders amber-bordered block */}

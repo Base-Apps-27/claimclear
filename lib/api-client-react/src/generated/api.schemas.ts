@@ -3536,6 +3536,44 @@ Mirrors the dashboard "Reclaimed" KPI definition exactly.
   payorBreakdown: DashboardInsightsPayorBreakdownItem[];
 }
 
+export type TimeInPhaseBucketPhase =
+  (typeof TimeInPhaseBucketPhase)[keyof typeof TimeInPhaseBucketPhase];
+
+export const TimeInPhaseBucketPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
+} as const;
+
+export interface TimeInPhaseBucket {
+  phase: TimeInPhaseBucketPhase;
+  /** Number of completed transitions out of this phase in the window. */
+  count: number;
+  /** Median duration spent in this phase, milliseconds. */
+  medianMs: number;
+  /** 90th-percentile duration spent in this phase, milliseconds. */
+  p90Ms: number;
+  /** Number of samples that breached the 7-day SLA. Only set for
+`mas-action-required`; omitted for every other phase.
+ */
+  overdueCount?: number;
+}
+
+/**
+ * Time-in-phase histogram for the Insights page. Sourced from the
+`audit_logs` `group_status_changed` stream — see Task #563.
+
+ */
+export interface DashboardTimeInPhase {
+  days: number;
+  phases: TimeInPhaseBucket[];
+  bottleneck: TimeInPhaseBucket | null;
+}
+
 export type DashboardUserProductivityUsersItem = {
   userEmail: string;
   userName: string;
@@ -5080,6 +5118,14 @@ export type GetDashboardTimeseriesParams = {
 };
 
 export type GetDashboardInsightsParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+};
+
+export type GetDashboardTimeInPhaseParams = {
   /**
    * @minimum 1
    * @maximum 365
