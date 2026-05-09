@@ -52,6 +52,7 @@ import {
   Send,
   Sparkles,
   StickyNote,
+  Tag,
   Trash2,
   X,
   XCircle,
@@ -490,12 +491,19 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
       {/* Chip-panel content as a right-edge floating drawer overlay.
           Rendered LAST so it paints above everything else; uses fixed
-          positioning so it never disturbs the workspace flow. */}
+          positioning so it never disturbs the workspace flow.
+          Includes the V3 invoice + leg context cards so the operator
+          gets the full leg dossier, not just the chip body. */}
       {chipOpen && activeLeg && (
         <ChipDrawerOverlay
           openChip={chipOpen}
           leg={activeLeg}
+          detail={detail}
+          rides={rides}
+          resolvedIndex={resolvedIndex}
           groupId={groupId}
+          onSelectLeg={setActiveLegId}
+          onOpenClassify={() => setClassifyOpen(true)}
           onClose={() => setChipOpen(null)}
         />
       )}
@@ -1039,16 +1047,43 @@ const CHIP_LABEL: Record<ChipKey, string> = {
 function ChipDrawerOverlay({
   openChip,
   leg,
+  detail,
+  rides,
+  resolvedIndex,
   groupId,
+  onSelectLeg,
+  onOpenClassify,
   onClose,
 }: {
   openChip: ChipKey;
   leg: ClaimResponse;
+  detail: DetailGroup;
+  rides: ClaimResponse[];
+  resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
   groupId: number;
+  onSelectLeg: (id: number) => void;
+  onOpenClassify: () => void;
   onClose: () => void;
 }) {
-  const evidenceFiles = leg.evidenceFiles ?? [];
+  // Evidence lives on BOTH the group payload (`detail.evidenceFiles`)
+  // and the per-leg payload (`leg.evidenceFiles`) — same merge pattern
+  // claim-detail-v2 uses. Reading only the leg field (the bug in the
+  // first overlay cut) showed "No evidence files" for groups whose
+  // evidence was uploaded at the invoice level.
+  const evidenceUrls = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const f of [...(detail.evidenceFiles ?? []), ...(leg.evidenceFiles ?? [])]) {
+      const url = f?.url;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      out.push(url);
+    }
+    return out;
+  }, [detail.evidenceFiles, leg.evidenceFiles]);
   const inlineNote = (leg.evidenceNotes ?? "").trim();
+  const fullHref = `/invoice-groups/${detail.id}?leg=${leg.id}`;
+  const activeLegIndex = rides.findIndex((r) => r.id === leg.id);
 
   // Esc-to-close. Backdrop click is wired below.
   useEffect(() => {
@@ -1074,41 +1109,144 @@ function ChipDrawerOverlay({
         role="dialog"
         aria-label={`${CHIP_LABEL[openChip]} — quick view`}
         data-testid={`chip-drawer-${openChip}`}
-        className="fixed right-3 top-1/2 z-50 -translate-y-1/2 w-[360px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col rounded-xl border bg-card shadow-2xl"
+        className="cc-scope cc-mini fixed right-3 top-1/2 z-50 -translate-y-1/2 w-[360px] max-w-[calc(100vw-1.5rem)] max-h-[85vh] flex flex-col gap-2 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between gap-2 border-b px-3 py-2 shrink-0">
-          <span className="text-sm font-semibold">{CHIP_LABEL[openChip]}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onClose}
-            aria-label="Close drawer"
-            title="Close"
-            data-testid="chip-drawer-close"
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        </header>
-        <div className="cc-scope cc-mini overflow-auto p-3 flex-1 min-h-0">
-          {/* Same panel components the chip strip used to render
-              inline — moved unchanged so behavior (notes thread,
-              evidence list, comms log, activity link) is identical. */}
-          {openChip === "evidence" && (
-            <EvidenceFileList
-              urls={evidenceFiles
-                .map((f) => f.url)
-                .filter((u): u is string => !!u)}
+        {/* ── Card 1 — invoice context (smallest, top) ─────────────── */}
+        <div className="rounded-xl border bg-card shadow-2xl p-2.5 flex flex-col gap-1.5 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link href={fullHref}>
+              <a
+                aria-label="Open invoice group in full view"
+                title="Open invoice group in full view"
+                className="inline-flex items-center justify-center w-6 h-6 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+                data-testid="chip-drawer-open-invoice"
+              >
+                <ArrowUpRight className="w-3 h-3" />
+              </a>
+            </Link>
+            <RefNumber
+              value={detail.invoiceNumber}
+              variant="inline"
+              className="text-xs font-semibold flex-1 min-w-0 truncate"
             />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={onClose}
+              aria-label="Close drawer"
+              title="Close"
+              data-testid="chip-drawer-close"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+            <HideForClerk>
+              <span className="font-semibold text-foreground text-xs">
+                {formatCurrency(detail.totalAmount)}
+              </span>
+              <span>·</span>
+            </HideForClerk>
+            <span>
+              {detail.rideCount} ride{detail.rideCount === 1 ? "" : "s"}
+            </span>
+          </div>
+          {rides.length > 0 && (
+            <div
+              className="cc-segmented w-full"
+              role="tablist"
+              aria-label="Legs"
+              data-testid="chip-drawer-leg-tabs"
+            >
+              {rides.map((r, i) => {
+                const isActive = r.id === leg.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={isActive ? "is-active" : ""}
+                    onClick={() => onSelectLeg(r.id)}
+                    data-testid={`chip-drawer-leg-tab-${r.id}`}
+                  >
+                    Leg {i + 1} {legStateIcon(r, resolvedIndex)}
+                  </button>
+                );
+              })}
+            </div>
           )}
-          {openChip === "notes" && (
-            <NotesPanel leg={leg} inlineNote={inlineNote} />
-          )}
-          {openChip === "comms" && <CommsPanel groupId={groupId} />}
-          {openChip === "activity" && (
-            <ActivityPanel groupId={groupId} legId={leg.id} />
-          )}
+        </div>
+
+        {/* ── Card 2 — leg context (CLM, classification, actions) ─── */}
+        <div className="rounded-xl border bg-card shadow-2xl p-2.5 flex flex-col gap-1.5 shrink-0">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="font-mono text-sm font-bold tracking-tight flex-1 min-w-0 truncate">
+              {leg.confNumber ?? `Leg ${activeLegIndex + 1}`}
+            </span>
+            {rides.length > 0 && (
+              <span className="text-[11px] text-muted-foreground shrink-0">
+                Leg {activeLegIndex + 1} of {rides.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+            {leg.errorTypeName ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5">
+                <Tag className="w-3 h-3" />
+                {leg.errorTypeName}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground border px-2 py-0.5">
+                <HelpCircle className="w-3 h-3" />
+                Unclassified
+              </span>
+            )}
+            {leg.includedInDispute === false && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground border px-2 py-0.5">
+                <XCircle className="w-3 h-3" /> Excluded
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() => {
+                onOpenClassify();
+                onClose();
+              }}
+              data-testid="chip-drawer-reclassify"
+            >
+              <Tag className="w-3 h-3 mr-1" />
+              {leg.errorTypeName ? "Reclassify" : "Classify"}
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Card 3 — section (chip-driven body) ──────────────────── */}
+        <div className="rounded-xl border bg-card shadow-2xl flex flex-col flex-1 min-h-0 overflow-hidden">
+          <header className="flex items-center justify-between gap-2 border-b px-3 py-1.5 shrink-0">
+            <span className="text-xs font-semibold">{CHIP_LABEL[openChip]}</span>
+            {openChip === "evidence" && evidenceUrls.length > 0 && (
+              <span className="text-[11px] text-muted-foreground">
+                {evidenceUrls.length} file{evidenceUrls.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </header>
+          <div className="overflow-auto p-3 flex-1 min-h-0">
+            {openChip === "evidence" && <EvidenceFileList urls={evidenceUrls} />}
+            {openChip === "notes" && (
+              <NotesPanel leg={leg} inlineNote={inlineNote} />
+            )}
+            {openChip === "comms" && <CommsPanel groupId={groupId} />}
+            {openChip === "activity" && (
+              <ActivityPanel groupId={groupId} legId={leg.id} />
+            )}
+          </div>
         </div>
       </aside>
     </>
