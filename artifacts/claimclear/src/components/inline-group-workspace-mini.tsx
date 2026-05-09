@@ -40,7 +40,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
-  ChevronRight,
+  ArrowUpRight,
   Circle,
   FileText,
   HelpCircle,
@@ -552,15 +552,20 @@ function GroupSummaryHeader({
           testIdPrefix="mini-service-date"
         />
       </span>
+      {/* Single drilldown to /invoice-groups/:id — compact ↗ icon-only
+          affordance, matches the V3 edge-drawer invoice-card circle.
+          Carries `?leg=` so the detail page auto-selects the same leg
+          the operator was working on here. */}
       <Link href={fullHref}>
         <Button
           variant="ghost"
-          size="sm"
-          className="ml-auto h-7 px-2 text-xs"
+          size="icon"
+          className="ml-auto h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+          aria-label="Open invoice group in full view"
+          title="Open invoice group in full view"
           data-testid="mini-open-details"
         >
-          Full details
-          <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+          <ArrowUpRight className="w-3.5 h-3.5" />
         </Button>
       </Link>
       {rides.length > 0 && (
@@ -1306,11 +1311,16 @@ function ActivityPanel({
   return (
     <div className="text-xs space-y-1.5" data-testid="mini-activity-panel">
       <div>Audit trail and recent activity live in full details.</div>
+      {/* Single drilldown — compact ↗ link, matches GroupSummaryHeader's
+          icon-only affordance. `?leg=…#activity` lands on the right leg
+          and scrolls to the activity section. */}
       <Link
         href={`/invoice-groups/${groupId}?leg=${legId}#activity`}
-        className="underline text-muted-foreground"
+        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        aria-label="Open invoice group activity in full view"
+        title="Open invoice group activity in full view"
       >
-        Open full details to view activity →
+        View activity <ArrowUpRight className="w-3 h-3" />
       </Link>
     </div>
   );

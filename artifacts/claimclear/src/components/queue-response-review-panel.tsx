@@ -24,7 +24,7 @@ import { formatCurrency } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
 import {
   ArrowRight,
-  ChevronRight,
+  ArrowUpRight,
   ExternalLink,
   Loader2,
   Mail,
@@ -340,9 +340,16 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
               The AI hint is just a suggestion — you decide the verdict.
             </p>
           </div>
+          {/* Compact ↗ drilldown — matches the queue-wide affordance. */}
           <Link href={`/invoice-groups/${group.id}`}>
-            <Button variant="ghost" size="sm">
-              Full Details <ChevronRight className="h-4 w-4 ml-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+              aria-label="Open invoice group in full view"
+              title="Open invoice group in full view"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
             </Button>
           </Link>
         </div>

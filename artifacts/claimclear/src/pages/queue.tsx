@@ -1765,11 +1765,12 @@ export default function Queue() {
                   )}
                 </h3>
                 <div className="flex items-center gap-1">
-                  <Link href={`/invoice-groups/${selectedWorkflowId}`}>
-                    <Button variant="ghost" size="sm">
-                      Full Details <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </Link>
+                  {/* "Full Details" outer button removed — it duplicated the
+                      GroupSummaryHeader's deep link below. The single
+                      drilldown to /invoice-groups/:id now lives on
+                      GroupSummaryHeader's compact ↗ icon, which carries
+                      `?leg=<activeLegId>` so the detail page lands on the
+                      same leg the operator was working on. */}
                   <Button
                     variant="ghost"
                     size="sm"

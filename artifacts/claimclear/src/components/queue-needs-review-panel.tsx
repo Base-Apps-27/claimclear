@@ -38,7 +38,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import {
   AlertTriangle,
-  ChevronRight,
+  ArrowUpRight,
   Tag,
   Loader2,
   Plus,
@@ -230,9 +230,18 @@ export function QueueNeedsReviewPanel({
               )}
             </p>
           </div>
+          {/* Compact ↗ drilldown — the inline workspace IS the detail
+              workspace; the only reason to leave is to see the canonical
+              full page. */}
           <Link href={`/invoice-groups/${inboxGroup.id}`}>
-            <Button variant="ghost" size="sm">
-              Full Details <ChevronRight className="h-4 w-4 ml-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+              aria-label="Open invoice group in full view"
+              title="Open invoice group in full view"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
             </Button>
           </Link>
         </div>
