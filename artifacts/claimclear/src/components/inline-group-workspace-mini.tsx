@@ -2225,11 +2225,11 @@ function PinnedFooter({
           <span className="cc-pill cc-pill-green" data-testid="mini-ready-pill">Ready to send</span>
           <span className="cc-meta text-[11px] inline-flex items-center gap-1 ml-auto">
             <Sparkles className="w-3 h-3" />
-            {detail.reviewedBy?.displayName && (
-              <strong style={{ color: "var(--foreground)" }}>{detail.reviewedBy.displayName}</strong>
+            {detail.draftReviewedBy && (
+              <strong style={{ color: "var(--foreground)" }}>{detail.draftReviewedBy}</strong>
             )}
             {detail.draftReviewedAt && (
-              <span>{detail.reviewedBy?.displayName ? "· " : ""}{formatDateTime(detail.draftReviewedAt)}</span>
+              <span>{detail.draftReviewedBy ? "· " : ""}{formatDateTime(detail.draftReviewedAt)}</span>
             )}
           </span>
           <Button

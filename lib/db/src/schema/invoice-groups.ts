@@ -79,7 +79,6 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   draftEditedBy: text("draft_edited_by"),
   draftReviewedAt: timestamp("draft_reviewed_at", { withTimezone: true }),
   draftReviewedBy: text("draft_reviewed_by"),
-  draftReviewedByUserId: text("draft_reviewed_by_user_id"),
   // Operator-authored "this is what I'm asking for" sentence shown back to
   // the operator before generating the dispute preview.
   understandingReadback: text("understanding_readback"),
