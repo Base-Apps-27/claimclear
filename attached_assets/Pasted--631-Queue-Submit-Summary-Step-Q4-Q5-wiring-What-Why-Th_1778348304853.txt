@@ -1,0 +1,108 @@
+#631 - Queue Submit Summary Step (Q4 → Q5 wiring)
+What & Why
+The end-of-walk wizard inside the Queue side pane is broken in a specific way that makes the final submit step unreachable. This task aligns the in-pane mini-wizard with the Canvas Q4 (Review) and Q5 (Submit) mockups — without leaving the side pane, without adding any new routes, without changing the hero state machine.
+
+The exact problem (in code terms)
+The gauntlet body (invoice-group-submission-gauntlet.tsx) renders both a Mark reviewed button at lines 574–591 and a Submit to portal button at lines 660–694, both buried inside the Review & edit panel.
+The pinned footer's mini-submit-cta (inline-group-workspace-mini.tsx:1730–1742) is hidden whenever hero === "generate" | "review" | "ready" (line 464: hideSubmit={...}) precisely to avoid duplicating the gauntlet's body submit button.
+When the operator clicks Mark Reviewed:
+useMarkInvoiceGroupDraftReviewed runs.
+hero flips from review → ready because previewGenerated && draftReviewed (line 353).
+The gauntlet (and its body Submit button) is unmounted; only <ReadyHero /> (a near-empty placeholder) renders.
+The footer Submit is still hidden because hideSubmit covers ready too.
+Result: no working submit affordance anywhere on screen.
+What it should be (from Q4/Q5 mockups)
+Q4 (Review) = current hero === "review". The body is for editing only (subject + body textarea). The forward action Mark reviewed lives in the pinned footer as the primary CTA (Q4's FooterReview shows Continue to submit as the primary footer button — in our app the equivalent action is "Mark reviewed", since marking reviewed is what advances to Submit). The footer also carries: a status pill (Note ready when clean, Unsaved edits when dirty), a helper line, the Walk ✓ · Generate ✓ · Review & edit · Submit progress chips, and a Discard edits secondary button (revert local subject/body to the saved server values; only enabled when dirty).
+Q5 (Submit) = current hero === "ready". The body is the summary view (last-check banner, destination header, compact legs, locked final note, attachments-by-leg). The forward action Queue for Portal lives in the pinned footer as the primary CTA. The footer also carries: Ready to send pill, the signing meta (reviewer name + timestamp + bot icon, right-aligned), and a Back to review secondary button that flips the hero back to review.
+Why this stays small
+No hero state additions: we keep review and ready exactly as they are derived today (line 353–354).
+No new mutations, no new routes: Mark Reviewed wires to the existing useMarkInvoiceGroupDraftReviewed; Queue for Portal wires to the existing useCreatePortalSubmission.
+No new gates: the existing 6-condition gate in PinnedFooter (lines 1648–1666) is reused verbatim for Queue for Portal. The Mark reviewed footer button reuses the existing in-body button's enable conditions.
+The gauntlet's in-body Mark reviewed (lines 574–591) and Submit-to-portal (lines 660–694) sections are removed; the footer takes over for both.
+hideSubmit for review and ready is replaced with footer rendering of the right CTA per hero.
+Done looks like
+Review step (hero === "review")
+The Review & edit panel body has only the Subject input, the Description textarea, the unsaved/empty hints, the Save draft button, and the Regenerate from preview button. The in-body Mark reviewed button is gone. The in-body "Submit to portal" subsection (lines 646–710 of the gauntlet today: the Separator, the SubmitIcon/submitVerb heading row, the gated submit button + tooltip, and the trailing helper paragraph) is gone.
+Pinned footer renders these elements left → right:
+Status pill: Note ready (green) when !draftDirty, or Unsaved edits (amber/purple) when draftDirty.
+Helper text: Edits stay on this draft only — they do not change the prompt or the underlying inputs. (verbatim from Q4 FooterReview).
+Progress chips: Walk ✓ · Generate ✓ · Review & edit (active) · Submit — same cc-gauntlet-step styling as Q4.
+Discard edits secondary button — enabled iff draftDirty; clicking resets local draftSubject / draftBody to the saved group.draft* values; no server call.
+Mark reviewed primary button (icon: Send per Q4's Continue to submit, label: Mark reviewed) — wired to the existing onMarkReviewed handler (invoice-group-submission-gauntlet.tsx:267–297); same enable rule as today's in-body button: !draftBodyEmpty && !markReviewedMutation.isPending && !saveDraftMutation.isPending && !draftReviewed. Disabled-state tooltip explains the missing precondition (Generate or regenerate the draft first. when body empty; Saving… when save pending; Already reviewed when reviewed).
+The existing footer Hold-invoice button continues to render exactly as today.
+Ready / Submit step (hero === "ready")
+The ReadyHero body is replaced with a Q5-style summary, and the pinned footer becomes the real final-submit step.
+
+Header destination line (Q5 InvoiceHeader): renders inline at the top of the summary body, above the legs, in a single row:
+
+Invoice number (mono, semibold).
+payor · total meta.
+Destination meta: send-icon + → <DestinationName> · <disputedCount> disputed / <filteredCount> filtered.
+DestinationName: when isDirectEmail (gauntlet line 177), use the configured recipient label (or "Direct email"); otherwise use the payor portal name (e.g. MAS Trip Inventory). Source from existing payor fields on detail; if no field cleanly carries the portal name today, derive from detail.payor.portalLabel ?? detail.payor.name ?? "Portal" and document the fallback.
+disputedCount = number of legs with includedInDispute !== false AND a terminal disputable conclusion (use conclusionCounts.sop from gauntlet lines 149–158).
+filteredCount = rides.length - disputedCount.
+Right-aligned segmented progress: Walk ✓ · Preview ✓ · Review ✓ · Submit (active) using the same cc-segmented styling as Q5.
+Last-check banner: an Annotation-equivalent block immediately under the header destination line, with this exact copy: "Last check before this leaves your desk. Confirm the destination, the attachments, and the final note. Submit posts to the MAS portal; you can't recall a submission once it's sent." When isDirectEmail, swap "MAS portal" → "configured recipient".
+
+Compact leg row (Q5 LegCardCompact): one card per leg in the same horizontal row layout as Q5. Each card shows:
+
+Leg N label + monospaced confirmation number (left), amount (right).
+The leg's classification tag (e.g. Time at Facility, GPS Deviation) sourced from the existing per-leg display label.
+A status pill: In submission (green) when includedInDispute !== false AND leg reached a disputable terminal; Filtered out (amber) otherwise.
+Top-border accent: green for included, amber for filtered. Filtered cards render at 0.7 opacity. Match Q5 visuals exactly.
+Locked final note (Q5 SubmitBody left column):
+
+Section header: Final note · locked with file-text icon and right-aligned char count.
+Body: group.draftSubject rendered as a small bold line above the body, then group.draftBody rendered with whitespace: pre-wrap. Read-only; no textarea, no editable affordance. Visual: border-left: 3px solid var(--cc-blue-fg) matching Q5.
+Attachments by leg (Q5 SubmitBody right column, fixed 240px rail):
+
+Section header: Attachments · <count> with paperclip icon. count is the number of attachments belonging to included legs only.
+List rows: each row shows paperclip icon + monospaced filename (truncated, ellipsis) + a small leg pill on the right (L1, L2, L3). Group order: legs in their natural index order, then files in their existing per-leg order. Aggregate via useMemo over group.rides — no new API call. Reuse EvidenceFileList data shape if available; otherwise read from the existing leg.evidence field.
+Footer of the rail: a muted callout ⚠ Leg N attachments excluded (filtered) listing each filtered leg that had attachments. Suppress entirely if no filtered legs have attachments.
+Pinned footer renders these elements left → right:
+
+Ready to send pill (green).
+Helper/meta: signing line, right-aligned in the footer, with bot icon + <reviewer displayName> (bold) + · <draftReviewedAt formatted as time + zone>. When reviewedBy is null (older groups), show only the timestamp.
+Back to review secondary button — clicking sets local UI state that flips the hero back to review. Implementation: introduce a local forceReview boolean inside InlineGroupWorkspaceMini that, when true, downgrades the derived hero from ready to review (insert before line 353's previewGenerated && draftReviewed check). Reset forceReview to false whenever the operator clicks Mark reviewed again or when the group id changes. The server draftReviewedAt stays intact.
+Queue for Portal primary button (icon: Send, label: Queue for Portal) — wired to the existing onSubmit in PinnedFooter (lines 1668–1703), which calls useCreatePortalSubmission. Reuse the existing 6-condition enabled calculation and disabledReason text (lines 1648–1666) verbatim. On success the existing invalidateQueries calls already drop the invoice from the active Queue lanes (it transitions out of pre-submit); the existing successToast, the 401 service-token re-auth banner (lines 1751–1774), and the serviceTokenExpired recovery flow are preserved unchanged.
+The existing footer Hold-invoice affordance continues to render in the Submit step (Q5 omits it visually but operationally we still need it; place it after the secondary "Back to review" button or in an overflow if footer width is tight).
+
+Wiring contract (no ambiguity)
+Hero	Footer primary CTA	Footer wires to	Footer secondary	Body submit/review buttons
+generate	(unchanged)	(gauntlet body keeps "Generate preview")	—	gauntlet body Generate preview only
+review	Mark reviewed	existing onMarkReviewed handler from gauntlet	Discard edits (local revert; no server call)	gauntlet body has Subject + Body + Save draft + Regenerate only — Mark reviewed and Submit-to-portal subsections removed
+ready	Queue for Portal	existing useCreatePortalSubmission via PinnedFooter.onSubmit	Back to review (local hero downgrade)	none — body is the Q5 summary (read-only)
+submitted / withdrawn / others	(unchanged)	—	—	(unchanged)
+The hideSubmit prop on PinnedFooter is removed. Instead, PinnedFooter switches its primary button by hero (or by an explicit mode: "review" | "ready" | "submit-default" prop, whichever is cleaner). Either pass hero and onMarkReviewed/draftDirty/onDiscardEdits/onBackToReview callbacks down from InlineGroupWorkspaceMini, OR refactor the gauntlet to expose those handlers via props/context so the footer can call them without remounting the gauntlet — implementer's choice; either path is acceptable as long as no behaviour duplicates and both buttons share state correctly with the gauntlet body's edit state.
+
+Data plumbing
+Add reviewedBy: { id: string; displayName: string } | null to the InvoiceGroupDetailResponse (or wherever draftReviewedAt already lives). Server-side: in the markInvoiceGroupDraftReviewed handler, persist draftReviewedByUserId alongside draftReviewedAt; serialize as reviewedBy by joining the user record. Older groups with no value return null and the footer shows only the timestamp. Regenerate the API client types (pnpm --filter @workspace/api-spec run codegen or the project's existing codegen workflow).
+Out of scope
+The broader Queue page remake described in Task #565.
+Editing the final note from the Submit step (intentionally locked; Back to review is the way to edit).
+Re-attest, direct-email-only, withdrawn, MAS-action-required, post-submit verdict variants — only the standard dispute-submission Review and Ready steps are in scope.
+Changes to the mockup-sandbox Q4/Q5 files.
+Changing the 6 submit gates or derivePreviewGateState logic. (If a gate proves wrong in production after this change, file separately.)
+New visual primitives: reuse existing Button, Input, Textarea, cc-pill, cc-segmented, cc-footer-card cc-footer-pinned, cc-gauntlet-step, etc. classes that already exist in cc-scope.
+Steps
+Add reviewedBy to the group response. Server: persist draftReviewedByUserId when markInvoiceGroupDraftReviewed runs; serialize reviewedBy: { id, displayName } | null on InvoiceGroupDetailResponse. Backfill is not required — null is the defined fallback. Regenerate API client types.
+
+Refactor PinnedFooter to take per-hero CTA wiring. Remove hideSubmit. Add the ability to render: (a) the existing default Submit button (for non-review/ready heroes that currently show the footer Submit), (b) a Mark reviewed primary + Discard edits secondary for review, (c) a Queue for Portal primary + Back to review secondary for ready. The Queue for Portal button reuses the existing enabled/disabledReason/onSubmit/serviceTokenExpired code path verbatim. Mark reviewed reuses the gauntlet's onMarkReviewed and its enable rule. Pass new callbacks/state down from InlineGroupWorkspaceMini.
+
+Remove the Mark reviewed and Submit-to-portal sections from the gauntlet body. Delete lines 574–591 (the Mark reviewed button and its surrounding flex container header on lines ~543–593) and lines 646–710 (Separator + SubmitIcon heading + gated submit button + trailing helper paragraph). Keep Save draft, Regenerate from preview, the Subject input, the Description textarea, and the dirty/empty hints. Hoist onMarkReviewed, draftDirty, draftBodyEmpty, markReviewedMutation.isPending, saveDraftMutation.isPending, draftReviewed, and a discardEdits() function up to InlineGroupWorkspaceMini (or expose via a render-prop / context) so the footer can drive them.
+
+Build the Q5 summary contents in ReadyHero. Replace the body of ReadyHero with the Q5 layout: header destination line (with progress chips), last-check banner, compact leg row, two-column body (locked final note + attachments rail with leg tags and excluded-leg callout). Aggregate attachments via useMemo over group.rides. Mirror Q5's spacing, borders, and cc-* class usage so the visual matches. The hero takes detail, rides, conclusionCounts (or recompute it locally from rides using the same logic as gauntlet 149–158), and signing data (reviewedBy, draftReviewedAt) as props.
+
+Wire Back-to-review. Add a forceReview local state inside InlineGroupWorkspaceMini. When true, the hero derivation (line 353) downgrades ready → review (insert the check ahead of the previewGenerated && draftReviewed branch). Reset on Mark reviewed click and on groupId change.
+
+End-to-end check + e2e update. Walk a multi-leg dispute group through the queue side pane and confirm: edit body → footer Mark reviewed → summary renders correctly with destination + legs + locked note + attachments by leg + signing line → Back to review returns to the editor with edits intact → Queue for Portal submits successfully → invoice drops out of the Queue lanes. Confirm Discard edits reverts local edits without a server call. Confirm the existing 401 re-auth banner still appears when the service token has expired. Update the walk-driver e2e scenario to assert: (a) Mark reviewed exists in the footer (not the body) during review, (b) summary banner + locked note + attachment-by-leg rail render in ready, (c) footer Queue for Portal label and submit-success behaviour, (d) Back to review returns to the editor.
+
+Relevant files
+artifacts/claimclear/src/components/inline-group-workspace-mini.tsx:329-360,389-434,447-465,1601-1779
+artifacts/claimclear/src/components/invoice-group-submission-gauntlet.tsx:74,149-158,177-178,267-297,540-710
+artifacts/claimclear/src/components/whats-next-derivation.ts
+artifacts/claimclear/src/pages/queue.tsx
+artifacts/claimclear/e2e/walk-scenarios/walk-driver.ts
+artifacts/mockup-sandbox/src/components/mockups/aisummary-hero/Q4.tsx
+artifacts/mockup-sandbox/src/components/mockups/aisummary-hero/Q5.tsx
+artifacts/mockup-sandbox/src/components/mockups/queue-redesign/_shared.tsx
