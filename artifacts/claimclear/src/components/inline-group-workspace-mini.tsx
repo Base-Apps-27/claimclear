@@ -14,9 +14,6 @@ import {
   useDeleteNote,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
-  useStampPreviewGenerated,
-  useConfirmUnderstandingReadback,
-  useMarkInvoiceGroupDraftReviewed,
   useCreatePortalSubmission,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
@@ -77,6 +74,7 @@ import {
 import type { LegHoldReason } from "@workspace/leg-state";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
+import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatCurrency } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
@@ -389,11 +387,25 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         {hero === "withdrawn" && <WithdrawnHero detail={detail} />}
         {hero === "submitted" && <SubmittedHero detail={detail} />}
         {hero === "ready" && <ReadyHero />}
-        {hero === "review" && (
-          <ReviewHero detail={detail} groupId={groupId} rides={rides} />
-        )}
-        {hero === "generate" && (
-          <GeneratePreviewHero detail={detail} groupId={groupId} rides={rides} />
+        {(hero === "generate" || hero === "review") && (
+          // Mount the canonical submission gauntlet (readback →
+          // generate → subject/body editor → mark reviewed → submit)
+          // bare so the queue-walk operator can finish end-to-end
+          // without leaving the mini pane. The previous bespoke
+          // GeneratePreviewHero/ReviewHero only exposed buttons and
+          // forced operators to "Open Full details" to read or edit
+          // the AI write-up — a dead end. Reusing the gauntlet keeps
+          // the inline experience identical to the detail page.
+          <Card>
+            <CardContent className="py-5">
+              <InvoiceGroupSubmissionGauntlet
+                bare
+                group={detail}
+                groupId={groupId}
+                onJumpToLeg={(id) => setActiveLegId(id)}
+              />
+            </CardContent>
+          </Card>
         )}
         {hero === "empty" && (
           <Card>
@@ -803,260 +815,12 @@ function ResolvedHero({ leg }: { leg: ClaimResponse }) {
   );
 }
 
-// Generate-preview hero — shown once every leg is walked but no
-// preview has been stamped yet. Owns the only "Generate preview"
-// affordance in the mini pane; without it the operator would have no
-// in-pane path forward (the footer Submit stays disabled with
-// "Generate the preview first").
-function GeneratePreviewHero({
-  detail,
-  groupId,
-  rides,
-}: {
-  detail: DetailGroup;
-  groupId: number;
-  rides: ClaimResponse[];
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const stamp = useStampPreviewGenerated();
-  const confirmReadback = useConfirmUnderstandingReadback();
-  const gate = derivePreviewGateState(detail, rides);
-  // Inline readback confirm — without this, the queue-walk operator
-  // hits a dead end here when "readback" is the only missing gate
-  // (the readback UI used to live exclusively on the Full Details
-  // page's submission gauntlet, leaving no in-pane path forward).
-  const [readback, setReadback] = useState(detail.understandingReadback ?? "");
-  useEffect(() => {
-    setReadback(detail.understandingReadback ?? "");
-  }, [detail.understandingReadback]);
-  const readbackMissing = gate.missingGates[0] === "readback";
-  function onConfirmReadback() {
-    confirmReadback.mutate(
-      { id: groupId, data: { readback: readback.trim() } },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({
-            title: "Done",
-            description: "Understanding readback confirmed",
-          });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Readback failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-  function generate() {
-    stamp.mutate(
-      { id: groupId },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({ title: "Done", description: "Preview generated" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Generate failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-  return (
-    <Card>
-      <CardContent className="py-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Generate the preview</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Every leg is walked. Generate the dispute preview, review the
-          draft, then submit to the portal.
-        </p>
-        {readbackMissing && (
-          <div
-            className="rounded border border-amber-200 bg-amber-50 p-2 space-y-2"
-            data-testid="mini-readback-block"
-          >
-            <p className="text-xs font-medium text-amber-900">
-              Confirm understanding before generating
-            </p>
-            <p className="text-[11px] text-amber-800">
-              Anything the AI write-up should know about the case overall.
-              Leave blank to skip — the AI will use the per-leg findings and
-              the dispute reason on their own.
-            </p>
-            <Textarea
-              value={readback}
-              onChange={(e) => setReadback(e.target.value)}
-              rows={2}
-              placeholder="Optional — leave blank if there's nothing extra to add."
-              data-testid="mini-readback-input"
-            />
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={confirmReadback.isPending}
-                onClick={onConfirmReadback}
-                data-testid="mini-readback-confirm"
-              >
-                {confirmReadback.isPending ? (
-                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                ) : null}
-                Confirm understanding
-              </Button>
-            </div>
-          </div>
-        )}
-        {!gate.ok && !readbackMissing && gate.reason && (
-          <p className="text-xs text-amber-700">{gate.reason}</p>
-        )}
-        {stamp.isError && !stamp.isPending && (
-          <div
-            className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
-            data-testid="mini-generate-preview-error"
-          >
-            <p className="font-medium">Preview generation failed.</p>
-            <p className="mt-0.5">
-              {stamp.error instanceof Error
-                ? stamp.error.message
-                : "The server rejected the request."}
-            </p>
-            <div className="mt-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={stamp.isPending || !gate.ok}
-                onClick={() => {
-                  stamp.reset();
-                  generate();
-                }}
-                data-testid="mini-generate-preview-retry"
-              >
-                Retry
-              </Button>
-            </div>
-          </div>
-        )}
-        <div>
-          <Button
-            size="sm"
-            disabled={stamp.isPending || !gate.ok}
-            onClick={generate}
-            data-testid="mini-generate-preview"
-          >
-            {stamp.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5 mr-1" />
-            )}
-            Generate preview
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Review hero — preview exists, not yet marked reviewed. Owns the
-// only "Mark reviewed" affordance and a "Regenerate preview"
-// secondary so the operator can refresh the draft from here without
-// leaving the pane.
-function ReviewHero({
-  detail,
-  groupId,
-  rides,
-}: {
-  detail: DetailGroup;
-  groupId: number;
-  rides: ClaimResponse[];
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const mark = useMarkInvoiceGroupDraftReviewed();
-  const stamp = useStampPreviewGenerated();
-  const gate = derivePreviewGateState(detail, rides);
-  function markReviewed() {
-    mark.mutate(
-      { id: groupId },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({ title: "Done", description: "Draft marked reviewed" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Mark reviewed failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-  function regenerate() {
-    stamp.mutate(
-      { id: groupId },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({ title: "Done", description: "Preview regenerated" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Regenerate failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-  return (
-    <Card>
-      <CardContent className="py-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Review the draft</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          The preview is ready. Open Full details to read the body, then mark
-          it reviewed to unlock Submit.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={mark.isPending}
-            onClick={markReviewed}
-            data-testid="mini-mark-reviewed"
-          >
-            {mark.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-            ) : null}
-            Mark reviewed
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={stamp.isPending || !gate.ok}
-            onClick={regenerate}
-            data-testid="mini-regenerate-preview"
-          >
-            {stamp.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-            ) : null}
-            Regenerate preview
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// Generate-preview + review-draft heroes were removed — both phases
+// now mount <InvoiceGroupSubmissionGauntlet bare /> directly in the
+// hero slot (see hero render block) so the queue-walk operator sees
+// the full readback + subject/body editor + mark-reviewed + submit
+// surface inline. The previous bespoke heroes only exposed buttons
+// with no editor, leaving operators with a dead end.
 
 // Ready hero — preview generated AND marked reviewed. Confirms the
 // operator's only remaining action is the footer Submit.
