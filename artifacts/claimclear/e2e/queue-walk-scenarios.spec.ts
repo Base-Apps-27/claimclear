@@ -87,6 +87,8 @@ import { tokenExpired } from "./walk-scenarios/scenarios/20-token-expired";
 import { zeroEvidence } from "./walk-scenarios/scenarios/21-zero-evidence";
 import { bouncedAddress } from "./walk-scenarios/scenarios/24-bounced-address";
 import { claimWithdrawnElsewhere } from "./walk-scenarios/scenarios/25-claim-withdrawn-elsewhere";
+import { stalePreviewReattestFooter } from "./walk-scenarios/scenarios/26-stale-preview-reattest-footer";
+import { stalePreviewCloseoutFooter } from "./walk-scenarios/scenarios/27-stale-preview-closeout-footer";
 
 const SCENARIOS: WalkScenario[] = [
   happyPath,
@@ -106,6 +108,8 @@ const SCENARIOS: WalkScenario[] = [
   zeroEvidence,
   bouncedAddress,
   claimWithdrawnElsewhere,
+  stalePreviewReattestFooter,
+  stalePreviewCloseoutFooter,
   // Add new scenarios here.
 ];
 
