@@ -53,6 +53,7 @@ import {
   Sparkles,
   StickyNote,
   Trash2,
+  X,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -486,6 +487,18 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         existingReason={detail.holdReason ?? ""}
         groupHoldActive={groupHoldActive}
       />
+
+      {/* Chip-panel content as a right-edge floating drawer overlay.
+          Rendered LAST so it paints above everything else; uses fixed
+          positioning so it never disturbs the workspace flow. */}
+      {chipOpen && activeLeg && (
+        <ChipDrawerOverlay
+          openChip={chipOpen}
+          leg={activeLeg}
+          groupId={groupId}
+          onClose={() => setChipOpen(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1002,8 +1015,86 @@ function ChipStrip({
         </div>
       </div>
 
-      {openChip && (
-        <div className="cc-mini-chip-panel" data-testid={`mini-chip-panel-${openChip}`}>
+      {/* The chip-PANEL body used to expand inline here. It now renders
+          as a floating right-edge overlay (`<ChipDrawerOverlay>` mounted
+          from `InlineGroupWorkspaceMini`) so the existing hero / footer
+          layout never shifts when an operator opens a chip. */}
+    </div>
+  );
+}
+
+// Right-edge floating drawer for the chip-panel content. Rendered as
+// an additive overlay layer (position: fixed) on top of the queue —
+// it does NOT participate in the workspace's flex/grid flow, so the
+// hero, footer, banners, and GroupSummaryHeader stay anchored exactly
+// where they already were. Closes via the chip toggle (the chip
+// button stays the source of truth), Esc, or backdrop click.
+const CHIP_LABEL: Record<ChipKey, string> = {
+  evidence: "Evidence",
+  notes: "Notes",
+  comms: "Comms",
+  activity: "Activity",
+};
+
+function ChipDrawerOverlay({
+  openChip,
+  leg,
+  groupId,
+  onClose,
+}: {
+  openChip: ChipKey;
+  leg: ClaimResponse;
+  groupId: number;
+  onClose: () => void;
+}) {
+  const evidenceFiles = leg.evidenceFiles ?? [];
+  const inlineNote = (leg.evidenceNotes ?? "").trim();
+
+  // Esc-to-close. Backdrop click is wired below.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      {/* Subtle backdrop — click anywhere outside the drawer to close.
+          Translucent (not solid) so the queue underneath stays
+          legible; the drawer is a contextual layer, not a modal. */}
+      <div
+        className="fixed inset-0 z-40 bg-black/10"
+        onClick={onClose}
+        data-testid="chip-drawer-backdrop"
+        aria-hidden
+      />
+      <aside
+        role="dialog"
+        aria-label={`${CHIP_LABEL[openChip]} — quick view`}
+        data-testid={`chip-drawer-${openChip}`}
+        className="fixed right-3 top-1/2 z-50 -translate-y-1/2 w-[360px] max-w-[calc(100vw-1.5rem)] max-h-[70vh] flex flex-col rounded-xl border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-2 border-b px-3 py-2 shrink-0">
+          <span className="text-sm font-semibold">{CHIP_LABEL[openChip]}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={onClose}
+            aria-label="Close drawer"
+            title="Close"
+            data-testid="chip-drawer-close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </header>
+        <div className="cc-scope cc-mini overflow-auto p-3 flex-1 min-h-0">
+          {/* Same panel components the chip strip used to render
+              inline — moved unchanged so behavior (notes thread,
+              evidence list, comms log, activity link) is identical. */}
           {openChip === "evidence" && (
             <EvidenceFileList
               urls={evidenceFiles
@@ -1019,8 +1110,8 @@ function ChipStrip({
             <ActivityPanel groupId={groupId} legId={leg.id} />
           )}
         </div>
-      )}
-    </div>
+      </aside>
+    </>
   );
 }
 
