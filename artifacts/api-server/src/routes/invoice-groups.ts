@@ -124,6 +124,32 @@ const INVOICE_GROUP_SORTABLE_COLUMNS = {
   serviceDate: earliestServiceDateExpr,
 } as const;
 
+// Shared "hide expired" predicate used by both the regular list handler
+// and the Classification Inbox builder so the two views can never drift
+// (Task #644). Two conditions:
+//   1. `status != 'Expired'` — terminal-status hide.
+//   2. (optional) past-effective-deadline hide — service date + 30 days,
+//      pulled back to Friday on Sat/Sun. Bypassed by the list handler's
+//      `?expiring=urgent|stuck` modes (those are explicitly past-deadline
+//      views); the inbox always wants this leg on by default.
+function buildHideExpiredGroupConditions(opts: { includePastDeadline: boolean }): SQL[] {
+  const out: SQL[] = [ne(invoiceGroupsTable.status, "Expired")];
+  if (opts.includePastDeadline) {
+    const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
+    const effectiveDeadlineSql = sql`(
+      CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
+        WHEN 6 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
+        WHEN 0 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
+        ELSE (${dateExpr} + INTERVAL '30 days')::date
+      END
+    )`;
+    out.push(
+      sql`NOT (${invoiceGroupsTable.serviceDate} IS NOT NULL AND ${effectiveDeadlineSql} < CURRENT_DATE)`,
+    );
+  }
+  return out;
+}
+
 function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined {
   const { status, outcome, search, errorDetails: errorDetailsFilter, errorTypeId } = query;
   const createdFrom = query.createdFrom as string | undefined;
@@ -173,22 +199,8 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   const expiringModeIncludesPastDeadline =
     expiringModeRaw === "urgent" || expiringModeRaw === "stuck";
   if (!includeExpiredFlag && !statusFilterIncludesExpired) {
-    conditions.push(ne(invoiceGroupsTable.status, "Expired"));
-    // Hide groups whose effective filing deadline has slipped (any
-    // status with a service date). Bypassed under
-    // `?expiring=urgent|stuck`, where those rows are the view.
-    if (!expiringModeIncludesPastDeadline) {
-      const dateExpr = sql`${invoiceGroupsTable.serviceDate}`;
-      const effectiveDeadlineSql = sql`(
-        CASE EXTRACT(DOW FROM (${dateExpr} + INTERVAL '30 days'))
-          WHEN 6 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
-          WHEN 0 THEN ((${dateExpr} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
-          ELSE (${dateExpr} + INTERVAL '30 days')::date
-        END
-      )`;
-      conditions.push(
-        sql`NOT (${invoiceGroupsTable.serviceDate} IS NOT NULL AND ${effectiveDeadlineSql} < CURRENT_DATE)`,
-      );
+    for (const c of buildHideExpiredGroupConditions({ includePastDeadline: !expiringModeIncludesPastDeadline })) {
+      conditions.push(c);
     }
   }
 
@@ -727,7 +739,12 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
     today: serverTodayKey(today),
   };
   if (includeSet.has("needs_classification")) {
-    responseBody.needsClassificationInbox = await buildNeedsClassificationInbox();
+    // Task #644: thread the same `?includeExpired` flag through to the
+    // embedded inbox so the "Show expired" Queue toggle re-surfaces
+    // expired-status / past-deadline groups in both the list and the
+    // inbox at once. Default remains hide.
+    const inboxIncludeExpired = String(req.query.includeExpired ?? "").toLowerCase() === "true";
+    responseBody.needsClassificationInbox = await buildNeedsClassificationInbox({ includeExpired: inboxIncludeExpired });
   }
 
   responseBody.groups = scrubMoneyFieldsArray(groups, req.user);
@@ -1069,7 +1086,24 @@ export interface NeedsClassificationInbox {
 // `GET /invoice-groups?include=needs_classification` branch. Single
 // source of truth for the predicate (Needs Review only) and the sort
 // order (qualifying siblings first, then all-blank).
-async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox> {
+async function buildNeedsClassificationInbox(
+  opts: { includeExpired?: boolean } = {},
+): Promise<NeedsClassificationInbox> {
+  // Task #644: hide `Expired`-status and past-effective-deadline parent
+  // groups from the inbox by default so operators don't triage rows
+  // they can no longer file on. The shared `buildHideExpiredGroupConditions`
+  // helper guarantees the inbox never drifts from the regular
+  // `/invoice-groups` list. The `includeExpired` opt-in (driven by the
+  // "Show expired" Queue toggle) re-surfaces them.
+  const includeExpired = opts.includeExpired === true;
+  const whereConditions: SQL[] = [eq(invoiceGroupsTable.isTourSample, false)];
+  if (!includeExpired) {
+    for (const c of buildHideExpiredGroupConditions({ includePastDeadline: true })) {
+      whereConditions.push(c);
+    }
+  }
+  const whereExpr = whereConditions.length === 1 ? whereConditions[0] : and(...whereConditions);
+
   const candidateLegs = await db
     .select({
       id: claimsTable.id,
@@ -1089,7 +1123,7 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
     })
     .from(claimsTable)
     .innerJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(eq(invoiceGroupsTable.isTourSample, false))
+    .where(whereExpr)
     // Task #412: broaden the inbox so any active leg with no Error Type
     // surfaces, regardless of parent group status. Previously the
     // predicate was scoped to `Needs Review` only, which hid legs whose
@@ -1193,12 +1227,15 @@ async function buildNeedsClassificationInbox(): Promise<NeedsClassificationInbox
   };
 }
 
-router.get("/invoice-groups/needs-classification", asyncHandler(async (_req, res): Promise<void> => {
+router.get("/invoice-groups/needs-classification", asyncHandler(async (req, res): Promise<void> => {
   // Back-compat route — same payload, kept so existing clients keep
   // working through the deprecation window. New callers should prefer
   // `GET /invoice-groups?include=needs_classification` which embeds the
   // inbox alongside the regular list response.
-  const inbox = await buildNeedsClassificationInbox();
+  // Task #644: honor the `?includeExpired=true` opt-in here too so
+  // legacy callers behave identically to the embedded path.
+  const includeExpired = String(req.query.includeExpired ?? "").toLowerCase() === "true";
+  const inbox = await buildNeedsClassificationInbox({ includeExpired });
   res.json(inbox);
 }));
 
