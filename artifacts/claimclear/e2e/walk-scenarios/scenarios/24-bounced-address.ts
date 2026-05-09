@@ -84,7 +84,7 @@ export const bouncedAddress: WalkScenario = {
     await d.expectStage("generate");
     await d.generatePreview();
     await d.expectStage("review");
-    await d.markReviewed();
+    await d.markReviewed({ expectSubmitEnabled: false });
     // Hero lands on `ready` even with the bounce — the bounce gates
     // the submit button, not the lifecycle stage.
     await d.expectStage("ready");

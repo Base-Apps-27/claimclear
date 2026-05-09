@@ -109,6 +109,12 @@ export const singleLegNotViable: WalkScenario = {
     // single sop_advance. Belt-and-suspenders alongside
     // `expectedCallOrder` so a stray mutation slipping in here
     // shows up as an inequality instead of a subsequence pass.
-    expect(state.callOrder).toEqual([`sop_advance_${LEG_ID}`]);
+    // Filter out presence-heartbeat noise (added by scenario #13's
+    // concurrency wiring on the shared call ledger) so this strict
+    // equality check stays focused on commit-affecting POSTs only.
+    const commitCalls = state.callOrder.filter(
+      (c) => !c.startsWith("presence_"),
+    );
+    expect(commitCalls).toEqual([`sop_advance_${LEG_ID}`]);
   },
 };

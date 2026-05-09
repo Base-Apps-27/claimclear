@@ -117,8 +117,11 @@ export function UrgentTodayWhyLine({ tone, urgentCountOverride, testid, onSelect
   if (isLoading || !data) return null;
 
   const urgentCount = urgentCountOverride ?? data.urgentCount;
-  const cleared = data.clearedSummary.total;
-  const actors = data.clearedSummary.actors ?? [];
+  // Defensive: older API builds (and a few mock harnesses) ship the
+  // payload without `clearedSummary`. Treat the absence as "nothing
+  // cleared today" rather than crashing the entire page render.
+  const cleared = data.clearedSummary?.total ?? 0;
+  const actors = data.clearedSummary?.actors ?? [];
   const snapshots = data.snapshots ?? [];
 
   // Server-authoritative "nothing was ever urgent today" guard. The
@@ -310,7 +313,7 @@ export function UrgentTodayActivityPanelBody({
 
       <section data-testid="urgent-today-panel-cleared">
         <div className="text-xs uppercase tracking-wide font-bold mb-2 text-muted-foreground">
-          Cleared today ({data.clearedSummary.total})
+          Cleared today ({data.clearedSummary?.total ?? 0})
         </div>
         {data.clearedToday.length === 0 ? (
           <div className="text-sm text-muted-foreground">Nothing cleared yet today.</div>

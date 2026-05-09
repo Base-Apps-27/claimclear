@@ -81,9 +81,17 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     await clickSopOption(optionLabel);
     // Closed terminal — the live player swaps in ClosedTerminalRewindCard.
     // Easiest cross-cut signal is the workspace `data-hero` flipping
-    // off `sop`: it lands on `resolved` (or `generate` if all legs
-    // walked).
-    await expect(workspace()).not.toHaveAttribute("data-hero", "sop");
+    // off `sop`. If this leg also auto-closes the group (every active
+    // leg now non-issue), the queue list short-circuits empty and the
+    // workspace unmounts entirely — accept either outcome here so the
+    // caller doesn't have to special-case the closing leg.
+    await expect
+      .poll(async () => {
+        if (await workspace().count() === 0) return "unmounted";
+        const hero = await workspace().getAttribute("data-hero");
+        return hero && hero !== "sop" ? "advanced" : "pending";
+      })
+      .not.toBe("pending");
   }
 
   async function placeLegHold(
@@ -126,12 +134,19 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     await expect(page.getByTestId("mini-mark-reviewed")).toBeVisible();
   }
 
-  async function markReviewed(): Promise<void> {
+  async function markReviewed(opts: { expectSubmitEnabled?: boolean } = {}): Promise<void> {
     const cta = page.getByTestId("mini-mark-reviewed");
     await expect(cta).toBeEnabled();
     await cta.click();
-    // Hero swaps to `ready` and the footer Submit becomes enabled.
-    await expect(page.getByTestId("mini-submit-cta")).toBeEnabled();
+    // Hero swaps to `ready`. The footer Submit becomes enabled in the
+    // happy path, but scenarios that exercise external gates (bounced
+    // payor, expired token) keep it disabled — opt those out with
+    // `expectSubmitEnabled: false` and assert the gate themselves.
+    if (opts.expectSubmitEnabled === false) {
+      await expect(workspace()).toHaveAttribute("data-hero", "ready");
+    } else {
+      await expect(page.getByTestId("mini-submit-cta")).toBeEnabled();
+    }
   }
 
   async function submit(): Promise<void> {
