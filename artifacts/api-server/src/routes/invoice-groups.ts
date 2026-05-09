@@ -336,11 +336,19 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   //   nothing_to_do    — no disputable legs, no survivors → ready to close
   const outlookRaw = typeof query.outlook === "string" ? query.outlook : "";
   if (outlookRaw === "ready_to_review" || outlookRaw === "reattest_only" || outlookRaw === "nothing_to_do") {
+    // NULL-safe: when sop_outcome or disposition IS NULL, plain `=` / NOT IN
+    // return NULL and propagate through the AND chain, silently excluding
+    // unresolved "Investigating" legs (sop_outcome NULL, disposition like
+    // 'classifying'). `IS DISTINCT FROM` and explicit NULL guards keep
+    // those legs in the disputable set, matching the JS derivation.
     const disputablePredicate = sql`(
       c.included_in_dispute = true
       AND c.duplicate_of_claim_id IS NULL
-      AND NOT (c.disposition IN ('disposed_withdraw','final_withdrawn') OR c.sop_outcome = 'cannot_dispute')
-      AND NOT (c.disposition IN ('disposed_nonissue','final_nonissue') OR c.sop_outcome = 'non_issue')
+      AND c.sop_outcome IS DISTINCT FROM 'cannot_dispute'
+      AND c.sop_outcome IS DISTINCT FROM 'non_issue'
+      AND (c.disposition IS NULL OR c.disposition NOT IN (
+        'disposed_withdraw','final_withdrawn','disposed_nonissue','final_nonissue'
+      ))
       AND (c.outcome IS DISTINCT FROM 'Denied')
     )`;
     const hasDisputable = sql`EXISTS (
