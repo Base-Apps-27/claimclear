@@ -2157,7 +2157,23 @@ function PinnedFooter({
   function onSubmit() {
     setServiceTokenExpired(false);
     submit.mutate(
-      { data: { invoiceGroupId: groupId } },
+      {
+        data: {
+          invoiceGroupId: groupId,
+          actorType: "operator",
+          understandingReadback: detail.understandingReadback ?? "",
+          // Forward the operator-reviewed draft so /portal-submissions
+          // ships the exact text the user just confirmed on Q5. Falls
+          // back to the AI baseline so the backend still has a body if
+          // the draft column was never written. Mirrors the Q4 gauntlet
+          // submit path (invoice-group-submission-gauntlet.tsx).
+          subject: detail.draftSubject ?? detail.aiBaselineSubject ?? "",
+          descriptionHtml:
+            detail.draftDescriptionHtml ??
+            detail.aiBaselineDescriptionHtml ??
+            "",
+        },
+      },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
