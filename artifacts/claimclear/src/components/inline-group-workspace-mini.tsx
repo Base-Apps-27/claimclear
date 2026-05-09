@@ -67,6 +67,11 @@ import {
 } from "@/components/ui/dialog";
 import { RefNumber } from "@/components/ref-number";
 import { ClassifyDialog } from "@/components/classify-dialog";
+import {
+  HoldReasonSelect,
+  isHoldReasonValid,
+} from "@/components/hold-reason-select";
+import type { LegHoldReason } from "@workspace/leg-state";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { useUrlParams } from "@/lib/use-url-params";
@@ -1504,15 +1509,27 @@ function PlaceLegHoldDialog({
   const qc = useQueryClient();
   const { toast } = useToast();
   const mutation = usePlaceLegOnHold();
-  const [reason, setReason] = useState("");
+  // Server requires `reason` to be one of the canonical
+  // `LEG_HOLD_REASONS` enum values. Free-text "reason" used to fall
+  // through to the server and 400 with "reason must be one of …" —
+  // route it through `HoldReasonSelect` so we send the enum slug and
+  // route the free-text into the optional `note` field.
+  const [reason, setReason] = useState<LegHoldReason | "">("");
+  const [note, setNote] = useState("");
   useEffect(() => {
-    if (open) setReason("");
+    if (open) {
+      setReason("");
+      setNote("");
+    }
   }, [open]);
+  const valid = isHoldReasonValid(reason, note);
   function submit() {
-    const trimmed = reason.trim();
-    if (!trimmed) return;
+    if (!valid || !reason) return;
     mutation.mutate(
-      { id: leg.id, data: { reason: trimmed } },
+      {
+        id: leg.id,
+        data: { reason, note: note.trim() ? note.trim() : null },
+      },
       {
         onSuccess: (updated) => {
           applyLegMutationResult(qc, updated);
@@ -1535,23 +1552,20 @@ function PlaceLegHoldDialog({
         <DialogHeader>
           <DialogTitle>Place leg on hold</DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
-          <label className="text-xs font-medium">Reason</label>
-          <Textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Why are you holding this leg?"
-            rows={4}
-            data-testid="mini-leg-hold-reason"
-          />
-        </div>
+        <HoldReasonSelect
+          reason={reason}
+          note={note}
+          onReasonChange={setReason}
+          onNoteChange={setNote}
+          disabled={mutation.isPending}
+        />
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={submit}
-            disabled={!reason.trim() || mutation.isPending}
+            disabled={!valid || mutation.isPending}
             data-testid="mini-leg-hold-submit"
           >
             {mutation.isPending ? (
