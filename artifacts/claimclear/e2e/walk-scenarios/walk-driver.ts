@@ -53,13 +53,20 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     }
     await expect(page.getByTestId("sop-advance-player")).toBeVisible();
     await clickSopOption(optionLabel);
-    // Once the leg lands on a terminal the workspace hero swaps off
-    // `sop` (typically to `resolved`, or to `generate` when this was
-    // the last unwalked leg). The inline `inline-group-workspace-mini`
-    // never mounts the standalone `sop-include-ready-card` surface —
-    // that lives on the full claim-detail page — so key off the hero
-    // attribute the way `markLegNonIssue` does.
-    await expect(workspace()).not.toHaveAttribute("data-hero", "sop");
+    // Two valid post-conditions: (a) the SOP player is still mounted
+    // for the just-walked leg and renders the include-ready card —
+    // happens when other legs remain in triage so the workspace hero
+    // stays on `sop`; (b) this was the last leg, the workspace hero
+    // advances off `sop` (typically to `generate`) and the player
+    // unmounts entirely. Waiting for either keeps single-leg and
+    // multi-leg scenarios on the same verb.
+    await expect
+      .poll(async () => {
+        if (await page.getByTestId("sop-include-ready-card").count()) return "include";
+        const hero = await workspace().getAttribute("data-hero");
+        return hero && hero !== "sop" ? "advanced" : "pending";
+      })
+      .not.toBe("pending");
   }
 
   async function markLegNonIssue(

@@ -557,7 +557,11 @@ export async function installApiStubs(
     },
   );
 
-  // Stamp-preview-generated POST.
+  // Stamp-preview-generated POST. The generated client posts to
+  // `/preview-generated` (see getStampPreviewGeneratedUrl) — not
+  // `/stamp-preview-generated` — so the route literal must match
+  // exactly or the workspace's "Generate preview" mutation 200s on
+  // the catch-all with `{}` and never refreshes `previewGeneratedAt`.
   await page.route(
     `**/api/invoice-groups/${state.groupId}/preview-generated*`,
     async (route: Route, request: Request) => {
@@ -571,7 +575,10 @@ export async function installApiStubs(
     },
   );
 
-  // Mark-draft-reviewed POST.
+  // Mark-draft-reviewed POST. The generated client posts to
+  // `/draft/mark-reviewed` (see getMarkInvoiceGroupDraftReviewedUrl);
+  // matching that exact path keeps the mutation from falling through
+  // to the catch-all and stamping nothing.
   await page.route(
     `**/api/invoice-groups/${state.groupId}/draft/mark-reviewed*`,
     async (route: Route, request: Request) => {
