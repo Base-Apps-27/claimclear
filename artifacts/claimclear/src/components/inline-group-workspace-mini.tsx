@@ -306,18 +306,26 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
     activeLeg.sopOutcome !== "hold" &&
     (activeLeg.holdReason ?? null) != null;
 
+  const allWalked = rides.length > 0 && resolvedCount === rides.length;
   type HeroState =
     | "submitted"
+    | "ready"
     | "review"
-    | "preview"
+    | "generate"
     | "classify"
     | "sop"
     | "resolved"
     | "empty";
+  // Ordered priority: terminal phases (submitted) → group-level draft
+  // states (ready/review/generate) → per-leg states (sop/classify/
+  // resolved). Group-level wins over per-leg so an operator who has
+  // walked everything sees the "generate / review / submit" pre-flight
+  // instead of a stale resolved-leg card.
   let hero: HeroState;
   if (submitted) hero = "submitted";
-  else if (previewGenerated && draftReviewed) hero = "review";
-  else if (previewGenerated) hero = "preview";
+  else if (previewGenerated && draftReviewed) hero = "ready";
+  else if (previewGenerated) hero = "review";
+  else if (allWalked && outlook === "has_disputable") hero = "generate";
   else if (!activeLeg) hero = "empty";
   else if (activeLeg.includedInDispute === false) hero = "resolved";
   else if (resolvedIndex.isLegResolved(activeLeg)) hero = "resolved";
@@ -349,9 +357,12 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
       <div aria-live="polite" className="cc-mini-hero">
         {hero === "submitted" && <SubmittedHero detail={detail} />}
-        {hero === "review" && <ReviewHero detail={detail} groupId={groupId} />}
-        {hero === "preview" && (
-          <PreviewHero detail={detail} groupId={groupId} rides={rides} />
+        {hero === "ready" && <ReadyHero />}
+        {hero === "review" && (
+          <ReviewHero detail={detail} groupId={groupId} rides={rides} />
+        )}
+        {hero === "generate" && (
+          <GeneratePreviewHero detail={detail} groupId={groupId} rides={rides} />
         )}
         {hero === "empty" && (
           <Card>
@@ -720,9 +731,12 @@ function ResolvedHero({ leg }: { leg: ClaimResponse }) {
   );
 }
 
-// Preview hero owns "Generate preview" — stamps previewGeneratedAt
-// and progresses the phase pill in the footer.
-function PreviewHero({
+// Generate-preview hero — shown once every leg is walked but no
+// preview has been stamped yet. Owns the only "Generate preview"
+// affordance in the mini pane; without it the operator would have no
+// in-pane path forward (the footer Submit stays disabled with
+// "Generate the preview first").
+function GeneratePreviewHero({
   detail,
   groupId,
   rides,
@@ -735,6 +749,92 @@ function PreviewHero({
   const { toast } = useToast();
   const stamp = useStampPreviewGenerated();
   const gate = derivePreviewGateState(detail, rides);
+  function generate() {
+    stamp.mutate(
+      { id: groupId },
+      {
+        onSuccess: (g) => {
+          applyGroupMutationResult(qc, g);
+          successToast({ title: "Done", description: "Preview generated" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Generate failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+  return (
+    <Card>
+      <CardContent className="py-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">Generate the preview</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Every leg is walked. Generate the dispute preview, review the
+          draft, then submit to the portal.
+        </p>
+        {!gate.ok && gate.reason && (
+          <p className="text-xs text-amber-700">{gate.reason}</p>
+        )}
+        <div>
+          <Button
+            size="sm"
+            disabled={stamp.isPending || !gate.ok}
+            onClick={generate}
+            data-testid="mini-generate-preview"
+          >
+            {stamp.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5 mr-1" />
+            )}
+            Generate preview
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Review hero — preview exists, not yet marked reviewed. Owns the
+// only "Mark reviewed" affordance and a "Regenerate preview"
+// secondary so the operator can refresh the draft from here without
+// leaving the pane.
+function ReviewHero({
+  detail,
+  groupId,
+  rides,
+}: {
+  detail: DetailGroup;
+  groupId: number;
+  rides: ClaimResponse[];
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const mark = useMarkInvoiceGroupDraftReviewed();
+  const stamp = useStampPreviewGenerated();
+  const gate = derivePreviewGateState(detail, rides);
+  function markReviewed() {
+    mark.mutate(
+      { id: groupId },
+      {
+        onSuccess: (g) => {
+          applyGroupMutationResult(qc, g);
+          successToast({ title: "Done", description: "Draft marked reviewed" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Mark reviewed failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
   function regenerate() {
     stamp.mutate(
       { id: groupId },
@@ -757,16 +857,24 @@ function PreviewHero({
       <CardContent className="py-5 space-y-3">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Preview generated</h3>
+          <h3 className="text-sm font-semibold">Review the draft</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          The dispute draft is ready. Open Full details to read the body and
-          mark it reviewed, then submit from the footer.
+          The preview is ready. Open Full details to read the body, then mark
+          it reviewed to unlock Submit.
         </p>
-        {!gate.ok && gate.reason && (
-          <p className="text-xs text-amber-700">{gate.reason}</p>
-        )}
-        <div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={mark.isPending}
+            onClick={markReviewed}
+            data-testid="mini-mark-reviewed"
+          >
+            {mark.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : null}
+            Mark reviewed
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -785,63 +893,19 @@ function PreviewHero({
   );
 }
 
-// Review hero owns "Mark reviewed" — stamps draftReviewedAt and the
-// footer Submit unlocks immediately (single CTA, no extra accordion).
-function ReviewHero({
-  detail,
-  groupId,
-}: {
-  detail: DetailGroup;
-  groupId: number;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const mark = useMarkInvoiceGroupDraftReviewed();
-  function markReviewed() {
-    mark.mutate(
-      { id: groupId },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({ title: "Done", description: "Draft marked reviewed" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Mark reviewed failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
+// Ready hero — preview generated AND marked reviewed. Confirms the
+// operator's only remaining action is the footer Submit.
+function ReadyHero() {
   return (
     <Card>
-      <CardContent className="py-5 space-y-3">
+      <CardContent className="py-5 space-y-2">
         <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Reviewed — ready to submit</h3>
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <h3 className="text-sm font-semibold">Ready to submit</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          {detail.draftReviewedAt
-            ? "The draft has been reviewed. Submit to the portal from the footer below."
-            : "Confirm the draft reads correctly, then submit from the footer."}
+          Draft reviewed. Submit to the portal from the footer below.
         </p>
-        {!detail.draftReviewedAt && (
-          <div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={mark.isPending}
-              onClick={markReviewed}
-              data-testid="mini-mark-reviewed"
-            >
-              {mark.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin mr-1" />
-              ) : null}
-              Mark reviewed
-            </Button>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
