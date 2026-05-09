@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetInvoiceGroup,
@@ -8,13 +9,28 @@ import {
   useRemoveInvoiceGroupHold,
   useRemoveLegHold,
   useListErrorTypes,
+  useListClaimNotes,
+  useCreateClaimNote,
+  useDeleteNote,
+  useGetInvoiceGroupEmailThread,
+  useReplyToInvoiceGroupEmailConversation,
+  useStampPreviewGenerated,
+  useMarkInvoiceGroupDraftReviewed,
+  useCreatePortalSubmission,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  getListClaimNotesQueryKey,
+  getGetInvoiceGroupEmailThreadQueryKey,
+  getGetInvoiceGroupQueryKey,
+  getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   ErrorTypeResponse,
   InvoiceGroupDetailResponse,
+  EmailThreadConversation,
+  EmailThreadMessage,
+  NoteResponse,
 } from "@workspace/api-client-react";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import {
@@ -36,17 +52,12 @@ import {
   Send,
   Sparkles,
   StickyNote,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -55,19 +66,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RefNumber } from "@/components/ref-number";
-import { ClaimDetailV2 } from "@/components/claim-detail-v2";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
-import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatCurrency } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
 import {
-  buildPhaseConfigV3,
-} from "@/components/inline-group-workspace-v3";
-import {
   deriveInvoiceDisputeOutlook,
+  derivePreviewGateState,
 } from "@/lib/whats-next-derivation";
 import { getGroupLifecyclePhaseFromGroup } from "@/lib/lifecycle-phase";
 import {
@@ -80,14 +87,16 @@ import { markLocalAction } from "@/hooks/use-local-action-mark";
 // ─────────────────────────────────────────────────────────────────────
 // InlineGroupWorkspaceMini — Task #565 right pane.
 //
-// One stable hero per leg with six explicit states (Classify, SOP,
-// Resolved, Preview, Review, Submitted), a 4-chip strip with one
-// inline accordion panel for context (Evidence/Notes/Comms/Activity),
-// a persistent group-hold banner, and a single pinned footer that
-// owns the readiness pill, helper copy, and the only Submit CTA.
+// Single-pane workspace: hero per leg, four-chip strip with inline
+// panels (Evidence/Notes/Comms/Activity), a persistent group-hold
+// banner, and a single pinned footer that owns the readiness pill,
+// helper copy, and the only Submit CTA.
 //
-// This component is *additive* — it ships behind a feature flag in
-// queue.tsx and leaves the classic + V3 right panes untouched.
+// Reads canonical group fields only (`group.phase`, the lifecycle
+// helper). Never reads deprecated `detail.status` / `detail.outcome`
+// to decide what stage we're in. The dispute/re-attest fork still
+// flows through `deriveInvoiceDisputeOutlook` because that helper
+// inspects the leg shape, not the group status.
 // ─────────────────────────────────────────────────────────────────────
 
 type DetailGroup = InvoiceGroupDetailResponse & {
@@ -102,6 +111,121 @@ interface Props {
   groupId: number;
 }
 
+interface PhaseConfig {
+  steps: readonly string[];
+  activeIndex: number;
+  helper: string;
+  pill: { label: string; tone: "amber" | "green" | "blue" };
+}
+
+interface PhaseInputs {
+  outlook: ReturnType<typeof deriveInvoiceDisputeOutlook>["outlook"];
+  legCount: number;
+  resolvedCount: number;
+  previewGenerated: boolean;
+  draftReviewed: boolean;
+  submitted: boolean;
+  needsClassificationCount: number;
+}
+
+// Inlined phase-pill builder (formerly imported from
+// inline-group-workspace-v3). Owned here so the V3 file can be deleted
+// in the same task.
+function buildMiniPhase(inputs: PhaseInputs): PhaseConfig {
+  const {
+    outlook,
+    legCount,
+    resolvedCount,
+    previewGenerated,
+    draftReviewed,
+    submitted,
+    needsClassificationCount,
+  } = inputs;
+  const allWalked = legCount > 0 && resolvedCount === legCount;
+
+  if (outlook === "has_disputable") {
+    const needsClassification = needsClassificationCount > 0;
+    const steps = needsClassification
+      ? (["Classify", "Walk legs", "Preview", "Review", "Submit"] as const)
+      : (["Walk legs", "Preview", "Review", "Submit"] as const);
+    const shift = needsClassification ? 1 : 0;
+    let activeIndex = 0;
+    if (submitted) activeIndex = 3 + shift;
+    else if (draftReviewed) activeIndex = 3 + shift;
+    else if (previewGenerated) activeIndex = 2 + shift;
+    else if (allWalked) activeIndex = 1 + shift;
+    else if (!needsClassification) activeIndex = 0;
+
+    let helper: string;
+    if (submitted) helper = "Submitted to the portal.";
+    else if (draftReviewed) helper = "Draft reviewed — submit to the portal.";
+    else if (previewGenerated)
+      helper = "Preview generated — review the draft, then submit.";
+    else if (allWalked)
+      helper = "All legs walked — generate the preview, then submit to the portal.";
+    else if (needsClassification)
+      helper = `Pick the error type for ${needsClassificationCount} leg${needsClassificationCount === 1 ? "" : "s"} to unlock the SOP walk.`;
+    else
+      helper = `Walk all ${legCount} leg${legCount === 1 ? "" : "s"} to unlock Generate preview, then Submit.`;
+
+    let pillLabel: string;
+    let pillTone: "amber" | "green" | "blue";
+    if (submitted) {
+      pillLabel = "Submitted";
+      pillTone = "green";
+    } else if (draftReviewed) {
+      pillLabel = "Ready to submit";
+      pillTone = "green";
+    } else if (previewGenerated) {
+      pillLabel = "Awaiting review";
+      pillTone = "blue";
+    } else if (allWalked) {
+      pillLabel = "Ready to preview";
+      pillTone = "blue";
+    } else if (needsClassification) {
+      pillLabel = `${needsClassificationCount} to classify`;
+      pillTone = "amber";
+    } else {
+      pillLabel = `${resolvedCount} of ${legCount} ready`;
+      pillTone = "amber";
+    }
+    return { steps, activeIndex, helper, pill: { label: pillLabel, tone: pillTone } };
+  }
+
+  if (outlook === "reattest_only") {
+    return {
+      steps: ["Walk legs", "Re-attest"],
+      activeIndex: allWalked ? 1 : 0,
+      helper: allWalked
+        ? "All legs walked — re-attest survivors in the portal."
+        : `Walk all ${legCount} leg${legCount === 1 ? "" : "s"} to unlock Re-attest.`,
+      pill: {
+        label: allWalked ? "Ready to re-attest" : `${resolvedCount} of ${legCount} ready`,
+        tone: allWalked ? "blue" : "amber",
+      },
+    };
+  }
+
+  return {
+    steps: ["Close"],
+    activeIndex: 0,
+    helper: "Nothing left to dispute — close the invoice out as Withdrawn.",
+    pill: { label: "Ready to close", tone: "amber" },
+  };
+}
+
+// Submitted-or-later macro check sourced from canonical phase only.
+function isPostSubmit(group: DetailGroup): boolean {
+  const phase = group.phase;
+  return (
+    phase === "submitted" ||
+    phase === "response_received" ||
+    phase === "reviewed" ||
+    phase === "awaiting_reattestation" ||
+    phase === "closed"
+  );
+}
+
 export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const { get, set } = useUrlParams();
   const legParam = Number.parseInt(get("leg"), 10);
@@ -109,7 +233,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
     Number.isFinite(legParam) && legParam > 0 ? legParam : null;
 
   const [chipOpen, setChipOpen] = useState<ChipKey | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [classifyOpen, setClassifyOpen] = useState(false);
   const [walkStartedFor, setWalkStartedFor] = useState<number | null>(null);
   const [holdLegOpen, setHoldLegOpen] = useState(false);
@@ -160,14 +283,11 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
   const previewGenerated = !!detail.previewGeneratedAt;
   const draftReviewed = !!detail.draftReviewedAt;
-  const submitted =
-    !!detail.outcome &&
-    detail.outcome !== "Withdrawn" &&
-    detail.outcome !== "Non-Issue" &&
-    detail.status !== "New" &&
-    detail.status !== "Needs Evidence";
+  // Canonical post-submit signal — `group.phase` + the lifecycle
+  // helper. Never reads `detail.status` or `detail.outcome` directly.
+  const submitted = isPostSubmit(detail);
 
-  const phase = buildPhaseConfigV3({
+  const phase = buildMiniPhase({
     outlook,
     legCount: rides.length,
     resolvedCount,
@@ -178,9 +298,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   });
 
   const groupHoldActive =
-    !submitted &&
-    (getGroupLifecyclePhaseFromGroup(detail) === "on-hold" ||
-      (detail.holdReason ?? null) != null);
+    !submitted && getGroupLifecyclePhaseFromGroup(detail) === "on-hold";
   const legHoldActive =
     !submitted &&
     !groupHoldActive &&
@@ -188,11 +306,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
     activeLeg.sopOutcome !== "hold" &&
     (activeLeg.holdReason ?? null) != null;
 
-  // ─── Hero state machine ─────────────────────────────────────────────
-  // Six explicit states keyed off real group/leg data — no hidden
-  // intermediate cards, no overlapping decks. Order matters: Submitted
-  // wins, then Review/Preview chrome, then per-leg work (Classify or
-  // SOP) or the per-leg "Resolved" terminal.
   type HeroState =
     | "submitted"
     | "review"
@@ -217,6 +330,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
       data-testid="inline-group-workspace-mini"
       data-outlook={outlook}
       data-hero={hero}
+      data-phase={detail.phase ?? ""}
     >
       <GroupSummaryHeader
         detail={detail}
@@ -224,7 +338,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         activeLeg={activeLeg}
         resolvedIndex={resolvedIndex}
         onSelectLeg={setActiveLegId}
-        onOpenDetails={() => setDetailsOpen(true)}
       />
 
       {groupHoldActive && (
@@ -236,8 +349,10 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
 
       <div aria-live="polite" className="cc-mini-hero">
         {hero === "submitted" && <SubmittedHero detail={detail} />}
-        {hero === "review" && <ReviewHero detail={detail} />}
-        {hero === "preview" && <PreviewHero detail={detail} />}
+        {hero === "review" && <ReviewHero detail={detail} groupId={groupId} />}
+        {hero === "preview" && (
+          <PreviewHero detail={detail} groupId={groupId} rides={rides} />
+        )}
         {hero === "empty" && (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -245,9 +360,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
             </CardContent>
           </Card>
         )}
-        {hero === "resolved" && activeLeg && (
-          <ResolvedHero leg={activeLeg} />
-        )}
+        {hero === "resolved" && activeLeg && <ResolvedHero leg={activeLeg} />}
         {hero === "classify" && activeLeg && (
           <ClassifyHero
             leg={activeLeg}
@@ -269,7 +382,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
           groupId={groupId}
           openChip={chipOpen}
           onToggle={(k) => setChipOpen((cur) => (cur === k ? null : k))}
-          onOpenFullDetails={() => setDetailsOpen(true)}
           onPlaceLegHold={() => setHoldLegOpen(true)}
           legHoldActive={legHoldActive}
         />
@@ -279,44 +391,14 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         phase={phase}
         detail={detail}
         groupId={groupId}
-        activeLeg={activeLeg}
-        onJumpToLeg={setActiveLegId}
+        rides={rides}
         onPlaceGroupHold={() => setHoldGroupOpen(true)}
         groupHoldActive={groupHoldActive}
         outlook={outlook}
+        previewGenerated={previewGenerated}
+        draftReviewed={draftReviewed}
+        submitted={submitted}
       />
-
-      {/* Full leg details — kept as the existing Sheet so editing-heavy
-          surfaces (composer, comms reply, activity) stay ergonomic. */}
-      <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <SheetContent
-          side="right"
-          className="w-full sm:max-w-2xl overflow-y-auto"
-          data-testid="mini-details-drawer"
-        >
-          <SheetHeader>
-            <SheetTitle>
-              {activeLeg ? (
-                <>
-                  Leg details ·{" "}
-                  <RefNumber value={activeLeg.confNumber} variant="inline" />
-                </>
-              ) : (
-                "Leg details"
-              )}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="cc-scope mt-4">
-            {activeLeg ? (
-              <ClaimDetailV2 claimId={activeLeg.id} embedded />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No active leg to show.
-              </p>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
 
       {activeLeg && classifyOpen && (
         <ClassifyDialog
@@ -346,22 +428,27 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   );
 }
 
-// ─── Group summary header (with Leg tabs) ───────────────────────────
+// ─── Group summary header ───────────────────────────────────────────
+// "Full details" is now a deep link to the canonical detail page so
+// the workspace stays a single right pane (no nested drawer). The
+// link carries `?leg=` so the operator lands on the same leg they
+// were working in here.
 function GroupSummaryHeader({
   detail,
   rides,
   activeLeg,
   resolvedIndex,
   onSelectLeg,
-  onOpenDetails,
 }: {
   detail: DetailGroup;
   rides: ClaimResponse[];
   activeLeg: ClaimResponse | null;
   resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
   onSelectLeg: (id: number) => void;
-  onOpenDetails: () => void;
 }) {
+  const fullHref = activeLeg
+    ? `/invoice-groups/${detail.id}?leg=${activeLeg.id}`
+    : `/invoice-groups/${detail.id}`;
   return (
     <div className="cc-group-header" data-testid="mini-group-header">
       <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -377,16 +464,17 @@ function GroupSummaryHeader({
           {formatCurrency(detail.totalAmount)}
         </HideForClerk>
       </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="ml-auto h-7 px-2 text-xs"
-        onClick={onOpenDetails}
-        data-testid="mini-open-details"
-      >
-        Full details
-        <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
-      </Button>
+      <Link href={fullHref}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 px-2 text-xs"
+          data-testid="mini-open-details"
+        >
+          Full details
+          <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+        </Button>
+      </Link>
       {rides.length > 0 && (
         <div
           className="cc-segmented w-full mt-1.5"
@@ -432,7 +520,7 @@ function legStateIcon(
   return <Circle className="w-3 h-3" aria-label="pending" />;
 }
 
-// ─── Group-hold banner (persistent across all heroes) ───────────────
+// ─── Group-hold banner ──────────────────────────────────────────────
 function GroupHoldBanner({
   detail,
   onPlaceHoldEdit,
@@ -450,7 +538,7 @@ function GroupHoldBanner({
       {
         onSuccess: (g) => {
           applyGroupMutationResult(qc, g);
-          successToast({ title: "__VERB__", description: "Hold released" });
+          successToast({ title: "Done", description: "Hold released" });
         },
         onError: (e: unknown) =>
           toast({
@@ -515,7 +603,9 @@ function ClassifyHero({
           <h3 className="text-sm font-semibold">Pick the error type</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          This leg has no error type yet. Pick one to unlock the SOP walk.
+          {leg.confNumber
+            ? `Leg ${leg.confNumber} has no error type yet. Pick one to unlock the SOP walk.`
+            : "This leg has no error type yet. Pick one to unlock the SOP walk."}
         </p>
         <div>
           <Button
@@ -630,41 +720,137 @@ function ResolvedHero({ leg }: { leg: ClaimResponse }) {
   );
 }
 
-function PreviewHero({ detail }: { detail: DetailGroup }) {
+// Preview hero owns "Generate preview" — stamps previewGeneratedAt
+// and progresses the phase pill in the footer.
+function PreviewHero({
+  detail,
+  groupId,
+  rides,
+}: {
+  detail: DetailGroup;
+  groupId: number;
+  rides: ClaimResponse[];
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const stamp = useStampPreviewGenerated();
+  const gate = derivePreviewGateState(detail, rides);
+  function regenerate() {
+    stamp.mutate(
+      { id: groupId },
+      {
+        onSuccess: (g) => {
+          applyGroupMutationResult(qc, g);
+          successToast({ title: "Done", description: "Preview regenerated" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Regenerate failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
   return (
     <Card>
-      <CardContent className="py-5 space-y-2">
+      <CardContent className="py-5 space-y-3">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Preview generated</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          The dispute draft is ready. Open Full details to review the subject
-          and body, then come back here to submit.
+          The dispute draft is ready. Open Full details to read the body and
+          mark it reviewed, then submit from the footer.
         </p>
+        {!gate.ok && gate.reason && (
+          <p className="text-xs text-amber-700">{gate.reason}</p>
+        )}
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={stamp.isPending || !gate.ok}
+            onClick={regenerate}
+            data-testid="mini-regenerate-preview"
+          >
+            {stamp.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : null}
+            Regenerate preview
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function ReviewHero({ detail }: { detail: DetailGroup }) {
+// Review hero owns "Mark reviewed" — stamps draftReviewedAt and the
+// footer Submit unlocks immediately (single CTA, no extra accordion).
+function ReviewHero({
+  detail,
+  groupId,
+}: {
+  detail: DetailGroup;
+  groupId: number;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const mark = useMarkInvoiceGroupDraftReviewed();
+  function markReviewed() {
+    mark.mutate(
+      { id: groupId },
+      {
+        onSuccess: (g) => {
+          applyGroupMutationResult(qc, g);
+          successToast({ title: "Done", description: "Draft marked reviewed" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Mark reviewed failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
   return (
     <Card>
-      <CardContent className="py-5 space-y-2">
+      <CardContent className="py-5 space-y-3">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Reviewed — ready to submit</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          The draft has been reviewed. Submit to the portal from the footer
-          below.
+          {detail.draftReviewedAt
+            ? "The draft has been reviewed. Submit to the portal from the footer below."
+            : "Confirm the draft reads correctly, then submit from the footer."}
         </p>
+        {!detail.draftReviewedAt && (
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={mark.isPending}
+              onClick={markReviewed}
+              data-testid="mini-mark-reviewed"
+            >
+              {mark.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : null}
+              Mark reviewed
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 function SubmittedHero({ detail }: { detail: DetailGroup }) {
+  // Read-only acknowledgement — informational copy is keyed off the
+  // canonical phase, not the deprecated `outcome` column.
+  const lifecycle = getGroupLifecyclePhaseFromGroup(detail);
   return (
     <Card>
       <CardContent className="py-5 space-y-2">
@@ -673,19 +859,20 @@ function SubmittedHero({ detail }: { detail: DetailGroup }) {
           <h3 className="text-sm font-semibold">Submitted to the portal</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          Outcome: {detail.outcome ?? "—"} · Status: {detail.status}
+          Phase: {lifecycle}. Open Full details to follow up on portal
+          responses or close the invoice out.
         </p>
       </CardContent>
     </Card>
   );
 }
 
-// ─── Chip strip with inline expand panel ────────────────────────────
+// ─── Chip strip + inline panels ─────────────────────────────────────
 function ChipStrip({
   leg,
+  groupId,
   openChip,
   onToggle,
-  onOpenFullDetails,
   onPlaceLegHold,
   legHoldActive,
 }: {
@@ -693,17 +880,12 @@ function ChipStrip({
   groupId: number;
   openChip: ChipKey | null;
   onToggle: (k: ChipKey) => void;
-  onOpenFullDetails: () => void;
   onPlaceLegHold: () => void;
   legHoldActive: boolean;
 }) {
-  // Counts come from the claim payload itself — no extra fetches. This
-  // matches v3's `WalkSopHero` counts strip and keeps the chip strip
-  // cheap to render even when the operator has the full leg list open.
   const evidenceFiles = leg.evidenceFiles ?? [];
   const evidenceCount = evidenceFiles.length;
-  const hasNotes = (leg.evidenceNotes ?? "").trim().length > 0;
-  const notesCount = hasNotes ? 1 : 0;
+  const inlineNote = (leg.evidenceNotes ?? "").trim();
 
   return (
     <div className="cc-mini-chips" data-testid="mini-chip-strip">
@@ -720,7 +902,6 @@ function ChipStrip({
           k="notes"
           label="Notes"
           icon={<StickyNote className="w-3 h-3" />}
-          count={notesCount}
           openChip={openChip}
           onToggle={onToggle}
         />
@@ -751,9 +932,7 @@ function ChipStrip({
               Hold leg
             </Button>
           )}
-          {legHoldActive && (
-            <ReleaseLegHoldButton legId={leg.id} />
-          )}
+          {legHoldActive && <ReleaseLegHoldButton legId={leg.id} />}
         </div>
       </div>
 
@@ -761,20 +940,17 @@ function ChipStrip({
         <div className="cc-mini-chip-panel" data-testid={`mini-chip-panel-${openChip}`}>
           {openChip === "evidence" && (
             <EvidenceFileList
-              urls={evidenceFiles.map((f) => f.url).filter((u): u is string => !!u)}
+              urls={evidenceFiles
+                .map((f) => f.url)
+                .filter((u): u is string => !!u)}
             />
           )}
           {openChip === "notes" && (
-            <NotesPanel
-              notes={(leg.evidenceNotes ?? "").trim()}
-              onOpenFullDetails={onOpenFullDetails}
-            />
+            <NotesPanel leg={leg} inlineNote={inlineNote} />
           )}
-          {openChip === "comms" && (
-            <CommsPanel onOpenFullDetails={onOpenFullDetails} />
-          )}
+          {openChip === "comms" && <CommsPanel groupId={groupId} />}
           {openChip === "activity" && (
-            <ActivityPanel onOpenFullDetails={onOpenFullDetails} />
+            <ActivityPanel groupId={groupId} legId={leg.id} />
           )}
         </div>
       )}
@@ -815,75 +991,266 @@ function Chip({
   );
 }
 
+// Notes — real list + create + delete via the leg-scoped notes
+// endpoint. Inline `evidenceNotes` is shown read-only above the
+// thread because that field is edited from the leg detail editor and
+// there's no dedicated mini composer for it.
 function NotesPanel({
-  notes,
-  onOpenFullDetails,
+  leg,
+  inlineNote,
 }: {
-  notes: string;
-  onOpenFullDetails: () => void;
+  leg: ClaimResponse;
+  inlineNote: string;
 }) {
-  if (!notes) {
-    return (
-      <div className="text-xs text-muted-foreground py-2">
-        No evidence notes yet.{" "}
-        <button
-          type="button"
-          className="underline"
-          onClick={onOpenFullDetails}
-        >
-          Add a note in full details →
-        </button>
-      </div>
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: notes, isLoading } = useListClaimNotes(leg.id);
+  const create = useCreateClaimNote();
+  const remove = useDeleteNote();
+  const [draft, setDraft] = useState("");
+
+  function refreshNotes() {
+    qc.invalidateQueries({ queryKey: getListClaimNotesQueryKey(leg.id) });
+  }
+
+  function submit() {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    create.mutate(
+      { id: leg.id, data: { content: trimmed } },
+      {
+        onSuccess: () => {
+          setDraft("");
+          refreshNotes();
+          successToast({ title: "Done", description: "Note added" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Add note failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
     );
   }
+
+  function del(noteId: number) {
+    remove.mutate(
+      { id: noteId },
+      {
+        onSuccess: () => {
+          refreshNotes();
+          successToast({ title: "Done", description: "Note deleted" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Delete failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   return (
-    <div className="text-xs space-y-1.5">
-      <div className="whitespace-pre-wrap">{notes}</div>
-      <button
-        type="button"
-        className="underline text-muted-foreground"
-        onClick={onOpenFullDetails}
-      >
-        Open full details to edit →
-      </button>
+    <div className="text-xs space-y-2" data-testid="mini-notes-panel">
+      {inlineNote && (
+        <div className="rounded border bg-muted/40 p-2 whitespace-pre-wrap">
+          <div className="font-medium text-muted-foreground mb-0.5">
+            Evidence note
+          </div>
+          {inlineNote}
+        </div>
+      )}
+      {isLoading ? (
+        <div className="text-muted-foreground">Loading notes…</div>
+      ) : (notes ?? []).length === 0 ? (
+        <div className="text-muted-foreground">No notes yet.</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {(notes ?? []).map((n: NoteResponse) => (
+            <li
+              key={n.id}
+              className="rounded border p-2 flex items-start gap-2"
+              data-testid={`mini-note-${n.id}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="whitespace-pre-wrap">{n.content}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  {n.author ?? "—"}
+                  {n.createdAt ? ` · ${new Date(n.createdAt).toLocaleString()}` : ""}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5"
+                onClick={() => del(n.id)}
+                disabled={remove.isPending}
+                aria-label="Delete note"
+                data-testid={`mini-note-delete-${n.id}`}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="space-y-1.5">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a note for the team…"
+          rows={2}
+          data-testid="mini-note-composer"
+        />
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!draft.trim() || create.isPending}
+            data-testid="mini-note-submit"
+          >
+            {create.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : null}
+            Add note
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function CommsPanel({
-  onOpenFullDetails,
-}: {
-  onOpenFullDetails: () => void;
-}) {
+// Comms — real group-level email thread + inline reply on the most
+// recent conversation. Replies are routed through the conversation's
+// outlook id; full reply composer with attachments stays on the
+// detail page.
+function CommsPanel({ groupId }: { groupId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: thread, isLoading } = useGetInvoiceGroupEmailThread(groupId);
+  const reply = useReplyToInvoiceGroupEmailConversation();
+  const [body, setBody] = useState("");
+
+  const conversations: EmailThreadConversation[] = useMemo(() => {
+    return thread?.conversations ?? [];
+  }, [thread]);
+  const latest: EmailThreadConversation | undefined = conversations[0];
+
+  function send() {
+    if (!latest) return;
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    reply.mutate(
+      {
+        id: groupId,
+        conversationId: latest.conversationId,
+        data: {
+          subject: latest.latestSubject ?? "Re: invoice dispute",
+          bodyText: trimmed,
+          to: latest.latestInboundSender ? [latest.latestInboundSender] : [],
+        },
+      },
+      {
+        onSuccess: () => {
+          setBody("");
+          qc.invalidateQueries({
+            queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
+          });
+          successToast({ title: "Done", description: "Reply sent" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Send failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   return (
-    <div className="text-xs space-y-1.5">
-      <div>Payor email conversations live in full details.</div>
-      <button
-        type="button"
-        className="underline text-muted-foreground"
-        onClick={onOpenFullDetails}
-      >
-        Open full details to read or reply →
-      </button>
+    <div className="text-xs space-y-2" data-testid="mini-comms-panel">
+      {isLoading ? (
+        <div className="text-muted-foreground">Loading messages…</div>
+      ) : conversations.length === 0 ? (
+        <div className="text-muted-foreground">No payor messages yet.</div>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="font-medium text-muted-foreground">
+            Latest conversation
+          </div>
+          <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(latest?.messages ?? []).slice(-4).map((m: EmailThreadMessage) => (
+              <li
+                key={m.id}
+                className="rounded border p-2"
+                data-testid={`mini-comms-msg-${m.id}`}
+              >
+                <div className="text-[10px] text-muted-foreground">
+                  {m.direction === "outbound" ? "→ " : "← "}
+                  {m.sender}
+                  {m.timestamp ? ` · ${new Date(m.timestamp).toLocaleString()}` : ""}
+                </div>
+                {m.subject && (
+                  <div className="font-medium truncate">{m.subject}</div>
+                )}
+                <div className="whitespace-pre-wrap line-clamp-3">
+                  {m.bodyPreview ?? ""}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {latest && (
+            <div className="space-y-1.5">
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Reply to the latest message…"
+                rows={2}
+                data-testid="mini-comms-composer"
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={send}
+                  disabled={!body.trim() || reply.isPending}
+                  data-testid="mini-comms-send"
+                >
+                  {reply.isPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  ) : null}
+                  Send reply
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
+// Activity — links into the canonical detail page where the full
+// audit trail lives. The mini panel surfaces the count so operators
+// know whether there's history to read.
 function ActivityPanel({
-  onOpenFullDetails,
+  groupId,
+  legId,
 }: {
-  onOpenFullDetails: () => void;
+  groupId: number;
+  legId: number;
 }) {
   return (
-    <div className="text-xs space-y-1.5">
+    <div className="text-xs space-y-1.5" data-testid="mini-activity-panel">
       <div>Audit trail and recent activity live in full details.</div>
-      <button
-        type="button"
+      <Link
+        href={`/invoice-groups/${groupId}?leg=${legId}#activity`}
         className="underline text-muted-foreground"
-        onClick={onOpenFullDetails}
       >
         Open full details to view activity →
-      </button>
+      </Link>
     </div>
   );
 }
@@ -899,7 +1266,7 @@ function ReleaseLegHoldButton({ legId }: { legId: number }) {
         onSuccess: (leg) => {
           applyLegMutationResult(qc, leg);
           markLocalAction(`claim:${legId}`);
-          successToast({ title: "__VERB__", description: "Leg hold released" });
+          successToast({ title: "Done", description: "Leg hold released" });
         },
         onError: (e: unknown) =>
           toast({
@@ -931,32 +1298,86 @@ function ReleaseLegHoldButton({ legId }: { legId: number }) {
   );
 }
 
-// ─── Pinned footer (readiness pill + helper + Submit) ───────────────
+// ─── Pinned footer (single Submit) ──────────────────────────────────
+// One inline Submit CTA built directly on `useCreatePortalSubmission`
+// + `derivePreviewGateState`. The footer no longer mounts the
+// gauntlet — readiness is the single pill, the helper line owns
+// the explanation, and the button is the one and only submit path.
 function PinnedFooter({
   phase,
   detail,
   groupId,
-  activeLeg,
-  onJumpToLeg,
+  rides,
   onPlaceGroupHold,
   groupHoldActive,
   outlook,
+  previewGenerated,
+  draftReviewed,
+  submitted,
 }: {
-  phase: ReturnType<typeof buildPhaseConfigV3>;
+  phase: PhaseConfig;
   detail: DetailGroup;
   groupId: number;
-  activeLeg: ClaimResponse | null;
-  onJumpToLeg: (id: number | null) => void;
+  rides: ClaimResponse[];
   onPlaceGroupHold: () => void;
   groupHoldActive: boolean;
   outlook: ReturnType<typeof deriveInvoiceDisputeOutlook>["outlook"];
+  previewGenerated: boolean;
+  draftReviewed: boolean;
+  submitted: boolean;
 }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const submit = useCreatePortalSubmission();
+  const gate = derivePreviewGateState(detail, rides);
+
+  // Submit is enabled only when the readback gate is satisfied AND
+  // the operator has progressed through preview + reviewed. Disabled
+  // tooltip text is the gate reason (or a step hint when the gate
+  // is fine but earlier steps haven't been completed).
+  const stepReady = previewGenerated && draftReviewed;
+  const enabled =
+    !submitted &&
+    !groupHoldActive &&
+    outlook === "has_disputable" &&
+    gate.ok &&
+    stepReady;
+
+  let disabledReason: string | null = null;
+  if (submitted) disabledReason = "Already submitted.";
+  else if (groupHoldActive) disabledReason = "Release the hold first.";
+  else if (outlook !== "has_disputable")
+    disabledReason = "Nothing to dispute on this invoice.";
+  else if (!gate.ok) disabledReason = gate.reason;
+  else if (!previewGenerated)
+    disabledReason = "Generate the preview first.";
+  else if (!draftReviewed) disabledReason = "Mark the draft reviewed first.";
+
+  function onSubmit() {
+    submit.mutate(
+      { data: { invoiceGroupId: groupId } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          qc.invalidateQueries({
+            queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
+          });
+          qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+          successToast({ title: "Done", description: "Submitted to the portal" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Submit failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <div
-        className="cc-footer-card cc-footer-pinned"
-        data-testid="mini-pinned-footer"
-      >
+      <div className="cc-footer-card cc-footer-pinned" data-testid="mini-pinned-footer">
         <span
           className={`cc-pill cc-pill-${phase.pill.tone}`}
           data-testid="mini-phase-pill"
@@ -964,7 +1385,7 @@ function PinnedFooter({
           {phase.pill.label}
         </span>
         <span className="cc-meta text-xs flex-1 min-w-0">{phase.helper}</span>
-        {!groupHoldActive && outlook !== "nothing_to_do" && (
+        {!groupHoldActive && outlook !== "nothing_to_do" && !submitted && (
           <Button
             size="sm"
             variant="ghost"
@@ -977,21 +1398,36 @@ function PinnedFooter({
           </Button>
         )}
       </div>
-      {/* The single Submit/Generate/Re-attest CTA — delegated to the
-          existing gauntlet so the wiring stays canonical. `bare` strips
-          the gauntlet's own card chrome so it reads as the footer's
-          terminator. */}
-      <InvoiceGroupActionSlot
-        group={detail}
-        groupId={groupId}
-        bare
-        onJumpToLeg={(id) => onJumpToLeg(id)}
-      />
+      {outlook === "has_disputable" && !submitted && (
+        <div className="flex flex-col gap-1.5">
+          <Button
+            size="sm"
+            onClick={onSubmit}
+            disabled={!enabled || submit.isPending}
+            data-testid="mini-submit-cta"
+          >
+            {submit.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+            ) : (
+              <Send className="w-3 h-3 mr-1" />
+            )}
+            Submit to portal
+          </Button>
+          {!enabled && disabledReason && (
+            <p
+              className="text-[11px] text-muted-foreground"
+              data-testid="mini-submit-disabled-reason"
+            >
+              {disabledReason}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Hold dialogs (leg + group) ─────────────────────────────────────
+// ─── Hold dialogs ───────────────────────────────────────────────────
 function PlaceLegHoldDialog({
   open,
   onOpenChange,
@@ -1017,7 +1453,7 @@ function PlaceLegHoldDialog({
         onSuccess: (updated) => {
           applyLegMutationResult(qc, updated);
           markLocalAction(`claim:${leg.id}`);
-          successToast({ title: "__VERB__", description: "Leg placed on hold" });
+          successToast({ title: "Done", description: "Leg placed on hold" });
           onOpenChange(false);
         },
         onError: (e: unknown) =>
@@ -1097,7 +1533,7 @@ function PlaceGroupHoldDialog({
             queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
           });
           successToast({
-            title: "__VERB__",
+            title: "Done",
             description: groupHoldActive
               ? "Hold reason updated"
               : "Invoice placed on hold",

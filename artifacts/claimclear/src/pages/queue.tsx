@@ -64,7 +64,6 @@ import {
 } from "@/components/engagement-filter-controls";
 import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { LegConclusionList } from "@/components/leg-conclusion-row";
-import { InlineGroupWorkspaceV3 } from "@/components/inline-group-workspace-v3";
 import { InlineGroupWorkspaceMini } from "@/components/inline-group-workspace-mini";
 import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { ClaimResponse, InvoiceGroupDetailResponse } from "@workspace/api-client-react";
@@ -759,18 +758,7 @@ function QueueTabEmptyState({
   );
 }
 
-interface QueueProps {
-  /**
-   * Right-pane workspace variant. `classic` (default) renders the
-   * original stacked legs + submission gauntlet workspace. `v3`
-   * renders the walk-first wizard frame from Task #517 — same data,
-   * same mutations, different chrome. The `/queue-v3` page mounts
-   * this component with `variant="v3"`.
-   */
-  variant?: "classic" | "v3" | "mini";
-}
-
-export default function Queue({ variant = "classic" }: QueueProps = {}) {
+export default function Queue() {
   useInvoiceGroupsListEvents();
   const queryClient = useQueryClient();
   const { get, set } = useUrlParams();
@@ -1776,13 +1764,7 @@ export default function Queue({ variant = "classic" }: QueueProps = {}) {
                   sticky/height cap, so the panel just flows down the
                   page. */}
               <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                {variant === "mini" ? (
-                  <InlineGroupWorkspaceMini groupId={selectedWorkflowId} />
-                ) : variant === "v3" ? (
-                  <InlineGroupWorkspaceV3 groupId={selectedWorkflowId} />
-                ) : (
-                  <InlineGroupWorkspace groupId={selectedWorkflowId} />
-                )}
+                <InlineGroupWorkspaceMini groupId={selectedWorkflowId} />
               </div>
             </div>
           </div>
@@ -2087,130 +2069,3 @@ function ClassificationInboxRow({
   );
 }
 
-const WORKSPACE_LOADING_CAPTIONS = [
-  "Loading workspace…",
-  "Pulling group details…",
-  "Almost there…",
-] as const;
-
-function WorkspaceLoadingCard() {
-  const caption = useRotatingCaption({
-    active: true,
-    captions: WORKSPACE_LOADING_CAPTIONS,
-  });
-  return (
-    <Card>
-      <CardContent className="py-12 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> {caption}
-      </CardContent>
-    </Card>
-  );
-}
-
-// Inline group workspace — stacked layout (restored to original
-// design). Top: Legs section, rendering each leg as a thin strip via
-// <LegConclusionRow />. Each strip's primary action is "Process" /
-// "Continue", which expands the worktree (SopAdvancePlayer) inline
-// beneath the strip; per-leg context is captured AS the operator
-// walks the tree, not via a standalone field. Quick-conclude
-// Non-issue / Non-contestable buttons appear ONLY when no error type
-// is set on the leg.
-// Bottom: the submission gauntlet — readback → preview → editable
-// AI write-up → channel-aware Submit.
-//
-// Gauntlet → leg jump: when a submit fails with `gate: "legs"`, the
-// gauntlet calls `onJumpToLeg(legId)` and we ring + auto-expand the
-// matching row. The highlight clears on any subsequent expand
-// interaction so an operator who scrolls past the jump target doesn't
-// keep seeing the amber ring.
-function InlineGroupWorkspace({
-  groupId,
-}: {
-  groupId: number;
-}) {
-  const { get, set } = useUrlParams();
-  const legParam = Number.parseInt(get("leg"), 10);
-  const expandedLegId: number | null =
-    Number.isFinite(legParam) && legParam > 0 ? legParam : null;
-  const setExpandedLegId = (id: number | null) => {
-    set({ leg: id == null ? null : String(id) }, false);
-  };
-
-  const [highlightLegId, setHighlightLegId] = useState<number | null>(null);
-
-  const { data: group, isLoading } = useGetInvoiceGroup(groupId);
-  if (isLoading || !group) {
-    return <WorkspaceLoadingCard />;
-  }
-  const detail = group as InvoiceGroupDetailResponse;
-  // Show every leg in the group, including ones that were excluded
-  // (e.g. concluded as Non-issue / Non-contestable). The
-  // LegConclusionRow renders excluded legs as the "processed" variant
-  // with a muted card background and a "Non-issue" sub-status pill, so
-  // the operator still sees the leg is part of the invoice — it just
-  // can't be acted on. Hiding the row entirely was misleading because
-  // the readiness card and group header still claimed N legs exist.
-  const rides: ClaimResponse[] = detail.rides ?? [];
-
-  return (
-    <div
-      className="space-y-4"
-      data-testid="inline-group-workspace"
-    >
-      {/* Legs section (above) — thin strips, one per leg. Each strip
-          opens the worktree (SOP) inline.
-
-          Submission-preview element is built once and forwarded into
-          the actively-expanded leg's worktree (so it sits directly
-          under the SOP walk — operator flow is "walk → confirm
-          preview"). When no leg is expanded, it falls back to its
-          standalone spot below the legs panel so the operator can
-          still review and submit without opening a leg. */}
-      {(() => {
-        const submissionPreview = (
-          <InvoiceGroupActionSlot
-            group={detail}
-            groupId={groupId}
-            onJumpToLeg={(claimId) => {
-              setExpandedLegId(claimId);
-              setHighlightLegId(claimId);
-            }}
-          />
-        );
-        return (
-          <>
-            <Card data-testid="legs-panel">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileText className="h-4 w-4" /> Legs
-                </CardTitle>
-                <CardDescription>
-                  Walk each leg through its worktree to conclude it.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <LegConclusionList
-                  claims={rides}
-                  groupId={groupId}
-                  expandedClaimId={expandedLegId}
-                  onExpandedChange={(id) => {
-                    setExpandedLegId(id);
-                    if (highlightLegId != null) setHighlightLegId(null);
-                  }}
-                  highlightClaimId={highlightLegId}
-                  submissionSlot={submissionPreview}
-                />
-              </CardContent>
-            </Card>
-
-            {/* Standalone submission preview — only when no leg is
-                expanded. With a leg open, the same preview is
-                rendered inline under the worktree, and showing it
-                twice would be redundant. */}
-            {expandedLegId == null ? submissionPreview : null}
-          </>
-        );
-      })()}
-    </div>
-  );
-}

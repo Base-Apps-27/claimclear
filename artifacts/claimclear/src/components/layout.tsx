@@ -207,7 +207,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "Queue", href: "/queue", icon: ListTodo },
-        { label: "Queue v3 (preview)", href: "/queue-v3", icon: ListTodo },
         {
           label: "Responses Awaiting Review",
           href: "/responses-awaiting-review",
