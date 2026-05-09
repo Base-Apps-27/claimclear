@@ -114,10 +114,14 @@ export function buildMockState(args: {
     draftReviewedAt: null,
     holdReason: null,
     groupHoldPlacedAt: null,
+    outcome: null,
+    closureReason: null,
+    closureCategory: null,
+    closureNarrative: null,
+    lastClosureBody: null,
     legs,
     callOrder: [],
     portalSubmissionBody: null,
-    closureReason: null,
     errorTypeIndex,
     presence: new Map<string, Map<string, PresenceLedgerEntry>>(),
   };
@@ -202,7 +206,7 @@ function buildGroupListItem(state: WalkMockState) {
     errorTypeId: "et_eligibility",
     errorTypeName: "Eligibility",
     status,
-    outcome: "Pending",
+    outcome: state.outcome ?? "Pending",
     rideCount: state.legs.size,
     totalAmount: "240.00",
     isUrgent: false,
@@ -221,11 +225,11 @@ function buildGroupDetail(state: WalkMockState) {
     ...buildGroupListItem(state),
     errorDetails: "Smoke harness scenario",
     closureReason: state.closureReason,
-    closureCategory: null,
+    closureCategory: state.closureCategory,
     closureCategoryOther: null,
     closureRootCause: null,
     closureRootCauseOther: null,
-    closureNarrative: null,
+    closureNarrative: state.closureNarrative,
     closureAccountabilityTags: null,
     closureAccountabilityOther: null,
     closureDrivers: null,
@@ -432,7 +436,14 @@ export async function installApiStubs(
   // Invoice-groups list — distinguishes from `/api/invoice-groups/:id`
   // which always has a slash after `invoice-groups`.
   await page.route(/\/api\/invoice-groups(?:\?|$)/, (route: Route) =>
-    route.fulfill(jsonResponse(200, { groups: [buildGroupListItem(state)] })),
+    route.fulfill(
+      jsonResponse(200, {
+        // Closed groups drop off the live queue immediately — mirrors
+        // the production filter the queue page applies. Scenarios use
+        // an empty list as the proxy for "left the queue".
+        groups: state.phase === "closed" ? [] : [buildGroupListItem(state)],
+      }),
+    ),
   );
 
   // Per-group detail GET — registered BEFORE the more specific
@@ -508,6 +519,35 @@ export async function installApiStubs(
       if (request.method() !== "POST") return route.fallback();
       state.draftReviewedAt = nowIso();
       state.callOrder.push("mark_reviewed");
+      return route.fulfill(jsonResponse(200, buildGroupDetail(state)));
+    },
+  );
+
+  // Group outcome PATCH — drives the structured closure intake from
+  // the detail-page rail. Flips the group to `closed` so the queue
+  // list filter drops it on the next refetch (scenario-03).
+  await page.route(
+    `**/api/invoice-groups/${state.groupId}/outcome*`,
+    async (route: Route, request: Request) => {
+      if (request.method() !== "PATCH") return route.fallback();
+      let body: {
+        outcome?: string;
+        closureReason?: string;
+        closureCategory?: string;
+        closureNarrative?: string;
+      } = {};
+      try {
+        body = request.postDataJSON();
+      } catch {
+        // ignore
+      }
+      state.lastClosureBody = body;
+      state.outcome = body.outcome ?? "Withdrawn";
+      state.closureReason = body.closureReason ?? null;
+      state.closureCategory = body.closureCategory ?? null;
+      state.closureNarrative = body.closureNarrative ?? null;
+      state.phase = "closed";
+      state.callOrder.push("group_close");
       return route.fulfill(jsonResponse(200, buildGroupDetail(state)));
     },
   );
@@ -660,14 +700,15 @@ function applySopAnswer(
   }
 }
 
-/** Mirrors the server's auto-close cascade: when every active leg has
- *  landed on a non-disputable terminal (all `non_issue`, all
- *  `cannot_dispute`, or a mix), the group flips to `closed` with a
- *  closure reason that names the path taken. The reason for the
- *  uniform-non-issue path (`non_issue`) is intentionally distinct from
- *  the uniform-cannot-dispute path (`cannot_dispute`) so smoke
- *  scenarios can pin the difference. Mixed paths are left for a future
- *  scenario and are not auto-closed here. */
+/** Mirrors the server's auto-close cascade for the all-non-issue path:
+ *  when every active leg has landed on a `non_issue` terminal, the
+ *  group flips to `closed` automatically (no operator gesture needed,
+ *  there is nothing to dispute or withdraw). The all-cannot-dispute
+ *  path is intentionally NOT auto-closed here — it requires the
+ *  operator to drive the structured Withdraw — Cannot Dispute intake
+ *  on the detail-page rail (PATCH /api/invoice-groups/:id/outcome),
+ *  which scenario #3 pins end-to-end. Mixed paths are left for a
+ *  future scenario and are not auto-closed here. */
 function maybeAutoCloseGroup(state: WalkMockState): void {
   if (state.phase === "closed") return;
   const active = [...state.legs.values()].filter(
@@ -677,16 +718,9 @@ function maybeAutoCloseGroup(state: WalkMockState): void {
   if (active.some((l) => l.sopOutcome == null)) return;
 
   const allNonIssue = active.every((l) => l.sopOutcome === "non_issue");
-  const allCannotDispute = active.every(
-    (l) => l.sopOutcome === "cannot_dispute",
-  );
   if (allNonIssue) {
     state.phase = "closed";
     state.closureReason = "non_issue";
     state.callOrder.push("group_close_non_issue");
-  } else if (allCannotDispute) {
-    state.phase = "closed";
-    state.closureReason = "cannot_dispute";
-    state.callOrder.push("group_close_cannot_dispute");
   }
 }

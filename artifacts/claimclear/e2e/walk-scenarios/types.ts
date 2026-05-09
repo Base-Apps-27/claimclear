@@ -69,16 +69,20 @@ export interface WalkMockState {
   draftReviewedAt: string | null;
   holdReason: string | null;
   groupHoldPlacedAt: string | null;
+  /** Closure outcome stamped by PATCH /api/invoice-groups/:id/outcome.
+   *  `null` until the operator runs the structured closure intake. */
+  outcome: string | null;
+  closureReason: string | null;
+  closureCategory: string | null;
+  closureNarrative: string | null;
+  /** Last body posted to the closure endpoint, for assertions. */
+  lastClosureBody: unknown;
   /** Per-leg state keyed by leg id. */
   legs: Map<number, MockLegState>;
   /** Append-only call ledger: one label per commit-affecting POST/DELETE. */
   callOrder: string[];
   /** Body of the last create-portal-submission POST, for assertions. */
   portalSubmissionBody: unknown;
-  /** Closure reason stamped when the mock auto-closes the group
-   *  (e.g. all legs walked to a non-disputable terminal). Null while
-   *  the group remains open. */
-  closureReason: "non_issue" | "cannot_dispute" | null;
   /** Stash of leg-by-error-type so the SOP player resolves trees. */
   errorTypeIndex: Map<string, { id: string; name: string; tree: DecisionTree }>;
   /** Shared presence ledger keyed by `${resourceType}:${resourceId}`,
