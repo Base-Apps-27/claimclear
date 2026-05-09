@@ -357,34 +357,71 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   else if (deriveLegSubStatus(activeLeg) === "needs_classification") hero = "classify";
   else hero = "sop";
 
+  const showChipSection =
+    activeLeg && hero !== "submitted" && hero !== "withdrawn";
+  const showBanners =
+    groupHoldActive ||
+    detail.payorEmailBounceState?.kind === "hard_bounced";
+
   return (
+    /* V3 edge-drawer layout.
+       Mobile/sm — natural flex-column flow in DOM order: invoice header,
+       banners, hero, chip, footer. Matches the pre-V3 stacked layout.
+       lg+ — CSS Grid with explicit areas so the invoice + section cards
+       float on the right (W=360), while banners/hero/footer occupy a
+       flexible center column. The chip section spans rows 2 and 3 and
+       uses `self-center` so the floating card sits vertically centered
+       around the hero, matching the V3 mockup spec ("NOT full-height,
+       vertically centered around hero"). */
     <div
-      className="cc-scope cc-mini space-y-3"
+      className={[
+        "cc-scope cc-mini flex flex-col gap-3",
+        "lg:h-full lg:gap-3 lg:grid",
+        "lg:[grid-template-columns:minmax(0,1fr)_360px]",
+        "lg:[grid-template-rows:auto_minmax(0,1fr)_auto]",
+        "lg:[grid-template-areas:'banners_invoice'_'hero_chip'_'footer_chip']",
+      ].join(" ")}
       data-testid="inline-group-workspace-mini"
       data-outlook={outlook}
       data-hero={hero}
       data-phase={detail.phase ?? ""}
     >
-      <GroupSummaryHeader
-        detail={detail}
-        rides={rides}
-        activeLeg={activeLeg}
-        resolvedIndex={resolvedIndex}
-        onSelectLeg={setActiveLegId}
-      />
-
-      {groupHoldActive && (
-        <GroupHoldBanner
+      {/* INVOICE CARD — top of right rail on lg, stays on top of mobile flow.
+          The wrapper applies the floating-card visual ONLY on lg so mobile
+          renders the cc-group-header inline as it always has. */}
+      <div className="lg:[grid-area:invoice] lg:self-start lg:rounded-xl lg:border lg:bg-card lg:shadow-md lg:p-3">
+        <GroupSummaryHeader
           detail={detail}
-          onPlaceHoldEdit={() => setHoldGroupOpen(true)}
+          rides={rides}
+          activeLeg={activeLeg}
+          resolvedIndex={resolvedIndex}
+          onSelectLeg={setActiveLegId}
         />
+      </div>
+
+      {/* BANNERS — top of center column. Wrapper rendered only when at
+          least one banner is active so an empty grid row doesn't take a
+          gap of vertical space. */}
+      {showBanners && (
+        <div className="space-y-3 lg:[grid-area:banners] lg:self-start">
+          {groupHoldActive && (
+            <GroupHoldBanner
+              detail={detail}
+              onPlaceHoldEdit={() => setHoldGroupOpen(true)}
+            />
+          )}
+          {detail.payorEmailBounceState?.kind === "hard_bounced" && (
+            <PayorBounceBanner bounce={detail.payorEmailBounceState} />
+          )}
+        </div>
       )}
 
-      {detail.payorEmailBounceState?.kind === "hard_bounced" && (
-        <PayorBounceBanner bounce={detail.payorEmailBounceState} />
-      )}
-
-      <div aria-live="polite" className="cc-mini-hero">
+      {/* HERO — center column, scrollable on lg so the floating right
+          rail stays put and only the action area scrolls. */}
+      <div
+        aria-live="polite"
+        className="cc-mini-hero lg:[grid-area:hero] lg:min-h-0 lg:overflow-y-auto lg:pr-1"
+      >
         {hero === "withdrawn" && <WithdrawnHero detail={detail} />}
         {hero === "submitted" && <SubmittedHero detail={detail} />}
         {hero === "ready" && <ReadyHero />}
@@ -431,36 +468,54 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         )}
       </div>
 
-      {activeLeg && hero !== "submitted" && hero !== "withdrawn" && (
-        <ChipStrip
-          leg={activeLeg}
-          groupId={groupId}
-          openChip={chipOpen}
-          onToggle={(k) => setChipOpen((cur) => (cur === k ? null : k))}
-          onPlaceLegHold={() => setHoldLegOpen(true)}
-          legHoldActive={legHoldActive}
-        />
+      {/* SECTION CARD — chip strip + chip-driven body. On lg this is the
+          floating right-rail card vertically centered around the hero
+          (self-center inside its row span). max-h prevents it from
+          extending past the pane height; inner overflow lets long
+          panels (notes thread, evidence list) scroll inside the card. */}
+      {showChipSection && (
+        <aside
+          className={[
+            "lg:[grid-area:chip] lg:self-center",
+            "lg:rounded-xl lg:border lg:bg-card lg:shadow-md",
+            "lg:flex lg:flex-col lg:max-h-full lg:overflow-hidden",
+          ].join(" ")}
+        >
+          <div className="lg:overflow-auto lg:p-3">
+            <ChipStrip
+              leg={activeLeg!}
+              groupId={groupId}
+              openChip={chipOpen}
+              onToggle={(k) => setChipOpen((cur) => (cur === k ? null : k))}
+              onPlaceLegHold={() => setHoldLegOpen(true)}
+              legHoldActive={legHoldActive}
+            />
+          </div>
+        </aside>
       )}
 
-      <PinnedFooter
-        phase={phase}
-        detail={detail}
-        groupId={groupId}
-        rides={rides}
-        onPlaceGroupHold={() => setHoldGroupOpen(true)}
-        groupHoldActive={groupHoldActive}
-        outlook={outlook}
-        previewGenerated={previewGenerated}
-        draftReviewed={draftReviewed}
-        submitted={submitted}
-        // The submission gauntlet renders its own Submit button when
-        // the operator is in the generate / review / ready hero — the
-        // footer's Submit would be a duplicate sitting six pixels
-        // below it with a slightly different gate calculation. Hide
-        // the footer Submit in those states; the footer still carries
-        // the phase pill, helper copy, and Hold-invoice affordance.
-        hideSubmit={hero === "generate" || hero === "review" || hero === "ready"}
-      />
+      {/* FOOTER — bottom of center column. Phase pill, Submit, holds. */}
+      <div className="lg:[grid-area:footer]">
+        <PinnedFooter
+          phase={phase}
+          detail={detail}
+          groupId={groupId}
+          rides={rides}
+          onPlaceGroupHold={() => setHoldGroupOpen(true)}
+          groupHoldActive={groupHoldActive}
+          outlook={outlook}
+          previewGenerated={previewGenerated}
+          draftReviewed={draftReviewed}
+          submitted={submitted}
+          // The submission gauntlet renders its own Submit button when
+          // the operator is in the generate / review / ready hero — the
+          // footer's Submit would be a duplicate sitting six pixels
+          // below it with a slightly different gate calculation. Hide
+          // the footer Submit in those states; the footer still carries
+          // the phase pill, helper copy, and Hold-invoice affordance.
+          hideSubmit={hero === "generate" || hero === "review" || hero === "ready"}
+        />
+      </div>
 
       {activeLeg && classifyOpen && (
         <ClassifyDialog
