@@ -76,6 +76,8 @@ import {
 } from "@/components/hold-reason-select";
 import type { LegHoldReason } from "@workspace/leg-state";
 import { EvidenceFileList } from "@/components/evidence-file-list";
+import { ActivityFeed } from "@/components/activity-feed";
+import type { ActionCategory } from "@/lib/audit-action-meta";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { useUrlParams } from "@/lib/use-url-params";
@@ -1244,7 +1246,7 @@ function ChipDrawerOverlay({
             )}
             {openChip === "comms" && <CommsPanel groupId={groupId} />}
             {openChip === "activity" && (
-              <ActivityPanel groupId={groupId} legId={leg.id} />
+              <ActivityPanel detail={detail} groupId={groupId} legId={leg.id} />
             )}
           </div>
         </div>
@@ -1527,30 +1529,52 @@ function CommsPanel({ groupId }: { groupId: number }) {
   );
 }
 
-// Activity — links into the canonical detail page where the full
-// audit trail lives. The mini panel surfaces the count so operators
-// know whether there's history to read.
+// Activity — real audit + notes feed pulled from the group detail
+// payload (`detail.auditLogs` + `detail.notes`), rendered with the
+// shared `<ActivityFeed>` so the wording, filter chips, and grouping
+// match the canonical detail page exactly. Group-scoped audit rows
+// already include leg events propagated up via `viaGroup`, so the
+// operator sees both invoice-level and leg-level actions in one
+// timeline. The drilldown link to /invoice-groups/:id stays as a
+// secondary "see everything" affordance.
 function ActivityPanel({
+  detail,
   groupId,
   legId,
 }: {
+  detail: DetailGroup;
   groupId: number;
   legId: number;
 }) {
+  const [filter, setFilter] = useState<ActionCategory | "all">("all");
+  const auditLogs = (detail.auditLogs ?? []) as React.ComponentProps<typeof ActivityFeed>["auditLogs"];
+  const notes = (detail.notes ?? []) as React.ComponentProps<typeof ActivityFeed>["notes"];
   return (
-    <div className="text-xs space-y-1.5" data-testid="mini-activity-panel">
-      <div>Audit trail and recent activity live in full details.</div>
-      {/* Single drilldown — compact ↗ link, matches GroupSummaryHeader's
-          icon-only affordance. `?leg=…#activity` lands on the right leg
-          and scrolls to the activity section. */}
-      <Link
-        href={`/invoice-groups/${groupId}?leg=${legId}#activity`}
-        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-        aria-label="Open invoice group activity in full view"
-        title="Open invoice group activity in full view"
-      >
-        View activity <ArrowUpRight className="w-3 h-3" />
-      </Link>
+    <div className="text-xs space-y-2" data-testid="mini-activity-panel">
+      <ActivityFeed
+        auditLogs={auditLogs}
+        notes={notes}
+        kind="group"
+        filter={filter}
+        onFilterChange={setFilter}
+        title="Activity"
+        // Neutralize the Card chrome — the drawer's section card
+        // already provides border/shadow, so a nested Card would
+        // double-up the visual weight.
+        className="border-0 shadow-none bg-transparent"
+        maxHeightClass="max-h-[40vh]"
+        testId="drawer-activity-feed"
+      />
+      <div className="flex justify-end pt-1 border-t">
+        <Link
+          href={`/invoice-groups/${groupId}?leg=${legId}#activity`}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          aria-label="Open invoice group activity in full view"
+          title="Open invoice group activity in full view"
+        >
+          Open full activity view <ArrowUpRight className="w-3 h-3" />
+        </Link>
+      </div>
     </div>
   );
 }
