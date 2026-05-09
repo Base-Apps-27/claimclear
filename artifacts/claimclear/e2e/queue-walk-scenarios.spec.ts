@@ -73,6 +73,7 @@ import type { WalkScenario } from "./walk-scenarios/types";
 import { happyPath } from "./walk-scenarios/scenarios/01-happy-path";
 import { markOneNonIssue } from "./walk-scenarios/scenarios/02-mark-non-issue";
 import { noLegsViableClose } from "./walk-scenarios/scenarios/03-no-legs-viable-close";
+import { reattestDirect } from "./walk-scenarios/scenarios/04-reattest-direct";
 import { holdResume } from "./walk-scenarios/scenarios/05-hold-resume";
 import { allNonIssue } from "./walk-scenarios/scenarios/09-all-non-issue";
 import { twoUserConcurrency } from "./walk-scenarios/scenarios/13-two-user-concurrency";
@@ -81,6 +82,7 @@ const SCENARIOS: WalkScenario[] = [
   happyPath,
   markOneNonIssue,
   noLegsViableClose,
+  reattestDirect,
   holdResume,
   allNonIssue,
   twoUserConcurrency,

@@ -132,6 +132,25 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     });
   }
 
+  async function queueReattest(): Promise<void> {
+    // Direct POST — no Reattest CTA exists on the Queue page workspace
+    // (it lives on the invoice-detail `InvoiceGroupActionSlot`). Fire
+    // from the page context so the request goes through the same
+    // intercepted route handler the production client would hit.
+    const url = `/api/invoice-groups/${state.groupId}/reattest/queue`;
+    const status = await page.evaluate(async (u) => {
+      const r = await fetch(u, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      return r.status;
+    }, url);
+    if (status !== 200) {
+      throw new Error(`queueReattest expected 200, got ${status}`);
+    }
+  }
+
   async function expectPhase(phase: InvoicePhase): Promise<void> {
     await expect(workspace()).toHaveAttribute("data-phase", phase);
   }
@@ -153,6 +172,7 @@ export function buildDriver(page: Page, state: WalkMockState): WalkDriverApi {
     generatePreview,
     markReviewed,
     submit,
+    queueReattest,
     expectPhase,
     expectStage,
   };

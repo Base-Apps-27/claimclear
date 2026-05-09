@@ -157,6 +157,14 @@ export interface WalkDriverApi {
   /** Click the pinned-footer Submit CTA. */
   submit: () => Promise<void>;
 
+  /** POST `/api/invoice-groups/:id/reattest/queue` to park survivors
+   *  on the Attestation Queue. The Queue page workspace has no UI
+   *  affordance for this — the operator triggers it from the invoice
+   *  detail page's `InvoiceGroupActionSlot` — so the harness fires
+   *  the request directly to keep the scenario self-contained while
+   *  still proving the route ledger and the resulting macroPhase. */
+  queueReattest: () => Promise<void>;
+
   /** Assert the inline-workspace's `data-phase` attribute matches.
    *  Wire-level — for ordering against backend lifecycle states. */
   expectPhase: (phase: InvoicePhase) => Promise<void>;

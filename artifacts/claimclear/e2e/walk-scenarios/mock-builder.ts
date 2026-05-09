@@ -343,6 +343,24 @@ export async function installApiStubs(
   await page.route("**/api/macro-phase-rollup*", (route: Route) =>
     route.fulfill(jsonResponse(200, {})),
   );
+  await page.route(
+    "**/api/dashboard/urgent-today/transitions*",
+    (route: Route) =>
+      route.fulfill(
+        jsonResponse(200, {
+          today: new Date().toISOString().slice(0, 10),
+          urgentCount: 0,
+          totalActionable: 0,
+          byStatus: {},
+          wasUrgentToday: false,
+          maxUrgentToday: 0,
+          currentlyUrgent: [],
+          clearedToday: [],
+          clearedSummary: { total: 0, actors: [] },
+          snapshots: [],
+        }),
+      ),
+  );
   await page.route("**/api/needs-classification-inbox*", (route: Route) =>
     route.fulfill(jsonResponse(200, { groups: [] })),
   );
@@ -442,6 +460,8 @@ export async function installApiStubs(
         // the production filter the queue page applies. Scenarios use
         // an empty list as the proxy for "left the queue".
         groups: state.phase === "closed" ? [] : [buildGroupListItem(state)],
+        total: state.phase === "closed" ? 0 : 1,
+        today: new Date().toISOString().slice(0, 10),
       }),
     ),
   );
@@ -573,6 +593,27 @@ export async function installApiStubs(
       state.callOrder.push("group_sop_advance");
       maybeAutoCloseGroup(state);
       return route.fulfill(jsonResponse(200, { succeeded, skipped: [] }));
+    },
+  );
+
+  // Bulk-queue-reattest POST — operator parks survivors on the
+  // Attestation Queue without ever touching the portal-submission
+  // pipeline. Flips the group phase to `awaiting_reattestation` so a
+  // subsequent group fetch reports `macroPhase: "mas-action-required"`.
+  await page.route(
+    `**/api/invoice-groups/${state.groupId}/reattest/queue*`,
+    async (route: Route, request: Request) => {
+      if (request.method() !== "POST") return route.fallback();
+      state.phase = "awaiting_reattestation";
+      state.callOrder.push("bulk_queue_reattest");
+      return route.fulfill(
+        jsonResponse(200, {
+          queued: [...state.legs.values()]
+            .filter((l) => l.sopOutcome === "non_issue")
+            .map((l) => l.id),
+          skipped: [],
+        }),
+      );
     },
   );
 
