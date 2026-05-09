@@ -68,12 +68,17 @@ test("preview-gate: unresolved legs → reason names count + sub-status summary"
   assert.equal(gate.unresolvedCount, 1);
 });
 
-test("preview-gate: missing readback (everything else green) → reason names readback", () => {
+test("preview-gate: readback is OPTIONAL — missing readback with everything else green is OK", () => {
+  // Readback was historically a fourth gate (#168) but is now an
+  // optional prompt-enrichment hint everywhere — server's
+  // /preview-generated and /portal-submissions both accept the
+  // missing case. The gate must NOT block on readback or the UI's
+  // Submit button drifts from what the server will actually accept.
   const gate = derivePreviewGateState(
     { status: "New", phase: "triage", understandingReadbackAt: null },
     [leg({ id: 1, ...READY })],
   );
-  assert.equal(gate.ok, false);
-  assert.equal(gate.missingGates[0], "readback");
-  assert.match(gate.reason ?? "", /understanding readback/);
+  assert.equal(gate.ok, true);
+  assert.equal(gate.reason, null);
+  assert.deepEqual(gate.missingGates, []);
 });

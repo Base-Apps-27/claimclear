@@ -80,8 +80,16 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   const [draftSaveBreath, setDraftSaveBreath] = useState(0);
 
   const [readback, setReadback] = useState("");
+  // When the operator has saved a readback, default to a read-only
+  // quoted display (Edit reopens the textarea). When nothing is saved
+  // yet, default to the textarea so they can start typing immediately.
+  const [isEditingReadback, setIsEditingReadback] = useState(false);
   useEffect(() => {
     setReadback(group?.understandingReadback ?? "");
+    // Any external change to the saved readback collapses the editor
+    // back to the read-only display so two operators don't tug on the
+    // same buffer.
+    setIsEditingReadback(false);
   }, [group?.understandingReadback]);
 
   // Editable draft state for the new Review & edit step. We hydrate from
@@ -188,12 +196,18 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
       { id: groupId, data: { readback } },
       {
         onSuccess: () => {
-          successToast({ title: "__VERB__", description: "Understanding readback confirmed" });
+          successToast({ title: "__VERB__", description: "Understanding notes saved" });
+          setIsEditingReadback(false);
           invalidateGroup();
         },
-        onError: (e: unknown) => toast({ title: "Readback failed", description: String((e as Error).message), variant: "destructive" }),
+        onError: (e: unknown) => toast({ title: "Save failed", description: String((e as Error).message), variant: "destructive" }),
       },
     );
+  }
+
+  function onCancelReadbackEdit() {
+    setReadback(group?.understandingReadback ?? "");
+    setIsEditingReadback(false);
   }
 
   function onGeneratePreview() {
@@ -341,56 +355,93 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   const body = (
     <>
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold">Understanding notes</h3>
-              <Badge variant="outline" className="text-[10px] font-normal">Required</Badge>
-              {/* Surface what the AI prompt sees on top of the dispute
-                   reason: per-leg findings + sibling-duplicate rollups
-                   (Task #311). Hidden when neither counter is non-zero. */}
-              <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
-            </div>
-            <div className="flex items-center gap-2">
-              {readbackConfirmed && (
-                <Badge variant="secondary" className="text-[10px]">
-                  Saved {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
-                </Badge>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onConfirmReadback}
-                disabled={
-                  !isPreSubmit ||
-                  !allResolved ||
-                  confirmReadbackMutation.isPending ||
-                  !readback.trim() ||
-                  readback === (group.understandingReadback ?? "")
-                }
-                data-testid="readback-confirm"
+          {readbackConfirmed && !isEditingReadback ? (
+            // Saved-state display: show the operator the exact text
+            // they committed (this is what gets passed to the AI prompt
+            // and to /portal-submissions). Edit reopens the textarea.
+            <>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-semibold">Understanding notes</h3>
+                  <Badge variant="secondary" className="text-[10px]">
+                    Saved {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
+                  </Badge>
+                  <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEditingReadback(true)}
+                  disabled={!isPreSubmit}
+                  data-testid="readback-edit"
+                >
+                  Edit
+                </Button>
+              </div>
+              <blockquote
+                className="rounded-md border-l-2 border-primary/40 bg-muted/40 px-3 py-2 text-xs whitespace-pre-wrap"
+                data-testid="readback-saved-display"
               >
-                {confirmReadbackMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                ) : null}
-                Save notes
-              </Button>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
-          </p>
-          <Textarea
-            value={readback}
-            onChange={(e) => setReadback(e.target.value)}
-            rows={3}
-            disabled={!isPreSubmit || !allResolved}
-            placeholder="Optional — leave blank if there's nothing extra to add."
-            data-testid="readback-input"
-          />
-          {isPreSubmit && !allResolved && (
-            <p className="text-xs text-muted-foreground italic" data-testid="readback-locked-reason">
-              These notes unlock once every disputed leg is resolved (ready, dropped, or excluded).
-            </p>
+                {group.understandingReadback}
+              </blockquote>
+              <p className="text-xs text-muted-foreground">
+                Included as additional context in the AI write-up.
+              </p>
+            </>
+          ) : (
+            // Editable state: empty (no save yet) or the operator
+            // clicked Edit. Save & include is enabled only when there's
+            // non-empty text that differs from what's already saved.
+            <>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-semibold">Understanding notes</h3>
+                  <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
+                  <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
+                </div>
+                <div className="flex items-center gap-2">
+                  {isEditingReadback && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={onCancelReadbackEdit}
+                      disabled={confirmReadbackMutation.isPending}
+                      data-testid="readback-cancel"
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onConfirmReadback}
+                    disabled={
+                      !isPreSubmit ||
+                      confirmReadbackMutation.isPending ||
+                      !readback.trim() ||
+                      readback === (group.understandingReadback ?? "")
+                    }
+                    data-testid="readback-confirm"
+                  >
+                    {confirmReadbackMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : null}
+                    Save &amp; include in submission
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
+              </p>
+              <Textarea
+                value={readback}
+                onChange={(e) => setReadback(e.target.value)}
+                rows={3}
+                disabled={!isPreSubmit}
+                placeholder="Optional — leave blank if there's nothing extra to add."
+                data-testid="readback-input"
+              />
+            </>
           )}
         </div>
 
@@ -448,12 +499,10 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                 ? `All legs reached a conclusion — ${conclusionCounts.sop} SOP, ${conclusionCounts.excluded} excluded`
                 : "All legs reached a conclusion"}
             </li>
-            <li
-              className={readbackConfirmed ? "text-green-700" : "text-muted-foreground"}
-              data-testid="gate-row-readback"
-            >
-              {readbackConfirmed ? "✓" : "○"} Understanding notes confirmed
-            </li>
+            {/* Readback row removed — readback is optional and no
+                 longer a preview gate. The saved-state display in the
+                 Understanding notes section above is the surface of
+                 record. */}
             {previewGenerated && (
               <li className="text-green-700">
                 ✓ Preview generated {group.previewGeneratedAt ? formatDateTime(group.previewGeneratedAt) : ""}

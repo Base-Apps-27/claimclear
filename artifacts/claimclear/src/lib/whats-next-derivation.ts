@@ -405,6 +405,13 @@ export interface InvoiceDisputeOutlookResult {
 //                          tooltip "(2 investigating, 1 blocked)")
 // ─────────────────────────────────────────────────────────────────────
 
+// Readback used to be a fourth gate. It's now optional everywhere
+// (server's `/preview-generated` and `/portal-submissions` no longer
+// require it; operators may save a readback to enrich the AI prompt
+// but skipping it is a valid "nothing extra to add" signal). The key
+// stays in the union for two reasons: (1) tests pin the priority
+// order, (2) external callers may still inspect `missingGates` for
+// telemetry. The derivation below never pushes "readback" anymore.
 export type PreviewGateKey = "phase" | "legs" | "resolved" | "readback";
 
 export interface PreviewGateState {
@@ -430,13 +437,12 @@ export function derivePreviewGateState(
   const disputed = allLegs.filter((r) => r.includedInDispute !== false);
   const resolvedIndex = buildLegResolvedIndex(allLegs);
   const unresolved = disputed.filter((r) => !resolvedIndex.isLegResolved(r));
-  const readbackConfirmed = !!group.understandingReadbackAt;
 
   const missingGates: PreviewGateKey[] = [];
   if (phase !== "pre-submit") missingGates.push("phase");
   if (disputed.length === 0) missingGates.push("legs");
   if (unresolved.length > 0) missingGates.push("resolved");
-  if (!readbackConfirmed) missingGates.push("readback");
+  // Readback is optional — see note above PreviewGateKey.
 
   let unresolvedSummary: string | undefined;
   if (unresolved.length > 0) {
@@ -458,8 +464,6 @@ export function derivePreviewGateState(
     reason = "Disabled because this group has no legs included in the dispute.";
   } else if (top === "resolved") {
     reason = `Disabled because ${unresolved.length} leg${unresolved.length === 1 ? "" : "s"} still owe action (${unresolvedSummary ?? ""}).`;
-  } else if (top === "readback") {
-    reason = "Disabled because the understanding readback has not been confirmed yet.";
   }
 
   return {

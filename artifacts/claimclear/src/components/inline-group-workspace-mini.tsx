@@ -66,6 +66,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RefNumber } from "@/components/ref-number";
+import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import {
   HoldReasonSelect,
@@ -452,6 +453,13 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         previewGenerated={previewGenerated}
         draftReviewed={draftReviewed}
         submitted={submitted}
+        // The submission gauntlet renders its own Submit button when
+        // the operator is in the generate / review / ready hero — the
+        // footer's Submit would be a duplicate sitting six pixels
+        // below it with a slightly different gate calculation. Hide
+        // the footer Submit in those states; the footer still carries
+        // the phase pill, helper copy, and Hold-invoice affordance.
+        hideSubmit={hero === "generate" || hero === "review" || hero === "ready"}
       />
 
       {activeLeg && classifyOpen && (
@@ -517,6 +525,32 @@ function GroupSummaryHeader({
           {" · "}
           {formatCurrency(detail.totalAmount)}
         </HideForClerk>
+      </span>
+      {/* Service date inline so the operator doesn't have to drill
+           into Full details just to see when the ride happened. Uses
+           the same labeled-empty-state component as the list page so
+           "no claims" / "couldn't read dates" never collapse to a
+           bare em-dash.
+           Caveat: `earliestDate` / `isUrgent` on the group payload are
+           "Only populated by list endpoints" per the openapi spec, so
+           we derive earliestDate from `detail.rides` here (MIN of
+           serviceDate across non-excluded legs) instead of trusting
+           the field on the detail payload. `serviceDateReason` IS
+           populated by the detail endpoint. */}
+      <span className="cc-meta inline-flex items-center text-xs" data-testid="mini-service-date">
+        <ServiceDateCell
+          earliestDate={
+            (detail as { earliestDate?: string | null }).earliestDate ??
+            ((detail.rides ?? [])
+              .filter((r) => r.includedInDispute !== false && r.date)
+              .map((r) => r.date as string)
+              .sort()[0] ?? null)
+          }
+          reason={(detail as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+          groupId={detail.id}
+          isUrgent={(detail as { isUrgent?: boolean }).isUrgent}
+          testIdPrefix="mini-service-date"
+        />
       </span>
       <Link href={fullHref}>
         <Button
@@ -1341,6 +1375,7 @@ function PinnedFooter({
   previewGenerated,
   draftReviewed,
   submitted,
+  hideSubmit,
 }: {
   phase: PhaseConfig;
   detail: DetailGroup;
@@ -1352,6 +1387,7 @@ function PinnedFooter({
   previewGenerated: boolean;
   draftReviewed: boolean;
   submitted: boolean;
+  hideSubmit?: boolean;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1450,7 +1486,7 @@ function PinnedFooter({
           </Button>
         )}
       </div>
-      {outlook === "has_disputable" && !submitted && (
+      {outlook === "has_disputable" && !submitted && !hideSubmit && (
         <div className="flex flex-col gap-1.5">
           <Button
             size="sm"

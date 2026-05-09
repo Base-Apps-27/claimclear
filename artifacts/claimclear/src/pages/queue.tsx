@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StateBadge } from "@/components/state-badge";
 import { PreSubmitBreakdown } from "@/components/pre-submit-breakdown";
 import { RefNumber } from "@/components/ref-number";
+import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { UrgentTodayWhyLine } from "@/components/urgent-today-why";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1386,6 +1387,19 @@ export default function Queue() {
               />
               <RefNumber value={group.invoiceNumber} variant="inline" className="font-semibold" />
               <span className="text-muted-foreground ml-1 text-sm">{group.rideCount} ride{group.rideCount !== 1 ? "s" : ""}</span>
+              {/* Inline service date — saves the operator from having
+                   to expand the mini pane (or open Full details) just
+                   to see when the ride happened. Reuses the labeled
+                   empty-state component so "no claims" / "couldn't
+                   read dates" stays consistent with the table view. */}
+              <span className="text-xs text-muted-foreground" data-testid={`row-service-date-${group.invoiceNumber}`}>
+                <ServiceDateCell
+                  groupId={group.id}
+                  earliestDate={group.earliestDate}
+                  reason={group.serviceDateReason as ServiceDateReason | null | undefined}
+                  isUrgent={group.isUrgent}
+                />
+              </span>
             </div>
             <StateBadge
               variant="phase"
