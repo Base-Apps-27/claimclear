@@ -372,6 +372,81 @@ test("POST /invoice-groups/:id/reattest/complete recordedOffline=true still grad
       "pending",
       "Approved verdict legs must graduate to attestation=pending on the offline path too",
     );
+
+    // Task #561 — engagement must also write an `attestation_engaged`
+    // audit row and a `claim.attestation_engaged` state_event so the
+    // restored gate is observable in dashboards and audit history.
+    const audits = await db.select().from(auditLogsTable)
+      .where(eq(auditLogsTable.claimId, claim.id));
+    const engaged = audits.find((a) => a.action === "attestation_engaged");
+    assert.ok(engaged,
+      `Task #561: expected attestation_engaged audit row, got ${JSON.stringify(audits.map((a) => a.action))}`);
+    assert.equal((engaged!.metadata as any)?.from, "not_required");
+    assert.equal((engaged!.metadata as any)?.to, "pending");
+    assert.equal((engaged!.metadata as any)?.trigger, "group_reattest_completed");
+
+    const events = await db.select().from(stateEventsTable)
+      .where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(
+      events.find((e) => e.eventKey === "claim.attestation_engaged"),
+      `Task #561: expected claim.attestation_engaged state_event, got ${JSON.stringify(events.map((e) => e.eventKey))}`,
+    );
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Task #561: /reattest/complete is the only path that engages attestation_state=pending; pre-completion verdicts park at not_required", async () => {
+  // Restored Task #196 gate: confirming an Approved verdict on a leg
+  // whose parent group has not yet recorded MAS re-attest must NOT
+  // push attestationState to pending. The transition only happens
+  // inside the /reattest/complete writer once reattest_completed_at
+  // lands. This protects the invoice-first contract: an Approved
+  // verdict means the group is ready to be sent to MAS, not that the
+  // leg is owed a portal re-attest.
+  currentRole = "admin";
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  // Operator-confirmed Approved verdict — but no MAS re-attest yet.
+  await db.insert(claimVerdictTable).values({
+    claimId: claim.id,
+    source: "operator_confirmed",
+    outcome: "Approved",
+    createdBy: TEST_USER.email,
+  });
+
+  try {
+    // Snapshot: the leg's attestation_state must still be the
+    // schema default ('not_required') — nothing has flipped it
+    // because the gate is closed.
+    const [pre] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(pre.attestationState, "not_required",
+      "Pre-/reattest/complete: gated leg must remain at not_required");
+
+    // Now run /reattest/complete. Engagement should fire.
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST",
+      body: {
+        recordedOffline: true,
+        offlineNote: "Confirmed completion in MAS earlier today.",
+      },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.attestationState, "pending",
+      "Post-/reattest/complete: gate opens and engagement runs, leg lands at pending");
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);

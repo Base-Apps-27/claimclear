@@ -140,7 +140,7 @@ export function QueueWorkspace() {
           <EmptyState
             icon={ShieldCheck}
             title="All caught up."
-            description="Nothing waiting on attestation right now."
+            description="Legs land here once you mark MAS re-attest complete on the invoice."
           />
           <span data-testid="open-empty" className="sr-only">
             All caught up.

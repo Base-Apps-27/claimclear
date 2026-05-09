@@ -13,14 +13,11 @@ export const APPROVED_OUTCOMES = new Set(["Approved", "Partially Approved"]);
 export type AttestationDelta = Partial<typeof claimsTable.$inferInsert>;
 
 /**
- * Group-context shape kept for caller compatibility: pre-2026-05 the
- * `reattestCompletedAt` field gated the engage-on-Approved cascade
- * (Task #196). That gate was removed after a 2026-05-05 prod audit
- * showed it was stranding Approved legs at `not_required` whenever
- * operators confirmed a verdict without immediately following up with
- * the bulk-queue click — see the function docstring below for the
- * full reasoning. The field is still accepted so existing call sites
- * compile, but it no longer influences the delta.
+ * Group-context shape used by the attestation engagement gate. The
+ * `reattestCompletedAt` field is the single source of truth for
+ * whether the parent invoice group has cleared MAS re-attestation
+ * (Task #196 / Task #561). Standalone legs (no parent group) pass
+ * `null` here and bypass the gate per the legacy fixture contract.
  */
 export interface AttestationGroupContext {
   reattestCompletedAt: typeof invoiceGroupsTable.$inferSelect["reattestCompletedAt"] | null;
@@ -31,20 +28,24 @@ export interface AttestationGroupContext {
  * outcome is changing.
  *
  * - Outcome moving INTO Approved/Partially Approved (from anything else)
- *   primes attestationState=pending unconditionally so the leg appears
- *   in the Open re-attestation queue immediately. The historical
- *   Task #196 gate (only engage once `reattest_completed_at` is set)
- *   was removed 2026-05-05 after the prod audit found it was the root
- *   cause of stuck Approved legs: every fresh Approved verdict landed
- *   on a group with `reattest_completed_at IS NULL`, so the gate
- *   parked them at `not_required` and the queue page never surfaced
- *   them. Operators were expected to manually click the group-level
- *   bulk-queue button to recover, and that follow-up step was
- *   routinely missed (groups 17, 18, 53, 148 in prod had verdicts
- *   confirmed but no bulk-queue click). The bulk-queue endpoint
- *   stays available for the "park for a teammate with portal access"
- *   path (`pending → queued`); the change here just guarantees the
- *   leg is visible in the queue UI the moment its verdict lands.
+ *   primes attestationState=pending IFF the parent invoice group has
+ *   already cleared MAS re-attestation (`reattest_completed_at IS NOT
+ *   NULL`). This is the Task #196 gate, restored 2026-05-09 by
+ *   Task #561 in service of the invoice-first model: an Approved
+ *   verdict on its own does not mean the leg is owed a portal
+ *   re-attestation — it means the group is ready for the operator to
+ *   record MAS re-attest, and the queue should only engage once that
+ *   completion lands. The gate fires inside the
+ *   `/invoice-groups/:id/reattest/complete` writer, which loops
+ *   eligible legs and re-evaluates this delta with `reattestCompletedAt`
+ *   freshly stamped. The stranded-leg problem the 2026-05-05 gate
+ *   removal tried to fix is solved instead by the explicit per-leg
+ *   engagement inside the reattest/complete tx (which now also writes
+ *   audit + state-event rows so the engagement is observable).
+ *
+ *   Standalone legs (no parent group, `group=null`) keep the legacy
+ *   "outcome→Approved primes pending" semantics so the existing
+ *   #165 test fixtures continue to pass.
  * - Outcome moving OUT of Approved/Partially Approved (e.g., clawback)
  *   resets attestationState=not_required and wipes the stamps. The audit
  *   log retains the prior history.
@@ -52,19 +53,28 @@ export interface AttestationGroupContext {
  *   re-stamp `pending` if the user is already mid-attestation, and we
  *   leave non-Approved rows untouched.
  *
- * Returns an empty object when nothing should change. The optional
- * `group` parameter is preserved for caller compatibility but no
- * longer affects the result.
+ * Returns an empty object when nothing should change.
  */
 export function computeAttestationDelta(
   oldOutcome: string | null | undefined,
   newOutcome: string,
-  _group?: AttestationGroupContext | null,
+  group?: AttestationGroupContext | null,
 ): AttestationDelta {
   const wasApproved = oldOutcome != null && APPROVED_OUTCOMES.has(oldOutcome);
   const willBeApproved = APPROVED_OUTCOMES.has(newOutcome);
 
   if (!wasApproved && willBeApproved) {
+    // Task #561 — gate engagement on MAS re-attest having been recorded
+    // for the parent group. Standalone legs (group omitted or null)
+    // keep the legacy unconditional-engage behavior so the existing
+    // standalone-claim test fixtures still hold. When a parent group
+    // is supplied but has not yet stamped `reattest_completed_at`,
+    // leave the attestation state untouched: the per-leg engagement
+    // fires inside the `/invoice-groups/:id/reattest/complete` writer
+    // once that timestamp lands.
+    if (group != null && group.reattestCompletedAt == null) {
+      return {};
+    }
     return {
       attestationState: "pending",
       attestedAt: null,

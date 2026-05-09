@@ -3786,9 +3786,19 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
         });
       }
 
-      // Trigger gate: graduate any leg with an operator-confirmed
-      // Approved/Partial verdict from not_required → pending. Same
-      // gate behavior as before, just inside the surrounding tx.
+      // Task #561 — attestation engagement gate fires HERE.
+      //
+      // The Task #196 gate in `computeAttestationDelta` blocks
+      // verdict-time engagement until `reattest_completed_at` is
+      // stamped on the parent group. This is the moment that stamp
+      // lands, so we walk every leg with an operator-confirmed
+      // Approved/Partial verdict still parked at `not_required` and
+      // promote it to `pending`. Each promotion writes:
+      //   * an `attestation_engaged` audit row for the operator-facing
+      //     activity feed, and
+      //   * a `claim.attestation_engaged` state_event so dashboards and
+      //     the Task #561 audit trail can slice when each leg actually
+      //     became queue-eligible.
       const legs = await tx.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, id));
       for (const leg of legs) {
         const [latestVerdict] = await tx
@@ -3809,6 +3819,35 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
           );
           if (Object.keys(delta).length > 0 && leg.attestationState === "not_required") {
             await tx.update(claimsTable).set(delta).where(eq(claimsTable.id, leg.id));
+            await tx.insert(auditLogsTable).values({
+              claimId: leg.id,
+              invoiceGroupId: id,
+              action: "attestation_engaged",
+              details:
+                `Attestation engaged: ${leg.attestationState} → pending after MAS re-attest completion ` +
+                `(verdict ${latestVerdict.outcome}, operator_confirmed).`,
+              metadata: {
+                from: leg.attestationState,
+                to: "pending",
+                verdictOutcome: latestVerdict.outcome,
+                trigger: "group_reattest_completed",
+                invoiceGroupId: id,
+              },
+              userEmail: actor.userEmail,
+              userName: actor.userName,
+            });
+            await emitStateEvent({
+              eventKey: "claim.attestation_engaged",
+              claimId: leg.id,
+              invoiceGroupId: id,
+              actorUserId: actor.userEmail,
+              metadata: {
+                from: leg.attestationState,
+                to: "pending",
+                verdictOutcome: latestVerdict.outcome,
+                trigger: "group_reattest_completed",
+              },
+            }, tx);
           }
         }
       }

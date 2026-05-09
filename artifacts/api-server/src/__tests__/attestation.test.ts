@@ -554,15 +554,16 @@ test("group outcome → Approved cascades pending attestation to disputed childr
   }
 });
 
-test("group outcome → Approved engages disputed children even when reattest_completed_at is unset", async () => {
-  // Regression test for the 2026-05-05 prod audit: with the original
-  // Task #196 gate in place, a fresh Approved verdict on a group whose
-  // `reattest_completed_at` was still null parked every disputed child
-  // at `not_required`, and the leg never appeared in the Open queue
-  // unless the operator remembered to click the bulk-queue button.
-  // Production data showed this missed click was routine (groups 17,
-  // 18, 53, 148 had stuck Approved legs). The gate was removed so
-  // the cascade now engages unconditionally on Approved verdicts.
+test("Task #561: group outcome → Approved holds disputed children at not_required until reattest_completed_at is stamped", async () => {
+  // Task #561 restored the Task #196 gate: an Approved verdict on a
+  // group whose `reattest_completed_at` is still NULL must NOT engage
+  // attestationState=pending on its disputed children. The engagement
+  // is deferred to the /reattest/complete writer, which loops eligible
+  // legs and promotes them once the timestamp lands. This test
+  // protects against a regression that would re-introduce the
+  // previous "engage on every Approved verdict" behavior, which the
+  // invoice-first model rejects (an Approved verdict means the group
+  // is ready for MAS, not that the leg is owed a portal re-attest).
   const group = await createSeedGroup();
   const child = await createSeedClaim({ invoiceGroupId: group.id });
   try {
@@ -573,9 +574,31 @@ test("group outcome → Approved engages disputed children even when reattest_co
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
 
     const [refreshedChild] = await db.select().from(claimsTable).where(eq(claimsTable.id, child.id));
-    assert.equal(refreshedChild.attestationState, "pending",
-      "with the Task #196 gate removed, an Approved verdict must engage attestationState=pending immediately so the leg surfaces in the Open re-attestation queue without a manual bulk-queue click");
+    assert.equal(refreshedChild.attestationState, "not_required",
+      "with the Task #561 gate restored, an Approved verdict must NOT engage attestationState=pending until /reattest/complete records MAS re-attest on the parent group");
   } finally {
     await cleanupGroup(group.id);
   }
+});
+
+test("Task #561: computeAttestationDelta gates engagement on parent group's reattest_completed_at", () => {
+  // Standalone leg (no parent group context) — legacy path engages.
+  const standalone = computeAttestationDelta("Pending", "Approved");
+  assert.equal(standalone.attestationState, "pending",
+    "Standalone legs (no group context) keep the legacy unconditional-engage behavior");
+
+  // Group context, gate closed (reattest_completed_at IS NULL) — no engagement.
+  const gated = computeAttestationDelta("Pending", "Approved", { reattestCompletedAt: null });
+  assert.deepEqual(gated, {},
+    "Approved verdict on a group without a recorded MAS re-attest must produce no attestation delta");
+
+  // Group context, gate open (reattest_completed_at IS NOT NULL) — engage.
+  const open = computeAttestationDelta("Pending", "Approved", { reattestCompletedAt: new Date() });
+  assert.equal(open.attestationState, "pending",
+    "Approved verdict on a group with reattest_completed_at stamped must engage attestationState=pending");
+
+  // Partially Approved (Partial-family) gates the same way.
+  const partialGated = computeAttestationDelta("Pending", "Partially Approved", { reattestCompletedAt: null });
+  assert.deepEqual(partialGated, {},
+    "Partially Approved must respect the same gate as Approved");
 });
