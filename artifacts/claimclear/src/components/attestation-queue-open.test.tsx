@@ -80,6 +80,8 @@ function makeLeg(overrides: {
   masActionRequired?: "cancel" | null;
   includedInDispute?: boolean;
   masActionCompletedAt?: string | null;
+  date?: string | null;
+  sopOutcome?: string | null;
 }): ClaimResponse {
   const claim = {
     id: overrides.id,
@@ -99,6 +101,8 @@ function makeLeg(overrides: {
     includedInDispute: overrides.includedInDispute ?? true,
     masActionRequired: overrides.masActionRequired ?? null,
     masActionCompletedAt: overrides.masActionCompletedAt ?? null,
+    date: overrides.date ?? null,
+    sopOutcome: overrides.sopOutcome ?? null,
   };
   return claim as unknown as ClaimResponse;
 }
@@ -204,7 +208,13 @@ const groupsById: Record<number, unknown> = {
 };
 
 // grp100 has two legs (drives the multi-row per-leg breakdown);
-// grp200 carries a persisted attestationNote for the disclosure check.
+// grp200 carries a persisted attestationNote for the disclosure check;
+// service dates are unique per bucket so the service-date sort can be
+// asserted in both directions; grp200's pending leg carries
+// sopOutcome="cannot_dispute" to exercise the hot-dot signal; one
+// leg's verdictRecordedAt is set to "now" so the fresh-dot signal
+// fires within its 30-minute window.
+const FRESH_NOW = new Date().toISOString();
 const pendingPayload = {
   claims: [
     makeLeg({
@@ -214,6 +224,7 @@ const pendingPayload = {
       invoiceGroupId: 100,
       invoiceNumbers: "INV-100",
       attestationNote: null,
+      date: "2026-04-01",
     }),
     makeLeg({
       id: 1002,
@@ -222,6 +233,7 @@ const pendingPayload = {
       invoiceGroupId: 100,
       invoiceNumbers: "INV-100",
       attestationNote: null,
+      date: "2026-04-02",
     }),
     makeLeg({
       id: 2001,
@@ -230,6 +242,8 @@ const pendingPayload = {
       invoiceGroupId: 200,
       invoiceNumbers: "INV-200",
       attestationNote: "1. In MAS: cancel /…\n2. Re-attest the invoice.",
+      date: "2026-04-15",
+      sopOutcome: "cannot_dispute",
     }),
     makeLeg({
       id: 3001,
@@ -237,13 +251,14 @@ const pendingPayload = {
       outcome: "Approved",
       invoiceGroupId: 300,
       invoiceNumbers: "INV-300A",
+      date: "2026-04-20",
     }),
   ],
   extras: {
     "1001": { verdictRecordedAt: "2026-04-30T09:00:00.000Z" },
     "1002": { verdictRecordedAt: "2026-04-30T09:30:00.000Z" },
     "2001": { verdictRecordedAt: "2026-04-30T10:00:00.000Z" },
-    "3001": { verdictRecordedAt: "2026-04-30T11:00:00.000Z" },
+    "3001": { verdictRecordedAt: FRESH_NOW },
   },
 };
 
@@ -297,13 +312,18 @@ test("Open tab aggregates legs into per-invoice-group rows (one row per group)",
   assert.equal(html.includes('data-testid="queue-row-1001"'), false);
 });
 
-test("(a) all-approved group renders 1 instructional line — just 'Re-attest the invoice.'", () => {
+test("(a) all-approved group renders the wizard with a reattest step (no MAS-cancel step)", () => {
+  // Task #650: all-approved bucket → wizard with no Step 2.
   urlParams = {};
   const html = render();
   assert.match(html, /data-testid="group-review-pane-g:100"/);
-  assert.match(html, /data-testid="reattest-instruction-reattest"/);
-  assert.equal(/data-testid="reattest-instruction-mas-/.test(html), false);
-  assert.match(html, /Re-attest the invoice\./);
+  assert.match(html, /data-testid="attestation-wizard-g:100"/);
+  assert.match(html, /data-testid="wizard-step-1"/);
+  assert.match(html, /data-testid="wizard-step-3"/);
+  assert.match(html, /data-testid="wizard-reattest-button"/);
+  // No denied leg → no MAS-cancel station in the DOM.
+  assert.equal(html.includes('data-testid="wizard-step-2"'), false);
+  assert.equal(html.includes('data-testid="wizard-cancel-button"'), false);
 });
 
 const built = await import("./whats-next/reattest-instruction-template");
@@ -346,14 +366,69 @@ test("(c) multi-denied-invoice group renders 2 distinct MAS lines + reattest lin
   assert.equal(dupeItems.length, 3);
 });
 
-test("right pane renders the live instructional list above the action checklist", () => {
+test("right pane renders the wizard summary band above the per-leg fallback disclosure", () => {
+  // Task #650: wizard summary band sits above the per-leg fallback.
   urlParams = {};
   const html = render();
-  const instrIdx = html.indexOf('data-testid="reattest-instructions"');
-  const checklistIdx = html.indexOf('data-testid="group-action-checklist-g:100"');
-  assert.ok(instrIdx >= 0);
-  assert.ok(checklistIdx >= 0);
-  assert.ok(instrIdx < checklistIdx);
+  const summaryIdx = html.indexOf('data-testid="wizard-summary-band"');
+  const perLegIdx = html.indexOf('data-testid="wizard-per-leg-disclosure"');
+  assert.ok(summaryIdx >= 0);
+  assert.ok(perLegIdx >= 0);
+  assert.ok(summaryIdx < perLegIdx);
+});
+
+test("Open tab left rail renders Variant B affordances: pending pill, hot dot for cannot_dispute, fresh dot for recent verdicts, plus the subhead with sort dropdown", () => {
+  // Task #650: pending pill on every bucket; hot dot on grp200
+  // (cannot_dispute); fresh dot on grp300 (verdict ~now).
+  urlParams = {};
+  const html = render();
+  assert.match(html, /data-testid="queue-row-pending-count-g:100"/);
+  assert.match(html, /data-testid="queue-row-pending-count-g:200"/);
+  assert.match(html, /data-testid="queue-row-pending-count-g:300"/);
+  assert.match(html, /data-testid="queue-row-hot-dot-g:200"/);
+  assert.equal(html.includes('data-testid="queue-row-hot-dot-g:100"'), false);
+  assert.match(html, /data-testid="queue-row-fresh-dot-g:300"/);
+  assert.equal(html.includes('data-testid="queue-row-fresh-dot-g:100"'), false);
+  assert.match(html, /data-testid="queue-pending-total"/);
+  assert.match(html, /data-testid="queue-sort-select"/);
+});
+
+test("Open tab honors ?sort=service-asc / service-desc and reverses the bucket order", () => {
+  // Task #650: ?sort flips the rail ordering by service date.
+  urlParams = { sort: "service-asc" };
+  const ascHtml = render();
+  const ascList = ascHtml.match(/data-testid="queue-row-(g:\d+)"/g) ?? [];
+  assert.deepEqual(ascList.slice(0, 3), [
+    'data-testid="queue-row-g:100"',
+    'data-testid="queue-row-g:200"',
+    'data-testid="queue-row-g:300"',
+  ]);
+
+  urlParams = { sort: "service-desc" };
+  const descHtml = render();
+  const descList = descHtml.match(/data-testid="queue-row-(g:\d+)"/g) ?? [];
+  assert.deepEqual(descList.slice(0, 3), [
+    'data-testid="queue-row-g:300"',
+    'data-testid="queue-row-g:200"',
+    'data-testid="queue-row-g:100"',
+  ]);
+});
+
+test("Open tab shows a 'Next up' tag on the top row when nothing is selected", () => {
+  // Task #650: top row gets the Next-up tag when ?group= is absent.
+  urlParams = {};
+  const html = render();
+  assert.match(html, /data-testid="queue-row-next-up-tag"/);
+});
+
+test("Open tab hides the 'Next up' tag once the URL pins a selection", () => {
+  // A pinned ?group= counts as an explicit selection.
+  urlParams = { group: "g:200" };
+  const html = render();
+  assert.equal(
+    html.includes('data-testid="queue-row-next-up-tag"'),
+    false,
+  );
 });
 
 test("persisted attestationNote is shown in a collapsed <details> disclosure when it adds something new", () => {

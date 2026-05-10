@@ -11,6 +11,9 @@ export interface QueueSidebarProps {
   footer?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Optional sub-header rendered under the section title bar.
+   *  Used by the Open tab to show "N items pending" + sort. */
+  subhead?: ReactNode;
 }
 
 /**
@@ -26,6 +29,7 @@ export function QueueSidebar({
   footer,
   children,
   className,
+  subhead,
 }: QueueSidebarProps) {
   return (
     <Section
@@ -41,6 +45,9 @@ export function QueueSidebar({
       padded={false}
       className={cn("lg:sticky lg:top-4", className)}
     >
+      {subhead && (
+        <div className="border-b border-border px-4 py-2.5">{subhead}</div>
+      )}
       <ScrollArea className="h-[calc(100vh-260px)] max-h-[640px]">
         <ul className="divide-y divide-border" data-testid={listTestId}>
           {children}

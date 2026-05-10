@@ -205,16 +205,17 @@ test("per-leg 'Confirm just this leg' calls useAttestClaim with the leg id", asy
   assert.equal(completeGroupReattestCalls.length, 0);
 });
 
-test("group-level reattest checkbox calls useCompleteGroupReattest with the group id", async (t) => {
+test("wizard 'Re-attested in MAS' button calls useCompleteGroupReattest with the group id", async (t) => {
+  // Task #650: Step 3 button replaces the legacy reattest checkbox.
   urlParams = {};
   completeGroupReattestCalls.length = 0;
   attestClaimCalls.length = 0;
   t.after(cleanup);
   mount();
   await waitFor(() => {
-    assert.ok(screen.queryByTestId("checkbox-reattest"));
+    assert.ok(screen.queryByTestId("wizard-reattest-button"));
   });
-  fireEvent.click(screen.getByTestId("checkbox-reattest"));
+  fireEvent.click(screen.getByTestId("wizard-reattest-button"));
   await waitFor(() => {
     assert.equal(completeGroupReattestCalls.length, 1);
   });

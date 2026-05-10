@@ -12,7 +12,7 @@ import type {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Section, TonePill, TONE_STYLE } from "@/components/cohesion";
+import { Section, TonePill } from "@/components/cohesion";
 import { formatDateTime } from "@/lib/format";
 import {
   buildReattestChecklist,
@@ -23,9 +23,8 @@ import {
   Mail,
   FileText,
   CircleDashed,
-  AlertTriangle,
 } from "lucide-react";
-import { GroupActionChecklist } from "./group-action-checklist";
+import { AttestationWizard } from "./attestation-wizard";
 import { PerLegRow, type MergedRow } from "./per-leg-row";
 import { pickInvoiceNumber } from "./utils";
 
@@ -36,9 +35,25 @@ export interface GroupBucket {
   earliestEnteredAt: string | null;
   pendingCount: number;
   queuedCount: number;
+  /** True when any leg in the bucket is denied or non-contestable.
+   *  Drives the red "hot" dot on the left rail (Task #650). */
+  hasDenialOrNonContestable: boolean;
+  /** Most-recent verdictRecordedAt across the bucket when within the
+   *  fresh window (30 min). Null otherwise. Drives the blue "just
+   *  landed" dot on the left rail (Task #650). */
+  freshSinceLandedAt: string | null;
+  /** Min `claim.date` across the bucket. Drives the rail's service
+   *  date sort + display (Task #650). */
+  earliestServiceDate: string | null;
 }
 
-export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
+export function GroupReviewPane({
+  bucket,
+  onAdvance,
+}: {
+  bucket: GroupBucket;
+  onAdvance?: () => void;
+}) {
   const groupId = bucket.invoiceGroupId;
   const detailQuery = useGetInvoiceGroup(groupId ?? 0, {
     query: {
@@ -63,7 +78,6 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
 
   const headLeg = bucket.rows[0].claim;
   const invoiceNumber = detail?.invoiceNumber ?? pickInvoiceNumber(headLeg);
-  const payor = detail?.clientNumber ?? headLeg.clientNumber ?? "—";
 
   const deniedLegs = useMemo<readonly ClaimResponse[]>(() => {
     const rides = detail?.rides ?? [];
@@ -81,6 +95,10 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
     return null;
   }, [bucket.rows]);
 
+  // Kept (even though the wizard owns the live action surface now)
+  // because the persisted-notes disclosure compares each saved note
+  // against the live walkthrough text so a queued operator's earlier
+  // walkthrough doesn't shadow the current one verbatim.
   const checklist = useMemo(
     () =>
       buildReattestChecklist(
@@ -117,16 +135,6 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
           <header className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-mono text-xl font-semibold tracking-tight">
-                  {invoiceNumber || "—"}
-                </h3>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] uppercase tracking-wide font-bold"
-                >
-                  {bucket.rows.length}{" "}
-                  {bucket.rows.length === 1 ? "leg" : "legs"}
-                </Badge>
                 {pendingRename && (
                   <span data-testid="queue-row-rename-chip">
                     <TonePill tone="purple" className="text-[10px] font-mono">
@@ -134,10 +142,6 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
                     </TonePill>
                   </span>
                 )}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Payor{" "}
-                <span className="font-medium text-foreground">{payor}</span>
               </div>
             </div>
             {groupId != null && (
@@ -150,6 +154,39 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
               </Link>
             )}
           </header>
+
+          {groupId == null ? (
+            <div
+              className="rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground flex items-start gap-2"
+              data-testid="group-orphan-leg-note"
+            >
+              <CircleDashed className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                This leg isn't tied to an invoice group — confirm it
+                individually below.
+              </span>
+            </div>
+          ) : (
+            <SkeletonSwap
+              loading={detailQuery.isLoading && !detail}
+              skeleton={
+                <div className="space-y-2" data-testid="group-detail-loading">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              }
+            >
+              <section data-testid="reattest-instructions">
+                <AttestationWizard
+                  key={bucket.key}
+                  bucket={bucket}
+                  detail={detail}
+                  invoiceNumber={invoiceNumber}
+                  onAdvance={onAdvance ?? (() => {})}
+                />
+              </section>
+            </SkeletonSwap>
+          )}
 
           <Separator />
 
@@ -180,75 +217,38 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
             </p>
           )}
 
-          <section
-            className="space-y-3"
-            data-testid="reattest-instructions"
+          <details
+            className="group rounded-md border bg-muted/20"
+            data-testid="wizard-per-leg-disclosure"
           >
-            <SectionLabel>Action checklist</SectionLabel>
-            {groupId == null ? (
-              <div
-                className="rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground flex items-start gap-2"
-                data-testid="group-orphan-leg-note"
+            <summary className="cursor-pointer list-none px-3 py-2 text-[11px] uppercase tracking-wide font-bold text-muted-foreground hover:text-foreground flex items-center justify-between gap-2">
+              <span>Finish legs individually</span>
+              <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70 group-open:hidden">
+                Show
+              </span>
+              <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70 hidden group-open:inline">
+                Hide
+              </span>
+            </summary>
+            <div className="border-t p-3 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Use the per-leg button only when finishing legs individually.
+              </p>
+              <ul
+                className="divide-y rounded-md border bg-card"
+                data-testid="group-leg-breakdown"
               >
-                <CircleDashed className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>
-                  This leg isn't tied to an invoice group — confirm it
-                  individually below.
-                </span>
-              </div>
-            ) : (
-              <SkeletonSwap
-                loading={detailQuery.isLoading && !detail}
-                skeleton={
-                  <div className="space-y-2" data-testid="group-detail-loading">
-                    <Skeleton className="h-9 w-full" />
-                    <Skeleton className="h-20 w-full" />
-                  </div>
-                }
-              >
-                {detail ? (
-                  <GroupActionChecklist detail={detail} bucketKey={bucket.key} />
-                ) : (
-                  <div
-                    className="rounded-md border px-3 py-2.5 text-sm flex items-start gap-2"
-                    style={{
-                      borderColor: TONE_STYLE.amber.border,
-                      background: TONE_STYLE.amber.bg,
-                      color: TONE_STYLE.amber.fg,
-                    }}
-                    data-testid="group-detail-error"
-                  >
-                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span>
-                      Couldn't load the invoice group's MAS checklist. Open the
-                      group page for the full controls.
-                    </span>
-                  </div>
-                )}
-              </SkeletonSwap>
-            )}
-          </section>
-
-          <section className="space-y-2.5">
-            <SectionLabel>Legs in this group</SectionLabel>
-            <p className="text-xs text-muted-foreground">
-              The action above re-attests every leg at once. Use the per-leg
-              button only when finishing legs individually.
-            </p>
-            <ul
-              className="divide-y rounded-md border bg-card"
-              data-testid="group-leg-breakdown"
-            >
-              {bucket.rows.map((row) => (
-                <PerLegRow
-                  key={row.claim.id}
-                  row={row}
-                  invoiceGroupId={groupId}
-                  detail={detail}
-                />
-              ))}
-            </ul>
-          </section>
+                {bucket.rows.map((row) => (
+                  <PerLegRow
+                    key={row.claim.id}
+                    row={row}
+                    invoiceGroupId={groupId}
+                    detail={detail}
+                  />
+                ))}
+              </ul>
+            </div>
+          </details>
 
           {persistedNotes.length > 0 && (
             <details
@@ -293,13 +293,5 @@ export function GroupReviewPane({ bucket }: { bucket: GroupBucket }) {
         </div>
       </Section>
     </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h4 className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground">
-      {children}
-    </h4>
   );
 }

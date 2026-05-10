@@ -1,5 +1,5 @@
 import type { ClaimResponse } from "@workspace/api-client-react";
-import { formatRelative } from "@/lib/time";
+import { formatRelative, formatDate } from "@/lib/time";
 
 /** Pull the headline invoice number off a leg, falling back to "—". */
 export function pickInvoiceNumber(claim: ClaimResponse): string {
@@ -40,4 +40,36 @@ export function relativeAge(iso: string | null | undefined, now: Date = new Date
   if (!label) return null;
   const isStale = now.getTime() - t >= 7 * 24 * 60 * 60 * 1000;
   return { iso, label, isStale };
+}
+
+/**
+ * Render a service date (`YYYY-MM-DD` or full ISO) as a short
+ * "Mon D" label, omitting the year when it matches the current
+ * calendar year. Used by the Variant B left rail (Task #650).
+ */
+export function formatServiceDateShort(
+  input: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!input) return null;
+  const full = formatDate(input);
+  if (!full || full === "N/A") return null;
+  const yearSuffix = `, ${now.getFullYear()}`;
+  return full.endsWith(yearSuffix) ? full.slice(0, -yearSuffix.length) : full;
+}
+
+const FRESH_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * True when an attestation leg's verdict landed within the last
+ * 30 minutes. Drives the blue "just landed" dot on the left rail.
+ */
+export function isFreshSince(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return now.getTime() - t <= FRESH_WINDOW_MS;
 }
