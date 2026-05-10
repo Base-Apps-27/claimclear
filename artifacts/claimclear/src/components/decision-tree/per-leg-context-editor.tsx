@@ -36,8 +36,9 @@
 // genuine human-authored finding.
 
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useUnsavedDraftLeaveGuard } from "@/hooks/use-unsaved-draft-leave-guard";
 
 void React; // JSX runtime: keep React in scope under tsx --test.
 
@@ -148,119 +149,8 @@ export function PerLegContextEditor({
   // where the operator clarified, hasn't accepted, and typed nothing
   // new — the clarified text is also at risk.
   const hasUnsavedDraft = raw.trim().length > 0 || (mode === "review" && clarified.trim().length > 0);
-  // We track the URL the editor is currently "anchored at" so that on
-  // a popstate cancel we can push back to it. `popstate` fires AFTER
-  // the URL has already changed to the destination, so reading
-  // `window.location.href` inside the handler captures the WRONG URL
-  // (the one we want to leave). The ref always holds the previous,
-  // editor-anchored URL, updated on every accepted navigation.
-  const anchoredUrlRef = useRef<string>(
-    typeof window !== "undefined" ? window.location.href : "",
-  );
-  // Pending navigation captured by the guard while the leave-confirm
-  // AlertDialog is open. Resolved by `confirmLeave` / `cancelLeave`.
-  type PendingNav =
-    | {
-        kind: "push" | "replace";
-        args: Parameters<typeof window.history.pushState>;
-      }
-    | { kind: "pop"; destinationUrl: string };
-  const pendingNavRef = useRef<PendingNav | null>(null);
-  // The original (unwrapped) history methods, so the dialog handlers
-  // can resolve a pending navigation without re-tripping the guard.
-  const originalPushRef = useRef<typeof window.history.pushState | null>(null);
-  const originalReplaceRef = useRef<typeof window.history.replaceState | null>(null);
-  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    // Re-anchor whenever the guard activates (a fresh draft begins).
-    if (hasUnsavedDraft) anchoredUrlRef.current = window.location.href;
-  }, [hasUnsavedDraft]);
-  useEffect(() => {
-    if (!hasUnsavedDraft) return;
-
-    // (1) Browser tab close / hard refresh.
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-
-    // (2) SPA navigation. wouter (and most history-based routers)
-    // navigates by calling `history.pushState` / `history.replaceState`
-    // directly — neither fires `beforeunload`. We patch both to capture
-    // the requested navigation and pop an in-app AlertDialog instead
-    // of the browser-native confirm. The patches are scoped to the
-    // lifetime of an unsaved draft and torn down in cleanup so we
-    // don't leak guards to other parts of the app.
-    const originalPush = window.history.pushState.bind(window.history);
-    const originalReplace = window.history.replaceState.bind(window.history);
-    originalPushRef.current = originalPush;
-    originalReplaceRef.current = originalReplace;
-
-    const guard =
-      (orig: typeof originalPush, kind: "push" | "replace") =>
-      function patched(
-        this: History,
-        ...args: Parameters<typeof originalPush>
-      ) {
-        // Defer the navigation. We do NOT call orig() yet — that
-        // happens only if the operator confirms in the dialog.
-        pendingNavRef.current = { kind, args };
-        setLeaveConfirmOpen(true);
-        return undefined;
-      } as typeof originalPush;
-    window.history.pushState = guard(originalPush, "push");
-    window.history.replaceState = guard(originalReplace, "replace");
-
-    // (3) Back / forward via popstate.
-    const onPopState = () => {
-      // popstate fires AFTER the URL has changed. `window.location.href`
-      // here is the DESTINATION, not the editor's URL. To keep the
-      // operator on the editor while the dialog is open, push the
-      // previously-anchored URL back via the unwrapped `originalPush`
-      // (using the wrapped one would re-trigger the guard and bounce).
-      // If they confirm-leave, we'll re-push the captured destination.
-      const destinationUrl = window.location.href;
-      pendingNavRef.current = { kind: "pop", destinationUrl };
-      originalPush({}, "", anchoredUrlRef.current);
-      setLeaveConfirmOpen(true);
-    };
-    window.addEventListener("popstate", onPopState);
-
-    return () => {
-      window.history.pushState = originalPush;
-      window.history.replaceState = originalReplace;
-      originalPushRef.current = null;
-      originalReplaceRef.current = null;
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.removeEventListener("popstate", onPopState);
-    };
-  }, [hasUnsavedDraft]);
-
-  const confirmLeave = () => {
-    const pending = pendingNavRef.current;
-    pendingNavRef.current = null;
-    setLeaveConfirmOpen(false);
-    if (!pending) return;
-    if (typeof window === "undefined") return;
-    const origPush = originalPushRef.current ?? window.history.pushState.bind(window.history);
-    const origReplace = originalReplaceRef.current ?? window.history.replaceState.bind(window.history);
-    if (pending.kind === "push") {
-      origPush(...pending.args);
-    } else if (pending.kind === "replace") {
-      origReplace(...pending.args);
-    } else if (pending.kind === "pop") {
-      origPush({}, "", pending.destinationUrl);
-    }
-    anchoredUrlRef.current = window.location.href;
-  };
-
-  const cancelLeave = () => {
-    pendingNavRef.current = null;
-    setLeaveConfirmOpen(false);
-  };
+  const { leaveConfirmOpen, confirmLeave, cancelLeave } =
+    useUnsavedDraftLeaveGuard(hasUnsavedDraft);
 
   const requestReadback = useMutation({
     mutationFn: async (rawText: string) => {

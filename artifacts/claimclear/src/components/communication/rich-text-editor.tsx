@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { useUnsavedDraftLeaveGuard } from "@/hooks/use-unsaved-draft-leave-guard";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -101,99 +102,8 @@ export function RichTextEditor({
   const hasUnsavedDraft =
     editable && richTextHasUnsavedDraft(latestHtml);
 
-  const anchoredUrlRef = useRef<string>(
-    typeof window !== "undefined" ? window.location.href : "",
-  );
-  type PendingNav =
-    | {
-        kind: "push" | "replace";
-        args: Parameters<typeof window.history.pushState>;
-      }
-    | { kind: "pop"; destinationUrl: string };
-  const pendingNavRef = useRef<PendingNav | null>(null);
-  const originalPushRef = useRef<typeof window.history.pushState | null>(null);
-  const originalReplaceRef = useRef<typeof window.history.replaceState | null>(null);
-  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (hasUnsavedDraft) anchoredUrlRef.current = window.location.href;
-  }, [hasUnsavedDraft]);
-
-  useEffect(() => {
-    if (!hasUnsavedDraft) return;
-    if (typeof window === "undefined") return;
-
-    // (1) Browser tab close / hard refresh.
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-      return "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-
-    // (2) SPA navigation via history.pushState / replaceState.
-    const originalPush = window.history.pushState.bind(window.history);
-    const originalReplace = window.history.replaceState.bind(window.history);
-    originalPushRef.current = originalPush;
-    originalReplaceRef.current = originalReplace;
-
-    const guard =
-      (orig: typeof originalPush, kind: "push" | "replace") =>
-      function patched(
-        this: History,
-        ...args: Parameters<typeof originalPush>
-      ) {
-        pendingNavRef.current = { kind, args };
-        setLeaveConfirmOpen(true);
-        return undefined;
-      } as typeof originalPush;
-    window.history.pushState = guard(originalPush, "push");
-    window.history.replaceState = guard(originalReplace, "replace");
-
-    // (3) Back / forward via popstate.
-    const onPopState = () => {
-      const destinationUrl = window.location.href;
-      pendingNavRef.current = { kind: "pop", destinationUrl };
-      originalPush({}, "", anchoredUrlRef.current);
-      setLeaveConfirmOpen(true);
-    };
-    window.addEventListener("popstate", onPopState);
-
-    return () => {
-      window.history.pushState = originalPush;
-      window.history.replaceState = originalReplace;
-      originalPushRef.current = null;
-      originalReplaceRef.current = null;
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.removeEventListener("popstate", onPopState);
-    };
-  }, [hasUnsavedDraft]);
-
-  const confirmLeave = () => {
-    const pending = pendingNavRef.current;
-    pendingNavRef.current = null;
-    setLeaveConfirmOpen(false);
-    if (!pending) return;
-    if (typeof window === "undefined") return;
-    const origPush =
-      originalPushRef.current ?? window.history.pushState.bind(window.history);
-    const origReplace =
-      originalReplaceRef.current ?? window.history.replaceState.bind(window.history);
-    if (pending.kind === "push") {
-      origPush(...pending.args);
-    } else if (pending.kind === "replace") {
-      origReplace(...pending.args);
-    } else if (pending.kind === "pop") {
-      origPush({}, "", pending.destinationUrl);
-    }
-    anchoredUrlRef.current = window.location.href;
-  };
-
-  const cancelLeave = () => {
-    pendingNavRef.current = null;
-    setLeaveConfirmOpen(false);
-  };
+  const { leaveConfirmOpen, confirmLeave, cancelLeave } =
+    useUnsavedDraftLeaveGuard(hasUnsavedDraft);
 
   if (!editor) return null;
 

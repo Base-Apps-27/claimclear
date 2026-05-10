@@ -27,6 +27,15 @@ const SOURCE = readFileSync(
   join(__dirname, "rich-text-editor.tsx"),
   "utf8",
 );
+// Task #672: the beforeunload + history-patch + popstate plumbing now
+// lives in the shared `useUnsavedDraftLeaveGuard` hook. The editor
+// source must still render the AlertDialog and opt-in to the hook;
+// the channel-level wiring (addEventListener("popstate"), history
+// patch + tear-down) is asserted against the hook's source.
+const HOOK_SOURCE = readFileSync(
+  join(__dirname, "..", "..", "hooks", "use-unsaved-draft-leave-guard.ts"),
+  "utf8",
+);
 
 test("richTextHasUnsavedDraft: empty / whitespace-only documents are NOT unsaved", () => {
   assert.equal(richTextHasUnsavedDraft(""), false);
@@ -71,21 +80,25 @@ test("RichTextEditor source: leave-confirm AlertDialog and its action test-ids a
   );
 });
 
-test("RichTextEditor source: all three navigation channels are guarded", () => {
-  // Tab close / hard refresh.
-  assert.match(SOURCE, /addEventListener\("beforeunload"/);
-  // SPA push/replace navigation (wouter and friends).
-  assert.match(SOURCE, /window\.history\.pushState = /);
-  assert.match(SOURCE, /window\.history\.replaceState = /);
-  // Back / forward.
-  assert.match(SOURCE, /addEventListener\("popstate"/);
+test("RichTextEditor source: opts in to the shared unsaved-draft leave guard hook", () => {
+  assert.match(SOURCE, /useUnsavedDraftLeaveGuard\(/);
 });
 
-test("RichTextEditor source: guard tears itself down when the draft is gone", () => {
+test("useUnsavedDraftLeaveGuard source: all three navigation channels are guarded", () => {
+  // Tab close / hard refresh.
+  assert.match(HOOK_SOURCE, /addEventListener\("beforeunload"/);
+  // SPA push/replace navigation (wouter and friends).
+  assert.match(HOOK_SOURCE, /window\.history\.pushState = /);
+  assert.match(HOOK_SOURCE, /window\.history\.replaceState = /);
+  // Back / forward.
+  assert.match(HOOK_SOURCE, /addEventListener\("popstate"/);
+});
+
+test("useUnsavedDraftLeaveGuard source: guard tears itself down when the draft is gone", () => {
   // Cleanup must restore the original history methods AND remove both
   // window listeners so the guard doesn't leak into other screens.
-  assert.match(SOURCE, /window\.history\.pushState = originalPush/);
-  assert.match(SOURCE, /window\.history\.replaceState = originalReplace/);
-  assert.match(SOURCE, /removeEventListener\("beforeunload"/);
-  assert.match(SOURCE, /removeEventListener\("popstate"/);
+  assert.match(HOOK_SOURCE, /window\.history\.pushState = originalPush/);
+  assert.match(HOOK_SOURCE, /window\.history\.replaceState = originalReplace/);
+  assert.match(HOOK_SOURCE, /removeEventListener\("beforeunload"/);
+  assert.match(HOOK_SOURCE, /removeEventListener\("popstate"/);
 });
