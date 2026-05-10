@@ -1906,6 +1906,14 @@ function ClosedTerminalRewindCard({
             <RotateCcw className="h-3.5 w-3.5" />
             Restart walk
           </Button>
+          {/* R2 mockup helper — both verbs keep the classification, so
+              the operator knows neither path forces a reclassify. */}
+          <span
+            className="text-[11px] text-muted-foreground ml-auto"
+            data-testid="sop-terminal-verb-helper"
+          >
+            In case you mis-clicked · both keep the classification
+          </span>
         </div>
 
         <p
