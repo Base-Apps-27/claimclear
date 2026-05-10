@@ -243,6 +243,69 @@ test("gauntlet hero: renders one card per disputed leg with conf number + resolv
   );
 });
 
+// Hero off-ramps (Re-attest / Close) and attachments rail are visual
+// indicators bound to existing payload fields — no new mutations.
+// Asserts they appear when the underlying field is set, and stay
+// hidden otherwise so quiet groups don't carry empty chrome.
+test("gauntlet hero: attachments rail + Re-attest/Close off-ramps render from payload", () => {
+  const ride = claim({
+    id: 900,
+    confNumber: "RIDE-900",
+    errorTypeId: "ET-1",
+    sopOutcome: "dispute",
+  });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([ride], {
+        reattestRequired: true,
+        closureReason: "approved",
+        evidenceFiles: [
+          { url: "/objects/abc/release.pdf", name: "release.pdf" },
+          { url: "/objects/abc/gps.csv" },
+        ],
+      } as unknown as Partial<InvoiceGroupDetailResponse>),
+      groupId: 42,
+    }),
+  );
+
+  assert.match(html, /data-testid="gauntlet-hero-attachments"/);
+  assert.match(html, /data-testid="gauntlet-hero-attachment-0"[^>]*>release\.pdf/);
+  assert.match(html, /data-testid="gauntlet-hero-attachment-1"[^>]*>gps\.csv/);
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-offramp-reattest"[^>]*data-state="required"/,
+  );
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-offramp-close"[^>]*data-state="closed"/,
+  );
+});
+
+test("gauntlet hero: off-ramps + attachments rail are hidden when fields are unset", () => {
+  const ride = claim({
+    id: 901,
+    confNumber: "RIDE-901",
+    errorTypeId: "ET-1",
+    sopOutcome: "dispute",
+  });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([ride]),
+      groupId: 42,
+    }),
+  );
+
+  assert.equal(html.includes(`data-testid="gauntlet-hero-attachments"`), false);
+  assert.equal(
+    html.includes(`data-testid="gauntlet-hero-offramp-reattest"`),
+    false,
+  );
+  assert.equal(
+    html.includes(`data-testid="gauntlet-hero-offramp-close"`),
+    false,
+  );
+});
+
 // Excluded legs (`includedInDispute === false`) are filtered out of
 // the disputed `rides` set, and so must not get a hero card. This
 // keeps the card count aligned with the resolved-N-of-M counter and

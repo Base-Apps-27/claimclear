@@ -432,6 +432,19 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   const baselinePresent =
     !!(group?.aiBaselineSubject || group?.aiBaselineDescriptionHtml);
   const heldGroup = !!group?.holdReason;
+  // Attachments rail — read-only chips for the group's
+  // `evidenceFiles` (bot-worker payload). The submission drawer owns
+  // the upload UI; here we only mirror what the AI prompt + outbound
+  // dispute will see.
+  const evidenceFiles = group?.evidenceFiles ?? [];
+  // Off-ramp indicators (visual-only — no mutations are wired here):
+  // - Re-attest: visible whenever `reattestRequired`. Stamped state
+  //   uses `reattestCompletedAt`.
+  // - Close: visible whenever `closureReason` is set; the existing
+  //   group-detail page owns the actual closure flow.
+  const reattestRequired = !!group?.reattestRequired;
+  const reattestDone = !!group?.reattestCompletedAt;
+  const closureReason = group?.closureReason ?? null;
 
   const body = (
     <>
@@ -460,6 +473,37 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                 On hold{group?.holdReason ? ` · ${group.holdReason}` : ""}
               </Badge>
             )}
+            {reattestRequired && (
+              <Badge
+                variant="outline"
+                className={
+                  "text-[10px] " +
+                  (reattestDone
+                    ? "border-green-300 text-green-800 dark:text-green-300"
+                    : "border-blue-300 text-blue-800 dark:text-blue-300")
+                }
+                data-testid="gauntlet-hero-offramp-reattest"
+                data-state={reattestDone ? "done" : "required"}
+                title={
+                  reattestDone
+                    ? `Re-attested ${formatDateTime(group!.reattestCompletedAt!)}`
+                    : "Group requires re-attestation in MAS portal"
+                }
+              >
+                {reattestDone ? "Re-attested" : "Re-attest required"}
+              </Badge>
+            )}
+            {closureReason && (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-muted-foreground/40 text-muted-foreground"
+                data-testid="gauntlet-hero-offramp-close"
+                data-state="closed"
+                title={`Closed · ${closureReason}`}
+              >
+                Closed · {closureReason}
+              </Badge>
+            )}
             <div
               className="ml-auto flex items-center gap-1 rounded border border-border bg-muted/40 p-0.5"
               role="list"
@@ -486,6 +530,34 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
               ))}
             </div>
           </div>
+
+          {/* Attachments rail — read-only chips for the group's
+              evidenceFiles. Bot-worker payload + AI prompt input;
+              uploads/edits live elsewhere. */}
+          {evidenceFiles.length > 0 && (
+            <div
+              className="flex items-center gap-1.5 flex-wrap"
+              data-testid="gauntlet-hero-attachments"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Attachments ({evidenceFiles.length})
+              </span>
+              {evidenceFiles.map((f, i) => {
+                const label =
+                  f.name ?? f.url.split("/").pop() ?? `file-${i + 1}`;
+                return (
+                  <span
+                    key={`${f.url}-${i}`}
+                    className="inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium"
+                    data-testid={`gauntlet-hero-attachment-${i}`}
+                    title={f.url}
+                  >
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           {/* Card row — one card per DISPUTED leg. Excluded legs
               (`includedInDispute === false`) are filtered out so the
