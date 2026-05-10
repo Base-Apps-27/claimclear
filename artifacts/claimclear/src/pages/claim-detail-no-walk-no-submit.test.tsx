@@ -193,6 +193,13 @@ mock.module("@/components/ref-number", {
 mock.module("@/components/classify-dialog", {
   namedExports: { ClassifyDialog: () => null },
 });
+mock.module("@/components/hold-reason-select", {
+  namedExports: {
+    HoldReasonSelect: () => React.createElement("div", { "data-testid": "stub-hold-reason-select" }),
+    isHoldReasonValid: () => false,
+    holdReasonLabel: (r: string) => r,
+  },
+});
 mock.module("@/components/decision-tree/sop-advance-player", {
   namedExports: { SopAdvancePlayer: stub("LIVE-SOP-PLAYER-MOUNTED") },
 });
@@ -423,6 +430,24 @@ const FIXTURES: Array<{
     expectReleaseHold: false,
   },
 ];
+
+// Task #664 — guard rail: render must never reach window.confirm/prompt.
+// The previous implementation called those browser primitives from the
+// recovery action click handlers; the new implementation uses the shared
+// AlertDialog + HoldReasonSelect UI. We blow up the test if anything in
+// the render tree even touches them.
+const originalConfirm = globalThis.confirm;
+const originalPrompt = globalThis.prompt;
+(globalThis as any).confirm = () => {
+  throw new Error("window.confirm must not be invoked from claim-detail render");
+};
+(globalThis as any).prompt = () => {
+  throw new Error("window.prompt must not be invoked from claim-detail render");
+};
+process.on("exit", () => {
+  (globalThis as any).confirm = originalConfirm;
+  (globalThis as any).prompt = originalPrompt;
+});
 
 for (const fx of FIXTURES) {
   test(`Task #658 V1+V2 — ${fx.name}`, () => {

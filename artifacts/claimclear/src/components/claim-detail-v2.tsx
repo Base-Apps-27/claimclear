@@ -70,6 +70,8 @@ import {
   Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2, Tag, Sparkles,
 } from "lucide-react";
 import { ClassifyDialog } from "@/components/classify-dialog";
+import { HoldReasonSelect, isHoldReasonValid } from "@/components/hold-reason-select";
+import type { LegHoldReason } from "@workspace/leg-state";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -168,12 +170,22 @@ interface RecoveryProps {
   invalidateLeg: () => void;
   toast: (a: { title: string; description?: string; variant?: "destructive" }) => void;
 }
-function renderRecoveryActions(p: RecoveryProps) {
+type RecoveryDialog = "restart" | "change-answer" | "place-hold" | "release-hold" | null;
+function RecoveryActions(p: RecoveryProps) {
   const onHold = p.subStatus === "blocked" && !!p.claim.holdReason;
+  const [dialog, setDialog] = useState<RecoveryDialog>(null);
+  const [holdReason, setHoldReason] = useState<LegHoldReason | "">("");
+  const [holdNote, setHoldNote] = useState("");
+  useEffect(() => {
+    if (dialog === "place-hold") {
+      setHoldReason("");
+      setHoldNote("");
+    }
+  }, [dialog]);
   type Icon = (props: { className?: string }) => ReactNode;
   function go<TVars>(m: LegMutationResult<TVars>, args: TVars, ok: string, fail: string) {
     m.mutate(args, {
-      onSuccess: () => { successToast({ title: "__VERB__", description: ok }); p.invalidateLeg(); },
+      onSuccess: () => { successToast({ title: "__VERB__", description: ok }); p.invalidateLeg(); setDialog(null); },
       onError: (e: unknown) => p.toast({ title: fail, description: String((e as Error).message), variant: "destructive" }),
     });
   }
@@ -183,6 +195,7 @@ function renderRecoveryActions(p: RecoveryProps) {
         <Icon className="h-3.5 w-3.5" />{label}
       </Button>
     ) : null;
+  const holdValid = isHoldReasonValid(holdReason, holdNote);
   return (
     <div className="space-y-3">
       <a href={`/queue?group=${p.parentGroup.id}&leg=${p.claim.id}`} className="cc-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded"
@@ -192,14 +205,109 @@ function renderRecoveryActions(p: RecoveryProps) {
       <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>Walk progression and submission happen in the queue.</p>
       <div className="flex flex-wrap items-center gap-1.5 pt-2" style={{ borderTop: "1px dashed var(--cc-border)" }}>
         {btn("claim-detail-action-restart-walk", p.walked && p.groupIsPreSubmit, p.sopRestartMutation.isPending, RotateCcw, "Restart walk",
-          () => { if (window.confirm("Restart this leg's SOP walk? Recorded answers will be cleared.")) go(p.sopRestartMutation, { id: p.claim.id, data: { discardDraft: true } }, "SOP walk restarted", "Restart failed"); })}
+          () => setDialog("restart"))}
         {btn("claim-detail-action-change-my-answer", p.walked && p.groupIsPreSubmit, p.sopBackStepMutation.isPending, Edit2, "Change my answer",
-          () => { if (window.confirm("Pop the most recent SOP answer so you can re-answer it?")) go(p.sopBackStepMutation, { id: p.claim.id, data: { discardDraft: true } }, "Last SOP answer cleared", "Change answer failed"); })}
+          () => setDialog("change-answer"))}
         {btn("claim-detail-action-place-leg-hold", !onHold && p.groupIsPreSubmit && (p.subStatus === "investigating" || p.subStatus === "ready"), p.placeHoldMutation.isPending, Lock, "Place leg hold",
-          () => { const n = window.prompt("Place this leg on hold. What are you waiting on? (optional)", ""); if (n !== null) go(p.placeHoldMutation, { id: p.claim.id, data: { reason: "awaiting_internal_review", note: n.trim() || null } }, "Leg placed on hold", "Place hold failed"); })}
+          () => setDialog("place-hold"))}
         {btn("claim-detail-action-release-leg-hold", onHold, p.clearHoldMutation.isPending, RefreshCw, "Release leg hold",
-          () => { if (window.confirm("Release this leg's hold?")) go(p.clearHoldMutation, { id: p.claim.id }, "Leg hold released", "Release hold failed"); })}
+          () => setDialog("release-hold"))}
       </div>
+
+      <AlertDialog open={dialog === "restart"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
+        <AlertDialogContent data-testid="claim-detail-restart-walk-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart this leg&apos;s SOP walk?</AlertDialogTitle>
+            <AlertDialogDescription>Recorded answers will be cleared.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="claim-detail-restart-walk-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => go(p.sopRestartMutation, { id: p.claim.id, data: { discardDraft: true } }, "SOP walk restarted", "Restart failed")}
+              disabled={p.sopRestartMutation.isPending}
+              data-testid="claim-detail-restart-walk-confirm-action"
+            >
+              {p.sopRestartMutation.isPending ? "Restarting…" : "Restart walk"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={dialog === "change-answer"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
+        <AlertDialogContent data-testid="claim-detail-change-answer-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change your last answer?</AlertDialogTitle>
+            <AlertDialogDescription>Pop the most recent SOP answer so you can re-answer it.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="claim-detail-change-answer-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => go(p.sopBackStepMutation, { id: p.claim.id, data: { discardDraft: true } }, "Last SOP answer cleared", "Change answer failed")}
+              disabled={p.sopBackStepMutation.isPending}
+              data-testid="claim-detail-change-answer-confirm-action"
+            >
+              {p.sopBackStepMutation.isPending ? "Clearing…" : "Change my answer"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={dialog === "release-hold"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
+        <AlertDialogContent data-testid="claim-detail-release-hold-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Release this leg&apos;s hold?</AlertDialogTitle>
+            <AlertDialogDescription>The leg returns to its previous queue state.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="claim-detail-release-hold-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => go(p.clearHoldMutation, { id: p.claim.id }, "Leg hold released", "Release hold failed")}
+              disabled={p.clearHoldMutation.isPending}
+              data-testid="claim-detail-release-hold-confirm-action"
+            >
+              {p.clearHoldMutation.isPending ? "Releasing…" : "Release hold"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={dialog === "place-hold"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
+        <DialogContent data-testid="claim-detail-place-hold-dialog">
+          <DialogHeader>
+            <DialogTitle>Place leg on hold</DialogTitle>
+          </DialogHeader>
+          <HoldReasonSelect
+            reason={holdReason}
+            note={holdNote}
+            onReasonChange={setHoldReason}
+            onNoteChange={setHoldNote}
+            disabled={p.placeHoldMutation.isPending}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDialog(null)} data-testid="claim-detail-place-hold-cancel">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!holdValid || !holdReason) return;
+                go(
+                  p.placeHoldMutation,
+                  { id: p.claim.id, data: { reason: holdReason, note: holdNote.trim() ? holdNote.trim() : null } },
+                  "Leg placed on hold",
+                  "Place hold failed",
+                );
+              }}
+              disabled={!holdValid || p.placeHoldMutation.isPending}
+              data-testid="claim-detail-place-hold-submit"
+            >
+              {p.placeHoldMutation.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : null}
+              Place on hold
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1298,13 +1406,21 @@ export function ClaimDetailV2({
                   <span>{playerDisabledReason}</span>
                 </div>
               )}
-              {!embedded && !isDuplicate && parentGroup &&
-                renderRecoveryActions({
-                  claim, parentGroup, subStatus, groupIsPreSubmit,
-                  walked: !!claim.sopOutcome || transcriptLines.length > 0,
-                  sopRestartMutation, sopBackStepMutation, placeHoldMutation, clearHoldMutation,
-                  invalidateLeg, toast,
-                })}
+              {!embedded && !isDuplicate && parentGroup && (
+                <RecoveryActions
+                  claim={claim}
+                  parentGroup={parentGroup}
+                  subStatus={subStatus}
+                  groupIsPreSubmit={groupIsPreSubmit}
+                  walked={!!claim.sopOutcome || transcriptLines.length > 0}
+                  sopRestartMutation={sopRestartMutation}
+                  sopBackStepMutation={sopBackStepMutation}
+                  placeHoldMutation={placeHoldMutation}
+                  clearHoldMutation={clearHoldMutation}
+                  invalidateLeg={invalidateLeg}
+                  toast={toast}
+                />
+              )}
             </CcCard>
             </div>
 
