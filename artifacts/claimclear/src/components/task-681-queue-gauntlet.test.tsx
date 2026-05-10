@@ -64,19 +64,23 @@ test("A — Clear recorded verdict button is wired (distinct from Reopen walk)",
 });
 
 test("A — Admin status override dropdown is mounted and HideForClerk-gated", () => {
-  assert.match(A, /function AdminStatusOverride\(/);
+  // The override is its own module so the queue page can stay
+  // tree-shake-friendly and the override is testable in isolation
+  // (see task-681-behavior.test.tsx).
   assert.match(A, /<AdminStatusOverride\b/);
-  assert.match(A, /useUpdateInvoiceGroupStatus/);
-  assert.match(A, /useGetInvoiceGroupValidTransitions/);
-  assert.match(A, /partitionTransitions\(/);
-  assert.match(A, /data-testid="mini-admin-status-override-trigger"/);
-  assert.match(A, /data-testid={`mini-admin-status-override-\$\{s\}`}/);
-  // The override component must be wrapped by HideForClerk so clerks
-  // can't see the menu trigger even if isAdmin somehow flickered true.
-  const m = A.match(/function AdminStatusOverride\([\s\S]*?\n\}\n/);
-  assert.ok(m, "AdminStatusOverride function body must be findable");
-  assert.match(m![0], /<HideForClerk>/);
-  assert.match(m![0], /isAdmin/);
+  assert.match(A, /from "@\/components\/admin-status-override"/);
+
+  const adminOverride = src("admin-status-override.tsx");
+  assert.match(adminOverride, /export function AdminStatusOverride\(/);
+  assert.match(adminOverride, /useUpdateInvoiceGroupStatus/);
+  assert.match(adminOverride, /useGetInvoiceGroupValidTransitions/);
+  assert.match(adminOverride, /partitionTransitions\([^)]*isAdmin\)/);
+  assert.match(adminOverride, /data-testid="mini-admin-status-override-trigger"/);
+  assert.match(adminOverride, /data-testid={`mini-admin-status-override-\$\{s\}`}/);
+  assert.match(adminOverride, /<HideForClerk>/);
+  // Belt-and-suspenders: an isAdmin early return must short-circuit
+  // before we even consult validTransitions / render anything.
+  assert.match(adminOverride, /if \(!isAdmin\) return null;/);
 });
 
 // ─── chip-drawer-overlay: delete-note confirm ──────────────────────

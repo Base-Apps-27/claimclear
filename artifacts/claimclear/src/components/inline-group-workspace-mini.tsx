@@ -10,23 +10,13 @@ import {
   useListErrorTypes,
   useCreatePortalSubmission,
   useClearLegVerdictDraft,
-  useUpdateInvoiceGroupStatus,
-  useGetInvoiceGroupValidTransitions,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetInvoiceGroupQueryKey,
   getListInvoiceGroupsQueryKey,
   ApiError,
 } from "@workspace/api-client-react";
-import { useAuth } from "@workspace/replit-auth-web";
-import { partitionTransitions } from "@/lib/transitions-partition";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AdminStatusOverride } from "@/components/admin-status-override";
 import type {
   ClaimResponse,
   ErrorTypeResponse,
@@ -1482,94 +1472,6 @@ function ReleaseLegHoldButton({ legId }: { legId: number }) {
   );
 }
 
-// Task #681 — admin-only status override dropdown ported from
-// `invoice-group-detail-v2.tsx`. The queue is now the sole place
-// operators process invoices, so the same backwards-transition
-// escape hatch admins relied on for stuck invoices has to live here
-// too. Shape mirrors the C-page dropdown: only the "Status overrides"
-// (admin-only, backwards) section is exposed — phase actions like
-// Submit / Hold / Mark MAS Eligible already have first-class CTAs in
-// the queue UI. `HideForClerk` keeps this hidden from clerks; the
-// inner `overrideStatuses` filter is empty for non-admins so even an
-// accidental render is a no-op.
-function AdminStatusOverride({
-  groupId,
-  currentStatus,
-}: {
-  groupId: number;
-  currentStatus: string | null;
-}) {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId);
-  const updateStatusMutation = useUpdateInvoiceGroupStatus();
-
-  if (!isAdmin) return null;
-
-  const allowed = validTransitions?.validStatuses ?? [];
-  const { overrideStatuses } = partitionTransitions(currentStatus, allowed, isAdmin);
-  if (overrideStatuses.length === 0) return null;
-
-  function invalidate() {
-    qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
-    qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
-    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-  }
-
-  return (
-    <HideForClerk>
-      <div className="flex justify-end">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              data-testid="mini-admin-status-override-trigger"
-            >
-              Admin: status override
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[220px]">
-            <DropdownMenuLabel>Status overrides (admin)</DropdownMenuLabel>
-            {overrideStatuses.map((s) => (
-              <DropdownMenuItem
-                key={s}
-                disabled={updateStatusMutation.isPending}
-                onSelect={() =>
-                  updateStatusMutation.mutate(
-                    { id: groupId, data: { status: s } },
-                    {
-                      onSuccess: () => {
-                        invalidate();
-                        successToast({
-                          title: "Done",
-                          description: `Status changed to ${s}.`,
-                        });
-                      },
-                      onError: (e: unknown) =>
-                        toast({
-                          title: "Status override failed",
-                          description: e instanceof Error ? e.message : String(e),
-                          variant: "destructive",
-                        }),
-                    },
-                  )
-                }
-                data-testid={`mini-admin-status-override-${s}`}
-              >
-                {s}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </HideForClerk>
-  );
-}
-
 function PinnedFooter({
   phase,
   detail,
@@ -1630,10 +1532,11 @@ function PinnedFooter({
   // recorded draft on the active leg. Ported from claim-detail-v2's
   // PerLegVerdictPicker.
   const activeLegId = activeLeg?.id ?? null;
-  const hasVerdictDraft =
-    activeLeg != null &&
-    (activeLeg as ClaimResponse & { latestVerdictDraft?: unknown })
-      .latestVerdictDraft != null;
+  // `latestDraft` is the per-leg verdict-draft slot on ClaimResponse
+  // (lib/api-client-react/src/generated/api.schemas.ts L455). Mirrors
+  // claim-detail-v2.tsx's PerLegVerdictPicker which gates Clear on
+  // the same field.
+  const hasVerdictDraft = activeLeg?.latestDraft != null;
   function onClearVerdictDraft() {
     if (activeLegId == null) return;
     clearLegVerdictDraft.mutate(
