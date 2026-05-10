@@ -75,18 +75,18 @@ export function RailToolbar() {
   );
 }
 
-function tierShort(t: RowData["tier"]) {
+function tierShort(t: RowData["tier"], service: string) {
   switch (t) {
     case "today":
-      return { label: "TODAY", date: "Apr 24", cls: "qv-rail-tier-today" };
+      return { label: "TODAY", date: service, cls: "qv-rail-tier-today" };
     case "tomorrow":
-      return { label: "TMRW", date: "Apr 25", cls: "qv-rail-tier-tomorrow" };
+      return { label: "TMRW", date: service, cls: "qv-rail-tier-tomorrow" };
     case "soon":
-      return { label: "≤3D", date: "", cls: "qv-rail-tier-soon" };
+      return { label: "≤3D", date: service, cls: "qv-rail-tier-soon" };
     case "week":
-      return { label: "≤7D", date: "", cls: "qv-rail-tier-week" };
+      return { label: "≤7D", date: service, cls: "qv-rail-tier-week" };
     case "later":
-      return { label: "LATER", date: "", cls: "qv-rail-tier-later" };
+      return { label: "LATER", date: service, cls: "qv-rail-tier-later" };
   }
 }
 
@@ -114,7 +114,7 @@ function MiniBreakdown({ row }: { row: RowData }) {
 }
 
 export function RailRow({ row }: { row: RowData }) {
-  const t = tierShort(row.tier);
+  const t = tierShort(row.tier, row.service);
   const cls = [
     "qv-rail-row",
     row.selected ? "qv-rail-row-selected" : "",
@@ -163,7 +163,7 @@ export function RailRow({ row }: { row: RowData }) {
 }
 
 export function RailTRow({ row }: { row: RowData }) {
-  const t = tierShort(row.tier);
+  const t = tierShort(row.tier, row.service);
   const cls = [
     "qv-rail-trow",
     row.selected ? "qv-rail-trow-selected" : "",
@@ -171,8 +171,9 @@ export function RailTRow({ row }: { row: RowData }) {
   ].join(" ");
   return (
     <div className={cls} title={row.errorType}>
-      <span className={`qv-rail-tier ${t.cls}`} style={{ minHeight: 22, padding: "1px 4px" }}>
+      <span className={`qv-rail-tier ${t.cls}`} style={{ minHeight: 22, padding: "1px 4px", flexDirection: "row", gap: 4 }}>
         {t.label}
+        <span className="qv-rail-tier-date" style={{ marginTop: 0 }}>{t.date}</span>
       </span>
       <span className="qv-rail-invoice">{row.invoice}</span>
       <span className="qv-rail-mini-bd">
