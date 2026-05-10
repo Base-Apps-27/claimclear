@@ -28,6 +28,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
 import { useNumberTicker } from "@/hooks/use-number-ticker";
 import { useServerDayRolloverInvalidator } from "@/lib/server-day-rollover";
+import { queueGroupHref } from "@/lib/queue-cta";
 import { PageHeader } from "@/components/cohesion";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
@@ -709,7 +710,7 @@ export default function Dashboard() {
               return (
                 <HeroRow
                   key={g.id}
-                  to={`/invoice-groups/${g.id}`}
+                  to={queueGroupHref(g.id)}
                   testid={`file-today-row-${g.id}`}
                   primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                   sub={
@@ -766,7 +767,7 @@ export default function Dashboard() {
             items={stuckItems.map(g => (
               <HeroRow
                 key={g.id}
-                to={`/invoice-groups/${g.id}`}
+                to={queueGroupHref(g.id)}
                 testid={`stuck-row-${g.id}`}
                 primary={<RefNumber value={g.invoiceNumber} variant="inline" />}
                 sub={

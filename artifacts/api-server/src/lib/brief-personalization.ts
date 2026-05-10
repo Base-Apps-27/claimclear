@@ -1,4 +1,5 @@
 import { db } from "@workspace/db";
+import { queueGroupHref, queueLegHref } from "./queue-cta";
 import {
   auditLogsTable,
   claimsTable,
@@ -132,6 +133,7 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
         confNumber: claimsTable.confNumber,
         status: claimsTable.status,
         updatedAt: claimsTable.updatedAt,
+        invoiceGroupId: claimsTable.invoiceGroupId,
       })
       .from(claimsTable)
       .where(and(inArray(claimsTable.id, touchedClaimIds), openFilter))
@@ -141,12 +143,18 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
     // in the brief item ("Awaiting Response", "Needs Evidence", …) —
     // keep on `status`. Phase is too coarse to render in a single-line
     // item.
+    // Task #660: route into the queue with the parent group preselected
+    // so the operator lands on the walk surface, not the standalone
+    // claim detail page. Falls back to /claims/:id only when a leg has
+    // no parent invoice group (orphan rows from manual creation).
     recentlyTouched = rows.map((r) => ({
       id: r.id,
       confNumber: r.confNumber,
       status: r.status,
       reason: "You touched this in the last 14 days",
-      href: `/claims/${r.id}`,
+      href: r.invoiceGroupId != null
+        ? queueLegHref(r.invoiceGroupId, r.id)
+        : `/claims/${r.id}`,
     }));
   }
 
@@ -209,7 +217,7 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
         confNumber: r.confNumber ?? `Invoice group #${r.invoiceGroupId}`,
         status: "draft",
         reason: "Draft you edited but never submitted",
-        href: `/invoice-groups/${r.invoiceGroupId}`,
+        href: queueGroupHref(r.invoiceGroupId),
       }));
     }
   }
@@ -228,6 +236,7 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
       id: claimsTable.id,
       confNumber: claimsTable.confNumber,
       status: claimsTable.status,
+      invoiceGroupId: claimsTable.invoiceGroupId,
     })
     .from(claimsTable)
     .where(
@@ -246,12 +255,17 @@ export async function getNeedsYouToday(userEmail: string, now: Date): Promise<Ne
   // (`disposition='awaiting_review'` with the legacy `Needs Review`
   // fallback) is the canonical filter; the rendered field stays as
   // the human-readable status name.
+  // Task #660: route reviewers into the queue with the leg preselected
+  // (review surfaces live in the queue's inline workspace). Falls back
+  // to /claims/:id only for orphan legs without a parent group.
   const needsReview: NeedsYouItem[] = reviewRows.map((r) => ({
     id: r.id,
     confNumber: r.confNumber,
     status: r.status,
     reason: "Response needs review",
-    href: `/claims/${r.id}`,
+    href: r.invoiceGroupId != null
+      ? queueLegHref(r.invoiceGroupId, r.id)
+      : `/claims/${r.id}`,
   }));
 
   return { recentlyTouched, unsubmittedDrafts, needsReview };
