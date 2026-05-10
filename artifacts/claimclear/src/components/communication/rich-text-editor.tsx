@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -19,6 +19,10 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface RichTextEditorProps {
   content: string;
@@ -26,6 +30,27 @@ interface RichTextEditorProps {
   placeholder?: string;
   editable?: boolean;
   className?: string;
+}
+
+/**
+ * Pure helper: does this editor HTML represent a non-empty draft worth
+ * warning about on navigation? Tiptap renders an empty document as
+ * `<p></p>` (and similar empty wrappers); we strip tags + collapse
+ * whitespace and check whether any user-visible text remains.
+ *
+ * Mirrors the `raw.trim().length > 0` predicate used by
+ * `per-leg-context-editor.tsx` for its leave guard.
+ */
+export function richTextHasUnsavedDraft(html: string): boolean {
+  if (!html) return false;
+  const text = html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+  return text.length > 0;
 }
 
 export function RichTextEditor({
@@ -37,6 +62,11 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  // Track the latest editor HTML so the leave guard can decide whether
+  // to fire on navigation. Initialized from the controlled `content`
+  // prop so a pre-filled draft is also protected from the moment it
+  // mounts.
+  const [latestHtml, setLatestHtml] = useState<string>(content);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -51,7 +81,9 @@ export function RichTextEditor({
     content,
     editable,
     onUpdate: ({ editor: e }) => {
-      onUpdate(e.getHTML());
+      const html = e.getHTML();
+      setLatestHtml(html);
+      onUpdate(html);
     },
     editorProps: {
       attributes: {
@@ -60,6 +92,108 @@ export function RichTextEditor({
       },
     },
   });
+
+  // Mirror of the unsaved-draft guard from
+  // `per-leg-context-editor.tsx` (Task #411 audit, Tier 2). Protects
+  // typed-but-unsent reply text from being silently lost to a tab
+  // close, refresh, or in-app SPA navigation. Only active while the
+  // editor is editable AND has non-empty content.
+  const hasUnsavedDraft =
+    editable && richTextHasUnsavedDraft(latestHtml);
+
+  const anchoredUrlRef = useRef<string>(
+    typeof window !== "undefined" ? window.location.href : "",
+  );
+  type PendingNav =
+    | {
+        kind: "push" | "replace";
+        args: Parameters<typeof window.history.pushState>;
+      }
+    | { kind: "pop"; destinationUrl: string };
+  const pendingNavRef = useRef<PendingNav | null>(null);
+  const originalPushRef = useRef<typeof window.history.pushState | null>(null);
+  const originalReplaceRef = useRef<typeof window.history.replaceState | null>(null);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (hasUnsavedDraft) anchoredUrlRef.current = window.location.href;
+  }, [hasUnsavedDraft]);
+
+  useEffect(() => {
+    if (!hasUnsavedDraft) return;
+    if (typeof window === "undefined") return;
+
+    // (1) Browser tab close / hard refresh.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    // (2) SPA navigation via history.pushState / replaceState.
+    const originalPush = window.history.pushState.bind(window.history);
+    const originalReplace = window.history.replaceState.bind(window.history);
+    originalPushRef.current = originalPush;
+    originalReplaceRef.current = originalReplace;
+
+    const guard =
+      (orig: typeof originalPush, kind: "push" | "replace") =>
+      function patched(
+        this: History,
+        ...args: Parameters<typeof originalPush>
+      ) {
+        pendingNavRef.current = { kind, args };
+        setLeaveConfirmOpen(true);
+        return undefined;
+      } as typeof originalPush;
+    window.history.pushState = guard(originalPush, "push");
+    window.history.replaceState = guard(originalReplace, "replace");
+
+    // (3) Back / forward via popstate.
+    const onPopState = () => {
+      const destinationUrl = window.location.href;
+      pendingNavRef.current = { kind: "pop", destinationUrl };
+      originalPush({}, "", anchoredUrlRef.current);
+      setLeaveConfirmOpen(true);
+    };
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.history.pushState = originalPush;
+      window.history.replaceState = originalReplace;
+      originalPushRef.current = null;
+      originalReplaceRef.current = null;
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [hasUnsavedDraft]);
+
+  const confirmLeave = () => {
+    const pending = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setLeaveConfirmOpen(false);
+    if (!pending) return;
+    if (typeof window === "undefined") return;
+    const origPush =
+      originalPushRef.current ?? window.history.pushState.bind(window.history);
+    const origReplace =
+      originalReplaceRef.current ?? window.history.replaceState.bind(window.history);
+    if (pending.kind === "push") {
+      origPush(...pending.args);
+    } else if (pending.kind === "replace") {
+      origReplace(...pending.args);
+    } else if (pending.kind === "pop") {
+      origPush({}, "", pending.destinationUrl);
+    }
+    anchoredUrlRef.current = window.location.href;
+  };
+
+  const cancelLeave = () => {
+    pendingNavRef.current = null;
+    setLeaveConfirmOpen(false);
+  };
 
   if (!editor) return null;
 
@@ -193,6 +327,34 @@ export function RichTextEditor({
           </form>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={leaveConfirmOpen}
+        onOpenChange={(o) => { if (!o) cancelLeave(); }}
+      >
+        <AlertDialogContent data-testid="rich-text-editor-leave-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved reply?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have a reply that hasn&apos;t been sent yet. Leaving now
+              drops it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={cancelLeave}
+              data-testid="rich-text-editor-leave-cancel"
+            >
+              Stay on this page
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmLeave}
+              data-testid="rich-text-editor-leave-confirm-btn"
+            >
+              Discard and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
