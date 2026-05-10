@@ -1,33 +1,48 @@
 // Task #678 — per-leg page rewires "Open group ↗" arrows
-// (`GoToGroupLink`) to open the right-edge ChipDrawerOverlay.
-import { test, mock } from "node:test";
+// (`GoToGroupLink`) to open the right-edge ChipDrawerOverlay
+// directly, using the page's already-fetched parentGroup + claim.
+import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import * as React from "react";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const claimDetailSource = readFileSync(
   join(here, "claim-detail-v2.tsx"),
   "utf8",
 );
+const overlaySource = readFileSync(
+  join(here, "chip-drawer-overlay.tsx"),
+  "utf8",
+);
 
-test("claim-detail-v2 imports ChipDrawerOverlayMount", () => {
+test("claim-detail-v2 imports ChipDrawerOverlay (the component, not a wrapper)", () => {
   assert.match(
     claimDetailSource,
-    /import\s+\{[\s\S]*?ChipDrawerOverlayMount[\s\S]*?\}\s+from\s+"@\/components\/chip-drawer-overlay"/,
+    /import\s+\{[\s\S]*?\bChipDrawerOverlay\b[\s\S]*?\}\s+from\s+"@\/components\/chip-drawer-overlay"/,
+  );
+  assert.ok(
+    !/\bChipDrawerOverlayMount\b/.test(claimDetailSource),
+    "wrapper component must no longer be referenced",
+  );
+  assert.ok(
+    !/\bChipDrawerOverlayMount\b/.test(overlaySource),
+    "wrapper component must be removed from chip-drawer-overlay.tsx",
   );
 });
 
-test("claim-detail-v2 mounts <ChipDrawerOverlayMount /> and wires onOpenClassify", () => {
-  assert.match(claimDetailSource, /<ChipDrawerOverlayMount\b/);
-  const m = claimDetailSource.match(/<ChipDrawerOverlayMount[\s\S]*?\/>/);
-  assert.ok(m, "expected a self-closing <ChipDrawerOverlayMount /> mount");
+test("claim-detail-v2 mounts <ChipDrawerOverlay /> directly with onSelectLeg=null and onOpenClassify wired", () => {
+  const m = claimDetailSource.match(/<ChipDrawerOverlay\b[\s\S]*?\/>/);
+  assert.ok(m, "expected a self-closing <ChipDrawerOverlay /> mount");
+  const tag = m![0];
+  assert.match(tag, /openChip=\{chipOpen\}/);
+  assert.match(tag, /leg=\{claim\}/);
+  assert.match(tag, /onSelectLeg=\{null\}/);
   assert.match(
-    m![0],
+    tag,
     /onOpenClassify=\{[^}]*setClassifyOpen\(true\)[^}]*\}/,
-    "ChipDrawerOverlayMount must wire onOpenClassify to the page's classify dialog",
+    "onOpenClassify must wire to the page's classify dialog",
   );
 });
 
@@ -55,111 +70,4 @@ test("every <GoToGroupLink> callsite passes onOpen, not groupId", () => {
       `callsite must not pass groupId anymore: ${tag}`,
     );
   }
-});
-
-// Runtime behavior: ChipDrawerOverlayMount returns null when closed.
-type MutationStub = {
-  mutate: () => void;
-  mutateAsync: () => Promise<undefined>;
-  isPending: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  isIdle: boolean;
-  error: null;
-  data: undefined;
-  reset: () => void;
-};
-const inertMutation = (): MutationStub => ({
-  mutate: () => {},
-  mutateAsync: async () => undefined,
-  isPending: false,
-  isError: false,
-  isSuccess: false,
-  isIdle: true,
-  error: null,
-  data: undefined,
-  reset: () => {},
-});
-
-mock.module("@tanstack/react-query", {
-  namedExports: {
-    useQueryClient: () => ({
-      invalidateQueries: () => {},
-      setQueryData: () => {},
-    }),
-    useMutation: inertMutation,
-  },
-});
-
-mock.module("@workspace/api-client-react", {
-  namedExports: {
-    useGetInvoiceGroup: () => ({ data: undefined, isLoading: false }),
-    useExcludeLeg: inertMutation,
-    useMarkLegDuplicate: inertMutation,
-    useListClaimNotes: () => ({ data: [], isLoading: false }),
-    useCreateClaimNote: inertMutation,
-    useDeleteNote: inertMutation,
-    useGetInvoiceGroupEmailThread: () => ({
-      data: { conversations: [] },
-      isLoading: false,
-    }),
-    useReplyToInvoiceGroupEmailConversation: inertMutation,
-    getGetInvoiceGroupQueryKey: (id: number) => ["group", id],
-    getListInvoiceGroupsQueryKey: () => ["groups"],
-    getListClaimNotesQueryKey: (id: number) => ["notes", id],
-    getGetInvoiceGroupEmailThreadQueryKey: (id: number) => ["thread", id],
-  },
-});
-
-const passthrough = (props: { children?: React.ReactNode }) =>
-  React.createElement(React.Fragment, null, props.children);
-mock.module("@/components/evidence-file-list", {
-  namedExports: { EvidenceFileList: () => null },
-});
-mock.module("@/components/activity-feed", {
-  namedExports: { ActivityFeed: () => null },
-});
-mock.module("@/components/ref-number", {
-  namedExports: {
-    RefNumber: ({ value }: { value: string | null | undefined }) =>
-      React.createElement("span", null, value ?? ""),
-  },
-});
-mock.module("@/lib/role", {
-  namedExports: { HideForClerk: passthrough, ShowForClerk: passthrough },
-});
-mock.module("@/lib/format", {
-  namedExports: {
-    formatCurrency: (v: number | string) => `$${v}`,
-    formatDateTime: (v: string | Date) => String(v),
-  },
-});
-mock.module("@/hooks/use-toast", {
-  namedExports: {
-    useToast: () => ({ toast: () => {} }),
-    successToast: () => {},
-    toast: () => {},
-  },
-});
-mock.module("wouter", {
-  namedExports: {
-    Link: ({ href, children }: { href: string; children: React.ReactNode }) =>
-      React.createElement("a", { href }, children),
-  },
-});
-
-const { ChipDrawerOverlayMount } = await import("./chip-drawer-overlay");
-const { renderToStaticMarkup } = await import("react-dom/server");
-
-test("ChipDrawerOverlayMount renders nothing when openChip is null", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(ChipDrawerOverlayMount, {
-      groupId: 100,
-      legId: 1,
-      openChip: null,
-      onClose: () => {},
-      onOpenClassify: () => {},
-    }),
-  );
-  assert.equal(html, "");
 });

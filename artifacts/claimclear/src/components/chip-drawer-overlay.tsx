@@ -12,7 +12,6 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useExcludeLeg,
-  useGetInvoiceGroup,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   useListClaimNotes,
@@ -783,79 +782,3 @@ export function MarkDuplicateDialog({
   );
 }
 
-// ChipDrawerOverlayMount — page-friendly wrapper used by the per-leg
-// detail page (`claim-detail-v2.tsx`). Fetches the parent group via
-// `useGetInvoiceGroup`, picks the active leg, and mounts the drawer +
-// MarkDuplicateDialog. The page only needs to own `openChip` /
-// `onClose` state.
-export function ChipDrawerOverlayMount({
-  groupId,
-  legId,
-  openChip,
-  onClose,
-  onOpenClassify,
-}: {
-  groupId: number;
-  legId: number;
-  openChip: ChipKey | null;
-  onClose: () => void;
-  onOpenClassify: () => void;
-}) {
-  const [markDuplicateOpen, setMarkDuplicateOpen] = useState(false);
-  // Keep the group fetched while either the chip is open OR the
-  // "Mark duplicate" dialog is open — clicking that action in the
-  // drawer closes the chip (openChip → null) before the dialog
-  // renders, so we can't gate the fetch on `openChip` alone.
-  const dataNeeded = openChip != null || markDuplicateOpen;
-  const { data } = useGetInvoiceGroup(groupId, {
-    query: {
-      queryKey: getGetInvoiceGroupQueryKey(groupId),
-      enabled: groupId > 0 && dataNeeded,
-    },
-  });
-
-  const detail = data as DetailGroup | undefined;
-  const rides: ClaimResponse[] = useMemo(
-    () => (detail?.rides ?? []) as ClaimResponse[],
-    [detail?.rides],
-  );
-  const leg: ClaimResponse | null = useMemo(
-    () => rides.find((r) => r.id === legId) ?? null,
-    [rides, legId],
-  );
-  const resolvedIndex = useMemo(
-    () => buildLegResolvedIndex(rides),
-    [rides],
-  );
-
-  if (!dataNeeded) return null;
-  if (!detail || !leg) return null;
-
-  return (
-    <>
-      {openChip ? (
-        <ChipDrawerOverlay
-          openChip={openChip}
-          leg={leg}
-          detail={detail}
-          rides={rides}
-          resolvedIndex={resolvedIndex}
-          groupId={groupId}
-          onSelectLeg={null}
-          onOpenClassify={onOpenClassify}
-          onOpenMarkDuplicate={() => setMarkDuplicateOpen(true)}
-          onClose={onClose}
-        />
-      ) : null}
-      {markDuplicateOpen ? (
-        <MarkDuplicateDialog
-          open={markDuplicateOpen}
-          onOpenChange={setMarkDuplicateOpen}
-          legId={leg.id}
-          groupId={groupId}
-          rides={rides}
-        />
-      ) : null}
-    </>
-  );
-}

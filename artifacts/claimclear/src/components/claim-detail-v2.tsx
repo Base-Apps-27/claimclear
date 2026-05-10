@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BackBar } from "@/components/back-bar";
 import {
-  ChipDrawerOverlayMount,
+  ChipDrawerOverlay,
+  MarkDuplicateDialog,
   type ChipKey,
 } from "@/components/chip-drawer-overlay";
+import { buildLegResolvedIndex } from "@workspace/leg-state";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -413,6 +415,7 @@ export function ClaimDetailV2({
   // used by the queue mini, so "Open group ↗" arrows surface group-level
   // context without leaving the leg page.
   const [chipOpen, setChipOpen] = useState<ChipKey | null>(null);
+  const [drawerMarkDuplicateOpen, setDrawerMarkDuplicateOpen] = useState(false);
 
   const parentGroupId = claim?.invoiceGroupId ?? null;
   const { data: parentGroup } = useGetInvoiceGroup(parentGroupId ?? 0, {
@@ -2001,13 +2004,33 @@ export function ClaimDetailV2({
         />
       ) : null}
 
-      {claim && parentGroup ? (
-        <ChipDrawerOverlayMount
-          groupId={parentGroup.id}
-          legId={claim.id}
+      {/* Task #678: mount the same ChipDrawerOverlay the queue mini
+          uses, so the leg page's ↗ arrows surface group-level context
+          without leaving the page. Uses already-fetched parentGroup
+          + claim — no extra round-trip. onSelectLeg is null because
+          the leg page is single-leg by URL, so the in-drawer leg
+          switcher hides itself. */}
+      {claim && parentGroup && chipOpen ? (
+        <ChipDrawerOverlay
           openChip={chipOpen}
-          onClose={() => setChipOpen(null)}
+          leg={claim}
+          detail={parentGroup as Parameters<typeof ChipDrawerOverlay>[0]["detail"]}
+          rides={parentGroup.rides ?? []}
+          resolvedIndex={buildLegResolvedIndex(parentGroup.rides ?? [])}
+          groupId={parentGroup.id}
+          onSelectLeg={null}
           onOpenClassify={() => setClassifyOpen(true)}
+          onOpenMarkDuplicate={() => setDrawerMarkDuplicateOpen(true)}
+          onClose={() => setChipOpen(null)}
+        />
+      ) : null}
+      {claim && parentGroup && drawerMarkDuplicateOpen ? (
+        <MarkDuplicateDialog
+          open={drawerMarkDuplicateOpen}
+          onOpenChange={setDrawerMarkDuplicateOpen}
+          legId={claim.id}
+          groupId={parentGroup.id}
+          rides={(parentGroup.rides ?? []) as ClaimResponse[]}
         />
       ) : null}
     </div>
