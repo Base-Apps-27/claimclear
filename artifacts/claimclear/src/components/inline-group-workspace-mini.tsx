@@ -78,6 +78,7 @@ import type { ActionCategory } from "@/lib/audit-action-meta";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
+import { StateBadge } from "@/components/state-badge";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { HideForClerk } from "@/lib/role";
@@ -1107,7 +1108,7 @@ function PayorVerdictCard({
           />
         ) : verdict ? (
           <div className="space-y-1">
-            <div className="font-medium">{verdict.outcome}</div>
+            <StateBadge variant="verdict" value={verdict.outcome} />
             <div className="text-muted-foreground">
               via {verdict.source}
               {verdict.createdAt ? ` · ${formatDateTime(verdict.createdAt)}` : ""}
