@@ -329,10 +329,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
-  // #687 — useDeleteNote / useHoldInvoiceGroup /
-  // useRemoveInvoiceGroupHold / useCompleteLegMasAction removed from
-  // this page. Hold place/release lives only in V3HoldExit hero (A);
-  // note delete + per-leg MAS cancel live only in queue chrome.
+  // #687 — note-delete, group-hold place/release, and per-leg
+  // MAS-cancel mutations were removed from this page. Hold
+  // place/release lives only in the V3HoldExit hero (A); note delete
+  // and per-leg MAS cancel live only in queue chrome.
   const updateStatusMutation = useUpdateInvoiceGroupStatus();
   // MAS re-attest mutation — used by the admin "recorded offline"
   // override modal in the right rail (Task #333). The standard

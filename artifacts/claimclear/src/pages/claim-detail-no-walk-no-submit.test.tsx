@@ -306,7 +306,74 @@ const BLOCKLIST_TESTIDS = [
   // live player gets mounted. On /claims/:id (embedded=false) it must
   // never appear — that's the whole anti-drift contract.
   "LIVE-SOP-PLAYER-MOUNTED",
+  // Task #687 — hold/recovery UI was stripped from B (claim-detail-v2).
+  // A (inline-group-workspace-mini) owns the V3HoldExit hero. B shows
+  // only a read-only "On hold:" meta line via leg-header-hold-meta.
+  "claim-detail-action-place-leg-hold",
+  "claim-detail-action-release-leg-hold",
+  "claim-detail-action-restart-walk",
+  "claim-detail-action-change-my-answer",
+  "leg-note-delete",
+  "hold-dialog",
+  "hold-dialog-confirm",
+  "hold-dialog-cancel",
+  "leg-mas-cancel-checkbox",
 ];
+
+// Task #687 — B must not call the stripped recovery/hold/note hooks.
+// Source-scan against claim-detail-v2.tsx.
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const url = await import("node:url");
+  const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+  const B_SRC = fs.readFileSync(
+    path.resolve(__dirname, "../components/claim-detail-v2.tsx"),
+    "utf8",
+  );
+  for (const hook of [
+    "usePlaceLegOnHold",
+    "useClearLegHold",
+    "useRemoveLegHold",
+    "useDeleteNote",
+    "useClearLegVerdictDraft",
+    "useCompleteLegMasAction",
+  ]) {
+    test(`Task #687 — claim-detail-v2.tsx must not reference ${hook}`, () => {
+      // Catch both call sites and import/symbol presence (matches as a
+      // whole word so substrings of unrelated identifiers are ignored).
+      const re = new RegExp(`\\b${hook}\\b`);
+      assert.ok(
+        !re.test(B_SRC),
+        `Task #687: claim-detail-v2.tsx must not reference ${hook} — neither call nor import (A owns the hold/recovery surface)`,
+      );
+    });
+  }
+  test(`Task #687 — claim-detail-v2.tsx renders leg-header-hold-meta`, () => {
+    assert.ok(
+      B_SRC.includes(`"leg-header-hold-meta"`),
+      `Task #687: claim-detail-v2.tsx must render data-testid="leg-header-hold-meta" for the read-only "On hold" meta line`,
+    );
+  });
+  // Task #687 — dynamic test-id prefixes for stripped UI must not
+  // reappear in any quoted or template-literal form.
+  for (const prefix of [
+    "leg-note-delete-",
+    "leg-mas-cancel-checkbox-",
+    "claim-detail-action-place-leg-hold",
+    "claim-detail-action-release-leg-hold",
+    "claim-detail-action-restart-walk",
+    "claim-detail-action-change-my-answer",
+    "hold-dialog",
+  ]) {
+    test(`Task #687 — claim-detail-v2.tsx must not contain test-id prefix "${prefix}"`, () => {
+      assert.ok(
+        !B_SRC.includes(prefix),
+        `Task #687: claim-detail-v2.tsx must not contain "${prefix}" in any form (template literal, attribute, or comment)`,
+      );
+    });
+  }
+}
 
 const BLOCKLIST_VERB_PHRASES = [
   /Submit to portal/i,

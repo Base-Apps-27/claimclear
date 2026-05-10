@@ -46,6 +46,17 @@ const BLOCKLIST_TESTIDS = [
   "header-phase-submit",
 ];
 
+// Task #687 — removed hold/recovery UI from C (invoice-group-detail-v2).
+// A owns the V3HoldExit hero; C must show meta only.
+const V2_ONLY_BLOCKLIST_TESTIDS = [
+  "header-phase-place-on-hold",
+  "header-phase-clear-hold",
+  "hold-dialog",
+  "hold-dialog-confirm",
+  "hold-dialog-cancel",
+  "group-note-delete",
+];
+
 const BLOCKLIST_TOUR = ["group-gauntlet"];
 
 const BLOCKLIST_LABELS = [
@@ -68,6 +79,45 @@ for (const id of BLOCKLIST_TESTIDS) {
     assert.ok(
       !V2_SRC.includes(`"${id}"`),
       `forbidden test-id "${id}" found in invoice-group-detail-v2.tsx`,
+    );
+  });
+}
+
+// Task #687 — these IDs may legitimately exist on queue chrome
+// (group-dossier-chrome.tsx) and on A (inline-group-workspace-mini.tsx),
+// but must NEVER appear on C (invoice-group-detail-v2.tsx). Use a
+// substring scan so quoted, template-literal, and prefix forms (e.g.
+// `group-note-delete-${n.id}`) all get caught.
+for (const id of V2_ONLY_BLOCKLIST_TESTIDS) {
+  test(`V1(a) — Task #687: V2 source must not contain test-id "${id}"`, () => {
+    assert.ok(
+      !V2_SRC.includes(id),
+      `Task #687: forbidden hold/recovery test-id "${id}" found in invoice-group-detail-v2.tsx in some form (quoted, template literal, or prefix) (A + queue chrome own this surface)`,
+    );
+  });
+}
+
+// Task #687 — C must render the read-only meta line when the group is held.
+test(`V1(a) — Task #687: V2 source renders group-header-hold-meta`, () => {
+  assert.ok(
+    V2_SRC.includes(`"group-header-hold-meta"`),
+    `Task #687: invoice-group-detail-v2.tsx must render data-testid="group-header-hold-meta" for the read-only "On hold" meta line`,
+  );
+});
+
+// Task #687 — C must not import or call the stripped hooks. Whole-word
+// regex catches both call sites and import/symbol references.
+for (const hook of [
+  "useHoldInvoiceGroup",
+  "useRemoveInvoiceGroupHold",
+  "useDeleteNote",
+  "useCompleteLegMasAction",
+]) {
+  test(`V1(a) — Task #687: V2 source must not reference ${hook}`, () => {
+    const re = new RegExp(`\\b${hook}\\b`);
+    assert.ok(
+      !re.test(V2_SRC),
+      `Task #687: invoice-group-detail-v2.tsx must not reference ${hook} — neither call nor import (A owns the hold/recovery surface)`,
     );
   });
 }
