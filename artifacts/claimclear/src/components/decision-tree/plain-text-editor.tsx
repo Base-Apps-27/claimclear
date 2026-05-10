@@ -6,6 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Sparkles, Save, Undo2, Loader2, Check, X, Pencil,
   CheckCheck, XCircle, FileText, AlertCircle,
 } from "lucide-react";
@@ -329,14 +333,22 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
     setEdits(prev => ({ ...prev, [id]: value }));
   };
 
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
   const handleDiscard = () => {
     if (pendingChangeCount === 0 && pendingSuggestionCount === 0) return;
-    if (!confirm(`Discard ${pendingChangeCount} text change${pendingChangeCount === 1 ? "" : "s"}${pendingSuggestionCount > 0 ? ` and ${pendingSuggestionCount} pending suggestion${pendingSuggestionCount === 1 ? "" : "s"}` : ""}?`)) return;
+    setDiscardConfirmOpen(true);
+  };
+
+  const confirmDiscard = () => {
+    setDiscardConfirmOpen(false);
     setEdits({});
     setSuggestions({});
     setInfo(null);
     setError(null);
   };
+
+  const discardSummary = `${pendingChangeCount} text change${pendingChangeCount === 1 ? "" : "s"}${pendingSuggestionCount > 0 ? ` and ${pendingSuggestionCount} pending suggestion${pendingSuggestionCount === 1 ? "" : "s"}` : ""}`;
 
   const handleSaveAll = async () => {
     setIsSaving(true);
@@ -595,6 +607,29 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
           <p className="text-sm text-muted-foreground text-center py-8">No editable text in this tree yet.</p>
         )}
       </div>
+
+      <AlertDialog open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
+        <AlertDialogContent data-testid="plain-text-editor-discard-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard {discardSummary}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears every unsaved edit and pending AI suggestion in the
+              editor. You can&apos;t undo it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="plain-text-editor-discard-cancel">
+              Keep editing
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDiscard}
+              data-testid="plain-text-editor-discard-confirm-btn"
+            >
+              Discard changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

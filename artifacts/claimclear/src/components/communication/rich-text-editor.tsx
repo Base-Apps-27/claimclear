@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -13,6 +14,11 @@ import {
   Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 interface RichTextEditorProps {
   content: string;
@@ -29,6 +35,8 @@ export function RichTextEditor({
   editable = true,
   className = "",
 }: RichTextEditorProps) {
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -103,14 +111,8 @@ export function RichTextEditor({
                 editor.chain().focus().unsetLink().run();
                 return;
               }
-              const url = window.prompt("URL:");
-              if (url) {
-                editor
-                  .chain()
-                  .focus()
-                  .setLink({ href: url, target: "_blank" })
-                  .run();
-              }
+              setLinkUrl("");
+              setLinkDialogOpen(true);
             }}
             title="Link"
           >
@@ -136,6 +138,61 @@ export function RichTextEditor({
         </div>
       )}
       <EditorContent editor={editor} />
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent data-testid="rich-text-editor-link-dialog">
+          <DialogHeader>
+            <DialogTitle>Insert link</DialogTitle>
+            <DialogDescription>
+              Paste or type the URL the selected text should link to.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const url = linkUrl.trim();
+              if (url) {
+                editor
+                  .chain()
+                  .focus()
+                  .setLink({ href: url, target: "_blank" })
+                  .run();
+              }
+              setLinkDialogOpen(false);
+            }}
+            className="space-y-3"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="rich-text-editor-link-url">URL</Label>
+              <Input
+                id="rich-text-editor-link-url"
+                data-testid="rich-text-editor-link-url"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://example.com"
+                autoFocus
+                type="url"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLinkDialogOpen(false)}
+                data-testid="rich-text-editor-link-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={linkUrl.trim().length === 0}
+                data-testid="rich-text-editor-link-confirm"
+              >
+                Add link
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

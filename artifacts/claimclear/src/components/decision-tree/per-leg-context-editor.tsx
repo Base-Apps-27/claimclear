@@ -44,6 +44,10 @@ void React; // JSX runtime: keep React in scope under tsx --test.
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CheckCircle2, Loader2, Sparkles, Edit3, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { isLegacyDerivedContext } from "@workspace/leg-state";
@@ -153,6 +157,20 @@ export function PerLegContextEditor({
   const anchoredUrlRef = useRef<string>(
     typeof window !== "undefined" ? window.location.href : "",
   );
+  // Pending navigation captured by the guard while the leave-confirm
+  // AlertDialog is open. Resolved by `confirmLeave` / `cancelLeave`.
+  type PendingNav =
+    | {
+        kind: "push" | "replace";
+        args: Parameters<typeof window.history.pushState>;
+      }
+    | { kind: "pop"; destinationUrl: string };
+  const pendingNavRef = useRef<PendingNav | null>(null);
+  // The original (unwrapped) history methods, so the dialog handlers
+  // can resolve a pending navigation without re-tripping the guard.
+  const originalPushRef = useRef<typeof window.history.pushState | null>(null);
+  const originalReplaceRef = useRef<typeof window.history.replaceState | null>(null);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     // Re-anchor whenever the guard activates (a fresh draft begins).
@@ -171,52 +189,78 @@ export function PerLegContextEditor({
 
     // (2) SPA navigation. wouter (and most history-based routers)
     // navigates by calling `history.pushState` / `history.replaceState`
-    // directly — neither fires `beforeunload`. We patch both with a
-    // confirm prompt; the patches are scoped to the lifetime of an
-    // unsaved draft and torn down in cleanup so we don't leak guards
-    // to other parts of the app.
+    // directly — neither fires `beforeunload`. We patch both to capture
+    // the requested navigation and pop an in-app AlertDialog instead
+    // of the browser-native confirm. The patches are scoped to the
+    // lifetime of an unsaved draft and torn down in cleanup so we
+    // don't leak guards to other parts of the app.
     const originalPush = window.history.pushState.bind(window.history);
     const originalReplace = window.history.replaceState.bind(window.history);
-    const PROMPT = "You have unsaved per-leg context. Discard it and leave?";
-    const guard = (orig: typeof originalPush) =>
-      function patched(this: History, ...args: Parameters<typeof originalPush>) {
-        // eslint-disable-next-line no-alert
-        if (typeof window !== "undefined" && !window.confirm(PROMPT)) return;
-        const ret = orig(...args);
-        // Operator confirmed the leave — re-anchor to the new URL so
-        // any later popstate (e.g. they hit back from the destination
-        // page) compares against the right reference point.
-        anchoredUrlRef.current = window.location.href;
-        return ret;
+    originalPushRef.current = originalPush;
+    originalReplaceRef.current = originalReplace;
+
+    const guard =
+      (orig: typeof originalPush, kind: "push" | "replace") =>
+      function patched(
+        this: History,
+        ...args: Parameters<typeof originalPush>
+      ) {
+        // Defer the navigation. We do NOT call orig() yet — that
+        // happens only if the operator confirms in the dialog.
+        pendingNavRef.current = { kind, args };
+        setLeaveConfirmOpen(true);
+        return undefined;
       } as typeof originalPush;
-    window.history.pushState = guard(originalPush);
-    window.history.replaceState = guard(originalReplace);
+    window.history.pushState = guard(originalPush, "push");
+    window.history.replaceState = guard(originalReplace, "replace");
 
     // (3) Back / forward via popstate.
     const onPopState = () => {
       // popstate fires AFTER the URL has changed. `window.location.href`
-      // here is the DESTINATION, not the editor's URL. To truly keep
-      // the operator on the editor when they cancel, push the
+      // here is the DESTINATION, not the editor's URL. To keep the
+      // operator on the editor while the dialog is open, push the
       // previously-anchored URL back via the unwrapped `originalPush`
-      // (using the wrapped one would re-prompt and infinite-loop on
-      // confirm:cancel). On confirm-leave, just re-anchor to the new
-      // URL so subsequent navigations measure from there.
-      // eslint-disable-next-line no-alert
-      if (!window.confirm(PROMPT)) {
-        originalPush({}, "", anchoredUrlRef.current);
-        return;
-      }
-      anchoredUrlRef.current = window.location.href;
+      // (using the wrapped one would re-trigger the guard and bounce).
+      // If they confirm-leave, we'll re-push the captured destination.
+      const destinationUrl = window.location.href;
+      pendingNavRef.current = { kind: "pop", destinationUrl };
+      originalPush({}, "", anchoredUrlRef.current);
+      setLeaveConfirmOpen(true);
     };
     window.addEventListener("popstate", onPopState);
 
     return () => {
       window.history.pushState = originalPush;
       window.history.replaceState = originalReplace;
+      originalPushRef.current = null;
+      originalReplaceRef.current = null;
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("popstate", onPopState);
     };
   }, [hasUnsavedDraft]);
+
+  const confirmLeave = () => {
+    const pending = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setLeaveConfirmOpen(false);
+    if (!pending) return;
+    if (typeof window === "undefined") return;
+    const origPush = originalPushRef.current ?? window.history.pushState.bind(window.history);
+    const origReplace = originalReplaceRef.current ?? window.history.replaceState.bind(window.history);
+    if (pending.kind === "push") {
+      origPush(...pending.args);
+    } else if (pending.kind === "replace") {
+      origReplace(...pending.args);
+    } else if (pending.kind === "pop") {
+      origPush({}, "", pending.destinationUrl);
+    }
+    anchoredUrlRef.current = window.location.href;
+  };
+
+  const cancelLeave = () => {
+    pendingNavRef.current = null;
+    setLeaveConfirmOpen(false);
+  };
 
   const requestReadback = useMutation({
     mutationFn: async (rawText: string) => {
@@ -427,6 +471,35 @@ export function PerLegContextEditor({
       {disabled && disabledReason && (
         <p className="text-[11px] text-muted-foreground italic">{disabledReason}</p>
       )}
+
+      <AlertDialog
+        open={leaveConfirmOpen}
+        onOpenChange={(o) => { if (!o) cancelLeave(); }}
+      >
+        <AlertDialogContent data-testid="per-leg-context-leave-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved per-leg context?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have a per-leg note that hasn&apos;t been accepted yet.
+              Leaving now drops it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={cancelLeave}
+              data-testid="per-leg-context-leave-cancel"
+            >
+              Stay on this page
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmLeave}
+              data-testid="per-leg-context-leave-confirm-btn"
+            >
+              Discard and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 

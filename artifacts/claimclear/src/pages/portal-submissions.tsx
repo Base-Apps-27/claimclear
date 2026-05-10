@@ -14,6 +14,10 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ListTableHeaderStrip } from "@/components/list-table/faceted-filter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatRelative, absoluteTooltip } from "@/lib/time";
@@ -193,6 +197,7 @@ export default function PortalSubmissions() {
   const batchOwnerName = sharedBatch?.triggeredBy ?? "";
   const batchInFlight = !!sharedBatch || batchTriggering;
   const [batchAborting, setBatchAborting] = useState(false);
+  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
 
   const { data: submissions, isLoading } = useListPortalSubmissions(undefined);
 
@@ -356,10 +361,14 @@ export default function PortalSubmissions() {
     }
   };
 
-  const handleAbortBatch = async () => {
+  const handleAbortBatch = () => {
     if (!sharedBatch) return;
-    const ownerLabel = isMyBatch ? "this run" : `${batchOwnerName}'s run`;
-    if (!confirm(`Stop ${ownerLabel}? The current row will finish, then the worker will exit and any queued rows will go back to Pending.`)) return;
+    setAbortConfirmOpen(true);
+  };
+
+  const confirmAbortBatch = async () => {
+    setAbortConfirmOpen(false);
+    if (!sharedBatch) return;
     setBatchAborting(true);
     try {
       const base = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -602,6 +611,31 @@ export default function PortalSubmissions() {
           </div>
         </aside>
       </div>
+
+      <AlertDialog open={abortConfirmOpen} onOpenChange={setAbortConfirmOpen}>
+        <AlertDialogContent data-testid="portal-submissions-abort-batch-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Stop {isMyBatch ? "this run" : `${batchOwnerName}'s run`}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The current row will finish, then the worker will exit and any
+              queued rows will go back to Pending.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="portal-submissions-abort-batch-cancel">
+              Keep running
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmAbortBatch}
+              data-testid="portal-submissions-abort-batch-confirm-btn"
+            >
+              Stop batch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Unified drawer */}
       <PortalSubmissionDrawer
