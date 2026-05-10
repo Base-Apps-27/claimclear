@@ -31,6 +31,10 @@ import {
   useRecordLegVerdict,
   useClearLegVerdictDraft,
   useCompleteLegMasAction,
+  useSopRestartLeg,
+  useSopBackStepLeg,
+  usePlaceLegOnHold,
+  useClearLegHold,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
@@ -41,7 +45,12 @@ import type {
   ClaimEvidenceResponse,
   EmailThreadMessage,
   EvidenceFileRef,
+  ClaimResponse,
+  InvoiceGroupResponse,
+  PlaceHoldBody,
+  SopRewindBody,
 } from "@workspace/api-client-react";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,44 +92,15 @@ import {
   siblingPromptEligibilityFor,
 } from "@/lib/sop-sibling-eligibility";
 
-// ─────────────────────────────────────────────────────────────────────────
-// Per-leg processing surface, re-densified to mirror the cohesion-sweep
-// `LegDetailRedensified` mockup. The leg page is now a real workstation
-// with a left-column investigation column (per-leg context, SOP walk,
-// evidence, notes, communication mentions) and a right-column rail that
-// mirrors group-scoped state (parent invoice, latest verdict, MAS,
-// audit). All write actions on group-scoped surfaces stay on the group
-// page — this page links out via "Open group ↗" affordances. The leg
-// header keeps a tight set of pre-submit actions (reclassify / exclude /
-// mark-or-unmark sibling duplicate) because invoice groups are the
-// primary processing entity; we deliberately do NOT add reassign / hold
-// here — those live on the group.
-// ─────────────────────────────────────────────────────────────────────────
+// Per-leg processing surface. Group-scoped writes live on the group page;
+// this page links out via "Open group ↗". Header actions are pre-submit
+// only (reclassify / exclude / mark-or-unmark sibling duplicate).
 
 interface Props {
   claimId: number;
-  // When true, this surface is being rendered inside another page (e.g.
-  // the queue's inline leg expansion) rather than as the standalone
-  // /claims/:id page. Embedded mode trims the chrome down to an
-  // active-work surface:
-  //   - the BackBar's "Back" button is dropped (only the breadcrumb
-  //     stays so the operator can still jump to the parent invoice if
-  //     they need to);
-  //   - the right-rail "Parent invoice" and "Latest payor verdict"
-  //     cards are hidden — they're already visible on the surrounding
-  //     queue/group surface;
-  //   - the outer `min-h-screen p-6` page wrapper collapses so the
-  //     content sits flush inside the host card.
-  // The "Internal notes" and "Activity history" labels are used in
-  // both standalone and embedded modes — they were renamed globally
-  // to make it explicit those fields are operator-only and never
-  // surfaced to payors.
+  // True when rendered inside another page (queue). Only embedded mode
+  // mounts the live SOP player; standalone shows a read-only transcript.
   embedded?: boolean;
-  // Optional content rendered immediately below the Investigation walk
-  // (worktree). The queue uses this slot to put the group-level
-  // submission preview right under the active worktree, so the
-  // operator's flow is "walk SOP → confirm submission preview"
-  // without leaving the surface.
   submissionSlot?: ReactNode;
 }
 
@@ -170,6 +150,60 @@ function MutedNote({ children }: { children: ReactNode }) {
   );
 }
 
+// #658 — recovery actions on standalone /claims/:id (escape hatches only).
+type LegMutationResult<TVars> = UseMutationResult<ClaimResponse, unknown, TVars, unknown>;
+type RestartArgs = { id: number; data: SopRewindBody };
+type HoldArgs = { id: number; data: PlaceHoldBody };
+type ReleaseArgs = { id: number };
+interface RecoveryProps {
+  claim: ClaimResponse;
+  parentGroup: InvoiceGroupResponse;
+  subStatus: string;
+  groupIsPreSubmit: boolean;
+  walked: boolean;
+  sopRestartMutation: LegMutationResult<RestartArgs>;
+  sopBackStepMutation: LegMutationResult<RestartArgs>;
+  placeHoldMutation: LegMutationResult<HoldArgs>;
+  clearHoldMutation: LegMutationResult<ReleaseArgs>;
+  invalidateLeg: () => void;
+  toast: (a: { title: string; description?: string; variant?: "destructive" }) => void;
+}
+function renderRecoveryActions(p: RecoveryProps) {
+  const onHold = p.subStatus === "blocked" && !!p.claim.holdReason;
+  type Icon = (props: { className?: string }) => ReactNode;
+  function go<TVars>(m: LegMutationResult<TVars>, args: TVars, ok: string, fail: string) {
+    m.mutate(args, {
+      onSuccess: () => { successToast({ title: "__VERB__", description: ok }); p.invalidateLeg(); },
+      onError: (e: unknown) => p.toast({ title: fail, description: String((e as Error).message), variant: "destructive" }),
+    });
+  }
+  const btn = (id: string, show: boolean, pending: boolean, Icon: Icon, label: string, onClick: () => void) =>
+    show ? (
+      <Button key={id} size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={pending} onClick={onClick} data-testid={id}>
+        <Icon className="h-3.5 w-3.5" />{label}
+      </Button>
+    ) : null;
+  return (
+    <div className="space-y-3">
+      <a href={`/queue?group=${p.parentGroup.id}&leg=${p.claim.id}`} className="cc-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded"
+         style={{ background: "var(--cc-blue-fg)", color: "white" }} data-testid="claim-detail-cta-walk-in-queue">
+        Walk this leg in the queue →
+      </a>
+      <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>Walk progression and submission happen in the queue.</p>
+      <div className="flex flex-wrap items-center gap-1.5 pt-2" style={{ borderTop: "1px dashed var(--cc-border)" }}>
+        {btn("claim-detail-action-restart-walk", p.walked && p.groupIsPreSubmit, p.sopRestartMutation.isPending, RotateCcw, "Restart walk",
+          () => { if (window.confirm("Restart this leg's SOP walk? Recorded answers will be cleared.")) go(p.sopRestartMutation, { id: p.claim.id, data: { discardDraft: true } }, "SOP walk restarted", "Restart failed"); })}
+        {btn("claim-detail-action-change-my-answer", p.walked && p.groupIsPreSubmit, p.sopBackStepMutation.isPending, Edit2, "Change my answer",
+          () => { if (window.confirm("Pop the most recent SOP answer so you can re-answer it?")) go(p.sopBackStepMutation, { id: p.claim.id, data: { discardDraft: true } }, "Last SOP answer cleared", "Change answer failed"); })}
+        {btn("claim-detail-action-place-leg-hold", !onHold && p.groupIsPreSubmit && (p.subStatus === "investigating" || p.subStatus === "ready"), p.placeHoldMutation.isPending, Lock, "Place leg hold",
+          () => { const n = window.prompt("Place this leg on hold. What are you waiting on? (optional)", ""); if (n !== null) go(p.placeHoldMutation, { id: p.claim.id, data: { reason: "awaiting_internal_review", note: n.trim() || null } }, "Leg placed on hold", "Place hold failed"); })}
+        {btn("claim-detail-action-release-leg-hold", onHold, p.clearHoldMutation.isPending, RefreshCw, "Release leg hold",
+          () => { if (window.confirm("Release this leg's hold?")) go(p.clearHoldMutation, { id: p.claim.id }, "Leg hold released", "Release hold failed"); })}
+      </div>
+    </div>
+  );
+}
+
 function GoToGroupLink({ groupId, children }: { groupId: number; children: ReactNode }) {
   return (
     <Link
@@ -182,11 +216,6 @@ function GoToGroupLink({ groupId, children }: { groupId: number; children: React
   );
 }
 
-// Relative-time renderer routes through the shared `lib/time` module so
-// every "5m ago" surface in the operator app uses the same tier scale,
-// the same display TZ, and exposes the same hover-for-absolute-time
-// tooltip (#562). Returns a <span> with `title` so the tooltip is on
-// the relative label itself even when the surrounding text isn't.
 function relativeTime(iso: string | Date | null | undefined): React.ReactNode {
   if (!iso) return <>—</>;
   const isoStr = typeof iso === "string" ? iso : iso.toISOString();
@@ -232,20 +261,12 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-// Format a byte count as a short, human-readable chip (e.g. `47 KB`, `2.3 MB`).
-// Mirrors the formatter in `portal-submission-drawer.tsx` and the reply
-// composer so all three surfaces describe attachment sizes the same way.
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Build a `url → size (bytes)` map from one or more `EvidenceFileRef[]`
-// JSONB lists. The Evidence card iterates `claim_evidence` rows (which
-// only carry `imageUrl`), so we look up sizes captured on the parallel
-// `evidenceFiles` JSONB columns. Later sources win on conflicting URLs;
-// pass the most specific (leg-level) source last.
 function buildSizeMap(...sources: Array<EvidenceFileRef[] | null | undefined>): Map<string, number> {
   const out = new Map<string, number>();
   for (const src of sources) {
@@ -270,11 +291,6 @@ export function ClaimDetailV2({
     query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId },
   });
 
-  // Task #412: Classify entry point on the detail page is the
-  // shared ClassifyDialog (same modal used by the queue strip and
-  // the Classification Inbox). State lives here so both the
-  // unclassified-state primary button and the "Change" affordance
-  // next to the Error Type badge feed the same dialog.
   const [classifyOpen, setClassifyOpen] = useState(false);
 
   const parentGroupId = claim?.invoiceGroupId ?? null;
@@ -301,20 +317,7 @@ export function ClaimDetailV2({
     () => (claim ? deriveLegSubStatus(claim) : "needs_classification"),
     [claim],
   );
-  // ─────────────────────────────────────────────────────────────────────
-  // "You finished a thing" microinteraction (Task #315). When this leg's
-  // top-level status flips to `Processed` while the page is mounted —
-  // either because the operator's own SOP-advance mutation just landed,
-  // or because the SSE stream broadcast their action back to this tab —
-  // briefly draw a check inside the status pill. Suppressed when the
-  // change came from a different operator.
-  // ─────────────────────────────────────────────────────────────────────
   const { lastClaimUpdateBy } = useClaimEvents(claimId);
-  // Task #509 — the previous-value tracking, mount/same-value skip,
-  // local-mark fast path, and SSE-author collaborator gate all live
-  // in `useActorCausedTransition`; the one-shot timer + cleanup live
-  // in `useTransientFlag`. Behavior is byte-identical (500ms duration,
-  // same trigger condition).
   const { active: justProcessed, fire: fireJustProcessed } = useTransientFlag(500);
   useActorCausedTransition({
     key: `claim:${claimId}`,
@@ -323,13 +326,6 @@ export function ClaimDetailV2({
     isTransition: (_prev, next) => next === "Processed",
     onTransition: () => {
       fireJustProcessed();
-      // Task #491 — same trigger that fires the per-pill flourish also
-      // bumps the session milestone counter. Task #541 — pass the
-      // claim's `updatedAt` as the generation token so a re-processed
-      // leg (revert + re-do, or any future state-machine pass) gets
-      // counted again. Visiting the same leg in a second view still
-      // collapses to one increment because both views observe the
-      // same `updatedAt`.
       notifyClaimProcessedThisSession(claimId, claim?.updatedAt ?? null);
     },
   });
@@ -337,15 +333,13 @@ export function ClaimDetailV2({
   const reclassifyMutation = useReclassifyLeg();
   const excludeMutation = useExcludeLeg();
   const markDuplicateMutation = useMarkLegDuplicate();
-  // Task #556 — per-leg verdict + per-leg MAS-cancel mutations live on
-  // Claim Detail itself (no group hop). The verdict picker writes a
-  // draft via POST /claims/:id/verdict; the MAS cancel checkbox stamps
-  // completion via POST /claims/:id/mas-action/complete. Both endpoints
-  // emit `state_events` server-side so the audit timeline below picks
-  // up the actor + reason without any extra client wiring.
   const recordVerdictMutation = useRecordLegVerdict();
   const clearVerdictDraftMutation = useClearLegVerdictDraft();
   const completeMasActionMutation = useCompleteLegMasAction();
+  const sopRestartMutation = useSopRestartLeg();
+  const sopBackStepMutation = useSopBackStepLeg();
+  const placeHoldMutation = usePlaceLegOnHold();
+  const clearHoldMutation = useClearLegHold();
   const unmarkDuplicateMutation = useUnmarkLegDuplicate();
   const createNoteMutation = useCreateClaimNote();
   const deleteNoteMutation = useDeleteNote();
@@ -363,17 +357,6 @@ export function ClaimDetailV2({
   const [duplicateNote, setDuplicateNote] = useState("");
   const [unmarkDuplicateOpen, setUnmarkDuplicateOpen] = useState(false);
 
-  // Task #372: per-leg unique context moved out of the top-of-leg
-  // editor and into the end-of-walk Include terminal (with an AI
-  // clarification gate). The leg page now renders a read-only SOP
-  // walk transcript in this slot — derived purely from `sopAnswers`
-  // + the loaded decision tree by `buildSopTranscript`. A legacy
-  // pre-#372 derived "• Q — A" perLegContext (when present) renders
-  // beneath the transcript as a migration trail so nothing is lost.
-  // sopAnswers is a jsonb column on the leg row, declared on the
-  // OpenAPI ClaimResponse schema (Task #378) so the generated type
-  // carries the field directly. `buildSopTranscript` still accepts
-  // `unknown` and rejects malformed payloads at the helper boundary.
   const transcriptLines: TranscriptLine[] = useMemo(
     () => buildSopTranscript(claim?.sopAnswers, tree),
     [claim, tree],
@@ -387,7 +370,6 @@ export function ClaimDetailV2({
   const [newNote, setNewNote] = useState("");
   const noteBreath = useBreath();
 
-  // Trip-overriding error type lookup for the sibling-duplicate picker.
   const tripOverridingErrorTypeIds = useMemo(
     () =>
       buildTripOverridingErrorTypeIds(
@@ -414,13 +396,6 @@ export function ClaimDetailV2({
 
   const groupIsPreSubmit = parentGroup?.macroPhase === "pre-submit";
 
-  // Task #470 — Pivot B1. Count OTHER legs in the same invoice group
-  // that the bulk SOP advance endpoint would consider "matching":
-  // parked at the same node, no terminal yet, included in dispute, not
-  // a sibling-duplicate. The actual eligibility (appliesPerInvoice on
-  // the node, no per-leg child step) is enforced server-side; this
-  // count just gates whether the "Apply to all matching legs" toggle is
-  // even shown — a 0 here always hides it.
   const bulkSiblingCount = useMemo(() => {
     if (!claim || claim.invoiceGroupId == null) return 0;
     if (!claim.sopNodeId || claim.sopOutcome != null) return 0;
@@ -446,7 +421,6 @@ export function ClaimDetailV2({
     });
   }, [claim, parentGroup?.macroPhase, parentGroup?.rides, errorTypes]);
 
-  // ───── Right-rail / surrounding data sources ─────
   const { data: notes } = useListClaimNotes(claimId, {
     query: { queryKey: getListClaimNotesQueryKey(claimId), enabled: !!claimId },
   });
@@ -485,11 +459,6 @@ export function ClaimDetailV2({
     return Array.isArray(e.evidence) ? e.evidence.slice() : [];
   }, [evidence]);
 
-  // Per-leg `claim_evidence` rows only carry `imageUrl`; size info lives on
-  // the parallel `evidenceFiles` JSONB columns. Merge group + leg sources
-  // so the Evidence card can chip a `47 KB` / `2.3 MB` next to each row and
-  // flag any single attachment over the 25 MB email cap before staff ever
-  // open the reply composer (which already enforces the same cap).
   const evidenceSizeByUrl = useMemo<Map<string, number>>(
     () => buildSizeMap(parentGroup?.evidenceFiles, claim?.evidenceFiles),
     [parentGroup?.evidenceFiles, claim?.evidenceFiles],
@@ -599,13 +568,6 @@ export function ClaimDetailV2({
     createNoteMutation.mutate(
       { id: claimId, data: { content: trimmed, type: "manual" } },
       {
-        // Task #411 audit, Tier 4: render the new note locally from
-        // the mutation response BEFORE the SSE invalidate fires, so
-        // the operator sees the note appear instantly without the
-        // "submit → empty list briefly → note appears" flicker.
-        // We still invalidate afterward to reconcile with whatever
-        // the server thinks the canonical list is (e.g. system rows
-        // emitted as a side effect of posting).
         onSuccess: (created) => {
           setNewNote("");
           noteBreath.trigger();
@@ -637,9 +599,6 @@ export function ClaimDetailV2({
       { id: noteId },
       {
         onSuccess: () => {
-          // Optimistically drop the row from the cached list so the
-          // operator sees it disappear without waiting for an
-          // invalidate round-trip.
           qc.setQueryData<NoteResponse[]>(
             getListClaimNotesQueryKey(claimId),
             (prev: NoteResponse[] | undefined) =>
@@ -666,42 +625,12 @@ export function ClaimDetailV2({
   }
 
   const hasSopOutcome = !!claim.sopOutcome;
-  // `canShowPlayer` is intentionally OR'd with `isDuplicate` so the legacy
-  // disabled-reason ladder below stays quiet for duplicate legs. The
-  // duplicate render itself is owned exclusively by the short-circuit
-  // branch in JSX, which mounts the terminal directly without going
-  // through `SopAdvancePlayer` — that way `mark as duplicate` works even
-  // before an error type / decision tree is assigned.
   const canShowPlayer =
     isDuplicate ||
     hasSopOutcome ||
     subStatus === "investigating" ||
     subStatus === "ready" ||
     subStatus === "dropped";
-  // Reason ladder for disabling the SOP player + every terminal
-  // (Include / Hold / Closed / Duplicate). Order matters — the most
-  // operator-actionable reason wins:
-  //
-  //   1. Presence/activity lock — "someone else is editing", actionable
-  //      by waiting or coordinating directly.
-  //   2. Group phase has advanced past `pre-submit` — every leg-level
-  //      mutation endpoint (per-leg-context, per-leg-context-readback,
-  //      change-error-type, set-hold, etc.) refuses with HTTP 409 once
-  //      the parent group is in `in-flight` / `response-pending` /
-  //      `closed` / `on-hold` / etc. Without this guard the
-  //      `PerLegContextEditor` (rendered inline during the SOP walk
-  //      and on the inline "Ready" surface) stayed fully active on a
-  //      packaged group: operator typed a note, clicked "Check with
-  //      AI", got a generic "AI clarification failed" toast that hid
-  //      the real phase-mismatch 409 underneath. Lock it explicitly
-  //      with the group's actual status so the operator can see why.
-  //      (The retired Include-terminal "I'm done — hand off" screen
-  //      had the same failure mode.)
-  //   3. Substatus gates that pre-empt the SOP entirely (no error type,
-  //      hold, excluded). These only apply when `canShowPlayer` is false.
-  //
-  // The result is forwarded to `SopAdvancePlayer` as `disabledReason`
-  // further down, which propagates into every terminal's CTAs and inputs.
   const playerDisabledReason = parentGroup && !groupIsPreSubmit
     ? `Leg-level edits are no longer accepted — this invoice is "${parentGroup.status}". Open the invoice thread to track progress.`
     : canShowPlayer
@@ -740,11 +669,6 @@ export function ClaimDetailV2({
   const masRequired = claim.masActionRequired === "cancel";
   const masCompleted = !!claim.masActionCompletedAt;
 
-  // Breadcrumb trail used in both standalone and embedded modes. In
-  // embedded mode we drop the BackBar's "Back" button (the operator is
-  // already inside the queue / invoice group surface — a Back button
-  // navigates them out of their own work) but keep the crumbs as a
-  // jump-to-parent affordance.
   const crumbs = [
     { label: "Claims", href: "/claims" },
     ...(parentGroup
@@ -764,10 +688,6 @@ export function ClaimDetailV2({
       data-embedded={embedded ? "true" : undefined}
     >
       <div className={embedded ? "space-y-4" : "max-w-[1180px] mx-auto space-y-4"}>
-        {/* Read-only banner shown when this is the global "tour sample"
-            row (seeded by migration 0029). The pair exists only so the
-            in-app guided tour can anchor steps 18 & 20 on a real detail
-            page. Mutations are blocked at the API layer. */}
         {(claim as { isTourSample?: boolean })?.isTourSample && (
           <div
             className="text-xs px-3 py-2 rounded border flex items-center gap-2"
@@ -782,11 +702,6 @@ export function ClaimDetailV2({
         )}
 
         {embedded ? (
-          // Crumb-only nav for embedded use. No "Back" button — the
-          // operator is already inside the queue and clicking Back
-          // would yank them out of the very work surface they just
-          // opened. The crumb still links to the parent invoice for
-          // anyone who needs to jump out of the leg.
           <div
             className="flex items-center gap-1.5 text-xs flex-wrap"
             style={{ color: "var(--cc-muted-fg)" }}
@@ -814,9 +729,6 @@ export function ClaimDetailV2({
             })}
           </div>
         ) : (
-          // Standalone /claims/:id page — keep the full BackBar (Back
-          // button + crumb) since the user might have arrived here
-          // from a deep link or a search and needs a clear way out.
           <BackBar
             fallbackHref={parentGroup ? `/invoice-groups/${parentGroup.id}` : "/claims"}
             crumbs={crumbs}
@@ -824,10 +736,6 @@ export function ClaimDetailV2({
           />
         )}
 
-        {/* Header — accent bar, eyebrow, identification + tight action set.
-            Actions stay limited (reclassify / exclude / mark-or-unmark
-            duplicate). Reassign / hold live on the invoice group page —
-            invoice groups are the primary processing entity. */}
         <div className="cc-card p-4" data-testid="leg-header">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -857,10 +765,6 @@ export function ClaimDetailV2({
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                         · {claim.errorTypeName}
                       </span>
-                      {/* Task #412: "Change" affordance opens the same
-                          ClassifyDialog the queue uses, pre-filled with
-                          the current Error Type so an operator can
-                          re-pick without leaving the detail page. */}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -892,11 +796,6 @@ export function ClaimDetailV2({
                     <>
                       <span>·</span>
                       <span>Invoice phase:</span>
-                      {/* Task #556 — parent invoice phase is rendered as a
-                          read-only StateBadge that click-jumps back to the
-                          invoice page. The leg surface is per-leg-only;
-                          the parent phase is a context indicator, not a
-                          control. */}
                       <Link
                         href={`/invoice-groups/${parentGroup.id}`}
                         className="hover:underline"
@@ -926,7 +825,7 @@ export function ClaimDetailV2({
                       size="sm"
                       variant="outline"
                       className="h-8 gap-1"
-                      data-testid="leg-reclassify"
+                      data-testid="claim-detail-action-reclassify"
                     >
                       <RotateCcw className="h-3.5 w-3.5" /> Reclassify
                     </Button>
@@ -1149,8 +1048,6 @@ export function ClaimDetailV2({
           </div>
         </div>
 
-        {/* Sibling-duplicate banner — first thing the operator sees so the
-            SOP card stays disabled. */}
         {isDuplicate && (
           <div className="cc-card p-3" data-testid="leg-duplicate-banner">
             <div className="flex items-start gap-2 text-sm">
@@ -1184,22 +1081,13 @@ export function ClaimDetailV2({
           </div>
         )}
 
-        {/* Two-column layout: workspace (left, 8 cols) + group rail (right, 4 cols) */}
         <div className="grid grid-cols-12 gap-4">
-
-          {/* LEFT — investigation workspace */}
           <div className="col-span-12 lg:col-span-8 space-y-4">
 
-            {/* Task #372: SOP walk transcript — read-only "Question →
-                Answer" trail derived from the persisted sopAnswers and
-                the live decision tree. This replaces the editable
-                per-leg-context card; the optional unique-context input
-                lives at the end-of-walk Include terminal now, gated by
-                the AI-clarification readback. */}
             <CcCard
               title="SOP walk transcript"
               icon={<ListChecks className="w-3.5 h-3.5" />}
-              testId="sop-walk-transcript-card"
+              testId="claim-detail-walk-transcript-readonly"
             >
               {transcriptLines.length === 0 && !legacyDerivedTrail ? (
                 <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
@@ -1261,16 +1149,6 @@ export function ClaimDetailV2({
               )}
             </CcCard>
 
-            {/* Investigation walk (SOP) — the entire purpose of this surface.
-                The `data-tour="claim-sop-player"` wrapper sits OUT here on the
-                CcCard so the tour anchor always exists, even when the inner
-                player can't render (no error type assigned, no decision tree
-                configured for the assigned type, leg is on hold/excluded,
-                etc.). Anchoring on the inner SopAdvancePlayer used to leave
-                step 22 of the tour orphaned for the read-only tour-sample
-                claim, which has no SOP tree configured by default — the
-                anchor wouldn't mount and Joyride's TARGET_NOT_FOUND handler
-                would silently skip the entire claim-detail step. */}
             <div data-tour="claim-sop-player">
             <CcCard
               title="Investigation walk"
@@ -1296,10 +1174,6 @@ export function ClaimDetailV2({
                   }}
                 />
               ) : null}
-              {/* Closed-state legs (excluded, dropped as non_issue /
-                  cannot_dispute, or frozen) take precedence over the
-                  classify prompt — they already have a final disposition
-                  and the SOP walk is intentionally not their next step. */}
               {!isDuplicate &&
                 (subStatus === "excluded" || subStatus === "dropped" || subStatus === "frozen") && (() => {
                   const reason =
@@ -1345,13 +1219,6 @@ export function ClaimDetailV2({
                   );
                 })()}
               {!isDuplicate && !claim.errorTypeId && subStatus === "needs_classification" && (
-                // Task #412: Replaces the read-only amber "pick one
-                // from the queue" banner with a real entry point.
-                // Opens the shared ClassifyDialog scoped to this leg so
-                // the operator can assign an Error Type without leaving
-                // the detail page. Gated on `needs_classification` so
-                // closed-state legs (handled above) don't also see the
-                // amber "classify it" prompt.
                 <div
                   className="flex items-center justify-between gap-3 p-3 rounded"
                   style={{ background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }}
@@ -1384,7 +1251,7 @@ export function ClaimDetailV2({
                   </span>
                 </div>
               )}
-              {!isDuplicate && tree && canShowPlayer && (
+              {embedded && !isDuplicate && tree && canShowPlayer && (
                 <div>
                 <SopAdvancePlayer
                   leg={{
@@ -1398,13 +1265,6 @@ export function ClaimDetailV2({
                     perLegContext: claim.perLegContext,
                   }}
                   tree={tree}
-                  // Forward the phase-based disable so the player and
-                  // its terminals (Hand off, Hold, Duplicate, Closed)
-                  // surface the "this invoice is past pre-submit"
-                  // tooltip and refuse to fire mutations that would
-                  // 409 server-side. Presence is intentionally NOT a
-                  // source for this — see the queue.tsx comment on
-                  // `usePresence` for context.
                   disabledReason={playerDisabledReason}
                   onAdvanced={invalidateLeg}
                   errorType={
@@ -1413,12 +1273,6 @@ export function ClaimDetailV2({
                       : null
                   }
                   bulkSiblingCount={bulkSiblingCount}
-                  // Task #526 — let the player's demoted Reclassify CTA
-                  // re-use this page's existing reclassify dialog +
-                  // mutation. The player only changes placement /
-                  // visual demotion; the route-driven flow itself
-                  // (`POST /api/claims/:id/reclassify` via
-                  // `useReclassifyLeg`) stays exactly where it was.
                   onRequestReclassify={() => setReclassifyOpen(true)}
                   siblingPrompt={
                     siblingPromptCandidate
@@ -1435,7 +1289,7 @@ export function ClaimDetailV2({
                 />
                 </div>
               )}
-              {!isDuplicate && tree && !canShowPlayer && playerDisabledReason && (
+              {embedded && !isDuplicate && tree && !canShowPlayer && playerDisabledReason && (
                 <div
                   className="text-xs flex items-start gap-1.5 px-2.5 py-1.5 rounded"
                   style={{ color: "var(--cc-muted-fg)", background: "var(--cc-muted)" }}
@@ -1444,19 +1298,16 @@ export function ClaimDetailV2({
                   <span>{playerDisabledReason}</span>
                 </div>
               )}
+              {!embedded && !isDuplicate && parentGroup &&
+                renderRecoveryActions({
+                  claim, parentGroup, subStatus, groupIsPreSubmit,
+                  walked: !!claim.sopOutcome || transcriptLines.length > 0,
+                  sopRestartMutation, sopBackStepMutation, placeHoldMutation, clearHoldMutation,
+                  invalidateLeg, toast,
+                })}
             </CcCard>
             </div>
 
-            {/* Task #556 — Post-response section. Appears once the
-                parent invoice has reached `response-pending` (or any
-                later phase). Lets the operator record the per-leg
-                verdict that came back from the payor on this specific
-                leg, without leaving Claim Detail. The picker writes
-                an `operator_draft` row via `POST /claims/:id/verdict`;
-                the group-level Step 4 commit (re-attest / queue /
-                closure) on the invoice page is what later promotes
-                drafts to `operator_confirmed`. Sibling-duplicate legs
-                are skipped — their verdict follows the primary. */}
             {!isDuplicate &&
               parentGroup &&
               (parentGroup.macroPhase === "response-pending" ||
@@ -1499,17 +1350,10 @@ export function ClaimDetailV2({
                 </div>
               )}
 
-            {/* Submission preview slot — embedded mode (queue inline
-                expansion) drops the group-level submission preview in
-                here so the operator's eye flows worktree → submission
-                preview without scrolling past evidence/notes. */}
             {submissionSlot ? (
               <div data-testid="claim-detail-submission-slot">{submissionSlot}</div>
             ) : null}
 
-            {/* Evidence — read-only list. Attachment workflows live on the
-                invoice group (we never collect leg-level evidence except
-                via SOP-walk evidence collectors). */}
             <CcCard
               title={
                 <>
@@ -1520,7 +1364,7 @@ export function ClaimDetailV2({
                 </>
               }
               icon={<Paperclip className="w-3.5 h-3.5" />}
-              testId="leg-evidence-card"
+              testId="claim-detail-section-evidence"
               padded={evidenceList.length === 0}
               action={
                 parentGroup ? (
@@ -1612,7 +1456,7 @@ export function ClaimDetailV2({
                 </>
               }
               icon={<Pin className="w-3.5 h-3.5" />}
-              testId="leg-notes-card"
+              testId="claim-detail-section-internal-notes"
             >
               {visibleNotes.length === 0 ? (
                 <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
@@ -1635,12 +1479,6 @@ export function ClaimDetailV2({
                         </div>
                         <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
                       </div>
-                      {/* Task #411 audit, Tier 5: notes had a working
-                          DELETE /api/notes/:id endpoint with no UI to
-                          call it. The trash affordance now wires that
-                          endpoint into the per-note hover state, gated
-                          by an AlertDialog confirm so an accidental
-                          click can't nuke an audit-bearing note. */}
                       {n.type === "manual" && (
                         <button
                           type="button"
@@ -1702,9 +1540,6 @@ export function ClaimDetailV2({
               </div>
             </CcCard>
 
-            {/* Communication — read-only mentions of this leg from the invoice
-                conversation. Conversations themselves happen at the
-                invoice level; reply / compose lives on the invoice page. */}
             <CcCard
               title={
                 <>
@@ -1774,15 +1609,8 @@ export function ClaimDetailV2({
             </CcCard>
           </div>
 
-          {/* RIGHT — group rail (read-only mirrors of group-level state).
-              Embedded mode hides the Parent invoice and Latest payor
-              verdict cards since both are already shown on the
-              surrounding queue / invoice group surface — repeating
-              them inside the worktree just turns an active workspace
-              into a data-review screen. */}
           <div className="col-span-12 lg:col-span-4 space-y-4">
 
-            {/* Parent invoice */}
             {!embedded && parentGroup ? (
               <CcCard
                 title="Parent invoice"
@@ -1824,9 +1652,6 @@ export function ClaimDetailV2({
               </CcCard>
             ) : null}
 
-            {/* Latest payor verdict (read-only) — hidden in embedded
-                (queue inline) mode; the verdict is already visible on
-                the invoice group page. */}
             {!embedded && (
             <CcCard
               title="Latest payor verdict"
@@ -1871,12 +1696,6 @@ export function ClaimDetailV2({
             </CcCard>
             )}
 
-            {/* MAS action — Task #556 made the per-leg cancel checkbox
-                actionable on Claim Detail when the parent invoice is in
-                `mas-action-required`. Outside that phase the card stays
-                read-only (the action would 409 server-side). The group
-                MAS card still aggregates per-leg completion, so we keep
-                the "Manage on group" link. */}
             {masRequired ? (
               <CcCard
                 title="MAS action"
@@ -1942,10 +1761,6 @@ export function ClaimDetailV2({
               </CcCard>
             ) : null}
 
-            {/* Task #556 — Attestation status. Once the invoice is
-                `awaiting-payout`, the operator's next move on this leg
-                lives in the attestation queue (per-leg payor portal
-                re-attestation). Read-only here with a click-jump. */}
             {parentGroup?.macroPhase === "awaiting-payout" ? (
               <CcCard
                 title="Attestation"
@@ -1972,16 +1787,10 @@ export function ClaimDetailV2({
               </CcCard>
             ) : null}
 
-            {/* Activity history — was "Audit timeline". Renamed to read
-                like a standard per-claim activity feed (what happened,
-                when, by whom) instead of a system-audit log. Used in
-                both standalone and embedded (queue inline) modes. The
-                data shape is unchanged — same audit-log entries, same
-                ordering — only the framing is operator-friendly. */}
             <CcCard
               title="Activity history"
               icon={<Activity className="w-3.5 h-3.5" />}
-              testId="leg-audit-timeline-card"
+              testId="claim-detail-section-activity"
               padded={false}
             >
               {sortedAudit.length === 0 ? (
@@ -2045,9 +1854,6 @@ export function ClaimDetailV2({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Task #412: Shared classification dialog. Open from the
-          unclassified-state primary button or the "Change" affordance
-          next to the Error Type badge. */}
       {claim ? (
         <ClassifyDialog
           open={classifyOpen}
