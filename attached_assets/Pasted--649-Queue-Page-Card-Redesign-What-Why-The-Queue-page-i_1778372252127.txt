@@ -1,0 +1,59 @@
+#649 - Queue Page & Card Redesign
+What & Why
+The Queue page is the surface an operator opens dozens of times a day to "execute Walks." Today it works against them in two ways:
+
+The queue card surfaces the wrong signal. Each row leads with the dollar amount and a leg-status triad whose middle/right pills are misleading: the dropped bucket is rendered with the label "Non-issue," so a leg the operator marked Non-contestable shows up under "Non-issue 1." The card buries what actually matters for executing a Walk (which legs still need a decision, which are settled, deadline tier, error-type signal) behind branding-irrelevant numbers.
+The page-level controls are a pile-up. The operator simultaneously sees the Needs Engagement / All toggle, the Action Required / Portal Queued / On Hold tabs, the "Ready to review" pill-button, the per-tab purpose blurb, an expiring-filter chip that only appears on dashboard click-through, a "Show past-deadline rows" link, the Classification Inbox banner, and the urgency hero. There is no faceted filter equivalent to what the Invoice Groups page offers (Error Type, Dispute Outlook, Draft Reviewed) — instead we have many bespoke widgets. The result is a page that feels noisy and inconsistent with Invoice Groups.
+This task redesigns the queue card around what an operator needs to act on a Walk, and consolidates the queue page's controls into a single, lean filter strip modeled on (and reduced from) the Invoice Groups facets.
+
+Done looks like
+Queue card
+The card no longer leads with the dollar amount. Currency is removed from the row entirely (operators use Invoice Groups when they need totals).
+The leg-state summary is the dominant visual signal. It clearly distinguishes:
+Ready — disputable legs walked to a packageable conclusion
+Investigating — disputable legs still open
+Non-contestable — legs the operator concluded as non-contestable / sibling-duplicate (today's mislabeled "Non-issue 1")
+Non-issue — legs concluded as actual non-issues
+Needs classification — surfaced explicitly when nonzero so triage debt is obvious from the row
+The right label appears under each count, never "Non-issue" for a non-contestable leg.
+Deadline tier, service date, error-type name, ride count, and the urgency / submitted-stuck badge stay visible. Service date and tier are positioned so the eye lands on "what's on the clock" before "what's the work."
+Selected, urgent, tomorrow, and soon row tints continue to read at a glance.
+The "Ineligible Enrollee" / error-type chip is more prominent than today's muted secondary line, so error type can be skimmed down a long list.
+Currency is hidden from the card surface but remains accessible inside the workspace / Invoice Groups page (no data is removed from the API).
+Queue page chrome
+The header strip above the workflow tabs is reorganized into ONE filter row that visually matches the Invoice Groups list:
+Needs Engagement / All toggle (kept, default Needs)
+Filters popover with three reduced facets: Error Type, Dispute Outlook (ready_to_review / reattest_only / nothing_to_do), and Draft Reviewed (reviewed / unreviewed). Behavior mirrors the Invoice Groups facets and writes the same URL params (errorTypeId, outlook, draftReviewed) so deep-links work both ways.
+Show past-deadline toggle (kept, repositioned into the strip — no longer a stray underlined link in the corner).
+When a filter is active it appears as a removable chip below the strip, with a count, just like Invoice Groups.
+The dashboard click-through expiring-filter chip (?expiring=…) becomes one more chip in this same chip row instead of a separate band, so the page does not have two filter zones.
+Ready to review stops being a primary button next to a tab purpose blurb. It becomes one preset of the new Dispute Outlook facet (outlook=ready_to_review), surfaced as a chip with its count just like the others. The standalone toggle is removed; the same URL state is preserved (existing ?readyToReview=true links redirect to ?outlook=ready_to_review so dashboard CTAs keep working).
+The per-tab "purpose" paragraph (the long "New + Needs Evidence + Generating Email…" copy) is condensed into a one-line subtitle plus a hover/tooltip for the deadline-tier legend, so the page does not waste two lines of vertical space per tab change.
+The Action Required / Portal Queued / On Hold tabs stay (they represent fundamentally different lanes of work, not filter facets) but the active tab's chip row swaps in/out the facets that don't apply (e.g. Dispute Outlook and Draft Reviewed only show on Action Required, matching the existing isPreSubmitTab gate on Invoice Groups).
+Vertical rhythm tightens: urgency hero → filter strip + chips → tabs → list. The Classification Inbox banner stays where it is but the gap above and below it is reduced.
+Naming fix that ripples
+Anywhere the dropped sub-status is currently rendered with the label "Non-issue" (queue card breakdown, any other surface that uses the same shared helper) is split so dropped resolves to "Non-contestable" and non_issue resolves to "Non-issue." Existing tests covering this distinction (e.g. invoice-group-detail-v2-rides-legs.test.tsx) keep passing; new tests pin the queue card breakdown.
+Out of scope
+Changing API responses or list filtering semantics on the server. All new chips and facets reuse existing query params (errorTypeId, outlook, draftReviewed, expiring, engagement, includeExpired).
+Touching the inline workspace mini, classify dialog, urgency hero internals, or the leg conclusion row's quick-conclude buttons.
+Changing the Action Required / Portal Queued / On Hold lane definitions or what each lane queries.
+Anything on the Invoice Groups list page itself (it stays the reference design we are pulling from).
+Anything on the Dashboard.
+Adding new filters not listed above (sort, date range, amount range, etc. — those stay on Invoice Groups).
+Steps
+Fix the dropped vs non_issue labeling. Audit the shared vocab helper and the queue card breakdown so each leg sub-status renders with the correct user-facing word. Add unit coverage that pins both labels on the queue card, mirroring the existing rides & legs test.
+Redesign the queue card. Drop the currency cell. Promote the leg-state breakdown into the card's primary visual block, expand the triad to include Non-contestable, Non-issue, and a Needs-classification badge when nonzero. Reorder the top line so urgency badge, ref number, ride count, service date, and deadline hint come first; error type sits as a clearly-styled chip on the second line.
+Build the consolidated queue filter strip. Add a Filters popover next to the existing Needs Engagement toggle with the three reduced facets (Error Type, Dispute Outlook, Draft Reviewed). Move the past-deadline toggle into the same strip. Render active filters as removable chips below, including the expiring-filter chip from dashboard click-through. Gate Dispute Outlook and Draft Reviewed to the Action Required tab (matching the existing pre-submit gate).
+Retire the standalone "Ready to review" button. Migrate its URL state into the Dispute Outlook facet, keep dashboard / external links working via a one-time URL rewrite, and remove the dedicated toggle and its surrounding hint copy.
+Tighten the page chrome. Condense each tab's multi-line purpose paragraph into a one-liner with the tier legend behind a tooltip, and tighten the vertical spacing between urgency hero, filter strip, classification inbox, and tabs.
+Smoke-test the full flow. Click through from the Dashboard's "file today" / "tomorrow" / "soon" CTAs and confirm the resulting chip set, verify the new facets round-trip via URL, and confirm the queue card reads correctly for groups containing each combination of leg sub-statuses.
+Relevant files
+artifacts/claimclear/src/pages/queue.tsx:1305-1432
+artifacts/claimclear/src/pages/queue.tsx:1468-1770
+artifacts/claimclear/src/components/pre-submit-breakdown.tsx
+artifacts/claimclear/src/components/leg-sub-status-pill.tsx
+artifacts/claimclear/src/components/engagement-filter-controls.tsx
+artifacts/claimclear/src/pages/invoice-groups.tsx:130-330
+artifacts/claimclear/src/components/list-table/faceted-filter/list-table-header-strip.tsx
+artifacts/claimclear/src/components/invoice-group-detail-v2-rides-legs.test.tsx
+packages/vocab/src
