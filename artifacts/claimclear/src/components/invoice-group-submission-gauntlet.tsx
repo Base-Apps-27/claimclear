@@ -385,8 +385,57 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
     );
   }
 
+  // Task #678 follow-up — claim-ID strip. Operators have to map MAS's
+  // A/B leg labels onto our claim IDs to know which leg they're
+  // reviewing; surface every disputed leg's claim ID at the top of
+  // the gauntlet so the mental check is one glance, not a hunt
+  // through the side rail.
   const body = (
     <>
+        <div
+          className="rounded-md border border-blue-200 bg-blue-50/60 dark:bg-blue-950/30 px-3 py-2 flex items-center gap-2 flex-wrap"
+          data-testid="gauntlet-claim-id-strip"
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-blue-900 dark:text-blue-200">
+            Reviewing
+          </span>
+          {rides.length === 0 ? (
+            <span className="text-xs text-muted-foreground italic">
+              No disputed legs
+            </span>
+          ) : (
+            rides.map((r, i) => {
+              const chip = (
+                <span
+                  className="inline-flex items-center gap-1 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-blue-950/60 px-1.5 py-0.5 font-mono text-[12px] font-bold text-[#1B2A4A] dark:text-blue-200"
+                  data-testid={`gauntlet-claim-id-chip-${r.id}`}
+                >
+                  <span className="text-[10px] font-sans font-medium uppercase tracking-wide text-muted-foreground">
+                    Leg {i + 1}
+                  </span>
+                  <span aria-hidden className="text-muted-foreground">·</span>
+                  <span>#{r.id}</span>
+                </span>
+              );
+              if (onJumpToLeg) {
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onJumpToLeg(r.id)}
+                    className="rounded hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    title={`Jump to leg #${r.id}`}
+                    data-testid={`gauntlet-claim-id-jump-${r.id}`}
+                  >
+                    {chip}
+                  </button>
+                );
+              }
+              return <span key={r.id}>{chip}</span>;
+            })
+          )}
+        </div>
+
         <div className="space-y-2">
           {readbackConfirmed && !isEditingReadback ? (
             // Saved-state display: show the operator the exact text

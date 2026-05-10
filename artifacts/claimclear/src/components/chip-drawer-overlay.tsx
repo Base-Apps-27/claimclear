@@ -133,7 +133,7 @@ export function ChipDrawerOverlay({
   rides: ClaimResponse[];
   resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
   groupId: number;
-  onSelectLeg: (id: number) => void;
+  onSelectLeg: ((id: number) => void) | null;
   onOpenClassify: () => void;
   onOpenMarkDuplicate: () => void;
   onClose: () => void;
@@ -261,7 +261,7 @@ export function ChipDrawerOverlay({
               {detail.rideCount} leg{detail.rideCount === 1 ? "" : "s"}
             </span>
           </div>
-          {rides.length > 0 && (
+          {rides.length > 0 && onSelectLeg != null && (
             <div
               className="cc-segmented w-full"
               role="tablist"
@@ -793,11 +793,13 @@ export function ChipDrawerOverlayMount({
   legId,
   openChip,
   onClose,
+  onOpenClassify,
 }: {
   groupId: number;
   legId: number;
   openChip: ChipKey | null;
   onClose: () => void;
+  onOpenClassify: () => void;
 }) {
   const [markDuplicateOpen, setMarkDuplicateOpen] = useState(false);
   // Keep the group fetched while either the chip is open OR the
@@ -839,16 +841,8 @@ export function ChipDrawerOverlayMount({
           rides={rides}
           resolvedIndex={resolvedIndex}
           groupId={groupId}
-          onSelectLeg={() => {
-            // The leg page is scoped to a single leg; switching legs
-            // from the drawer is a no-op here. The queue mini handles
-            // this via its own setActiveLegId.
-          }}
-          onOpenClassify={() => {
-            // Classify is owned by the page's own ClassifyDialog; the
-            // drawer's button closes itself before calling, so this is
-            // a soft no-op when invoked from the leg page.
-          }}
+          onSelectLeg={null}
+          onOpenClassify={onOpenClassify}
           onOpenMarkDuplicate={() => setMarkDuplicateOpen(true)}
           onClose={onClose}
         />

@@ -2007,6 +2007,7 @@ export function ClaimDetailV2({
           legId={claim.id}
           openChip={chipOpen}
           onClose={() => setChipOpen(null)}
+          onOpenClassify={() => setClassifyOpen(true)}
         />
       ) : null}
     </div>
