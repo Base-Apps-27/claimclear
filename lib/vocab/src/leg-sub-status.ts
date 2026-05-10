@@ -73,12 +73,16 @@ export const LEG_SUB_STATUS: Record<LegSubStatus, GlossaryEntry> = {
     domain: "leg_sub_status",
   },
   dropped: {
-    // Default label is the broader "Non-issue" form; consumers with the
-    // leg row in hand should call `legSubStatusDisplayLabel(leg)` to get
-    // the finer-grained "Non-contestable" label when warranted.
+    // Default label is "Non-contestable" — the dominant SOP outcome that
+    // produces a `dropped` sub-status (Task #649). Consumers with the
+    // leg row in hand should still call `legSubStatusDisplayLabel(leg)`
+    // to render the more specific "Non-issue" form when the underlying
+    // `sopOutcome === 'non_issue'`. The legacy `excluded` sub-status
+    // remains the canonical "Non-issue" surface (auto-excluded blank
+    // siblings).
     enumValue: "dropped",
-    label: "Non-issue",
-    description: "Leg was removed from the dispute via the SOP walk — see the underlying conclusion for whether it was Non-issue or Non-contestable.",
+    label: "Non-contestable",
+    description: "Leg was removed from the dispute via the SOP walk — defaults to Non-contestable; see the underlying conclusion for the Non-issue case.",
     domain: "leg_sub_status",
   },
   frozen: {

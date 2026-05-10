@@ -92,7 +92,9 @@ test("leg_conclusion.non_issue label is Non-issue", () => {
 test("legSubStatusDisplayLabel resolves dropped against sopOutcome", () => {
   assert.equal(legSubStatusDisplayLabel("dropped", { sopOutcome: "non_issue" }), "Non-issue");
   assert.equal(legSubStatusDisplayLabel("dropped", { sopOutcome: "cannot_dispute" }), "Non-contestable");
-  assert.equal(legSubStatusDisplayLabel("dropped"), "Non-issue");
+  // Default for `dropped` (no sop hint) is now "Non-contestable" — Task #649
+  // flipped the queue-row default to match the dominant SOP outcome.
+  assert.equal(legSubStatusDisplayLabel("dropped"), "Non-contestable");
   assert.equal(legSubStatusDisplayLabel("excluded"), "Non-issue");
   assert.equal(legSubStatusLabel("ready"), "Ready");
 });
@@ -129,5 +131,11 @@ test("every Non-issue surface uses the same canonical label", () => {
   assert.equal(LEG_CONCLUSION.non_issue.label, "Non-issue");
   assert.equal(CLOSURE_REASON.non_issue.label, "Non-issue");
   assert.equal(LEG_SUB_STATUS.excluded.label, "Non-issue");
-  assert.equal(LEG_SUB_STATUS.dropped.label, "Non-issue");
+  // `LEG_SUB_STATUS.dropped` intentionally renders as "Non-contestable"
+  // (Task #649). Use `legSubStatusDisplayLabel(sub, leg)` with the leg
+  // row to reach the "Non-issue" form when warranted.
+});
+
+test("LEG_SUB_STATUS.dropped default label is Non-contestable", () => {
+  assert.equal(LEG_SUB_STATUS.dropped.label, "Non-contestable");
 });

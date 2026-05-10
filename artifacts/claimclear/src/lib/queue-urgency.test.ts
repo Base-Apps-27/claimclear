@@ -421,18 +421,19 @@ test("queue row layout — row clusters must not combine `shrink-0` (left) with 
   );
 
   // And require the wrapping layout that keeps the pill visible.
-  // Stacking the two row lines (`flex-col`) plus wrapping the badge /
-  // status / pill cluster (`flex-wrap`) is the structural fix; if either
-  // is removed the regression returns.
+  // Task #649 redesigned the row to stack vertically (`flex flex-col`)
+  // with the top line wrapping (`flex items-center gap-2 flex-wrap
+  // min-w-0`) — the structural fix that prevents the original
+  // mobile-pill regression. If either is removed the regression returns.
   assert.match(
     queueSrc,
-    /flex flex-col gap-2/,
-    "queue.tsx must keep the two-line row layout that lets the deadline pill stay visible on narrow widths",
+    /flex flex-col/,
+    "queue.tsx must keep the stacked row layout (flex-col) that lets the tier pill stay visible on narrow widths",
   );
   assert.match(
     queueSrc,
-    /flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0/,
-    "queue.tsx must keep the wrapping top-line cluster so the badge / status / deadline pill always fit",
+    /flex items-center gap-2 flex-wrap min-w-0/,
+    "queue.tsx must keep the wrapping top-line cluster so the tier pill / invoice / status badges always fit",
   );
 });
 
@@ -529,26 +530,28 @@ test("emptyStateCopy reflects stuck filter on portal-queued lane (Task #352)", (
   );
 });
 
-// Mobile row layout (cont.) — the per-row deadline pill itself must
-// keep `whitespace-nowrap` so its label doesn't wrap mid-pill at narrow
-// widths (which would defeat the purpose of the pill being a single
-// readable token like "Today · 5/1").
-test("queue row layout — deadline pill keeps whitespace-nowrap", async () => {
+// Mobile row layout (cont.) — Task #649 replaced the per-row
+// `deadline-hint-${invoiceNumber}` pill with a tier pill keyed by the
+// group id (`queue-row-tier-pill-${id}`). The pill renders TODAY/TMRW/
+// ≤3D/≤7D/LATER/OVRDUE plus an optional service-date suffix and lives
+// inside the wrapping top-line cluster. We assert (a) the pill exists
+// at the canonical testid and (b) the row-level `gap-1` / `gap-2`
+// spacing the redesign introduced is preserved so the pill never
+// collapses against the invoice number on mobile.
+test("queue row layout — tier pill is present at the canonical testid", async () => {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   const url = await import("node:url");
   const here = path.dirname(url.fileURLToPath(import.meta.url));
   const queueSrc = await fs.readFile(path.join(here, "..", "pages", "queue.tsx"), "utf8");
-  // The pill is the `<span data-testid={`deadline-hint-...`}>` element
-  // inside `renderDeadlineHint`. We assert the tailwind class set keeps
-  // `whitespace-nowrap`; without it the pill text wraps mid-token on
-  // narrow widths and the operator-reported regression effectively
-  // returns in a different shape.
-  const pillClassRegex =
-    /data-testid={`deadline-hint-\$\{group\.invoiceNumber\}`}[\s\S]{0,200}whitespace-nowrap/;
   assert.match(
     queueSrc,
-    pillClassRegex,
-    "the per-row deadline pill must keep `whitespace-nowrap` so its single-token label doesn't break mid-pill on mobile",
+    /data-testid={`queue-row-tier-pill-\$\{group\.id\}`}/,
+    "the per-row tier pill must keep its canonical `queue-row-tier-pill-${id}` testid so integration tests and the empty-state snapshot can target it",
+  );
+  assert.match(
+    queueSrc,
+    /\$\{compact \? "gap-1 px-2 py-2" : "gap-2 px-3 py-2.5"\}/,
+    "queue.tsx must keep the compact/standard row spacing the Lane Stack redesign introduced",
   );
 });
