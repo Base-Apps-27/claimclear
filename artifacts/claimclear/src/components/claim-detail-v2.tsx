@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BackBar } from "@/components/back-bar";
+import {
+  ChipDrawerOverlayMount,
+  type ChipKey,
+} from "@/components/chip-drawer-overlay";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useClaimEvents } from "@/hooks/use-claim-events";
@@ -312,15 +316,20 @@ function RecoveryActions(p: RecoveryProps) {
   );
 }
 
-function GoToGroupLink({ groupId, children }: { groupId: number; children: ReactNode }) {
+// Task #678: opens the right-edge chip drawer overlay (Evidence panel
+// by default) instead of navigating to /invoice-groups/:id. Keeps the
+// operator on the leg page so they don't lose their walk context.
+function GoToGroupLink({ onOpen, children }: { onOpen: () => void; children: ReactNode }) {
   return (
-    <Link
-      href={`/invoice-groups/${groupId}`}
+    <button
+      type="button"
+      onClick={onOpen}
       className="text-xs font-medium inline-flex items-center gap-1 hover:underline"
       style={{ color: "var(--cc-purple-fg)" }}
+      data-testid="leg-open-group-overlay"
     >
       {children}<ArrowUpRight className="w-3 h-3" />
-    </Link>
+    </button>
   );
 }
 
@@ -400,6 +409,10 @@ export function ClaimDetailV2({
   });
 
   const [classifyOpen, setClassifyOpen] = useState(false);
+  // Task #678: per-leg page mounts the same right-edge ChipDrawerOverlay
+  // used by the queue mini, so "Open group ↗" arrows surface group-level
+  // context without leaving the leg page.
+  const [chipOpen, setChipOpen] = useState<ChipKey | null>(null);
 
   const parentGroupId = claim?.invoiceGroupId ?? null;
   const { data: parentGroup } = useGetInvoiceGroup(parentGroupId ?? 0, {
@@ -1436,7 +1449,7 @@ export function ClaimDetailV2({
                     icon={<Gavel className="w-3.5 h-3.5" />}
                     testId="leg-post-response-card"
                     action={
-                      <GoToGroupLink groupId={parentGroup.id}>
+                      <GoToGroupLink onOpen={() => setChipOpen("evidence")}>
                         Commit on group
                       </GoToGroupLink>
                     }
@@ -1484,7 +1497,7 @@ export function ClaimDetailV2({
               padded={evidenceList.length === 0}
               action={
                 parentGroup ? (
-                  <GoToGroupLink groupId={parentGroup.id}>Manage on group</GoToGroupLink>
+                  <GoToGroupLink onOpen={() => setChipOpen("evidence")}>Manage on group</GoToGroupLink>
                 ) : undefined
               }
             >
@@ -1669,7 +1682,7 @@ export function ClaimDetailV2({
               testId="leg-communication-card"
               action={
                 parentGroup ? (
-                  <GoToGroupLink groupId={parentGroup.id}>Open invoice thread</GoToGroupLink>
+                  <GoToGroupLink onOpen={() => setChipOpen("evidence")}>Open invoice thread</GoToGroupLink>
                 ) : undefined
               }
               padded={false}
@@ -1732,7 +1745,7 @@ export function ClaimDetailV2({
                 title="Parent invoice"
                 icon={<FileText className="w-3.5 h-3.5" />}
                 testId="parent-invoice-card"
-                action={<GoToGroupLink groupId={parentGroup.id}>Open group</GoToGroupLink>}
+                action={<GoToGroupLink onOpen={() => setChipOpen("evidence")}>Open group</GoToGroupLink>}
               >
                 <div className="text-base font-bold mono mb-1">
                   {parentGroup.invoiceNumber ? (
@@ -1775,7 +1788,7 @@ export function ClaimDetailV2({
               testId="leg-verdict-card"
               action={
                 parentGroup ? (
-                  <GoToGroupLink groupId={parentGroup.id}>Record on group</GoToGroupLink>
+                  <GoToGroupLink onOpen={() => setChipOpen("evidence")}>Record on group</GoToGroupLink>
                 ) : undefined
               }
             >
@@ -1819,7 +1832,7 @@ export function ClaimDetailV2({
                 testId="leg-mas-card"
                 action={
                   parentGroup ? (
-                    <GoToGroupLink groupId={parentGroup.id}>
+                    <GoToGroupLink onOpen={() => setChipOpen("evidence")}>
                       {masCompleted ? "View on group" : "Manage on group"}
                     </GoToGroupLink>
                   ) : undefined
@@ -1985,6 +1998,15 @@ export function ClaimDetailV2({
               });
             }
           }}
+        />
+      ) : null}
+
+      {claim && parentGroup ? (
+        <ChipDrawerOverlayMount
+          groupId={parentGroup.id}
+          legId={claim.id}
+          openChip={chipOpen}
+          onClose={() => setChipOpen(null)}
         />
       ) : null}
     </div>

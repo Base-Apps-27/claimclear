@@ -75,6 +75,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ["artifacts/claimclear/src/components/claim-detail-v2.tsx", "detail surface (blocklisted)"],
   ["artifacts/claimclear/src/components/invoice-group-detail-v2.tsx", "detail surface (blocklisted)"],
   ["artifacts/claimclear/src/components/inline-group-workspace-mini.tsx", "queue inline workspace (blocklisted)"],
+  ["artifacts/claimclear/src/components/chip-drawer-overlay.tsx", "right-edge chip drawer; only escape-hatch ↗ 'Open full view'/'Open full activity view' arrows reference detail URLs (Task #678)"],
   ["artifacts/claimclear/src/components/invoice-group-submission-gauntlet.tsx", "submission gauntlet (blocklisted)"],
   ["artifacts/claimclear/src/components/decision-tree/sop-advance-player.tsx", "SOP player (blocklisted)"],
 

@@ -404,6 +404,39 @@ for (const fx of FIXTURES) {
   });
 }
 
+test("Task #678 — mini-open-details renders as a button (no href, no <a> wrapper)", () => {
+  // After Task #678 the ↗ "more details" arrow opens the right-edge
+  // ChipDrawerOverlay instead of navigating to /invoice-groups/:id.
+  // It must render as a plain <button> with no href attribute and not
+  // be wrapped in the wouter <Link> stub (which renders as <a>).
+  const detail = group({ rides: [leg({ id: 7 })] });
+  const html = render(detail);
+  const idx = html.indexOf('data-testid="mini-open-details"');
+  assert.ok(idx >= 0, "mini-open-details must render");
+  const tagStart = html.lastIndexOf("<", idx);
+  const tagEnd = html.indexOf(">", idx);
+  const tag = html.slice(tagStart, tagEnd + 1);
+  assert.ok(
+    tag.startsWith("<button"),
+    `mini-open-details must render as <button>; got: ${tag}`,
+  );
+  assert.ok(
+    !/\shref=/.test(tag),
+    `mini-open-details must not carry an href attr; got: ${tag}`,
+  );
+  // The wouter <Link> mock above renders an <a>. Confirm the immediate
+  // wrapper around the button is NOT an <a> (i.e. the Link wrapper was
+  // removed). We verify by checking the character preceding `tagStart`
+  // back to the nearest open angle — it should not be `<a `.
+  const wrapperEnd = html.lastIndexOf(">", tagStart - 1);
+  const wrapperStart = html.lastIndexOf("<", wrapperEnd - 1);
+  const wrapper = html.slice(wrapperStart, wrapperEnd + 1);
+  assert.ok(
+    !wrapper.startsWith("<a "),
+    `mini-open-details must not be wrapped in <a>; wrapper: ${wrapper}`,
+  );
+});
+
 test("Hold-leg button uses chip-peer pill styling, not ghost button", () => {
   const detail = group({ rides: [leg({ id: 7 })] });
   const html = render(detail);
