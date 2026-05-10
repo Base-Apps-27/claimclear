@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BackBar } from "@/components/back-bar";
 import {
@@ -27,7 +27,6 @@ import {
   useListClaimNotes,
   getListClaimNotesQueryKey,
   useCreateClaimNote,
-  useDeleteNote,
   useListClaimAuditLogs,
   getListClaimAuditLogsQueryKey,
   useListClaimEvidence,
@@ -35,12 +34,8 @@ import {
   useGetClaimEmailThread,
   getGetClaimEmailThreadQueryKey,
   useRecordLegVerdict,
-  useClearLegVerdictDraft,
-  useCompleteLegMasAction,
   useSopRestartLeg,
   useSopBackStepLeg,
-  usePlaceLegOnHold,
-  useClearLegHold,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
@@ -52,11 +47,7 @@ import type {
   EmailThreadMessage,
   EvidenceFileRef,
   ClaimResponse,
-  InvoiceGroupResponse,
-  PlaceHoldBody,
-  SopRewindBody,
 } from "@workspace/api-client-react";
-import type { UseMutationResult } from "@tanstack/react-query";
 import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,22 +55,15 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
   Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
-  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Trash2, Tag, Sparkles,
+  Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Tag, Sparkles,
 } from "lucide-react";
 import { ClassifyDialog } from "@/components/classify-dialog";
-import { HoldReasonSelect, isHoldReasonValid } from "@/components/hold-reason-select";
-import type { LegHoldReason } from "@workspace/leg-state";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
-import { isLegacyDerivedContext } from "@workspace/leg-state";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
@@ -89,7 +73,6 @@ import { cn } from "@/lib/utils";
 import { TonePill } from "@/components/cohesion";
 import { StateBadge } from "@/components/state-badge";
 import { RefNumber } from "@/components/ref-number";
-import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
 import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { deriveLegSubStatus } from "@workspace/leg-state";
@@ -158,165 +141,9 @@ function MutedNote({ children }: { children: ReactNode }) {
   );
 }
 
-// #658 — recovery actions on standalone /claims/:id (escape hatches only).
-type LegMutationResult<TVars> = UseMutationResult<ClaimResponse, unknown, TVars, unknown>;
-type RestartArgs = { id: number; data: SopRewindBody };
-type HoldArgs = { id: number; data: PlaceHoldBody };
-type ReleaseArgs = { id: number };
-interface RecoveryProps {
-  claim: ClaimResponse;
-  parentGroup: InvoiceGroupResponse;
-  subStatus: string;
-  groupIsPreSubmit: boolean;
-  walked: boolean;
-  sopRestartMutation: LegMutationResult<RestartArgs>;
-  sopBackStepMutation: LegMutationResult<RestartArgs>;
-  placeHoldMutation: LegMutationResult<HoldArgs>;
-  clearHoldMutation: LegMutationResult<ReleaseArgs>;
-  invalidateLeg: () => void;
-  toast: (a: { title: string; description?: string; variant?: "destructive" }) => void;
-}
-type RecoveryDialog = "restart" | "change-answer" | "place-hold" | "release-hold" | null;
-function RecoveryActions(p: RecoveryProps) {
-  const onHold = p.subStatus === "blocked" && !!p.claim.holdReason;
-  const [dialog, setDialog] = useState<RecoveryDialog>(null);
-  const [holdReason, setHoldReason] = useState<LegHoldReason | "">("");
-  const [holdNote, setHoldNote] = useState("");
-  useEffect(() => {
-    if (dialog === "place-hold") {
-      setHoldReason("");
-      setHoldNote("");
-    }
-  }, [dialog]);
-  type Icon = (props: { className?: string }) => ReactNode;
-  function go<TVars>(m: LegMutationResult<TVars>, args: TVars, ok: string, fail: string) {
-    m.mutate(args, {
-      onSuccess: () => { successToast({ title: "__VERB__", description: ok }); p.invalidateLeg(); setDialog(null); },
-      onError: (e: unknown) => p.toast({ title: fail, description: String((e as Error).message), variant: "destructive" }),
-    });
-  }
-  const btn = (id: string, show: boolean, pending: boolean, Icon: Icon, label: string, onClick: () => void) =>
-    show ? (
-      <Button key={id} size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={pending} onClick={onClick} data-testid={id}>
-        <Icon className="h-3.5 w-3.5" />{label}
-      </Button>
-    ) : null;
-  const holdValid = isHoldReasonValid(holdReason, holdNote);
-  return (
-    <div className="space-y-3">
-      <a href={`/queue?group=${p.parentGroup.id}&leg=${p.claim.id}`} className="cc-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded"
-         style={{ background: "var(--cc-blue-fg)", color: "white" }} data-testid="claim-detail-cta-walk-in-queue">
-        Walk this leg in the queue →
-      </a>
-      <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>Walk progression and submission happen in the queue.</p>
-      <div className="flex flex-wrap items-center gap-1.5 pt-2" style={{ borderTop: "1px dashed var(--cc-border)" }}>
-        {btn("claim-detail-action-restart-walk", p.walked && p.groupIsPreSubmit, p.sopRestartMutation.isPending, RotateCcw, "Restart walk",
-          () => setDialog("restart"))}
-        {btn("claim-detail-action-change-my-answer", p.walked && p.groupIsPreSubmit, p.sopBackStepMutation.isPending, Edit2, "Change my answer",
-          () => setDialog("change-answer"))}
-        {btn("claim-detail-action-place-leg-hold", !onHold && p.groupIsPreSubmit && (p.subStatus === "investigating" || p.subStatus === "ready"), p.placeHoldMutation.isPending, Lock, "Place leg hold",
-          () => setDialog("place-hold"))}
-        {btn("claim-detail-action-release-leg-hold", onHold, p.clearHoldMutation.isPending, RefreshCw, "Release leg hold",
-          () => setDialog("release-hold"))}
-      </div>
-
-      <AlertDialog open={dialog === "restart"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
-        <AlertDialogContent data-testid="claim-detail-restart-walk-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Restart this leg&apos;s SOP walk?</AlertDialogTitle>
-            <AlertDialogDescription>Recorded answers will be cleared.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="claim-detail-restart-walk-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => go(p.sopRestartMutation, { id: p.claim.id, data: { discardDraft: true } }, "SOP walk restarted", "Restart failed")}
-              disabled={p.sopRestartMutation.isPending}
-              data-testid="claim-detail-restart-walk-confirm-action"
-            >
-              {p.sopRestartMutation.isPending ? "Restarting…" : "Restart walk"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={dialog === "change-answer"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
-        <AlertDialogContent data-testid="claim-detail-change-answer-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Change your last answer?</AlertDialogTitle>
-            <AlertDialogDescription>Pop the most recent SOP answer so you can re-answer it.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="claim-detail-change-answer-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => go(p.sopBackStepMutation, { id: p.claim.id, data: { discardDraft: true } }, "Last SOP answer cleared", "Change answer failed")}
-              disabled={p.sopBackStepMutation.isPending}
-              data-testid="claim-detail-change-answer-confirm-action"
-            >
-              {p.sopBackStepMutation.isPending ? "Clearing…" : "Change my answer"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={dialog === "release-hold"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
-        <AlertDialogContent data-testid="claim-detail-release-hold-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Release this leg&apos;s hold?</AlertDialogTitle>
-            <AlertDialogDescription>The leg returns to its previous queue state.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="claim-detail-release-hold-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => go(p.clearHoldMutation, { id: p.claim.id }, "Leg hold released", "Release hold failed")}
-              disabled={p.clearHoldMutation.isPending}
-              data-testid="claim-detail-release-hold-confirm-action"
-            >
-              {p.clearHoldMutation.isPending ? "Releasing…" : "Release hold"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={dialog === "place-hold"} onOpenChange={(o) => { if (!o) setDialog(null); }}>
-        <DialogContent data-testid="claim-detail-place-hold-dialog">
-          <DialogHeader>
-            <DialogTitle>Place leg on hold</DialogTitle>
-          </DialogHeader>
-          <HoldReasonSelect
-            reason={holdReason}
-            note={holdNote}
-            onReasonChange={setHoldReason}
-            onNoteChange={setHoldNote}
-            disabled={p.placeHoldMutation.isPending}
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDialog(null)} data-testid="claim-detail-place-hold-cancel">
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!holdValid || !holdReason) return;
-                go(
-                  p.placeHoldMutation,
-                  { id: p.claim.id, data: { reason: holdReason, note: holdNote.trim() ? holdNote.trim() : null } },
-                  "Leg placed on hold",
-                  "Place hold failed",
-                );
-              }}
-              disabled={!holdValid || p.placeHoldMutation.isPending}
-              data-testid="claim-detail-place-hold-submit"
-            >
-              {p.placeHoldMutation.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin mr-1" />
-              ) : null}
-              Place on hold
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+// #687 — RecoveryActions removed. Hold place/release now lives only in
+// V3HoldExit hero (artifacts/claimclear/src/components/inline-group-workspace-mini.tsx)
+// per #682d. Leg-page surfaces a read-only "On hold: <reason>" meta line in the header.
 
 // Task #678: opens the right-edge chip drawer overlay (Evidence panel
 // by default) instead of navigating to /invoice-groups/:id. Keeps the
@@ -458,16 +285,10 @@ export function ClaimDetailV2({
   const excludeMutation = useExcludeLeg();
   const markDuplicateMutation = useMarkLegDuplicate();
   const recordVerdictMutation = useRecordLegVerdict();
-  const clearVerdictDraftMutation = useClearLegVerdictDraft();
-  const completeMasActionMutation = useCompleteLegMasAction();
   const sopRestartMutation = useSopRestartLeg();
   const sopBackStepMutation = useSopBackStepLeg();
-  const placeHoldMutation = usePlaceLegOnHold();
-  const clearHoldMutation = useClearLegHold();
   const unmarkDuplicateMutation = useUnmarkLegDuplicate();
   const createNoteMutation = useCreateClaimNote();
-  const deleteNoteMutation = useDeleteNote();
-  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
 
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [excludeOpen, setExcludeOpen] = useState(false);
@@ -485,11 +306,6 @@ export function ClaimDetailV2({
     () => buildSopTranscript(claim?.sopAnswers, tree),
     [claim, tree],
   );
-  const legacyDerivedTrail =
-    claim?.perLegContext && isLegacyDerivedContext(claim.perLegContext)
-      ? claim.perLegContext
-      : null;
-
   // Note composer state.
   const [newNote, setNewNote] = useState("");
   const noteBreath = useBreath();
@@ -716,30 +532,6 @@ export function ClaimDetailV2({
     );
   }
 
-  function onConfirmDeleteNote() {
-    const noteId = pendingDeleteNoteId;
-    if (noteId == null || deleteNoteMutation.isPending) return;
-    deleteNoteMutation.mutate(
-      { id: noteId },
-      {
-        onSuccess: () => {
-          qc.setQueryData<NoteResponse[]>(
-            getListClaimNotesQueryKey(claimId),
-            (prev: NoteResponse[] | undefined) =>
-              Array.isArray(prev) ? prev.filter((n) => n.id !== noteId) : prev,
-          );
-          setPendingDeleteNoteId(null);
-          invalidateLeg();
-        },
-        onError: (e: unknown) => toast({
-          title: "Couldn't delete note",
-          description: String((e as Error).message),
-          variant: "destructive",
-        }),
-      },
-    );
-  }
-
   if (isLoading || !claim) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground gap-2">
@@ -935,6 +727,19 @@ export function ClaimDetailV2({
                           ({parentGroup.macroPhase})
                         </span>
                       ) : null}
+                    </>
+                  ) : null}
+                  {/* #687 — read-only hold meta line. Place/release lives
+                      in the V3HoldExit hero in A only. */}
+                  {claim.holdReason ? (
+                    <>
+                      <span>·</span>
+                      <span data-testid="leg-header-hold-meta">
+                        On hold:{" "}
+                        <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
+                          {claim.holdReason}
+                        </span>
+                      </span>
                     </>
                   ) : null}
                 </div>
@@ -1213,7 +1018,7 @@ export function ClaimDetailV2({
               icon={<ListChecks className="w-3.5 h-3.5" />}
               testId="claim-detail-walk-transcript-readonly"
             >
-              {transcriptLines.length === 0 && !legacyDerivedTrail ? (
+              {transcriptLines.length === 0 ? (
                 <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
                   Walk hasn't started yet — answers you record below will appear here as a read-only trail.
                 </div>
@@ -1251,23 +1056,6 @@ export function ClaimDetailV2({
                         </li>
                       ))}
                     </ul>
-                  )}
-                  {legacyDerivedTrail && (
-                    <div
-                      className="mt-3 pt-3 text-xs space-y-1"
-                      style={{ borderTop: "1px dashed var(--cc-border)" }}
-                      data-testid="sop-walk-transcript-legacy-trail"
-                    >
-                      <div className="font-medium" style={{ color: "var(--cc-muted-fg)" }}>
-                        Legacy auto-derived per-leg context (pre-#372 migration)
-                      </div>
-                      <pre
-                        className="whitespace-pre-wrap"
-                        style={{ color: "var(--cc-muted-fg)", fontFamily: "inherit" }}
-                      >
-                        {legacyDerivedTrail}
-                      </pre>
-                    </div>
                   )}
                 </>
               )}
@@ -1375,67 +1163,27 @@ export function ClaimDetailV2({
                   </span>
                 </div>
               )}
-              {embedded && !isDuplicate && tree && canShowPlayer && (
-                <div>
-                <SopAdvancePlayer
-                  leg={{
-                    id: claim.id,
-                    errorTypeId: claim.errorTypeId,
-                    sopNodeId: claim.sopNodeId,
-                    sopOutcome: claim.sopOutcome,
-                    dropReason: claim.dropReason,
-                    invoiceGroupId: claim.invoiceGroupId,
-                    duplicateOfClaimId: claim.duplicateOfClaimId,
-                    perLegContext: claim.perLegContext,
-                  }}
-                  tree={tree}
-                  disabledReason={playerDisabledReason}
-                  onAdvanced={invalidateLeg}
-                  errorType={
-                    errorType
-                      ? { useDirectEmail: errorType.useDirectEmail ?? null }
-                      : null
-                  }
-                  bulkSiblingCount={bulkSiblingCount}
-                  onRequestReclassify={() => setReclassifyOpen(true)}
-                  siblingPrompt={
-                    siblingPromptCandidate
-                      ? {
-                          primaryClaimId: siblingPromptCandidate.primary.id,
-                          primaryConfNumber:
-                            siblingPromptCandidate.primary.confNumber ||
-                            `CLM-${siblingPromptCandidate.primary.id}`,
-                          primaryErrorTypeName:
-                            siblingPromptCandidate.primary.errorTypeName ?? null,
-                        }
-                      : null
-                  }
-                />
+              {/* #687 — SopAdvancePlayer mount + RecoveryActions removed.
+                   The live SOP player only mounts in A
+                   (inline-group-workspace-mini.tsx) and on the
+                   error-types screen now. The leg page is read-only:
+                   it surfaces the transcript above and routes
+                   operators to the queue via the CTA below. */}
+              {!isDuplicate && parentGroup && (
+                <div className="space-y-2 pt-2" style={{ borderTop: "1px dashed var(--cc-border)" }}>
+                  <a
+                    href={`/queue?group=${parentGroup.id}&leg=${claim.id}`}
+                    className="cc-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded"
+                    style={{ background: "var(--cc-blue-fg)", color: "white" }}
+                    data-testid="claim-detail-cta-walk-in-queue"
+                  >
+                    Walk this leg in the queue →
+                  </a>
+                  <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                    Walk progression, hold place/release, MAS cancel, and submission
+                    happen in the queue.
+                  </p>
                 </div>
-              )}
-              {embedded && !isDuplicate && tree && !canShowPlayer && playerDisabledReason && (
-                <div
-                  className="text-xs flex items-start gap-1.5 px-2.5 py-1.5 rounded"
-                  style={{ color: "var(--cc-muted-fg)", background: "var(--cc-muted)" }}
-                >
-                  <FileText className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                  <span>{playerDisabledReason}</span>
-                </div>
-              )}
-              {!embedded && !isDuplicate && parentGroup && (
-                <RecoveryActions
-                  claim={claim}
-                  parentGroup={parentGroup}
-                  subStatus={subStatus}
-                  groupIsPreSubmit={groupIsPreSubmit}
-                  walked={!!claim.sopOutcome || transcriptLines.length > 0}
-                  sopRestartMutation={sopRestartMutation}
-                  sopBackStepMutation={sopBackStepMutation}
-                  placeHoldMutation={placeHoldMutation}
-                  clearHoldMutation={clearHoldMutation}
-                  invalidateLeg={invalidateLeg}
-                  toast={toast}
-                />
               )}
             </CcCard>
             </div>
@@ -1471,10 +1219,6 @@ export function ClaimDetailV2({
                           id: claim.id,
                           data: { source: "operator_draft", outcome },
                         });
-                        invalidateLeg();
-                      }}
-                      onClear={async () => {
-                        await clearVerdictDraftMutation.mutateAsync({ id: claim.id });
                         invalidateLeg();
                       }}
                     />
@@ -1611,19 +1355,8 @@ export function ClaimDetailV2({
                         </div>
                         <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
                       </div>
-                      {n.type === "manual" && (
-                        <button
-                          type="button"
-                          aria-label="Delete note"
-                          onClick={() => setPendingDeleteNoteId(n.id)}
-                          disabled={deleteNoteMutation.isPending}
-                          className="opacity-0 group-hover/leg-note:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
-                          style={{ color: "var(--cc-muted-fg)" }}
-                          data-testid={`leg-note-delete-${n.id}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
+                      {/* #687 — leg-note delete control removed; notes are
+                          deleted from the queue chrome only. */}
                     </div>
                   ))}
                 </div>
@@ -1858,36 +1591,12 @@ export function ClaimDetailV2({
                     {claim.masActionNote}
                   </div>
                 ) : null}
-                {parentGroup?.macroPhase === "mas-action-required" ? (
-                  <label
-                    className="flex items-start gap-2 text-xs mt-2 cursor-pointer"
-                    style={{ color: "var(--cc-fg)" }}
-                    data-testid="leg-mas-cancel-checkbox-label"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={masCompleted}
-                      disabled={masCompleted || completeMasActionMutation.isPending}
-                      onChange={async (e) => {
-                        if (!e.target.checked || masCompleted) return;
-                        await completeMasActionMutation.mutateAsync({
-                          id: claim.id,
-                          data: {},
-                        });
-                        invalidateLeg();
-                      }}
-                      data-testid="leg-mas-cancel-checkbox"
-                    />
-                    <span>
-                      I cancelled this trip in MAS for this leg.
-                      {completeMasActionMutation.isPending ? " Saving…" : ""}
-                    </span>
-                  </label>
-                ) : !masCompleted ? (
+                {/* #687 — interactive MAS-cancel checkbox removed from
+                    the leg page. Operators stamp the cancel from the
+                    queue chrome only; the leg page shows status only. */}
+                {!masCompleted ? (
                   <MutedNote>
-                    Cancel can only be stamped while the invoice is in
-                    MAS Action Required.
+                    Stamp the MAS cancel for this leg from the queue.
                   </MutedNote>
                 ) : null}
               </CcCard>
@@ -1961,30 +1670,8 @@ export function ClaimDetailV2({
         </div>
       </div>
 
-      <AlertDialog
-        open={pendingDeleteNoteId != null}
-        onOpenChange={(open) => { if (!open) setPendingDeleteNoteId(null); }}
-      >
-        <AlertDialogContent data-testid="leg-note-delete-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The note will be removed from the leg and an audit row
-              will record who deleted it. This can&apos;t be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="leg-note-delete-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onConfirmDeleteNote}
-              disabled={deleteNoteMutation.isPending}
-              data-testid="leg-note-delete-confirm-action"
-            >
-              {deleteNoteMutation.isPending ? "Deleting…" : "Delete note"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* #687 — leg-note delete AlertDialog removed (delete moved to
+          queue chrome). */}
 
       {claim ? (
         <ClassifyDialog

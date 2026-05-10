@@ -366,19 +366,17 @@ const FIXTURES: Array<{
   subStatus: string;
   leg: AnyClaim;
   group?: Record<string, unknown>;
-  expectChangeAnswer: boolean;
-  expectRestart: boolean;
-  expectPlaceHold: boolean;
-  expectReleaseHold: boolean;
+  // #687 — RecoveryActions removed from /claims/:id. The leg page no
+  // longer renders Place/Release leg-hold or Restart/Change-answer
+  // buttons. Hold place/release lives only in V3HoldExit hero in A;
+  // walk progression lives only in the queue. Fixtures retained for
+  // shape coverage but expect* flags are uniformly false now.
+  expectHoldMeta?: string | null;
 }> = [
   {
     name: "(a) walkable leg — fresh, no answers yet",
     subStatus: "investigating",
     leg: makeLeg({ id: 501 }),
-    expectChangeAnswer: false,
-    expectRestart: false,
-    expectPlaceHold: true,
-    expectReleaseHold: false,
   },
   {
     name: "(b) walked-to-terminal leg",
@@ -389,10 +387,6 @@ const FIXTURES: Array<{
       sopNodeId: "n1",
       sopOutcome: "portal_dispute",
     }),
-    expectChangeAnswer: true,
-    expectRestart: true,
-    expectPlaceHold: true,
-    expectReleaseHold: false,
   },
   {
     name: "(c) hold leg",
@@ -401,10 +395,7 @@ const FIXTURES: Array<{
       id: 503,
       holdReason: "awaiting_internal_review",
     }),
-    expectChangeAnswer: false,
-    expectRestart: false,
-    expectPlaceHold: false,
-    expectReleaseHold: true,
+    expectHoldMeta: "awaiting_internal_review",
   },
   {
     name: "(d) non_issue leg",
@@ -415,19 +406,11 @@ const FIXTURES: Array<{
       sopOutcome: "non_issue",
       dropReason: "non_issue",
     }),
-    expectChangeAnswer: true,
-    expectRestart: true,
-    expectPlaceHold: false,
-    expectReleaseHold: false,
   },
   {
     name: "(e) classified-but-not-walked leg",
     subStatus: "investigating",
     leg: makeLeg({ id: 505 }),
-    expectChangeAnswer: false,
-    expectRestart: false,
-    expectPlaceHold: true,
-    expectReleaseHold: false,
   },
 ];
 
@@ -497,49 +480,38 @@ for (const fx of FIXTURES) {
       `expected queue deep-link href '${expectedHref}' on /claims/:id (${fx.name})`,
     );
 
-    // Recovery action visibility expectations.
-    if (fx.expectChangeAnswer) {
+    // #687 — Recovery actions (Place/Release leg-hold, Restart walk,
+    // Change my answer) are NEVER rendered on /claims/:id anymore.
+    // Place/release lives in the V3HoldExit hero in A; walk
+    // progression lives in the queue. Assert all four are absent
+    // unconditionally; the only hold surface left here is the
+    // read-only "On hold: <reason>" meta line in the leg header.
+    for (const id of [
+      "claim-detail-action-change-my-answer",
+      "claim-detail-action-restart-walk",
+      "claim-detail-action-place-leg-hold",
+      "claim-detail-action-release-leg-hold",
+    ]) {
       assert.ok(
-        html.includes(`data-testid="claim-detail-action-change-my-answer"`),
-        `expected change-my-answer button on ${fx.name}`,
-      );
-    } else {
-      assert.ok(
-        !html.includes(`data-testid="claim-detail-action-change-my-answer"`),
-        `did NOT expect change-my-answer button on ${fx.name}`,
-      );
-    }
-    if (fx.expectRestart) {
-      assert.ok(
-        html.includes(`data-testid="claim-detail-action-restart-walk"`),
-        `expected restart-walk button on ${fx.name}`,
-      );
-    } else {
-      assert.ok(
-        !html.includes(`data-testid="claim-detail-action-restart-walk"`),
-        `did NOT expect restart-walk button on ${fx.name}`,
+        !html.includes(`data-testid="${id}"`),
+        `did NOT expect '${id}' on ${fx.name} (#687: removed from /claims/:id)`,
       );
     }
-    if (fx.expectPlaceHold) {
+    if (fx.expectHoldMeta) {
+      const metaIdx = html.indexOf(`data-testid="leg-header-hold-meta"`);
       assert.ok(
-        html.includes(`data-testid="claim-detail-action-place-leg-hold"`),
-        `expected place-leg-hold button on ${fx.name}`,
+        metaIdx > 0,
+        `expected leg-header hold meta on ${fx.name}`,
+      );
+      const metaSlice = html.slice(metaIdx, metaIdx + 400);
+      assert.ok(
+        metaSlice.includes("On hold:") && metaSlice.includes(fx.expectHoldMeta),
+        `expected "On hold: ${fx.expectHoldMeta}" in leg-header meta on ${fx.name}`,
       );
     } else {
       assert.ok(
-        !html.includes(`data-testid="claim-detail-action-place-leg-hold"`),
-        `did NOT expect place-leg-hold button on ${fx.name}`,
-      );
-    }
-    if (fx.expectReleaseHold) {
-      assert.ok(
-        html.includes(`data-testid="claim-detail-action-release-leg-hold"`),
-        `expected release-leg-hold button on ${fx.name}`,
-      );
-    } else {
-      assert.ok(
-        !html.includes(`data-testid="claim-detail-action-release-leg-hold"`),
-        `did NOT expect release-leg-hold button on ${fx.name}`,
+        !html.includes(`data-testid="leg-header-hold-meta"`),
+        `did NOT expect leg-header hold meta on ${fx.name}`,
       );
     }
 

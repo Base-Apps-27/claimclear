@@ -9,7 +9,6 @@ import { useTransientFlag } from "@/hooks/use-transient-flag";
 import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed } from "@/lib/lifecycle-phase";
 import { partitionTransitions } from "@/lib/transitions-partition";
 import { deriveGroupOutcomeFromLegs } from "@/lib/group-outcome";
-import { MasActionChecklist } from "@/components/mas-action-checklist";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,12 +27,8 @@ import {
   getGetInvoiceGroupEmailThreadQueryKey,
   useCheckEmailResponses,
   useCreateInvoiceGroupNote,
-  useDeleteNote,
-  useHoldInvoiceGroup,
-  useRemoveInvoiceGroupHold,
   useCompleteGroupReattest,
   useUpdateInvoiceGroupStatus,
-  useCompleteLegMasAction,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import {
@@ -55,13 +50,9 @@ import type {
 import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
-  XCircle, PauseCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
-  ShieldCheck, Trash2,
+  XCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
+  ShieldCheck,
 } from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
 import { cn } from "@/lib/utils";
@@ -338,21 +329,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
-  const deleteNoteMutation = useDeleteNote();
-  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
-  const holdMutation = useHoldInvoiceGroup();
-  const removeHoldMutation = useRemoveInvoiceGroupHold();
-  // Task #681 — the manual "Mark MAS Eligible" dropdown item was
-  // removed from this page. The hook itself stays in
-  // `pages/import.tsx` for the auto-import path. Status overrides
-  // dropdown (admin-only) routes through useUpdateInvoiceGroupStatus.
-  // Per-leg MAS-action completion (cancel) routes through
-  // useCompleteLegMasAction; the group-level re-attest stamp routes
-  // through useCompleteGroupReattest. Both feed the new
-  // <MasActionChecklist> mounted on the right rail in place of the
-  // old "go to RAR" pointer panel.
+  // #687 — useDeleteNote / useHoldInvoiceGroup /
+  // useRemoveInvoiceGroupHold / useCompleteLegMasAction removed from
+  // this page. Hold place/release lives only in V3HoldExit hero (A);
+  // note delete + per-leg MAS cancel live only in queue chrome.
   const updateStatusMutation = useUpdateInvoiceGroupStatus();
-  const completeLegMasActionMutation = useCompleteLegMasAction();
   // MAS re-attest mutation — used by the admin "recorded offline"
   // override modal in the right rail (Task #333). The standard
   // checklist-driven completion now lives on Responses Awaiting Review
@@ -366,9 +347,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   // (Task #316). Errors still toast via the mutation's onError below.
   const noteBreath = useBreath();
 
-  /* ---- Place-on-hold reason prompt (cc-scope inline) ---- */
-  const [holdOpen, setHoldOpen] = useState(false);
-  const [holdReason, setHoldReason] = useState("");
+  /* #687 — group-hold prompt removed; only V3HoldExit hero (A) places
+     or releases holds now. */
+
 
   /* ---- Admin override modal (Task #333). Lets an admin record that
      the MAS re-attest happened outside the in-app checklist (paper
@@ -612,73 +593,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
-  function onConfirmDeleteNote() {
-    const noteId = pendingDeleteNoteId;
-    if (noteId == null || deleteNoteMutation.isPending) return;
-    deleteNoteMutation.mutate(
-      { id: noteId },
-      {
-        onSuccess: () => {
-          qc.setQueryData<InvoiceGroupDetailResponse | undefined>(
-            getGetInvoiceGroupQueryKey(groupId),
-            (prev: InvoiceGroupDetailResponse | undefined) => {
-              if (!prev) return prev;
-              const existing: NoteResponse[] = Array.isArray(prev.notes) ? prev.notes : [];
-              return { ...prev, notes: existing.filter((n: NoteResponse) => n.id !== noteId) };
-            },
-          );
-          setPendingDeleteNoteId(null);
-          invalidateGroup();
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Couldn't delete note",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-
-  function onSubmitHold() {
-    const trimmed = holdReason.trim();
-    if (!trimmed) return;
-    holdMutation.mutate(
-      { id: groupId, data: { reason: trimmed } },
-      {
-        onSuccess: () => {
-          successToast({ title: "__VERB__", description: "Group placed on hold" });
-          setHoldOpen(false);
-          setHoldReason("");
-          invalidateGroup();
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Failed to place on hold",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-
-  function onClearHold() {
-    removeHoldMutation.mutate(
-      { id: groupId },
-      {
-        onSuccess: () => {
-          successToast({ title: "__VERB__", description: "Hold cleared" });
-          invalidateGroup();
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Failed to clear hold",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
+  /* #687 — onConfirmDeleteNote / onSubmitHold / onClearHold removed.
+     Note delete lives in queue chrome; hold place/release lives in
+     V3HoldExit hero (A) only. */
 
   const isReady = !isLoading && !!group && !!detail;
   const isAlreadyClosed = group?.status === "Resolved" || group?.status === "Denied";
@@ -830,6 +747,19 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   {inDisputeCount > 0
                     ? ` · ${inDisputeCount} of ${allRides.length} legs in dispute`
                     : null}
+                  {/* #687 — read-only hold meta line. Place/release lives
+                      in the V3HoldExit hero in A only. */}
+                  {group.holdReason ? (
+                    <>
+                      {" · "}
+                      <span data-testid="group-header-hold-meta">
+                        On hold:{" "}
+                        <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
+                          {group.holdReason}
+                        </span>
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 {/* Service-date strip (Task #353). Re-uses the same enum
                     the list cell consumes so the empty-state language is
@@ -879,12 +809,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 // action that emits a status change), so we surface
                 // it whenever the current phase is pre-submit.
                 const allowed = validTransitions?.validStatuses ?? [];
-                const { phaseActionStatuses, overrideStatuses } =
+                const { overrideStatuses } =
                   partitionTransitions(group?.status, allowed, !!isAdmin);
-                const showHold = phaseActionStatuses.includes("On Hold");
-                const showClearHold =
-                  group?.status === "On Hold" &&
-                  allowed.some((s) => s !== "On Hold");
+                // #687 — Place-/Clear-hold dropdown items removed; hold
+                // is owned by the V3HoldExit hero in A.
                 const showSubmit = isPreSubmitFn(group?.status);
                 return (
                   <DropdownMenu>
@@ -910,32 +838,15 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           also removed; the queue is the only operator
                           surface that mutates state. The auto-import
                           path in pages/import.tsx still uses the hook. */}
-                      {showHold && (
-                        <DropdownMenuItem
-                          disabled={holdMutation.isPending}
-                          onSelect={() => setHoldOpen(true)}
-                          data-testid="header-phase-place-on-hold"
-                        >
-                          Place group on hold
-                        </DropdownMenuItem>
-                      )}
-                      {showClearHold && (
-                        <DropdownMenuItem
-                          disabled={removeHoldMutation.isPending}
-                          onSelect={onClearHold}
-                          data-testid="header-phase-clear-hold"
-                        >
-                          Clear hold
-                        </DropdownMenuItem>
-                      )}
-                      {!showHold && !showClearHold && (
-                        <DropdownMenuItem
-                          disabled
-                          data-testid="header-phase-empty"
-                        >
-                          No phase actions available
-                        </DropdownMenuItem>
-                      )}
+                      {/* #687 — Place/Clear hold dropdown items removed.
+                          Hold is now owned by the V3HoldExit hero in A
+                          (inline-group-workspace-mini.tsx). */}
+                      <DropdownMenuItem
+                        disabled
+                        data-testid="header-phase-empty"
+                      >
+                        No phase actions available
+                      </DropdownMenuItem>
                       {overrideStatuses.length > 0 && (
                         <>
                           <DropdownMenuSeparator />
@@ -1528,30 +1439,10 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   </div>
                 ) : (
                   <div data-testid="group-reattest-pending" className="space-y-3">
-                    {/* Task #555 — mount the full per-leg cancel +
-                         group re-attest checklist directly here
-                         instead of the old quiet "go to RAR" pointer.
-                         The detail page is now the single macro
-                         workflow surface for the group; operators
-                         shouldn't have to bounce to another workspace
-                         to act on the MAS playbook. */}
-                    <MasActionChecklist
-                      group={group}
-                      onCompleteLegMasAction={async (claimId, body) => {
-                        await completeLegMasActionMutation.mutateAsync({
-                          id: claimId,
-                          data: body,
-                        });
-                        invalidateGroup();
-                      }}
-                      onCompleteGroupReattest={async (body) => {
-                        await completeReattestMutation.mutateAsync({
-                          id: groupId,
-                          data: body,
-                        });
-                        invalidateGroup();
-                      }}
-                    />
+                    {/* #687 — MasActionChecklist mount removed from the
+                         detail page. Per-leg MAS cancel is owned by the
+                         queue chrome; the admin-only "recorded offline"
+                         override below stays here for re-attest. */}
                     {canShowOfflineReattestOverride({
                       isAdmin,
                       reattestRequired: !!group.reattestRequired,
@@ -1840,24 +1731,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         </div>
                         <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
                       </div>
-                      {/* Task #411 audit, Tier 5: notes had a working
-                          DELETE /api/notes/:id endpoint with no UI to
-                          call it. The trash affordance is gated by an
-                          AlertDialog confirm so an accidental hover
-                          click can't nuke an audit-bearing note. */}
-                      {n.type === "manual" && (
-                        <button
-                          type="button"
-                          aria-label="Delete note"
-                          onClick={() => setPendingDeleteNoteId(n.id)}
-                          disabled={deleteNoteMutation.isPending}
-                          className="opacity-0 group-hover/group-note:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
-                          style={{ color: "var(--cc-muted-fg)" }}
-                          data-testid={`group-note-delete-${n.id}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
+                      {/* #687 — group-note delete control removed; notes
+                          are deleted from the queue chrome only. */}
                     </div>
                   ))}
                 </div>
@@ -2100,104 +1975,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
       ) : null}
       </SkeletonSwap>
 
-      {holdOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.4)" }}
-          onClick={() => setHoldOpen(false)}
-          data-testid="hold-dialog-backdrop"
-        >
-          <div
-            className="cc-card w-full max-w-md p-4"
-            style={{ background: "var(--cc-bg)", border: "1px solid var(--cc-border)" }}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            data-testid="hold-dialog"
-          >
-            <div className="font-semibold text-sm mb-1">Place group on hold</div>
-            <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
-              Add a reason so teammates know why this invoice group is parked.
-            </div>
-            <textarea
-              value={holdReason}
-              onChange={(e) => setHoldReason(e.target.value)}
-              rows={3}
-              placeholder="Reason for hold…"
-              className="cc-input w-full text-xs"
-              style={{
-                background: "var(--cc-bg)",
-                border: "1px solid var(--cc-border)",
-                color: "var(--cc-fg)",
-                padding: "6px 8px",
-                borderRadius: 4,
-                resize: "vertical",
-              }}
-              autoFocus
-              data-testid="hold-reason-textarea"
-            />
-            <div className="flex justify-end gap-1.5 mt-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setHoldOpen(false);
-                  setHoldReason("");
-                }}
-                className="cc-btn text-xs px-2.5 py-1.5"
-                style={{ border: "1px solid var(--cc-border)" }}
-                data-testid="hold-dialog-cancel"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onSubmitHold}
-                disabled={!holdReason.trim() || holdMutation.isPending}
-                className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5"
-                style={{
-                  background: "var(--cc-purple-fg)",
-                  color: "white",
-                  opacity: !holdReason.trim() || holdMutation.isPending ? 0.6 : 1,
-                }}
-                data-testid="hold-dialog-confirm"
-              >
-                {holdMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <PauseCircle className="w-3.5 h-3.5" />
-                )}
-                Place on hold
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <AlertDialog
-        open={pendingDeleteNoteId != null}
-        onOpenChange={(open) => { if (!open) setPendingDeleteNoteId(null); }}
-      >
-        <AlertDialogContent data-testid="group-note-delete-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The note will be removed from the invoice group and an
-              audit row will record who deleted it. This can&apos;t be
-              undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="group-note-delete-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onConfirmDeleteNote}
-              disabled={deleteNoteMutation.isPending}
-              data-testid="group-note-delete-confirm-action"
-            >
-              {deleteNoteMutation.isPending ? "Deleting…" : "Delete note"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* #687 — group hold dialog + group-note delete AlertDialog
+          removed. Hold is owned by V3HoldExit hero (A); note delete
+          lives in queue chrome. */}
     </div>
   );
 }
