@@ -7,8 +7,10 @@ import {
   useSaveInvoiceGroupDraft,
   useRegenerateInvoiceGroupDraft,
   useMarkInvoiceGroupDraftReviewed,
+  useClearLegVerdictDraft,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
+  getGetClaimQueryKey,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
 import type {
@@ -32,7 +34,19 @@ import {
   Save,
   FileText,
   AlertTriangle,
+  MoreVertical,
+  RotateCcw,
+  Layers,
+  ChevronLeft,
+  HelpCircle,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatDateTime, formatCurrency } from "@/lib/format";
 import { RefNumber } from "@/components/ref-number";
 import { useToast, successToast } from "@/hooks/use-toast";
@@ -60,13 +74,19 @@ interface Props {
   group: InvoiceGroupDetailResponse;
   groupId: number;
   onJumpToLeg?: (claimId: number) => void;
+  // Task #685 (R3): opens A's ClassifyDialog scoped to a single leg.
+  // The parent owns the dialog (it's already mounted in
+  // inline-group-workspace-mini.tsx for the queue surface). When the
+  // gauntlet is rendered standalone (no reclassify wiring) the
+  // "Reclassify…" item simply isn't shown — same pattern as onJumpToLeg.
+  onReclassifyLeg?: (claimId: number) => void;
   bare?: boolean;
   footerStateRef?: React.MutableRefObject<GauntletFooterState | null>;
   onFooterStateChange?: (state: GauntletFooterState) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, bare, footerStateRef, onFooterStateChange, onDirtyChange }: Props) {
+export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, onReclassifyLeg, bare, footerStateRef, onFooterStateChange, onDirtyChange }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -76,6 +96,13 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   const saveDraftMutation = useSaveInvoiceGroupDraft();
   const regenDraftMutation = useRegenerateInvoiceGroupDraft();
   const markReviewedMutation = useMarkInvoiceGroupDraftReviewed();
+  // Task #685 (R3) — same hook A uses for its
+  // `mini-clear-verdict-draft` button (per-leg DELETE
+  // /claims/{id}/verdict/draft). Per wiring-map.md this is the
+  // "keep classification, clear answers" mutation; "Redo walk" in the
+  // R3 mockup is exactly that semantic. We do NOT introduce a new
+  // hook — we reuse A's wiring at the per-leg scope.
+  const clearLegVerdictDraft = useClearLegVerdictDraft();
   const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
   // Save-confirmation breath replaces the "Draft saved" toast on the
   // Save-draft button (Task #316). The counter increments on every
@@ -573,18 +600,41 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
               {rides.map((r, i) => {
                 const sub = resolvedIndex.subStatusOf(r);
                 const resolved = resolvedIndex.isLegResolved(r);
-                const subTone =
-                  sub === "ready"
+                // Task #685 (R4) — leg in needs_classification has no
+                // walked verdict to "redo" and no error type to keep;
+                // the card surfaces an amber framing + "Needs
+                // classification" label and the overflow collapses to
+                // just "Reclassify…" so the operator can't fire a
+                // useless clear-draft against a never-walked leg.
+                const isNeedsClassification = sub === "needs_classification";
+                const subTone = isNeedsClassification
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  : sub === "ready"
                     ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300"
                     : sub === "dropped" || sub === "excluded"
                       ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
                       : "bg-muted text-muted-foreground";
+                const subLabel = isNeedsClassification ? "needs classification" : sub;
+                // R3: "Redo walk" item is only meaningful once the leg
+                // has actually been walked (has an error type and at
+                // least one recorded answer). Gate by errorTypeId so a
+                // brand-new unwalked leg doesn't offer a no-op.
+                const canRedoWalk = !isNeedsClassification && r.errorTypeId != null;
+                const isRedoPending =
+                  clearLegVerdictDraft.isPending &&
+                  clearLegVerdictDraft.variables?.id === r.id;
                 return (
                   <div
                     key={r.id}
-                    className="rounded-md border border-border bg-background p-2 flex flex-col gap-1.5"
+                    className={
+                      "rounded-md border bg-background p-2 flex flex-col gap-1.5 " +
+                      (isNeedsClassification
+                        ? "border-amber-300 dark:border-amber-800 border-t-2 border-t-amber-500 dark:border-t-amber-400"
+                        : "border-border")
+                    }
                     data-testid={`gauntlet-hero-card-${r.id}`}
                     data-resolved={resolved ? "true" : "false"}
+                    data-sub-status={sub}
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -594,19 +644,129 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                       {resolved && (
                         <CheckCircle2 className="w-3 h-3 ml-auto text-green-700 dark:text-green-400" />
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={
+                              "h-6 w-6 p-0 " + (resolved ? "" : "ml-auto")
+                            }
+                            aria-label={`More for leg ${i + 1}`}
+                            data-testid={`gauntlet-hero-card-${r.id}-overflow-trigger`}
+                          >
+                            {isRedoPending ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-56"
+                          data-testid={`gauntlet-hero-card-${r.id}-overflow-menu`}
+                        >
+                          {onJumpToLeg && (
+                            <DropdownMenuItem
+                              onSelect={() => onJumpToLeg(r.id)}
+                              data-testid={`gauntlet-hero-card-${r.id}-open-walk`}
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold">Open walk</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  Jump to this leg's player
+                                </span>
+                              </div>
+                            </DropdownMenuItem>
+                          )}
+                          {canRedoWalk && (
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                clearLegVerdictDraft.mutate(
+                                  { id: r.id },
+                                  {
+                                    onSuccess: () => {
+                                      qc.invalidateQueries({
+                                        queryKey: getGetClaimQueryKey(r.id),
+                                      });
+                                      qc.invalidateQueries({
+                                        queryKey: getGetInvoiceGroupQueryKey(groupId),
+                                      });
+                                      successToast({
+                                        title: "Walk reset",
+                                        description:
+                                          "Classification kept; recorded answers cleared.",
+                                      });
+                                      if (onJumpToLeg) onJumpToLeg(r.id);
+                                    },
+                                    onError: (e: unknown) =>
+                                      toast({
+                                        title: "Redo walk failed",
+                                        description:
+                                          e instanceof Error ? e.message : String(e),
+                                        variant: "destructive",
+                                      }),
+                                  },
+                                );
+                              }}
+                              disabled={clearLegVerdictDraft.isPending}
+                              data-testid={`gauntlet-hero-card-${r.id}-redo-walk`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold">Redo walk</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  Keep classification, clear answers
+                                </span>
+                              </div>
+                            </DropdownMenuItem>
+                          )}
+                          {onReclassifyLeg && (canRedoWalk || isNeedsClassification) && (
+                            <DropdownMenuSeparator />
+                          )}
+                          {onReclassifyLeg && (
+                            <DropdownMenuItem
+                              onSelect={() => onReclassifyLeg(r.id)}
+                              data-testid={`gauntlet-hero-card-${r.id}-reclassify`}
+                            >
+                              <Layers className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold">
+                                  {isNeedsClassification ? "Classify…" : "Reclassify…"}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  Pick a different error type
+                                </span>
+                              </div>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     <div className="text-[11px] text-muted-foreground">
                       {r.date ? formatDateTime(r.date) : "—"}
                       {r.claimAmount != null && <> · {formatCurrency(r.claimAmount)}</>}
                     </div>
-                    {r.errorTypeName && (
-                      <div className="text-[11px] text-foreground truncate" title={r.errorTypeName}>
-                        {r.errorTypeName}
+                    {isNeedsClassification ? (
+                      <div
+                        className="flex items-center gap-1 text-[11px] text-amber-800 dark:text-amber-300"
+                        data-testid={`gauntlet-hero-card-${r.id}-needs-classification`}
+                      >
+                        <HelpCircle className="w-3 h-3" />
+                        <span>Pick an error type to unlock the SOP walk.</span>
                       </div>
+                    ) : (
+                      r.errorTypeName && (
+                        <div className="text-[11px] text-foreground truncate" title={r.errorTypeName}>
+                          {r.errorTypeName}
+                        </div>
+                      )
                     )}
                     <div className="flex items-center gap-1 mt-auto">
                       <span className={"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium " + subTone}>
-                        {sub}
+                        {subLabel}
                       </span>
                     </div>
                   </div>

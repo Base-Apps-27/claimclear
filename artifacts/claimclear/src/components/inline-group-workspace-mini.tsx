@@ -427,6 +427,10 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
                 group={detail}
                 groupId={groupId}
                 onJumpToLeg={(id) => setActiveLegId(id)}
+                onReclassifyLeg={(id) => {
+                  setActiveLegId(id);
+                  setClassifyOpen(true);
+                }}
                 onFooterStateChange={onFooterStateChange}
                 onDirtyChange={setGauntletDirty}
               />
@@ -441,6 +445,14 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
                 group={detail}
                 groupId={groupId}
                 onJumpToLeg={(id) => setActiveLegId(id)}
+                onReclassifyLeg={(id) => {
+                  // Task #685 (R3) — reuse A's existing ClassifyDialog
+                  // (already mounted below via setClassifyOpen). Setting
+                  // the active leg first scopes the dialog to the
+                  // requested leg via highlightLegId on next render.
+                  setActiveLegId(id);
+                  setClassifyOpen(true);
+                }}
               />
             </CardContent>
           </Card>

@@ -43,6 +43,10 @@ interface Props {
   groupId: number;
   /** Forwarded to the gauntlet's `gate: "legs"` jump-to-leg button. */
   onJumpToLeg?: (claimId: number) => void;
+  /** Task #685 (R3) — forwarded to the gauntlet's per-leg overflow
+   *  "Reclassify…" item. Parent (queue mini) opens A's ClassifyDialog
+   *  scoped to the chosen leg. */
+  onReclassifyLeg?: (claimId: number) => void;
   /** Forwarded to the gauntlet — strips the Card chrome. */
   bare?: boolean;
 }
@@ -51,6 +55,7 @@ export function InvoiceGroupActionSlot({
   group,
   groupId,
   onJumpToLeg,
+  onReclassifyLeg,
   bare,
 }: Props) {
   const rides: ClaimResponse[] = group.rides ?? [];
@@ -65,6 +70,7 @@ export function InvoiceGroupActionSlot({
         group={group}
         groupId={groupId}
         onJumpToLeg={onJumpToLeg}
+        onReclassifyLeg={onReclassifyLeg}
         bare={bare}
       />
     );

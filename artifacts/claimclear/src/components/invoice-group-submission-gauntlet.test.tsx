@@ -37,12 +37,17 @@ mock.module("@workspace/api-client-react", {
     useSaveInvoiceGroupDraft: inertMutation,
     useRegenerateInvoiceGroupDraft: inertMutation,
     useMarkInvoiceGroupDraftReviewed: inertMutation,
+    // Task #685 (R3): per-leg overflow's "Redo walk" reuses A's
+    // clear-verdict-draft hook. Inert-stub it so the SSR render and
+    // the menu-trigger render don't pull network code.
+    useClearLegVerdictDraft: inertMutation,
     getGetInvoiceGroupQueryKey: (id: number) => ["invoice-group", id],
     getGetInvoiceGroupValidTransitionsQueryKey: (id: number) => [
       "invoice-group",
       id,
       "transitions",
     ],
+    getGetClaimQueryKey: (id: number) => ["claim", id],
     getListInvoiceGroupsQueryKey: () => ["invoice-groups", "list"],
   },
 });
@@ -374,5 +379,66 @@ test("gauntlet: duplicate of an excluded primary still unlocks the gate", () => 
   assert.equal(
     html.includes(`data-testid="generate-preview-disabled-wrapper"`),
     false,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #685 (R3) — every disputed leg card grows an overflow trigger
+// in the static SSR. The trigger is the only SSR-stable surface for
+// Radix DropdownMenu (the Content portal only mounts on open) so we
+// pin the per-card trigger testid here. We render two disputed legs
+// to prove the overflow is per-card, not group-scoped.
+// ─────────────────────────────────────────────────────────────────────
+test("gauntlet R3: each leg card renders its own overflow trigger", () => {
+  const a = claim({ id: 700, errorTypeId: "ET-1", sopOutcome: "dispute" });
+  const b = claim({ id: 701, errorTypeId: "ET-2", sopOutcome: "dispute" });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([a, b]),
+      groupId: 42,
+      onJumpToLeg: () => {},
+      onReclassifyLeg: () => {},
+    }),
+  );
+
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-card-700-overflow-trigger"/,
+    "leg 700 must render its own overflow trigger",
+  );
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-card-701-overflow-trigger"/,
+    "leg 701 must render its own overflow trigger",
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #685 (R4) — a leg whose `deriveLegSubStatus` is
+// `needs_classification` (no errorTypeId, not a duplicate, not
+// excluded) gets the amber visual treatment on its card: the card
+// carries `data-sub-status="needs_classification"` and renders the
+// pick-an-error-type prompt. Confirms the visual is keyed off the
+// shared sub-status derivation, not a separate code path.
+// ─────────────────────────────────────────────────────────────────────
+test("gauntlet R4: needs_classification leg renders the amber visual", () => {
+  // No errorTypeId → deriveLegSubStatus returns "needs_classification".
+  const unclassified = claim({ id: 800 });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([unclassified]),
+      groupId: 42,
+    }),
+  );
+
+  // The card carries the data-sub-status attribute…
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-card-800"[^>]*data-sub-status="needs_classification"/,
+  );
+  // …and renders the prompt that's specific to this state.
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-card-800-needs-classification"/,
   );
 });
