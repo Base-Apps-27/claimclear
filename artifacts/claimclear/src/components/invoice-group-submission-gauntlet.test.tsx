@@ -43,6 +43,7 @@ mock.module("@workspace/api-client-react", {
       id,
       "transitions",
     ],
+    getListInvoiceGroupsQueryKey: () => ["invoice-groups", "list"],
   },
 });
 
@@ -200,6 +201,82 @@ test("gauntlet: duplicate of investigating primary keeps the gate locked", () =>
 
   // Readback notes locked.
   assert.match(html, /data-testid="readback-locked-reason"/);
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #683 — AI summary hero (Q1–Q7 graduation). Visual-only block
+// rendered above the existing readback step. Asserts the SSR-stable
+// contract: hero appears, one card per disputed leg (with the leg's
+// confNumber), and the resolved-N-of-M counter reflects the
+// resolved-leg index.
+// ─────────────────────────────────────────────────────────────────────
+test("gauntlet hero: renders one card per disputed leg with conf number + resolved counter", () => {
+  const ready = claim({
+    id: 700,
+    confNumber: "RIDE-700",
+    errorTypeId: "ET-1",
+    sopOutcome: "dispute", // → ready/resolved
+  });
+  const investigating = claim({
+    id: 701,
+    confNumber: "RIDE-701",
+    errorTypeId: "ET-1",
+    sopOutcome: null, // → investigating/unresolved
+  });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([ready, investigating]),
+      groupId: 42,
+    }),
+  );
+
+  // Hero shell present, above the existing claim-id strip.
+  assert.match(html, /data-testid="gauntlet-hero"/);
+  // One card per disputed leg, with the leg's confNumber rendered
+  // through <RefNumber />.
+  assert.match(html, /data-testid="gauntlet-hero-card-700"[^>]*>[\s\S]*RIDE-700/);
+  assert.match(html, /data-testid="gauntlet-hero-card-701"[^>]*>[\s\S]*RIDE-701/);
+  // Resolved-N-of-M counter — 1 of 2 (only `ready` is resolved).
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-resolved-counter"[\s\S]*?>1<\/span>[\s\S]*?>2<\/span>/,
+  );
+});
+
+// Excluded legs (`includedInDispute === false`) are filtered out of
+// the disputed `rides` set, and so must not get a hero card. This
+// keeps the card count aligned with the resolved-N-of-M counter and
+// the "what feeds the AI prompt" mental model.
+test("gauntlet hero: excluded legs are not rendered as hero cards", () => {
+  const included = claim({
+    id: 800,
+    confNumber: "RIDE-800",
+    errorTypeId: "ET-1",
+    sopOutcome: "dispute",
+  });
+  const excluded = claim({
+    id: 801,
+    confNumber: "RIDE-801",
+    includedInDispute: false,
+  });
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([included, excluded]),
+      groupId: 42,
+    }),
+  );
+
+  assert.match(html, /data-testid="gauntlet-hero-card-800"/);
+  assert.equal(
+    html.includes(`data-testid="gauntlet-hero-card-801"`),
+    false,
+    "excluded leg must not get a hero card",
+  );
+  // Only the disputed leg counts toward the M in the resolved counter.
+  assert.match(
+    html,
+    /data-testid="gauntlet-hero-resolved-counter"[\s\S]*?>1<\/span>[\s\S]*?>1<\/span>/,
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────

@@ -30,8 +30,11 @@ import {
   CheckCircle2,
   RefreshCw,
   Save,
+  FileText,
+  AlertTriangle,
 } from "lucide-react";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatCurrency } from "@/lib/format";
+import { RefNumber } from "@/components/ref-number";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
@@ -390,8 +393,214 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   // reviewing; surface every disputed leg's claim ID at the top of
   // the gauntlet so the mental check is one glance, not a hunt
   // through the side rail.
+  // Task #683 — AI summary hero (Q1–Q7 graduation). Visual-only,
+  // read-only summary that sits above the existing readback step.
+  // Every value is bound to a real payload field; no new mutations,
+  // no synthetic confidence/timing copy. The existing edit step
+  // below (`Review & edit`) remains the only writable surface.
+  const submitted = !isPreSubmit;
+  const heroStages = [
+    { key: "walk", label: "Walk legs", done: allResolved, active: !allResolved },
+    {
+      key: "preview",
+      label: "Generate",
+      done: previewGenerated,
+      active: allResolved && !previewGenerated,
+    },
+    {
+      key: "review",
+      label: "Review & edit",
+      done: draftReviewed,
+      active: previewGenerated && !draftReviewed && !submitted,
+    },
+    {
+      key: "submit",
+      label: submitVerb,
+      done: submitted,
+      active: draftReviewed && !submitted,
+    },
+  ];
+  const hasSavedDraftEdit =
+    (group?.draftSubject ?? null) !== null ||
+    (group?.draftDescriptionHtml ?? null) !== null;
+  const editTracker: { label: string; tone: "muted" | "amber" | "blue" } =
+    draftDirty
+      ? { label: "Note edited · unsaved", tone: "amber" }
+      : hasSavedDraftEdit
+        ? { label: "Note edited", tone: "blue" }
+        : { label: "Note as drafted", tone: "muted" };
+  const baselinePresent =
+    !!(group?.aiBaselineSubject || group?.aiBaselineDescriptionHtml);
+  const heldGroup = !!group?.holdReason;
+
   const body = (
     <>
+        <section
+          className="rounded-lg border border-border bg-card p-3 space-y-3"
+          data-testid="gauntlet-hero"
+          aria-label="Submission summary"
+        >
+          {/* Header strip: invoice + status + segmented stage indicator */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <RefNumber value={group?.invoiceNumber ?? null} variant="chip" data-testid="gauntlet-hero-invoice" />
+            <span className="text-xs text-muted-foreground">
+              {group?.payorEmail ?? "—"}
+              {group?.totalAmount != null && (
+                <> · <span className="font-medium text-foreground">{formatCurrency(group.totalAmount)}</span></>
+              )}
+            </span>
+            {group?.status && (
+              <Badge variant="secondary" className="text-[10px]" data-testid="gauntlet-hero-status">
+                {group.status}
+              </Badge>
+            )}
+            {heldGroup && (
+              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-800 dark:text-amber-300" data-testid="gauntlet-hero-hold">
+                <AlertTriangle className="w-3 h-3 mr-1 inline" />
+                On hold{group?.holdReason ? ` · ${group.holdReason}` : ""}
+              </Badge>
+            )}
+            <div
+              className="ml-auto flex items-center gap-1 rounded border border-border bg-muted/40 p-0.5"
+              role="list"
+              data-testid="gauntlet-hero-stages"
+            >
+              {heroStages.map((s) => (
+                <span
+                  key={s.key}
+                  role="listitem"
+                  data-testid={`gauntlet-hero-stage-${s.key}`}
+                  data-state={s.done ? "done" : s.active ? "active" : "todo"}
+                  className={
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium " +
+                    (s.done
+                      ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300"
+                      : s.active
+                        ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                        : "text-muted-foreground")
+                  }
+                >
+                  {s.done ? <CheckCircle2 className="w-3 h-3" /> : null}
+                  {s.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Card row — one card per DISPUTED leg. Excluded legs
+              (`includedInDispute === false`) are filtered out so the
+              card count matches the resolved-N-of-M counter and the
+              "what feeds the AI prompt" mental model. */}
+          {rides.length > 0 && (
+            <div
+              className="grid gap-2"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+              data-testid="gauntlet-hero-cards"
+            >
+              {rides.map((r, i) => {
+                const sub = resolvedIndex.subStatusOf(r);
+                const resolved = resolvedIndex.isLegResolved(r);
+                const subTone =
+                  sub === "ready"
+                    ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300"
+                    : sub === "dropped" || sub === "excluded"
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                      : "bg-muted text-muted-foreground";
+                return (
+                  <div
+                    key={r.id}
+                    className="rounded-md border border-border bg-background p-2 flex flex-col gap-1.5"
+                    data-testid={`gauntlet-hero-card-${r.id}`}
+                    data-resolved={resolved ? "true" : "false"}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Leg {i + 1}
+                      </span>
+                      <RefNumber value={r.confNumber} variant="inline" />
+                      {resolved && (
+                        <CheckCircle2 className="w-3 h-3 ml-auto text-green-700 dark:text-green-400" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.date ? formatDateTime(r.date) : "—"}
+                      {r.claimAmount != null && <> · {formatCurrency(r.claimAmount)}</>}
+                    </div>
+                    {r.errorTypeName && (
+                      <div className="text-[11px] text-foreground truncate" title={r.errorTypeName}>
+                        {r.errorTypeName}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1 mt-auto">
+                      <span className={"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium " + subTone}>
+                        {sub}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Resolved counter + edit tracker */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span data-testid="gauntlet-hero-resolved-counter" className="text-muted-foreground">
+              Resolved{" "}
+              <span className="font-semibold text-foreground">
+                {rides.length - unresolvedRides.length}
+              </span>{" "}
+              of <span className="font-semibold text-foreground">{rides.length}</span>
+            </span>
+            <span aria-hidden className="text-muted-foreground">·</span>
+            <span
+              data-testid="gauntlet-hero-edit-tracker"
+              data-tone={editTracker.tone}
+              className={
+                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium " +
+                (editTracker.tone === "amber"
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  : editTracker.tone === "blue"
+                    ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                    : "bg-muted text-muted-foreground")
+              }
+            >
+              <FileText className="w-3 h-3" />
+              {editTracker.label}
+            </span>
+            {group?.draftEditedAt && (
+              <span className="text-[11px] text-muted-foreground">
+                Last edit {formatDateTime(group.draftEditedAt)}
+              </span>
+            )}
+          </div>
+
+          {/* AI baseline preview — read-only, subject only. The full
+              HTML body is rendered (and editable) in the existing
+              "Review & edit" step below; we deliberately do NOT
+              re-render `aiBaselineDescriptionHtml` here to avoid an
+              `dangerouslySetInnerHTML` sink in operator UI. */}
+          {baselinePresent && (
+            <div
+              className="rounded-md border border-border bg-muted/30 p-2 space-y-1"
+              data-testid="gauntlet-hero-baseline-preview"
+            >
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  AI baseline
+                </span>
+              </div>
+              {group?.aiBaselineSubject ? (
+                <p className="text-xs font-semibold">{group.aiBaselineSubject}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">
+                  Body drafted — review below.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
         <div
           className="rounded-md border border-blue-200 bg-blue-50/60 dark:bg-blue-950/30 px-3 py-2 flex items-center gap-2 flex-wrap"
           data-testid="gauntlet-claim-id-strip"
