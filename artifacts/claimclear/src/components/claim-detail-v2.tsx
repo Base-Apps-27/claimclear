@@ -734,7 +734,18 @@ export function ClaimDetailV2({
                   {claim.holdReason ? (
                     <>
                       <span>·</span>
-                      <span data-testid="leg-header-hold-meta">
+                      <span
+                        data-testid="leg-header-hold-meta"
+                        title={
+                          claim.holdPlacedAt
+                            ? `Placed ${formatDateTime(claim.holdPlacedAt)}${
+                                claim.holdPendingFrom
+                                  ? ` · pending from ${claim.holdPendingFrom}`
+                                  : ""
+                              }`
+                            : undefined
+                        }
+                      >
                         On hold:{" "}
                         <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
                           {claim.holdReason}

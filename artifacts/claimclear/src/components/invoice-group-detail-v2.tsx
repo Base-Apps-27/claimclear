@@ -752,7 +752,25 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   {group.holdReason ? (
                     <>
                       {" · "}
-                      <span data-testid="group-header-hold-meta">
+                      <span
+                        data-testid="group-header-hold-meta"
+                        title={
+                          (group as { holdPlacedAt?: string | null }).holdPlacedAt
+                            ? `Placed ${formatDateTime(
+                                (group as { holdPlacedAt?: string | null })
+                                  .holdPlacedAt as string,
+                              )}${
+                                (group as { holdPendingFrom?: string | null })
+                                  .holdPendingFrom
+                                  ? ` · pending from ${
+                                      (group as { holdPendingFrom?: string | null })
+                                        .holdPendingFrom
+                                    }`
+                                  : ""
+                              }`
+                            : undefined
+                        }
+                      >
                         On hold:{" "}
                         <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
                           {group.holdReason}
