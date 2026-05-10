@@ -114,6 +114,18 @@ export const GROUP_ACTION_META: Record<string, ActionMeta> = {
   group_denied: meta("group_denied", "group", XCircle, "text-rose-600", "status"),
   closure_addressed: meta("closure_addressed", "group", CheckCircle2, "text-emerald-600", "status"),
   closure_review_updated: meta("closure_review_updated", "group", FileEdit, "text-muted-foreground", "other"),
+  // Task #659 — distinct activity label for group-level "Close as
+  // non-issue" so the activity feed renders an explicit "Marked
+  // non-issue" entry separate from the generic outcome change. Label
+  // is hard-coded here (not via @workspace/vocab) because the vocab
+  // package is on this task's blocklist; the action key itself is
+  // emitted by the server alongside the standard outcome transition.
+  closure_marked_non_issue: {
+    label: "Marked non-issue",
+    icon: CheckCircle2,
+    iconClass: "text-emerald-600",
+    category: "status",
+  },
   portal_understanding_preflight: meta("portal_understanding_preflight", "group", BrainCircuit, "text-violet-600", "draft"),
   portal_draft_created: meta("portal_draft_created", "group", FilePlus2, "text-blue-600", "draft"),
   portal_draft_edited: meta("portal_draft_edited", "group", FileEdit, "text-violet-600", "draft"),

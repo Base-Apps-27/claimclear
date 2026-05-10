@@ -87,7 +87,6 @@ import {
   getResponseTypeLabel,
 } from "@/components/queue-response-review-panel";
 import { ActionRow } from "@/components/actions-rail";
-import { InvoiceGroupActionSlot } from "@/components/invoice-group-action-slot";
 import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
 import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
 import {
@@ -903,25 +902,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                       <DropdownMenuLabel data-testid="transitions-section-phase">
                         Phase actions
                       </DropdownMenuLabel>
-                      {showSubmit && (
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            const el = document.querySelector(
-                              '[data-testid="generate-preview"]',
-                            );
-                            if (el && "scrollIntoView" in el) {
-                              (el as HTMLElement).scrollIntoView({
-                                behavior: "smooth",
-                                block: "center",
-                              });
-                              (el as HTMLElement).focus?.();
-                            }
-                          }}
-                          data-testid="header-phase-submit"
-                        >
-                          Submit dispute (open gauntlet)
-                        </DropdownMenuItem>
-                      )}
+                      {/* Task #659 — submission no longer happens on this
+                          page. Operators reach the gauntlet from the queue
+                          via the dossier's "Process this invoice in the
+                          queue →" CTA. The Submit dispute dropdown item
+                          and gauntlet card are intentionally removed. */}
                       {showMarkMas && (
                         <DropdownMenuItem
                           disabled={markMasEligibleMutation.isPending}
@@ -970,7 +955,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           Clear hold
                         </DropdownMenuItem>
                       )}
-                      {!showSubmit && !showMarkMas && !showHold && !showClearHold && (
+                      {!showMarkMas && !showHold && !showClearHold && (
                         <DropdownMenuItem
                           disabled
                           data-testid="header-phase-empty"
@@ -1351,31 +1336,12 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               )}
             </CcCard>
 
-            {/* Submission preview & gauntlet (preserves real submit/readback/preview UX).
-                Only render while the group is still in the pre-submit window
-                (New / Needs Evidence) — once it's past pre-submit the surface
-                has nothing actionable, so we hide the whole card per Task #289. */}
-            {isPreSubmit &&
-              deriveInvoiceDisputeOutlook(detail, detail.rides ?? [])
-                .outlook !== "nothing_to_do" && (
-                // Task #476: when the outlook is `nothing_to_do` the slot
-                // renders null — we also drop the wrapper card so the
-                // submission section disappears entirely instead of
-                // leaving an empty "Submission preview" container.
-                <div data-tour="group-gauntlet">
-                  <CcCard
-                    title="Submission preview"
-                    icon={<Sparkles className="w-3.5 h-3.5" />}
-                    testId="submission-preview-card"
-                  >
-                    <InvoiceGroupActionSlot
-                      group={detail}
-                      groupId={groupId}
-                      bare
-                    />
-                  </CcCard>
-                </div>
-              )}
+            {/* Task #659 — submission preview / draft / Mark Reviewed /
+                Submit live in the queue right pane only. The dossier
+                surfaces a read-only Submission summary card and a
+                "Process this invoice in the queue →" CTA above this V2
+                surface; the operator-facing submission gauntlet has
+                been removed from this page. */}
 
             {/* Communication thread */}
             <div id="invoice-thread" />

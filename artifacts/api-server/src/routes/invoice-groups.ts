@@ -1713,6 +1713,25 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         closureReason: effectiveReason ?? closureReason,
         closure,
       });
+      // Task #659 — emit a distinct `closure_marked_non_issue` audit
+      // row alongside the standard `group_status_and_outcome_changed`
+      // entry whenever this transition was the new "Close as non-issue"
+      // operator override. The outcome row carries the lifecycle
+      // change; this row gives the activity feed a dedicated label so
+      // operators can scan for offline-resolved closures without
+      // disambiguating from generic Resolved/Withdrawn rows.
+      if (outcome === "Non-Issue" && (effectiveReason ?? closureReason) === "non_issue") {
+        await db.insert(auditLogsTable).values({
+          invoiceGroupId: id,
+          action: "closure_marked_non_issue",
+          details: "Closed as non-issue (resolved offline)",
+          metadata: {
+            closureNarrative: closure?.closureNarrative ?? null,
+            closureCategory: closure?.closureCategory ?? null,
+          },
+          ...actorFromReq(req),
+        });
+      }
       res.json(result.group);
     } else {
       const result = await transitionGroupOutcome({
