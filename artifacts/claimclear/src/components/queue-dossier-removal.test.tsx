@@ -1,4 +1,9 @@
-// V3 — Removal proof for the chip-drawer model (Task #657).
+// Task #675 — proves the #657 two-column dossier surface is REMOVED.
+//
+// The dossier framing (queue-dossier-root + left/right columns + per-
+// section/card testids) was retired when we restored the pre-#657
+// right-edge ChipDrawerOverlay. This test guards against any
+// reintroduction.
 
 import { test, mock } from "node:test";
 import { strict as assert } from "node:assert";
@@ -21,7 +26,8 @@ function stub(testid: string) {
 
 mock.module("wouter", {
   namedExports: {
-    Link: ({ href, children }: any) => React.createElement("a", { href }, children),
+    Link: ({ href, children }: any) =>
+      React.createElement("a", { href }, children),
   },
 });
 
@@ -49,15 +55,18 @@ mock.module("@workspace/api-client-react", {
     useListClaimNotes: () => ({ data: [], isLoading: false }),
     useCreateClaimNote: inertMutation,
     useDeleteNote: inertMutation,
+    useGetInvoiceGroupEmailThread: () => ({ data: { conversations: [] }, isLoading: false }),
+    useReplyToInvoiceGroupEmailConversation: inertMutation,
+    useCreatePortalSubmission: inertMutation,
+    useExcludeLeg: inertMutation,
     useMarkLegDuplicate: inertMutation,
-    useRecordLegVerdict: inertMutation,
-    useClearLegVerdictDraft: inertMutation,
-    useCompleteLegMasAction: inertMutation,
     getGetClaimQueryKey: (id: number) => ["getClaim", id],
     getGetInvoiceGroupValidTransitionsQueryKey: (id: number) => ["txn", id],
     getListClaimNotesQueryKey: (id: number) => ["notes", id],
+    getGetInvoiceGroupEmailThreadQueryKey: (id: number) => ["thread", id],
     getGetInvoiceGroupQueryKey: (id: number) => ["group", id],
     getListInvoiceGroupsQueryKey: () => ["groups"],
+    ApiError: class ApiError extends Error {},
   },
 });
 
@@ -75,6 +84,10 @@ mock.module("@workspace/leg-state", {
     buildLegResolvedIndex: () => ({ isLegResolved: () => false }),
     deriveLegSubStatus: () => "ready",
   },
+});
+
+mock.module("@workspace/vocab", {
+  namedExports: { legSubStatusLabel: (s: string) => s },
 });
 
 mock.module("@/lib/sop-sibling-eligibility", {
@@ -102,6 +115,7 @@ mock.module("@/lib/whats-next-derivation", {
       survivors: [],
       dropped: [],
     }),
+    derivePreviewGateState: () => ({ ok: true, blockers: [] }),
   },
 });
 
@@ -154,8 +168,8 @@ mock.module("@/components/invoice-group-action-slot", {
   namedExports: { InvoiceGroupActionSlot: stub("stub-action-slot") },
 });
 
-mock.module("@/components/per-leg-verdict-picker", {
-  namedExports: { PerLegVerdictPicker: stub("stub-picker") },
+mock.module("@/components/invoice-group-submission-gauntlet", {
+  namedExports: { InvoiceGroupSubmissionGauntlet: stub("stub-gauntlet") },
 });
 
 mock.module("@/components/activity-feed", {
@@ -183,7 +197,8 @@ mock.module("@/components/hold-reason-select", {
 
 mock.module("@/components/ref-number", {
   namedExports: {
-    RefNumber: ({ value }: any) => React.createElement("span", null, value ?? ""),
+    RefNumber: ({ value }: any) =>
+      React.createElement("span", null, value ?? ""),
   },
 });
 
@@ -230,36 +245,37 @@ const FIXTURE_DETAIL = {
   payorEmailBounceState: null,
 };
 
-const BLOCKLIST_IDS = [
-  "chip-drawer-overlay",
-  "chip-drawer-evidence",
-  "chip-drawer-notes",
-  "chip-drawer-comms",
-  "chip-drawer-activity",
-  "chip-drawer-reclassify",
-  "chip-drawer-backdrop",
-  "chip-drawer-close",
-  "chip-drawer-leg-tabs",
-  "chip-drawer-section-close",
-  "mini-chip-strip",
-  "mini-chip-evidence",
-  "mini-chip-notes",
-  "mini-chip-comms",
-  "mini-chip-activity",
+const REMOVED_DOSSIER_IDS = [
+  "queue-dossier-root",
+  "queue-dossier-left",
+  "queue-dossier-right",
+  "queue-dossier-section-investigation-walk",
+  "queue-dossier-section-evidence",
+  "queue-dossier-section-internal-notes",
+  "queue-dossier-card-parent-invoice",
+  "queue-dossier-card-payor-verdict",
+  "queue-dossier-card-mas-action",
+  "queue-dossier-card-activity",
+  "queue-dossier-card-group-next-step",
+  "queue-dossier-hero-gauntlet",
 ];
 
-test("V3 chip-drawer model is fully removed from the queue right pane", () => {
+test("Task #675 — the #657 dossier surface is fully removed", () => {
   currentDetail = FIXTURE_DETAIL;
   currentClaim = FIXTURE_DETAIL.rides[0];
   currentParams = new URLSearchParams("");
   const html = renderToStaticMarkup(
     React.createElement(InlineGroupWorkspaceMini, { groupId: FIXTURE_DETAIL.id }),
   );
-  assert.match(html, /data-testid="queue-dossier-root"/);
-  for (const id of BLOCKLIST_IDS) {
+  // Pre-#657 wrapper testid is back.
+  assert.match(html, /data-testid="inline-group-workspace-mini"/);
+  // Restored chip strip is present.
+  assert.match(html, /data-testid="mini-chip-strip"/);
+  // None of the deleted dossier ids reappear.
+  for (const id of REMOVED_DOSSIER_IDS) {
     assert.ok(
       !html.includes(`data-testid="${id}"`),
-      `expected chip/drawer testid ${id} to be ABSENT after refactor`,
+      `expected dossier testid ${id} to be ABSENT after restore`,
     );
   }
 });

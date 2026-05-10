@@ -1331,23 +1331,6 @@ export function SopAdvancePlayer(props: Props) {
         </CardContent>
       </Card>
 
-      {/*
-        Per-leg unique-context editor. Rendered inline on EVERY step of
-        the walk so operators can capture context as they go. The same
-        component also renders on the inline "Ready" surface above when
-        the leg lands at an include outcome, so context can still be
-        added/edited post-terminal. Preview mode skips it — there is no
-        leg.id to bind it to.
-      */}
-      {!isPreview && (
-        <PerLegContextEditor
-          legId={leg.id}
-          perLegContext={leg.perLegContext ?? null}
-          disabled={disabled}
-          disabledReason={disabledReason}
-        />
-      )}
-
       {!isPreview && (
         <div
           className="flex items-center justify-between gap-2 pt-1"

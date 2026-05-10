@@ -1,10 +1,16 @@
-// V1 + V2 — Queue dossier render coverage (Task #657).
+// Task #675 — restored chip-drawer surface render coverage.
 //
-// Mounts `InlineGroupWorkspaceMini` against fixtures that exercise the
-// hero-priority ladder and asserts the test-id allowlist contract from
-// the task spec. V2 (hero parity) is folded in: for the
-// `nothing_to_do` and `reattest_only` fixtures we assert the per-leg
-// Investigation walk card AND the Group-next-step card both render.
+// After restoring the pre-#657 right-edge ChipDrawerOverlay + chip
+// strip, the queue right pane is no longer the two-column dossier.
+// This test pins the new contract:
+//   - The pre-#657 wrapper (`inline-group-workspace-mini`) renders.
+//   - The chip strip and its four chips render on any walkable hero.
+//   - The WalkTranscriptSection (`queue-dossier-section-walk-transcript`)
+//     stays inline so operators can backtrack without opening the drawer.
+//   - The deleted dossier ids (left/right columns, evidence/notes
+//     sections, parent-invoice / payor-verdict / mas-action / activity /
+//     group-next-step / hero-gauntlet cards) are absent.
+//   - Submitted / withdrawn groups suppress the chip strip + transcript.
 
 import { test, mock } from "node:test";
 import { strict as assert } from "node:assert";
@@ -15,8 +21,6 @@ const { renderToStaticMarkup } = await import("react-dom/server");
 let currentDetail: any = null;
 let currentClaim: any = null;
 let currentParams = new URLSearchParams("");
-let currentOutlook: "has_disputable" | "reattest_only" | "nothing_to_do" =
-  "has_disputable";
 
 function stub(testid: string) {
   return (props: any) =>
@@ -74,15 +78,18 @@ mock.module("@workspace/api-client-react", {
     useListClaimNotes: () => ({ data: [], isLoading: false }),
     useCreateClaimNote: inertMutation,
     useDeleteNote: inertMutation,
+    useGetInvoiceGroupEmailThread: () => ({ data: { conversations: [] }, isLoading: false }),
+    useReplyToInvoiceGroupEmailConversation: inertMutation,
+    useCreatePortalSubmission: inertMutation,
+    useExcludeLeg: inertMutation,
     useMarkLegDuplicate: inertMutation,
-    useRecordLegVerdict: inertMutation,
-    useClearLegVerdictDraft: inertMutation,
-    useCompleteLegMasAction: inertMutation,
     getGetClaimQueryKey: (id: number) => ["getClaim", id],
     getGetInvoiceGroupValidTransitionsQueryKey: (id: number) => ["txn", id],
     getListClaimNotesQueryKey: (id: number) => ["notes", id],
+    getGetInvoiceGroupEmailThreadQueryKey: (id: number) => ["thread", id],
     getGetInvoiceGroupQueryKey: (id: number) => ["group", id],
     getListInvoiceGroupsQueryKey: () => ["groups"],
+    ApiError: class ApiError extends Error {},
   },
 });
 
@@ -111,6 +118,10 @@ mock.module("@workspace/leg-state", {
   },
 });
 
+mock.module("@workspace/vocab", {
+  namedExports: { legSubStatusLabel: (s: string) => s },
+});
+
 mock.module("@/lib/sop-sibling-eligibility", {
   namedExports: { siblingPromptEligibilityFor: () => null },
 });
@@ -132,10 +143,11 @@ mock.module("@/lib/use-url-params", {
 mock.module("@/lib/whats-next-derivation", {
   namedExports: {
     deriveInvoiceDisputeOutlook: () => ({
-      outlook: currentOutlook,
+      outlook: "has_disputable",
       survivors: [],
       dropped: [],
     }),
+    derivePreviewGateState: () => ({ ok: true, blockers: [] }),
   },
 });
 
@@ -206,8 +218,10 @@ mock.module("@/components/invoice-group-action-slot", {
   namedExports: { InvoiceGroupActionSlot: stub("stub-group-action-slot") },
 });
 
-mock.module("@/components/per-leg-verdict-picker", {
-  namedExports: { PerLegVerdictPicker: stub("stub-per-leg-verdict-picker") },
+mock.module("@/components/invoice-group-submission-gauntlet", {
+  namedExports: {
+    InvoiceGroupSubmissionGauntlet: stub("stub-gauntlet"),
+  },
 });
 
 mock.module("@/components/activity-feed", {
@@ -235,7 +249,8 @@ mock.module("@/components/hold-reason-select", {
 
 mock.module("@/components/ref-number", {
   namedExports: {
-    RefNumber: ({ value }: any) => React.createElement("span", null, value ?? ""),
+    RefNumber: ({ value }: any) =>
+      React.createElement("span", null, value ?? ""),
   },
 });
 
@@ -243,16 +258,10 @@ const { InlineGroupWorkspaceMini } = await import("./inline-group-workspace-mini
 
 void React;
 
-function render(
-  detail: any,
-  claim?: any,
-  qs = "",
-  outlook: typeof currentOutlook = "has_disputable",
-): string {
+function render(detail: any, claim?: any, qs = ""): string {
   currentDetail = detail;
   currentClaim = claim ?? detail.rides?.[0] ?? null;
   currentParams = new URLSearchParams(qs);
-  currentOutlook = outlook;
   return renderToStaticMarkup(
     React.createElement(InlineGroupWorkspaceMini, { groupId: detail.id }),
   );
@@ -303,11 +312,10 @@ function group(over: any = {}): any {
   };
 }
 
-const REQUIRED_DOSSIER_IDS = [
+const REMOVED_DOSSIER_IDS = [
   "queue-dossier-root",
   "queue-dossier-left",
   "queue-dossier-right",
-  "queue-dossier-section-walk-transcript",
   "queue-dossier-section-investigation-walk",
   "queue-dossier-section-evidence",
   "queue-dossier-section-internal-notes",
@@ -315,20 +323,8 @@ const REQUIRED_DOSSIER_IDS = [
   "queue-dossier-card-payor-verdict",
   "queue-dossier-card-mas-action",
   "queue-dossier-card-activity",
-];
-
-const BLOCKLIST_IDS = [
-  "chip-drawer-overlay",
-  "chip-drawer-evidence",
-  "chip-drawer-notes",
-  "chip-drawer-comms",
-  "chip-drawer-activity",
-  "chip-drawer-reclassify",
-  "mini-chip-strip",
-  "mini-chip-evidence",
-  "mini-chip-notes",
-  "mini-chip-comms",
-  "mini-chip-activity",
+  "queue-dossier-card-group-next-step",
+  "queue-dossier-hero-gauntlet",
 ];
 
 function assertHas(html: string, id: string, fixture: string) {
@@ -344,20 +340,13 @@ function assertNo(html: string, id: string, fixture: string) {
   );
 }
 
-type Outlook = "has_disputable" | "reattest_only" | "nothing_to_do";
-type Fixture = {
-  name: string;
-  detail: any;
-  expectDossier: boolean;
-  outlook: Outlook;
-};
+type Fixture = { name: string; detail: any; expectChips: boolean };
 
 const FIXTURES: Fixture[] = [
   {
     name: "a:walkable-no-progress",
     detail: group({ rides: [leg({ id: 1 })] }),
-    expectDossier: true,
-    outlook: "has_disputable",
+    expectChips: true,
   },
   {
     name: "b:walkable-mid-walk",
@@ -370,43 +359,19 @@ const FIXTURES: Fixture[] = [
         }),
       ],
     }),
-    expectDossier: true,
-    outlook: "has_disputable",
+    expectChips: true,
   },
   {
     name: "c:terminal-cannot-dispute",
     detail: group({
       rides: [leg({ id: 3, sopOutcome: "cannot_dispute", sopNodeId: "n3" })],
     }),
-    expectDossier: true,
-    outlook: "nothing_to_do",
-  },
-  {
-    name: "d:single-leg-nothing-to-do",
-    detail: group({
-      macroPhase: "pre-submit",
-      rides: [leg({ id: 4, sopOutcome: "cannot_dispute", sopNodeId: "n3" })],
-    }),
-    expectDossier: true,
-    outlook: "nothing_to_do",
-  },
-  {
-    name: "e:multi-leg-reattest-only",
-    detail: group({
-      macroPhase: "response-pending",
-      rides: [
-        leg({ id: 5, sopOutcome: "cannot_dispute" }),
-        leg({ id: 6, sopOutcome: null, sopNodeId: "n2" }),
-      ],
-    }),
-    expectDossier: true,
-    outlook: "reattest_only",
+    expectChips: true,
   },
   {
     name: "f:submitted",
     detail: group({ phase: "submitted", macroPhase: "submitted" }),
-    expectDossier: false,
-    outlook: "has_disputable",
+    expectChips: false,
   },
   {
     name: "g:withdrawn",
@@ -415,97 +380,44 @@ const FIXTURES: Fixture[] = [
       macroPhase: "closed",
       closureReason: "cannot_dispute",
     }),
-    expectDossier: false,
-    outlook: "has_disputable",
+    expectChips: false,
   },
 ];
 
 for (const fx of FIXTURES) {
-  test(`V1 dossier presence — ${fx.name}`, () => {
-    const html = render(fx.detail, undefined, "", fx.outlook);
-    assertHas(html, "queue-dossier-root", fx.name);
-    if (fx.expectDossier) {
-      for (const id of REQUIRED_DOSSIER_IDS) assertHas(html, id, fx.name);
-      // Outlook-specific placement: gauntlet hero vs demoted card.
-      if (fx.outlook === "has_disputable") {
-        assertHas(html, "queue-dossier-hero-gauntlet", fx.name);
-        assertNo(html, "queue-dossier-card-group-next-step", fx.name);
-      } else {
-        assertNo(html, "queue-dossier-hero-gauntlet", fx.name);
-        assertHas(html, "queue-dossier-card-group-next-step", fx.name);
-      }
+  test(`restored chip-strip surface — ${fx.name}`, () => {
+    const html = render(fx.detail);
+    assertHas(html, "inline-group-workspace-mini", fx.name);
+    if (fx.expectChips) {
+      assertHas(html, "queue-dossier-section-walk-transcript", fx.name);
+      assertHas(html, "mini-chip-strip", fx.name);
+      assertHas(html, "mini-chip-evidence", fx.name);
+      assertHas(html, "mini-chip-notes", fx.name);
+      assertHas(html, "mini-chip-comms", fx.name);
+      assertHas(html, "mini-chip-activity", fx.name);
+      assertHas(html, "mini-place-leg-hold", fx.name);
     } else {
-      assertNo(html, "queue-dossier-left", fx.name);
-      assertNo(html, "queue-dossier-right", fx.name);
-      assertNo(html, "queue-dossier-hero-gauntlet", fx.name);
-      assertNo(html, "queue-dossier-card-group-next-step", fx.name);
+      assertNo(html, "queue-dossier-section-walk-transcript", fx.name);
+      assertNo(html, "mini-chip-strip", fx.name);
     }
-    for (const id of BLOCKLIST_IDS) assertNo(html, id, fx.name);
+    for (const id of REMOVED_DOSSIER_IDS) assertNo(html, id, fx.name);
   });
 }
 
-function assertSopPlayerInsideInvestigationWalk(html: string, fixture: string) {
-  const startIdx = html.indexOf(
-    'data-testid="queue-dossier-section-investigation-walk"',
-  );
-  assert.ok(
-    startIdx >= 0,
-    `[${fixture}] queue-dossier-section-investigation-walk not found`,
-  );
-  // The walk section is the last left-column section before the right
-  // column. Slice from this section to the next dossier-section/card
-  // boundary and assert the SopAdvancePlayer stub renders inside.
-  const tail = html.slice(startIdx);
-  const nextBoundary = tail
-    .slice(1)
-    .search(/data-testid="queue-dossier-(section|card|right)-/);
-  const window = nextBoundary >= 0 ? tail.slice(0, nextBoundary + 1) : tail;
-  assert.ok(
-    window.includes('data-testid="stub-sop-advance-player"'),
-    `[${fixture}] SopAdvancePlayer must mount inside the investigation-walk section so the per-leg walk stays reachable`,
-  );
-}
-
-test("V2 hero parity — nothing_to_do still shows the per-leg walk and demotes the CTA", () => {
-  const fx = FIXTURES.find((f) => f.name === "d:single-leg-nothing-to-do")!;
-  const html = render(fx.detail, undefined, "", fx.outlook);
-  assertHas(html, "queue-dossier-section-investigation-walk", fx.name);
-  assertHas(html, "queue-dossier-card-group-next-step", fx.name);
-  assertNo(html, "queue-dossier-hero-gauntlet", fx.name);
-  assertSopPlayerInsideInvestigationWalk(html, fx.name);
-  assert.ok(
-    html.includes('data-testid="stub-group-action-slot"'),
-    "group-next-step card should mount InvoiceGroupActionSlot",
-  );
-});
-
-test("V2 hero parity — reattest_only still shows the per-leg walk and demotes the CTA", () => {
-  const fx = FIXTURES.find((f) => f.name === "e:multi-leg-reattest-only")!;
-  const html = render(fx.detail, undefined, "", fx.outlook);
-  assertHas(html, "queue-dossier-section-investigation-walk", fx.name);
-  assertHas(html, "queue-dossier-card-group-next-step", fx.name);
-  assertNo(html, "queue-dossier-hero-gauntlet", fx.name);
-  assertSopPlayerInsideInvestigationWalk(html, fx.name);
-  assert.ok(
-    html.includes('data-testid="stub-group-action-slot"'),
-    "group-next-step card should mount InvoiceGroupActionSlot",
-  );
-});
-
-test("V2 anti-drift — has_disputable keeps the gauntlet in the hero slot", () => {
+test("Hold-leg button uses chip-peer pill styling, not ghost button", () => {
   const detail = group({ rides: [leg({ id: 7 })] });
-  const html = render(detail, undefined, "", "has_disputable");
-  assertHas(html, "queue-dossier-hero-gauntlet", "has_disputable");
-  assertNo(html, "queue-dossier-card-group-next-step", "has_disputable");
+  const html = render(detail);
+  const idx = html.indexOf('data-testid="mini-place-leg-hold"');
+  assert.ok(idx >= 0, "mini-place-leg-hold must render");
+  // Walk back to the opening tag and verify the cc-pill cc-pill-amber
+  // chip-peer classes are present on the same element.
+  const tagStart = html.lastIndexOf("<", idx);
+  const tagEnd = html.indexOf(">", idx);
+  const tag = html.slice(tagStart, tagEnd + 1);
   assert.ok(
-    html.includes('data-testid="stub-group-action-slot"'),
-    "hero gauntlet should mount InvoiceGroupActionSlot",
+    tag.includes("cc-pill") &&
+      tag.includes("cc-pill-amber") &&
+      tag.includes("chip-peer"),
+    `Hold-leg button must carry cc-pill cc-pill-amber chip-peer classes; got: ${tag}`,
   );
-});
-
-test("V1 hero attribute exposes the active leg for the URL contract", () => {
-  const detail = group({ rides: [leg({ id: 42 })] });
-  const html = render(detail, undefined, "leg=42");
-  assert.match(html, /data-active-leg="42"/);
-  assert.match(html, /data-hero="(sop|classify|resolved)"/);
 });
