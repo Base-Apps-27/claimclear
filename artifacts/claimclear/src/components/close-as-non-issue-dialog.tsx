@@ -29,6 +29,7 @@ const NOTE_MIN = CLOSE_AS_NON_ISSUE_NOTE_MIN;
 // construct the body through this helper to stay in lockstep.
 export function buildCloseAsNonIssuePayload(narrative: string) {
   return {
+    // vocab-allow-next-line — API enum value (see lib/vocab/src/outcome.ts), not a UI label.
     outcome: "Non-Issue" as const,
     closureReason: "non_issue" as const,
     closureCategory: "other",

@@ -541,6 +541,7 @@ test("V3 — close-as-non-issue: confirm fires real mutation, invalidates queue,
   );
   const call = updateOutcomeCalls[0]!;
   assert.equal(call.id, 42);
+  // vocab-allow-next-line — asserting the API enum value sent in the payload, not a UI label.
   assert.equal(call.data.outcome, "Non-Issue");
   assert.equal(call.data.closureReason, "non_issue");
   assert.ok(
