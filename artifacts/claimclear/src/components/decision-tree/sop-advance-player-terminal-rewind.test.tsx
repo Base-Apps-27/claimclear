@@ -1,20 +1,9 @@
-// Task #684 (R2 + R5 polish) — terminal-screen per-step rewind test.
-//
-// Mounts SopAdvancePlayer in LIVE mode against a leg that has reached
-// a closed terminal verdict (`cannot_dispute`) with three recorded
-// answers. Asserts that:
-//
-//   1. The R2 ClosedTerminalRewindCard renders with the verb hierarchy
-//      (Change my answer primary, Restart walk secondary, Reclassify
-//      footnote, "both keep the classification" helper).
-//   2. Each Walked-answers row exposes a `sop-terminal-rewind-to-{nodeId}`
-//      button per R5 — clicking one calls `openRewindDialog("jump", nodeId)`
-//      which mounts the RewindConfirmDialog with the right `nodeId`
-//      sent to the impact-preview endpoint.
-//
-// The existing rewind plumbing tests (sop-advance-player-rewind.test.tsx)
-// already cover the breadcrumb-chip path + the 409→heavy escalation;
-// this test pins the missing terminal-card surface.
+// Task #684 (graduation of mockups #682b R2 + R5) — terminal-screen
+// per-step rewind test. Pins the R2 verb hierarchy on the closed
+// terminal card and the R5 per-step "Rewind to here" wiring through
+// `openRewindDialog("jump", nodeId)`. Companion to
+// `sop-advance-player-rewind.test.tsx` which covers the breadcrumb-chip
+// path + the 409→heavy escalation.
 
 import "./terminals/_setup-jsdom.ts";
 
