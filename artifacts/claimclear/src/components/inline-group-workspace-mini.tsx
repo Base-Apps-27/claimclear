@@ -353,7 +353,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   let hero: HeroState;
   if (withdrawn) hero = "withdrawn";
   else if (submitted) hero = "submitted";
-  // Task #686 (V3HoldExit) — manual holds (group-scope or active-leg
+  // Task #682d (V3HoldExit) — manual holds (group-scope or active-leg
   // scope) own the hero region. They short-circuit the gauntlet /
   // walk routing because the operator can't progress while a hold is
   // active. SOP-terminal holds (sopOutcome === "hold") still flow
@@ -715,7 +715,7 @@ function GroupSummaryHeader({
 }
 
 // ─── Hold hero ──────────────────────────────────────────────────────
-// Task #686 (V3HoldExit) — graduates the V3HoldExit mockup into A as
+// Task #682d (V3HoldExit) — graduates the V3HoldExit mockup into A as
 // the canonical hold-exit surface. One component for both scopes:
 //
 //   scope === "leg"   → calls useRemoveLegHold({id: leg.id})
@@ -991,7 +991,7 @@ function SopHero({
   groupMacroPhase: string | null;
   walkStartedFor: number | null;
   onStartWalk: () => void;
-  /** Task #686 (V3LandingStartWalk) — escape hatches on the pre-walk
+  /** Task #682d (V3LandingStartWalk) — escape hatches on the pre-walk
    *  landing card. Reuse A's existing dialog mounts. */
   onOpenClassify: () => void;
   onOpenMarkDuplicate: () => void;
@@ -1097,7 +1097,7 @@ function SopHero({
 }
 
 // ─── V3 Landing — pre-walk "Start walk" hero ────────────────────────
-// Task #686 — graduates the V3LandingStartWalk mockup into A. Replaces
+// Task #682d — graduates the V3LandingStartWalk mockup into A. Replaces
 // the bare landing card SopHero used to render before the operator
 // clicks Start walk. Adds a status pill, a Change-classification chip,
 // the parent-group state line, and the three escape hatches that
@@ -1663,7 +1663,7 @@ function ChipStrip({
               Hold leg
             </button>
           )}
-          {/* Task #686 — release-hold moved to <HoldHero/> (hero === "hold").
+          {/* Task #682d — release-hold moved to <HoldHero/> (hero === "hold").
               ChipStrip keeps the place-hold button for the !held branch. */}
         </div>
       </div>
