@@ -101,13 +101,12 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
 });
 
 /**
- * GET /storage/objects/*
- *
- * Serve object entities from PRIVATE_OBJECT_DIR.
- * These are served from a separate path from /public-objects and can optionally
- * be protected with authentication or ACL checks based on the use case.
+ * GET /storage/objects/* — serve object entities from PRIVATE_OBJECT_DIR.
+ * Also mounted at the top-level /objects/* in app.ts so links built from
+ * the canonical evidence path (claim_evidence.imageUrl = `/objects/...`)
+ * resolve directly without each renderer having to prefix /api/storage.
  */
-router.get("/storage/objects/*path", async (req: Request, res: Response) => {
+export async function serveObjectEntity(req: Request, res: Response): Promise<void> {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
@@ -156,6 +155,8 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     req.log.error({ err: error }, "Error serving object");
     res.status(500).json({ error: "Failed to serve object" });
   }
-});
+}
+
+router.get("/storage/objects/*path", serveObjectEntity);
 
 export default router;

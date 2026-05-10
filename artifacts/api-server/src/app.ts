@@ -7,6 +7,8 @@ import { authMiddleware } from "./middlewares/authMiddleware";
 import { verifyBotToken } from "./lib/bot-token";
 import { SESSION_COOKIE } from "./lib/auth";
 import router from "./routes";
+import { serveObjectEntity } from "./routes/storage";
+import { requireAuth } from "./middlewares/requireAuth";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -114,6 +116,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(csrfOriginCheck);
 app.use(authMiddleware);
+
+// Top-level alias so links built from the canonical evidence path
+// (claim_evidence.imageUrl = `/objects/...`) reach the storage handler
+// instead of falling through to the SPA fallback. Task #656.
+app.get("/objects/*path", requireAuth, serveObjectEntity);
 
 app.use("/api", router);
 
