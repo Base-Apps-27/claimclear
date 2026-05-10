@@ -62,6 +62,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { RefNumber } from "@/components/ref-number";
 import { EvidenceFileList } from "@/components/evidence-file-list";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -428,6 +438,11 @@ function NotesPanel({
   const create = useCreateClaimNote();
   const remove = useDeleteNote();
   const [draft, setDraft] = useState("");
+  // Task #681 — delete-note now requires an explicit confirm step.
+  // Ported from the per-leg detail page (claim-detail-v2.tsx) so the
+  // canonical notes surface (this drawer) gates accidental deletes
+  // the same way the audit-only detail page used to.
+  const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
 
   function refreshNotes() {
     qc.invalidateQueries({ queryKey: getListClaimNotesQueryKey(leg.id) });
@@ -454,11 +469,14 @@ function NotesPanel({
     );
   }
 
-  function del(noteId: number) {
+  function confirmDelete() {
+    const noteId = pendingDeleteNoteId;
+    if (noteId == null || remove.isPending) return;
     remove.mutate(
       { id: noteId },
       {
         onSuccess: () => {
+          setPendingDeleteNoteId(null);
           refreshNotes();
           successToast({ title: "Done", description: "Note deleted" });
         },
@@ -505,7 +523,7 @@ function NotesPanel({
                 size="sm"
                 variant="ghost"
                 className="h-6 px-1.5"
-                onClick={() => del(n.id)}
+                onClick={() => setPendingDeleteNoteId(n.id)}
                 disabled={remove.isPending}
                 aria-label="Delete note"
                 data-testid={`mini-note-delete-${n.id}`}
@@ -538,6 +556,31 @@ function NotesPanel({
           </Button>
         </div>
       </div>
+
+      <AlertDialog
+        open={pendingDeleteNoteId != null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteNoteId(null); }}
+      >
+        <AlertDialogContent data-testid="mini-note-delete-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The note will be removed from the leg and an audit row
+              will record who deleted it. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="mini-note-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={remove.isPending}
+              data-testid="mini-note-delete-confirm-action"
+            >
+              {remove.isPending ? "Deleting…" : "Delete note"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

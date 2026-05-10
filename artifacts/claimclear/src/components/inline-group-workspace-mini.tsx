@@ -9,12 +9,24 @@ import {
   useRemoveLegHold,
   useListErrorTypes,
   useCreatePortalSubmission,
+  useClearLegVerdictDraft,
+  useUpdateInvoiceGroupStatus,
+  useGetInvoiceGroupValidTransitions,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetInvoiceGroupQueryKey,
   getListInvoiceGroupsQueryKey,
   ApiError,
 } from "@workspace/api-client-react";
+import { useAuth } from "@workspace/replit-auth-web";
+import { partitionTransitions } from "@/lib/transitions-partition";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type {
   ClaimResponse,
   ErrorTypeResponse,
@@ -483,11 +495,14 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         />
       )}
 
+      <AdminStatusOverride groupId={groupId} currentStatus={detail.status ?? null} />
+
       <PinnedFooter
         phase={phase}
         detail={detail}
         groupId={groupId}
         rides={rides}
+        activeLeg={activeLeg}
         onPlaceGroupHold={() => setHoldGroupOpen(true)}
         groupHoldActive={groupHoldActive}
         outlook={outlook}
@@ -1467,11 +1482,100 @@ function ReleaseLegHoldButton({ legId }: { legId: number }) {
   );
 }
 
+// Task #681 — admin-only status override dropdown ported from
+// `invoice-group-detail-v2.tsx`. The queue is now the sole place
+// operators process invoices, so the same backwards-transition
+// escape hatch admins relied on for stuck invoices has to live here
+// too. Shape mirrors the C-page dropdown: only the "Status overrides"
+// (admin-only, backwards) section is exposed — phase actions like
+// Submit / Hold / Mark MAS Eligible already have first-class CTAs in
+// the queue UI. `HideForClerk` keeps this hidden from clerks; the
+// inner `overrideStatuses` filter is empty for non-admins so even an
+// accidental render is a no-op.
+function AdminStatusOverride({
+  groupId,
+  currentStatus,
+}: {
+  groupId: number;
+  currentStatus: string | null;
+}) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: validTransitions } = useGetInvoiceGroupValidTransitions(groupId);
+  const updateStatusMutation = useUpdateInvoiceGroupStatus();
+
+  if (!isAdmin) return null;
+
+  const allowed = validTransitions?.validStatuses ?? [];
+  const { overrideStatuses } = partitionTransitions(currentStatus, allowed, isAdmin);
+  if (overrideStatuses.length === 0) return null;
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+    qc.invalidateQueries({ queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId) });
+    qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+  }
+
+  return (
+    <HideForClerk>
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              data-testid="mini-admin-status-override-trigger"
+            >
+              Admin: status override
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[220px]">
+            <DropdownMenuLabel>Status overrides (admin)</DropdownMenuLabel>
+            {overrideStatuses.map((s) => (
+              <DropdownMenuItem
+                key={s}
+                disabled={updateStatusMutation.isPending}
+                onSelect={() =>
+                  updateStatusMutation.mutate(
+                    { id: groupId, data: { status: s } },
+                    {
+                      onSuccess: () => {
+                        invalidate();
+                        successToast({
+                          title: "Done",
+                          description: `Status changed to ${s}.`,
+                        });
+                      },
+                      onError: (e: unknown) =>
+                        toast({
+                          title: "Status override failed",
+                          description: e instanceof Error ? e.message : String(e),
+                          variant: "destructive",
+                        }),
+                    },
+                  )
+                }
+                data-testid={`mini-admin-status-override-${s}`}
+              >
+                {s}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </HideForClerk>
+  );
+}
+
 function PinnedFooter({
   phase,
   detail,
   groupId,
   rides,
+  activeLeg,
   onPlaceGroupHold,
   groupHoldActive,
   outlook,
@@ -1494,6 +1598,7 @@ function PinnedFooter({
   detail: DetailGroup;
   groupId: number;
   rides: ClaimResponse[];
+  activeLeg: ClaimResponse | null;
   onPlaceGroupHold: () => void;
   groupHoldActive: boolean;
   outlook: ReturnType<typeof deriveInvoiceDisputeOutlook>["outlook"];
@@ -1515,8 +1620,42 @@ function PinnedFooter({
   const qc = useQueryClient();
   const { toast } = useToast();
   const submit = useCreatePortalSubmission();
+  const clearLegVerdictDraft = useClearLegVerdictDraft();
   const gate = derivePreviewGateState(detail, rides);
   const [serviceTokenExpired, setServiceTokenExpired] = useState(false);
+
+  // Task #681 — Clear recorded verdict (per-leg DELETE
+  // /claims/{id}/verdict/draft). Distinct from "Reopen walk" — that
+  // mutation reopens the walk to fix a verdict; this one zeroes the
+  // recorded draft on the active leg. Ported from claim-detail-v2's
+  // PerLegVerdictPicker.
+  const activeLegId = activeLeg?.id ?? null;
+  const hasVerdictDraft =
+    activeLeg != null &&
+    (activeLeg as ClaimResponse & { latestVerdictDraft?: unknown })
+      .latestVerdictDraft != null;
+  function onClearVerdictDraft() {
+    if (activeLegId == null) return;
+    clearLegVerdictDraft.mutate(
+      { id: activeLegId },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetClaimQueryKey(activeLegId) });
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          successToast({
+            title: "Done",
+            description: "Recorded verdict cleared on this leg.",
+          });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Clear verdict failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
 
   const stepReady = previewGenerated && draftReviewed;
   const payorBounced =
@@ -1717,6 +1856,22 @@ function PinnedFooter({
           >
             Reopen walk
           </Button>
+          {hasVerdictDraft && activeLegId != null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={onClearVerdictDraft}
+              disabled={clearLegVerdictDraft.isPending}
+              data-testid="mini-clear-verdict-draft"
+              title="Erase the recorded verdict draft on this leg so it can be re-recorded"
+            >
+              {clearLegVerdictDraft.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : null}
+              Clear recorded verdict
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={onSubmit}

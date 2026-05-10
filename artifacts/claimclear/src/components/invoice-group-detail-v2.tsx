@@ -32,7 +32,6 @@ import {
   useHoldInvoiceGroup,
   useRemoveInvoiceGroupHold,
   useCompleteGroupReattest,
-  useMarkInvoiceGroupMasEligible,
   useUpdateInvoiceGroupStatus,
   useCompleteLegMasAction,
   getListInvoiceGroupsQueryKey,
@@ -343,14 +342,15 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   const [pendingDeleteNoteId, setPendingDeleteNoteId] = useState<number | null>(null);
   const holdMutation = useHoldInvoiceGroup();
   const removeHoldMutation = useRemoveInvoiceGroupHold();
-  // Task #555 — phase action: Mark MAS Eligible. Status overrides
+  // Task #681 — the manual "Mark MAS Eligible" dropdown item was
+  // removed from this page. The hook itself stays in
+  // `pages/import.tsx` for the auto-import path. Status overrides
   // dropdown (admin-only) routes through useUpdateInvoiceGroupStatus.
   // Per-leg MAS-action completion (cancel) routes through
   // useCompleteLegMasAction; the group-level re-attest stamp routes
   // through useCompleteGroupReattest. Both feed the new
   // <MasActionChecklist> mounted on the right rail in place of the
   // old "go to RAR" pointer panel.
-  const markMasEligibleMutation = useMarkInvoiceGroupMasEligible();
   const updateStatusMutation = useUpdateInvoiceGroupStatus();
   const completeLegMasActionMutation = useCompleteLegMasAction();
   // MAS re-attest mutation — used by the admin "recorded offline"
@@ -881,7 +881,6 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 const allowed = validTransitions?.validStatuses ?? [];
                 const { phaseActionStatuses, overrideStatuses } =
                   partitionTransitions(group?.status, allowed, !!isAdmin);
-                const showMarkMas = phaseActionStatuses.includes("MAS Eligible");
                 const showHold = phaseActionStatuses.includes("On Hold");
                 const showClearHold =
                   group?.status === "On Hold" &&
@@ -906,37 +905,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           page. Operators reach the gauntlet from the queue
                           via the dossier's "Process this invoice in the
                           queue →" CTA. The Submit dispute dropdown item
-                          and gauntlet card are intentionally removed. */}
-                      {showMarkMas && (
-                        <DropdownMenuItem
-                          disabled={markMasEligibleMutation.isPending}
-                          onSelect={() =>
-                            markMasEligibleMutation.mutate(
-                              { id: groupId, data: {} },
-                              {
-                                onSuccess: () => {
-                                  invalidateGroup();
-                                  successToast({
-                                    title: "__VERB__",
-                                    description: "Group marked MAS Eligible.",
-                                    duration: 3000,
-                                  });
-                                },
-                                onError: (e: unknown) =>
-                                  toast({
-                                    title: "Could not mark MAS Eligible",
-                                    description:
-                                      e instanceof Error ? e.message : String(e),
-                                    variant: "destructive",
-                                  }),
-                              },
-                            )
-                          }
-                          data-testid="header-phase-mark-mas-eligible"
-                        >
-                          Mark MAS Eligible
-                        </DropdownMenuItem>
-                      )}
+                          and gauntlet card are intentionally removed.
+                          Task #681 — "Mark MAS Eligible" dropdown item
+                          also removed; the queue is the only operator
+                          surface that mutates state. The auto-import
+                          path in pages/import.tsx still uses the hook. */}
                       {showHold && (
                         <DropdownMenuItem
                           disabled={holdMutation.isPending}
@@ -955,7 +928,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                           Clear hold
                         </DropdownMenuItem>
                       )}
-                      {!showMarkMas && !showHold && !showClearHold && (
+                      {!showHold && !showClearHold && (
                         <DropdownMenuItem
                           disabled
                           data-testid="header-phase-empty"
