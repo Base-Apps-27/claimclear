@@ -443,7 +443,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
   // - Close: visible whenever `closureReason` is set; the existing
   //   group-detail page owns the actual closure flow.
   const reattestRequired = !!group?.reattestRequired;
-  const reattestDone = !!group?.reattestCompletedAt;
+  const reattestCompletedAt = group?.reattestCompletedAt ?? null;
+  const reattestDone = !!reattestCompletedAt;
   const closureReason = group?.closureReason ?? null;
 
   const body = (
@@ -485,8 +486,8 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, ba
                 data-testid="gauntlet-hero-offramp-reattest"
                 data-state={reattestDone ? "done" : "required"}
                 title={
-                  reattestDone
-                    ? `Re-attested ${formatDateTime(group!.reattestCompletedAt!)}`
+                  reattestCompletedAt
+                    ? `Re-attested ${formatDateTime(reattestCompletedAt)}`
                     : "Group requires re-attestation in MAS portal"
                 }
               >
