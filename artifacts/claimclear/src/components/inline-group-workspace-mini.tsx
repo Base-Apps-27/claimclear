@@ -10,6 +10,7 @@ import {
   useListErrorTypes,
   useCreatePortalSubmission,
   useClearLegVerdictDraft,
+  useExcludeLeg,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetInvoiceGroupQueryKey,
@@ -30,14 +31,19 @@ import { siblingPromptEligibilityFor } from "@/lib/sop-sibling-eligibility";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ArrowUpRight,
   CheckCircle2,
+  Copy,
+  Edit2,
   FileText,
   HelpCircle,
+  Link2Off,
   Loader2,
   MessageSquare,
   Paperclip,
   PauseCircle,
+  Play,
   PlayCircle,
   Send,
   Sparkles,
@@ -237,6 +243,7 @@ type HeroState =
   | "classify"
   | "sop"
   | "resolved"
+  | "hold"
   | "empty";
 
 export function InlineGroupWorkspaceMini({ groupId }: Props) {
@@ -346,6 +353,13 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   let hero: HeroState;
   if (withdrawn) hero = "withdrawn";
   else if (submitted) hero = "submitted";
+  // Task #686 (V3HoldExit) — manual holds (group-scope or active-leg
+  // scope) own the hero region. They short-circuit the gauntlet /
+  // walk routing because the operator can't progress while a hold is
+  // active. SOP-terminal holds (sopOutcome === "hold") still flow
+  // through SopHero → SopAdvancePlayer's HoldTerminal as before; the
+  // legHoldActive gate already excludes them.
+  else if (groupHoldActive || legHoldActive) hero = "hold";
   else if (previewGenerated && draftReviewed && !forceReview && !forceWalk) hero = "ready";
   else if (previewGenerated && !forceWalk) hero = "review";
   else if (allWalked && outlook === "has_disputable" && !forceWalk) hero = "generate";
@@ -397,13 +411,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         onSelectLeg={setActiveLegId}
         onOpenChip={(k) => setChipOpen(k)}
       />
-
-      {groupHoldActive && (
-        <GroupHoldBanner
-          detail={detail}
-          onPlaceHoldEdit={() => setHoldGroupOpen(true)}
-        />
-      )}
 
       {detail.payorEmailBounceState?.kind === "hard_bounced" && (
         <PayorBounceBanner bounce={detail.payorEmailBounceState} />
@@ -471,13 +478,27 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
             onOpenClassify={() => setClassifyOpen(true)}
           />
         )}
+        {hero === "hold" && (
+          <HoldHero
+            scope={groupHoldActive ? "group" : "leg"}
+            detail={detail}
+            leg={activeLeg}
+            onEditReason={() =>
+              groupHoldActive ? setHoldGroupOpen(true) : setHoldLegOpen(true)
+            }
+          />
+        )}
         {hero === "sop" && activeLeg && (
           <SopHero
             leg={activeLeg}
             rides={rides}
+            detail={detail}
+            groupId={groupId}
             groupMacroPhase={detail.macroPhase ?? null}
             walkStartedFor={walkStartedFor}
             onStartWalk={() => setWalkStartedFor(activeLeg.id)}
+            onOpenClassify={() => setClassifyOpen(true)}
+            onOpenMarkDuplicate={() => setMarkDuplicateOpen(true)}
           />
         )}
       </div>
@@ -693,70 +714,177 @@ function GroupSummaryHeader({
   );
 }
 
-// ─── Group-hold banner ──────────────────────────────────────────────
-function GroupHoldBanner({
+// ─── Hold hero ──────────────────────────────────────────────────────
+// Task #686 (V3HoldExit) — graduates the V3HoldExit mockup into A as
+// the canonical hold-exit surface. One component for both scopes:
+//
+//   scope === "leg"   → calls useRemoveLegHold({id: leg.id})
+//   scope === "group" → calls useRemoveInvoiceGroupHold({id: detail.id})
+//
+// Wiring is scope-strict per wiring-map.md "hold mutations" rule —
+// never cross-bind the leg-scope and group-scope hooks. The place-hold
+// flow (PlaceLegHoldDialog / PlaceGroupHoldDialog driven by
+// HoldReasonSelect) is unchanged; this hero only owns the release.
+function HoldHero({
+  scope,
   detail,
-  onPlaceHoldEdit,
+  leg,
+  onEditReason,
 }: {
+  scope: "leg" | "group";
   detail: DetailGroup;
-  onPlaceHoldEdit: () => void;
+  leg: ClaimResponse | null;
+  onEditReason: () => void;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const removeMutation = useRemoveInvoiceGroupHold();
-  const reason = (detail.holdReason ?? "").trim();
+  const removeGroup = useRemoveInvoiceGroupHold();
+  const removeLeg = useRemoveLegHold();
+
+  // Bind reason / pending-from / placed-at off the right payload.
+  // Field names verified against openapi.yaml: holdReason,
+  // holdPendingFrom, holdPlacedAt — all live on both ClaimResponse
+  // and InvoiceGroupDetailResponse. No invented fields.
+  const source =
+    scope === "leg" && leg
+      ? {
+          reason: (leg.holdReason ?? "").trim(),
+          pendingFrom: (leg.holdPendingFrom ?? "").trim(),
+          placedAt: leg.holdPlacedAt ?? null,
+          title: "This leg is on hold",
+          clearLabel: "Clear leg hold",
+          footnote: "Clearing this hold returns the leg to the SOP walk where it left off.",
+        }
+      : {
+          reason: (detail.holdReason ?? "").trim(),
+          pendingFrom: (detail.holdPendingFrom ?? "").trim(),
+          placedAt: detail.holdPlacedAt ?? null,
+          title: "The whole invoice is on hold",
+          clearLabel: "Clear group hold",
+          footnote: "Clearing this hold returns the whole invoice to the queue.",
+        };
+
+  const pending = scope === "leg" ? removeLeg.isPending : removeGroup.isPending;
+
   function release() {
-    removeMutation.mutate(
-      { id: detail.id },
-      {
-        onSuccess: (g) => {
-          applyGroupMutationResult(qc, g);
-          successToast({ title: "Done", description: "Hold released" });
+    if (scope === "leg") {
+      if (!leg) return;
+      removeLeg.mutate(
+        { id: leg.id },
+        {
+          onSuccess: (next) => {
+            applyLegMutationResult(qc, next);
+            markLocalAction(`claim:${leg.id}`);
+            successToast({ title: "Done", description: "Leg hold released" });
+          },
+          onError: (e: unknown) =>
+            toast({
+              title: "Release failed",
+              description: e instanceof Error ? e.message : String(e),
+              variant: "destructive",
+            }),
         },
-        onError: (e: unknown) =>
-          toast({
-            title: "Release failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
+      );
+    } else {
+      removeGroup.mutate(
+        { id: detail.id },
+        {
+          onSuccess: (g) => {
+            applyGroupMutationResult(qc, g);
+            successToast({ title: "Done", description: "Hold released" });
+          },
+          onError: (e: unknown) =>
+            toast({
+              title: "Release failed",
+              description: e instanceof Error ? e.message : String(e),
+              variant: "destructive",
+            }),
+        },
+      );
+    }
   }
+
   return (
-    <div className="cc-mini-hold-banner" data-testid="mini-group-hold-banner">
-      <PauseCircle className="w-4 h-4 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-semibold">This invoice is on hold</div>
-        {reason && (
-          <div className="cc-meta text-xs truncate" title={reason}>
-            {reason}
+    <Card>
+      <CardContent
+        className="py-5 space-y-3"
+        data-testid={`mini-hold-hero-${scope}`}
+        data-scope={scope}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="cc-pill cc-pill-amber text-[10px] uppercase tracking-wide"
+            data-testid={`mini-hold-hero-${scope}-scope-pill`}
+          >
+            {scope === "leg" ? "Leg-scoped hold" : "Group-scoped hold"}
+          </span>
+          {source.placedAt && (
+            <span className="cc-meta text-[11px] ml-auto" data-testid={`mini-hold-hero-${scope}-placed-at`}>
+              Placed {formatDateTime(source.placedAt)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <PauseCircle className="w-6 h-6 text-amber-600 dark:text-amber-400 shrink-0" />
+          <h3 className="text-base font-semibold">{source.title}</h3>
+        </div>
+
+        {(source.reason || source.pendingFrom) && (
+          <div
+            className="rounded-md border border-amber-300/60 bg-background px-2.5 py-2 text-xs leading-relaxed space-y-1"
+            data-testid={`mini-hold-hero-${scope}-detail`}
+          >
+            {source.reason && (
+              <div>
+                <span className="cc-meta text-[11px]">Reason:</span>{" "}
+                <span className="font-medium" data-testid={`mini-hold-hero-${scope}-reason`}>
+                  {source.reason}
+                </span>
+              </div>
+            )}
+            {source.pendingFrom && (
+              <div>
+                <span className="cc-meta text-[11px]">Pending from:</span>{" "}
+                <span data-testid={`mini-hold-hero-${scope}-pending-from`}>
+                  {source.pendingFrom}
+                </span>
+              </div>
+            )}
           </div>
         )}
-      </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2 text-xs"
-        onClick={onPlaceHoldEdit}
-        data-testid="mini-edit-group-hold"
-      >
-        Edit reason
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7 px-2 text-xs"
-        onClick={release}
-        disabled={removeMutation.isPending}
-        data-testid="mini-release-group-hold"
-      >
-        {removeMutation.isPending ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          "Release hold"
-        )}
-      </Button>
-    </div>
+
+        <div className="flex items-center gap-2 pt-1">
+          <Button
+            size="sm"
+            onClick={release}
+            disabled={pending}
+            data-testid={`mini-hold-hero-${scope}-clear`}
+          >
+            {pending ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+            ) : (
+              <Play className="w-3.5 h-3.5 mr-1" />
+            )}
+            {source.clearLabel}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onEditReason}
+            className="h-8 px-2 text-xs"
+            data-testid={`mini-hold-hero-${scope}-edit`}
+          >
+            <Edit2 className="w-3 h-3 mr-1" />
+            Edit reason
+          </Button>
+        </div>
+
+        <p className="cc-meta text-[11px] pt-2 border-t border-dashed border-amber-300/40">
+          {source.footnote}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -839,20 +967,34 @@ function ClassifyHero({
 function SopHero({
   leg,
   rides,
+  detail,
+  groupId,
   groupMacroPhase,
   walkStartedFor,
   onStartWalk,
+  onOpenClassify,
+  onOpenMarkDuplicate,
 }: {
   leg: ClaimResponse;
   /** Sibling rides in the same invoice group — used to compute the
    *  bulk-apply count and the in-SOP sibling-detection prompt so the
    *  queue's per-leg workspace mirrors the Leg Details surface (Task #647). */
   rides: ClaimResponse[];
+  /** Parent group payload — sourced for the V3LandingStartWalk hero's
+   *  group-state line ("Group state: …") and the invoice-number link.
+   *  Read-only; SopHero does not mutate it. */
+  detail: DetailGroup;
+  /** Group id used to invalidate the parent group query after exclude. */
+  groupId: number;
   /** Pre-submit gate for the sibling prompt. Forwarded from the parent
    *  invoice group so the helper can short-circuit on post-submit groups. */
   groupMacroPhase: string | null;
   walkStartedFor: number | null;
   onStartWalk: () => void;
+  /** Task #686 (V3LandingStartWalk) — escape hatches on the pre-walk
+   *  landing card. Reuse A's existing dialog mounts. */
+  onOpenClassify: () => void;
+  onOpenMarkDuplicate: () => void;
 }) {
   const { data: claim } = useGetClaim(leg.id, {
     query: { queryKey: getGetClaimQueryKey(leg.id), enabled: !!leg.id },
@@ -906,29 +1048,14 @@ function SopHero({
 
   if (showLanding) {
     return (
-      <Card>
-        <CardContent className="py-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <PlayCircle className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">
-              {live.errorTypeName ?? "Walk this leg"}
-            </h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Step through the playbook for this leg. You can pause and come back
-            anytime.
-          </p>
-          <div>
-            <Button
-              size="sm"
-              onClick={onStartWalk}
-              data-testid="mini-start-walk"
-            >
-              Start walk
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <V3LandingStartWalkHero
+        leg={live}
+        detail={detail}
+        groupId={groupId}
+        onStartWalk={onStartWalk}
+        onOpenClassify={onOpenClassify}
+        onOpenMarkDuplicate={onOpenMarkDuplicate}
+      />
     );
   }
 
@@ -964,6 +1091,148 @@ function SopHero({
               : null
           }
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── V3 Landing — pre-walk "Start walk" hero ────────────────────────
+// Task #686 — graduates the V3LandingStartWalk mockup into A. Replaces
+// the bare landing card SopHero used to render before the operator
+// clicks Start walk. Adds a status pill, a Change-classification chip,
+// the parent-group state line, and the three escape hatches that
+// claim-detail-v2 already exposed (Reclassify / Mark as duplicate /
+// Exclude). All wiring reuses A's existing dialog mounts and the
+// `useExcludeLeg` hook (same hook chip-drawer-overlay calls).
+function V3LandingStartWalkHero({
+  leg,
+  detail,
+  groupId,
+  onStartWalk,
+  onOpenClassify,
+  onOpenMarkDuplicate,
+}: {
+  leg: ClaimResponse;
+  detail: DetailGroup;
+  groupId: number;
+  onStartWalk: () => void;
+  onOpenClassify: () => void;
+  onOpenMarkDuplicate: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const exclude = useExcludeLeg();
+  function onExclude() {
+    exclude.mutate(
+      { id: leg.id, data: { reason: "other" as const, note: "Excluded from queue landing" } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+          qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+          markLocalAction(`claim:${leg.id}`);
+          successToast({ title: "Done", description: "Leg excluded from this dispute" });
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "Exclude failed",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
+  const groupPhaseLabel = (detail.phase ?? "").replace(/_/g, " ").trim() || "in progress";
+
+  return (
+    <Card data-testid="mini-landing-start-walk" data-leg-id={leg.id}>
+      <CardContent className="py-5 space-y-3">
+        <div className="cc-meta text-[11px] flex items-center gap-2 flex-wrap">
+          {leg.confNumber && <RefNumber value={leg.confNumber} variant="inline" />}
+          {leg.date && <><span>·</span><span>DOS {leg.date}</span></>}
+          {leg.claimAmount != null && <><span>·</span><span>{formatCurrency(leg.claimAmount)}</span></>}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="cc-pill cc-pill-muted text-[11px]">Not started</span>
+          <span className="cc-meta text-xs">·</span>
+          <span className="text-xs font-medium">
+            {leg.errorTypeName ?? "Classification pending"}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px]"
+            onClick={onOpenClassify}
+            data-testid="mini-landing-change-classification"
+          >
+            <Edit2 className="w-3 h-3 mr-1" />
+            Change
+          </Button>
+        </div>
+
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">Ready to walk this leg</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Walking the SOP confirms whether this leg is disputable. You can stop
+            and resume at any time — your answers are saved as you go.
+          </p>
+        </div>
+
+        <div className="text-[11px] text-muted-foreground border-t pt-2">
+          Group state:{" "}
+          <span className="text-foreground font-medium" data-testid="mini-landing-group-state">
+            {groupPhaseLabel}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 pt-1">
+          <Button size="sm" onClick={onStartWalk} data-testid="mini-start-walk">
+            Start walk
+            <ArrowRight className="w-3.5 h-3.5 ml-1" />
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-dashed">
+          <span className="cc-meta text-[11px]">
+            Or, if this leg shouldn't be walked:
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            onClick={onOpenClassify}
+            data-testid="mini-landing-reclassify"
+          >
+            <Tag className="w-3 h-3 mr-1" />
+            Reclassify
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            onClick={onOpenMarkDuplicate}
+            data-testid="mini-landing-mark-duplicate"
+          >
+            <Copy className="w-3 h-3 mr-1" />
+            Mark as duplicate
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            onClick={onExclude}
+            disabled={exclude.isPending}
+            data-testid="mini-landing-exclude"
+          >
+            {exclude.isPending ? (
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            ) : (
+              <Link2Off className="w-3 h-3 mr-1" />
+            )}
+            Exclude
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -1394,7 +1663,8 @@ function ChipStrip({
               Hold leg
             </button>
           )}
-          {legHoldActive && <ReleaseLegHoldButton legId={leg.id} />}
+          {/* Task #686 — release-hold moved to <HoldHero/> (hero === "hold").
+              ChipStrip keeps the place-hold button for the !held branch. */}
         </div>
       </div>
 
@@ -1438,49 +1708,6 @@ function Chip({
         <span className="cc-mini-chip-count">{count}</span>
       )}
     </button>
-  );
-}
-
-function ReleaseLegHoldButton({ legId }: { legId: number }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const mutation = useRemoveLegHold();
-  function release() {
-    mutation.mutate(
-      { id: legId },
-      {
-        onSuccess: (leg) => {
-          applyLegMutationResult(qc, leg);
-          markLocalAction(`claim:${legId}`);
-          successToast({ title: "Done", description: "Leg hold released" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Release failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
-  }
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-7 px-2 text-xs"
-      onClick={release}
-      disabled={mutation.isPending}
-      data-testid="mini-release-leg-hold"
-    >
-      {mutation.isPending ? (
-        <Loader2 className="w-3 h-3 animate-spin" />
-      ) : (
-        <>
-          <PauseCircle className="w-3 h-3 mr-1" />
-          Release leg hold
-        </>
-      )}
-    </Button>
   );
 }
 
