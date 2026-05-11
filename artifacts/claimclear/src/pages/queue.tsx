@@ -66,6 +66,7 @@ import { legSubStatusDisplayLabel, closureReasonLabel } from "@workspace/vocab";
 import {
   parseOutlook,
   parseDraftReviewed,
+  parseExcludeReason,
   laneForRow,
   buildChips,
   appliedFacetCount,
@@ -544,6 +545,25 @@ function FiltersPopover({
       </div>
       <div className="space-y-2">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Removed
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={filters.excludeReason === "handled_offline"}
+            onChange={() =>
+              onChange({
+                excludeReason:
+                  filters.excludeReason === "handled_offline" ? null : "handled_offline",
+              })
+            }
+            data-testid="queue-filter-excludeReason-handled_offline"
+          />
+          <span>Handled offline</span>
+        </label>
+      </div>
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Error type
         </div>
         <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
@@ -705,6 +725,7 @@ export default function Queue() {
     outlook: parseOutlook(get("outlook")),
     errorTypeIds: getAll("errorTypeId"),
     draftReviewed: parseDraftReviewed(get("draftReviewed")),
+    excludeReason: parseExcludeReason(get("excludeReason")),
     showPastDeadline: get("showPastDeadline") === "true",
     qSearch: get("qSearch"),
   };
@@ -726,6 +747,9 @@ export default function Queue() {
     }
     if ("draftReviewed" in patch) {
       updates.draftReviewed = patch.draftReviewed ?? null;
+    }
+    if ("excludeReason" in patch) {
+      updates.excludeReason = patch.excludeReason ?? null;
     }
     if ("showPastDeadline" in patch) {
       updates.showPastDeadline = patch.showPastDeadline ? "true" : null;
@@ -796,6 +820,8 @@ export default function Queue() {
         ? false
         : undefined;
 
+  const excludeReasonForLanes = filters.excludeReason ?? undefined;
+
   const baseQueryShape = {
     limit: 500 as const,
     expiring: expiringForLanes,
@@ -803,6 +829,7 @@ export default function Queue() {
     outlook: outlookForLanes,
     errorTypeId: errorTypeForLanes,
     draftReviewed: draftReviewedForLanes,
+    excludeReason: excludeReasonForLanes,
   } satisfies Partial<ListInvoiceGroupsParams>;
 
   const newParams = { status: "New", ...baseQueryShape } as const;
@@ -1034,6 +1061,9 @@ export default function Queue() {
     if (filters.draftReviewed) {
       out[`draftReviewed-${filters.draftReviewed}`] = dedupedAll.length;
     }
+    if (filters.excludeReason === "handled_offline") {
+      out["excludeReason-handled_offline"] = dedupedAll.length;
+    }
     if (filters.showPastDeadline) {
       out["showPastDeadline"] = dedupedAll.filter(
         (r) => (r.effectiveDaysLeft ?? Number.POSITIVE_INFINITY) < 0,
@@ -1236,6 +1266,7 @@ export default function Queue() {
                       outlook: null,
                       errorTypeIds: [],
                       draftReviewed: null,
+                      excludeReason: null,
                       showPastDeadline: false,
                       qSearch: "",
                     })

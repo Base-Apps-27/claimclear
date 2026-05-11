@@ -325,6 +325,37 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     }
   }
 
+  // Task #693 — "Removed — handled offline" sub-filter. Restricts the
+  // result set to groups containing at least one currently-excluded
+  // leg whose *latest* exclusion event was the handled-offline path
+  // (audit action `claim_removed_handled_offline`, written by the
+  // dedicated handler in `excludeLegCore` when reason === 'handled_offline';
+  // the default exclude path writes `leg_excluded`). A leg that was
+  // first removed via handled_offline and later re-excluded via the
+  // default path correctly does NOT match — the inner subquery picks
+  // the most recent of the two exclusion actions per claim and we
+  // require it to be the handled_offline one. We go through audit_logs
+  // because there is no denormalized `excludeReason` column on claims.
+  const excludeReason = query.excludeReason;
+  if (excludeReason === "handled_offline") {
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1
+        FROM ${claimsTable} c
+        WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+          AND c.included_in_dispute = false
+          AND (
+            SELECT al.action
+            FROM ${auditLogsTable} al
+            WHERE al.claim_id = c.id
+              AND al.action IN ('leg_excluded', 'claim_removed_handled_offline')
+            ORDER BY al.timestamp DESC
+            LIMIT 1
+          ) = 'claim_removed_handled_offline'
+      )`,
+    );
+  }
+
   // Pre-submit-only sub-filter (Task #631 follow-up). Restricts to
   // groups whose dispute draft has been marked reviewed (or NOT marked
   // reviewed when `false`) — i.e. one click away from being queued for

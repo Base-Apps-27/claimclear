@@ -4746,6 +4746,19 @@ actionable to scope to.
  */
   legSubStatus?: string;
   /**
+ * Restricts the result set to groups containing at least one leg
+that was excluded with the named reason. Currently the only
+value is `handled_offline` (Task #689 — exclude path that
+stamps a distinct `claim_removed_handled_offline` audit row
+when an operator marks a claim handled outside the system).
+The Queue page surfaces this as a "Removed — handled offline"
+chip and the leg-detail removed banner deep-links here so an
+operator who lands on a single handled-offline leg can pivot
+to the full population.
+
+ */
+  excludeReason?: ListInvoiceGroupsExcludeReason;
+  /**
  * Pre-submit-only sub-filter. When `true`, restricts the result
 set to groups whose dispute draft has been marked reviewed
 (`draft_reviewed_at IS NOT NULL`) — i.e. one click away from
@@ -4856,6 +4869,13 @@ export const ListInvoiceGroupsMacroPhase = {
   "awaiting-payout": "awaiting-payout",
   closed: "closed",
   "on-hold": "on-hold",
+} as const;
+
+export type ListInvoiceGroupsExcludeReason =
+  (typeof ListInvoiceGroupsExcludeReason)[keyof typeof ListInvoiceGroupsExcludeReason];
+
+export const ListInvoiceGroupsExcludeReason = {
+  handled_offline: "handled_offline",
 } as const;
 
 export type ListInvoiceGroupsOutlook =

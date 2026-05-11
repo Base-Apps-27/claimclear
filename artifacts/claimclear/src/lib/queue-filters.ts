@@ -6,6 +6,7 @@
 import type {
   InvoiceGroupResponse,
   ListInvoiceGroupsOutlook,
+  ListInvoiceGroupsExcludeReason,
 } from "@workspace/api-client-react";
 import { readEngagementMode, type EngagementMode } from "@/components/engagement-filter-controls";
 import { parseExpiringParam, type ExpiringFilter } from "@/lib/queue-urgency";
@@ -14,6 +15,10 @@ export type LaneId = "clock" | "week" | "hold";
 
 export type OutlookFilter = ListInvoiceGroupsOutlook | null;
 export type DraftReviewedFilter = "reviewed" | "unreviewed" | null;
+// Task #693 — "Removed — handled offline" sub-filter. Pinned to the
+// single API enum value (`handled_offline`) so the chip and the URL
+// token can never drift from the server. `null` = chip cleared.
+export type ExcludeReasonFilter = ListInvoiceGroupsExcludeReason | null;
 
 export const VALID_OUTLOOK: ListInvoiceGroupsOutlook[] = [
   "ready_to_review",
@@ -32,6 +37,7 @@ export interface ParityFilters {
   outlook: OutlookFilter;
   errorTypeIds: string[];
   draftReviewed: DraftReviewedFilter;
+  excludeReason: ExcludeReasonFilter;
   showPastDeadline: boolean;
   qSearch: string;
 }
@@ -41,6 +47,9 @@ export function parseOutlook(raw: string): OutlookFilter {
 }
 export function parseDraftReviewed(raw: string): DraftReviewedFilter {
   return raw === "reviewed" || raw === "unreviewed" ? raw : null;
+}
+export function parseExcludeReason(raw: string): ExcludeReasonFilter {
+  return raw === "handled_offline" ? "handled_offline" : null;
 }
 
 export function parseParityFilters(
@@ -53,6 +62,7 @@ export function parseParityFilters(
     outlook: parseOutlook(get("outlook")),
     errorTypeIds: getAll("errorTypeId"),
     draftReviewed: parseDraftReviewed(get("draftReviewed")),
+    excludeReason: parseExcludeReason(get("excludeReason")),
     showPastDeadline: get("showPastDeadline") === "true",
     qSearch: get("qSearch"),
   };
@@ -70,6 +80,7 @@ export function serializeParityPatch(
     updates.errorTypeId = ids.length === 0 ? null : ids.join(",");
   }
   if ("draftReviewed" in patch) updates.draftReviewed = patch.draftReviewed ?? null;
+  if ("excludeReason" in patch) updates.excludeReason = patch.excludeReason ?? null;
   if ("showPastDeadline" in patch)
     updates.showPastDeadline = patch.showPastDeadline ? "true" : null;
   if ("qSearch" in patch) updates.qSearch = (patch.qSearch ?? "") === "" ? null : patch.qSearch!;
@@ -211,6 +222,13 @@ export function buildChips(
       onClear: () => apply({ draftReviewed: null }),
     }));
   }
+  if (filters.excludeReason === "handled_offline") {
+    chips.push(withCount({
+      id: "excludeReason-handled_offline",
+      label: "Removed: Handled offline",
+      onClear: () => apply({ excludeReason: null }),
+    }));
+  }
   if (filters.showPastDeadline) {
     chips.push(withCount({
       id: "showPastDeadline",
@@ -234,5 +252,6 @@ export function appliedFacetCount(filters: ParityFilters): number {
   if (filters.outlook) n += 1;
   if (filters.errorTypeIds.length > 0) n += filters.errorTypeIds.length;
   if (filters.draftReviewed) n += 1;
+  if (filters.excludeReason) n += 1;
   return n;
 }

@@ -1151,8 +1151,26 @@ export function ClaimDetailV2({
               ) : null}
               {!isDuplicate &&
                 (subStatus === "excluded" || subStatus === "dropped" || subStatus === "frozen") && (() => {
+                  // Task #693 — "latest exclusion reason is
+                  // handled_offline". `sortedAudit` is timestamp DESC,
+                  // so the first row in either of the two exclusion
+                  // actions decides whether the leg's most-recent
+                  // exclusion event was the handled-offline path. A
+                  // historical handled_offline followed by a default
+                  // `leg_excluded` re-exclusion would correctly NOT
+                  // qualify (and would not match the Queue chip's
+                  // server predicate either).
+                  const latestExclusion = sortedAudit.find(
+                    (a) =>
+                      a.action === "claim_removed_handled_offline" ||
+                      a.action === "leg_excluded",
+                  );
+                  const isHandledOffline =
+                    latestExclusion?.action === "claim_removed_handled_offline";
                   const reason =
-                    claim.sopOutcome === "non_issue" || claim.dropReason === "non_issue"
+                    isHandledOffline
+                      ? { label: "Handled offline", body: "This leg was removed because it was handled outside the system. The dispute window does not apply.", pill: "cc-pill-muted" }
+                      : claim.sopOutcome === "non_issue" || claim.dropReason === "non_issue"
                       ? { label: "Non-issue", body: "This leg was marked as a non-issue. Nothing to dispute — it routes to re-attestation in the payor portal.", pill: "cc-pill-green" }
                       : claim.sopOutcome === "cannot_dispute" || claim.dropReason === "cannot_dispute"
                       ? { label: "Cannot dispute", body: "This leg is non-contestable and has been withdrawn from the dispute.", pill: "cc-pill-amber" }
@@ -1190,6 +1208,16 @@ export function ClaimDetailV2({
                       <div className="cc-meta text-[11px]">
                         Audit trail is recorded in the Activity history below.
                       </div>
+                      {isHandledOffline && (
+                        <Link
+                          href="/queue?excludeReason=handled_offline"
+                          data-testid={`leg-closed-handled-offline-queue-link-${claim.id}`}
+                          className="text-[11px] underline-offset-2 hover:underline self-start"
+                          style={{ color: "var(--cc-blue-fg)" }}
+                        >
+                          See all handled-offline removals in the Queue →
+                        </Link>
+                      )}
                     </div>
                   );
                 })()}

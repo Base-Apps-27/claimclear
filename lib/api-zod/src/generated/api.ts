@@ -167,6 +167,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "Comma-separated list of derived per-leg sub-status values\n(excluded, duplicate, needs_classification, investigating,\nblocked, ready, dropped, frozen). Restricts the result set to\ngroups that contain at least one leg in any of the named\nsub-statuses. Mirrors the same vocabulary used by the\nper-claim `legSubStatus` filter on `\/claims`. Intended to be\nsurfaced only while the operator is on the Pre-submit\n(Action Required) tab — the post-submit phases bury the\nper-leg detail behind the group-level chip and have nothing\nactionable to scope to.\n",
     ),
+  excludeReason: zod
+    .enum(["handled_offline"])
+    .optional()
+    .describe(
+      'Restricts the result set to groups containing at least one leg\nthat was excluded with the named reason. Currently the only\nvalue is `handled_offline` (Task #689 — exclude path that\nstamps a distinct `claim_removed_handled_offline` audit row\nwhen an operator marks a claim handled outside the system).\nThe Queue page surfaces this as a \"Removed — handled offline\"\nchip and the leg-detail removed banner deep-links here so an\noperator who lands on a single handled-offline leg can pivot\nto the full population.\n',
+    ),
   draftReviewed: zod.coerce
     .boolean()
     .optional()

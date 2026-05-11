@@ -453,6 +453,18 @@ const PARITY_MATRIX: MatrixRow[] = [
     clearExpectKey: "draftReviewed",
   },
   {
+    name: "excludeReason=handled_offline",
+    urlKey: "excludeReason",
+    urlValue: "handled_offline",
+    set: { excludeReason: "handled_offline" },
+    setExpectKey: "excludeReason",
+    setExpectValue: "handled_offline",
+    parsedExpectKey: "excludeReason",
+    parsedExpect: "handled_offline",
+    clear: { excludeReason: null },
+    clearExpectKey: "excludeReason",
+  },
+  {
     name: "showPastDeadline",
     urlKey: "showPastDeadline",
     urlValue: "true",
