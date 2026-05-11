@@ -129,6 +129,7 @@ export function InvoiceGroupActionSlot({
         survivors={survivors}
         dropped={dropped}
         bare={bare}
+        onJumpToLeg={onJumpToLeg}
       />
     );
   }
@@ -155,6 +156,10 @@ interface ReattestCtaProps {
   survivors: ClaimResponse[];
   dropped: ClaimResponse[];
   bare?: boolean;
+  /** Back-out affordance: jumps the queue workspace back to a leg tab
+   *  so the operator can use the existing per-leg "Reopen walk" /
+   *  "Clear recorded verdict" UX if they landed here by mistake. */
+  onJumpToLeg?: (claimId: number) => void;
 }
 
 function ReattestOnlyCta({
@@ -163,6 +168,7 @@ function ReattestOnlyCta({
   survivors,
   dropped,
   bare,
+  onJumpToLeg,
 }: ReattestCtaProps) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -252,6 +258,31 @@ function ReattestOnlyCta({
         >
           {reattestEligibility.reason}
         </p>
+      )}
+
+      {/* Back-out affordance — every terminal needs an exit. The hero
+          itself can't undo a verdict (that lives on the leg), so the
+          honest move is to send the operator back to a leg tab where
+          the existing "Reopen walk" / "Clear recorded verdict" UX is
+          already wired. Picks the first survivor (the legs that drove
+          the re-attest state); falls back to a dropped leg so the
+          button is never dead. */}
+      {onJumpToLeg && (survivors.length > 0 || dropped.length > 0) && (
+        <div className="pl-12">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-blue-900/80 hover:bg-blue-100/60"
+            onClick={() => {
+              const target = survivors[0] ?? dropped[0];
+              if (target) onJumpToLeg(target.id);
+            }}
+            data-testid="invoice-reattest-only-reopen-leg"
+            title="Go back to a leg to fix a verdict, classification, or evidence before re-attesting"
+          >
+            Reopen a leg
+          </Button>
+        </div>
       )}
 
       <ReattestModal
