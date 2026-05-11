@@ -1,0 +1,711 @@
+id,action,message,success,created_at,submission_id
+966,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:40:36.500019+00:00,722
+967,submission_complete,Submitted successfully. Ticket: 88339,true,2026-05-09T16:41:04.377197+00:00,722
+968,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:41:04.791951+00:00,641
+969,submission_complete,Submitted successfully. Ticket: 88340,true,2026-05-09T16:41:24.93512+00:00,641
+970,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:41:25.005791+00:00,739
+971,submission_complete,Submitted successfully. Ticket: 88341,true,2026-05-09T16:41:41.480798+00:00,739
+972,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:41:41.973293+00:00,723
+973,submission_complete,Submitted successfully. Ticket: 88342,true,2026-05-09T16:42:01.825296+00:00,723
+974,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:42:02.150386+00:00,699
+975,submission_complete,Submitted successfully. Ticket: 88343,true,2026-05-09T16:42:18.058165+00:00,699
+976,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:42:19.194582+00:00,726
+977,submission_complete,Submitted successfully. Ticket: 88344,true,2026-05-09T16:42:36.257075+00:00,726
+978,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:42:36.995578+00:00,703
+979,submission_complete,Submitted successfully. Ticket: 88345,true,2026-05-09T16:42:53.228188+00:00,703
+980,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:42:54.532958+00:00,710
+981,submission_complete,Submitted successfully. Ticket: 88346,true,2026-05-09T16:43:10.46734+00:00,710
+982,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:43:11.987795+00:00,728
+983,submission_complete,Submitted successfully. Ticket: 88347,true,2026-05-09T16:43:28.425862+00:00,728
+984,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:43:28.869369+00:00,729
+985,submission_complete,Submitted successfully. Ticket: 88348,true,2026-05-09T16:43:47.663185+00:00,729
+986,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:43:47.733097+00:00,712
+987,submission_complete,Submitted successfully. Ticket: 88349,true,2026-05-09T16:44:06.40584+00:00,712
+988,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:44:07.067273+00:00,714
+989,submission_complete,Submitted successfully. Ticket: 88350,true,2026-05-09T16:44:23.393706+00:00,714
+990,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:44:24.301487+00:00,715
+991,submission_complete,Submitted successfully. Ticket: 88351,true,2026-05-09T16:44:40.303462+00:00,715
+992,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:44:41.183801+00:00,716
+993,submission_complete,Submitted successfully. Ticket: 88352,true,2026-05-09T16:44:57.265132+00:00,716
+994,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:44:57.443853+00:00,717
+995,submission_complete,Submitted successfully. Ticket: 88353,true,2026-05-09T16:45:16.371786+00:00,717
+996,batch_claimed,Claimed by batch job batch_1778344836403_wqkd (triggered by Danny S),true,2026-05-09T16:45:16.794294+00:00,721
+997,submission_complete,Submitted successfully. Ticket: 88354,true,2026-05-09T16:45:34.695338+00:00,721
+998,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:11:00.559877+00:00,812
+999,submission_complete,Submitted successfully. Ticket: 88372,true,2026-05-09T20:11:25.790081+00:00,812
+1000,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:11:26.159941+00:00,814
+1001,submission_complete,Submitted successfully. Ticket: 88374,true,2026-05-09T20:11:43.31458+00:00,814
+1002,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:11:43.735736+00:00,829
+1003,submission_complete,Submitted successfully. Ticket: 88375,true,2026-05-09T20:11:59.775578+00:00,829
+1004,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:12:00.023262+00:00,815
+1005,submission_complete,Submitted successfully. Ticket: 88376,true,2026-05-09T20:12:19.341646+00:00,815
+1006,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:12:19.571492+00:00,816
+1007,submission_complete,Submitted successfully. Ticket: 88377,true,2026-05-09T20:12:37.855289+00:00,816
+1008,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:12:38.329074+00:00,817
+1009,submission_complete,Submitted successfully. Ticket: 88378,true,2026-05-09T20:12:57.497102+00:00,817
+1010,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:12:57.959354+00:00,818
+1011,submission_complete,Submitted successfully. Ticket: 88379,true,2026-05-09T20:13:15.917113+00:00,818
+1012,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:13:15.992568+00:00,819
+1013,submission_complete,Submitted successfully. Ticket: 88380,true,2026-05-09T20:13:34.822166+00:00,819
+1014,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:13:34.909686+00:00,820
+1015,submission_complete,Submitted successfully. Ticket: 88381,true,2026-05-09T20:13:56.104146+00:00,820
+1016,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:13:56.198027+00:00,821
+1017,submission_complete,Submitted successfully. Ticket: 88383,true,2026-05-09T20:14:16.280904+00:00,821
+1018,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:14:16.351403+00:00,822
+1019,submission_complete,Submitted successfully. Ticket: 88384,true,2026-05-09T20:14:37.864395+00:00,822
+1020,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:14:37.979586+00:00,823
+1021,submission_complete,Submitted successfully. Ticket: 88385,true,2026-05-09T20:15:02.89965+00:00,823
+1022,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:15:02.96271+00:00,824
+1023,submission_complete,Submitted successfully. Ticket: 88386,true,2026-05-09T20:15:23.656477+00:00,824
+1024,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:15:23.720415+00:00,825
+1025,submission_complete,Submitted successfully. Ticket: 88387,true,2026-05-09T20:15:47.761347+00:00,825
+1026,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:15:47.827111+00:00,826
+1027,submission_complete,Submitted successfully. Ticket: 88388,true,2026-05-09T20:16:07.121689+00:00,826
+1028,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:16:07.183599+00:00,828
+1029,submission_complete,Submitted successfully. Ticket: 88390,true,2026-05-09T20:16:26.580382+00:00,828
+1030,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:16:26.647364+00:00,834
+1031,submission_complete,Submitted successfully. Ticket: 88391,true,2026-05-09T20:16:45.254469+00:00,834
+1032,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:16:45.321231+00:00,835
+1033,submission_complete,Submitted successfully. Ticket: 88392,true,2026-05-09T20:17:03.653055+00:00,835
+1034,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:17:03.719832+00:00,836
+1035,submission_complete,Submitted successfully. Ticket: 88393,true,2026-05-09T20:17:19.484922+00:00,836
+1036,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:17:19.550144+00:00,837
+1037,submission_complete,Submitted successfully. Ticket: 88394,true,2026-05-09T20:17:35.373803+00:00,837
+1038,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:17:35.437593+00:00,839
+1039,submission_complete,Submitted successfully. Ticket: 88395,true,2026-05-09T20:17:50.676416+00:00,839
+1040,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:17:50.74559+00:00,840
+1041,submission_complete,Submitted successfully. Ticket: 88396,true,2026-05-09T20:18:05.951067+00:00,840
+1042,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:18:06.01857+00:00,844
+1043,submission_complete,Submitted successfully. Ticket: 88397,true,2026-05-09T20:18:21.774155+00:00,844
+1044,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:18:21.842591+00:00,845
+1045,submission_complete,Submitted successfully. Ticket: 88399,true,2026-05-09T20:18:38.656369+00:00,845
+1046,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:18:38.722128+00:00,851
+1047,submission_complete,Submitted successfully. Ticket: 88400,true,2026-05-09T20:18:53.990124+00:00,851
+1048,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:18:54.055015+00:00,852
+1049,submission_complete,Submitted successfully. Ticket: 88401,true,2026-05-09T20:19:11.586962+00:00,852
+1050,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:19:11.653618+00:00,854
+1051,submission_complete,Submitted successfully. Ticket: 88402,true,2026-05-09T20:19:27.009008+00:00,854
+1052,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:19:27.070059+00:00,860
+1053,submission_complete,Submitted successfully. Ticket: 88403,true,2026-05-09T20:19:42.453212+00:00,860
+1054,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:19:42.516404+00:00,863
+1055,submission_complete,Submitted successfully. Ticket: 88404,true,2026-05-09T20:20:00.012678+00:00,863
+1056,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:20:00.074724+00:00,903
+1057,submission_complete,Submitted successfully. Ticket: 88405,true,2026-05-09T20:20:16.206189+00:00,903
+1058,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:20:16.266691+00:00,914
+1059,submission_complete,Submitted successfully. Ticket: 88406,true,2026-05-09T20:20:32.497234+00:00,914
+1060,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:20:32.555876+00:00,915
+1061,submission_complete,Submitted successfully. Ticket: 88407,true,2026-05-09T20:20:48.248546+00:00,915
+1062,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:20:48.310807+00:00,917
+1063,submission_complete,Submitted successfully. Ticket: 88409,true,2026-05-09T20:21:06.385926+00:00,917
+1064,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:21:06.454353+00:00,918
+1065,submission_complete,Submitted successfully. Ticket: 88410,true,2026-05-09T20:21:22.875112+00:00,918
+1066,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:21:22.95388+00:00,919
+1067,submission_complete,Submitted successfully. Ticket: 88411,true,2026-05-09T20:21:38.719948+00:00,919
+1068,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:21:38.788675+00:00,920
+1069,submission_complete,Submitted successfully. Ticket: 88412,true,2026-05-09T20:21:53.97053+00:00,920
+1070,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:21:54.036076+00:00,921
+1071,submission_complete,Submitted successfully. Ticket: 88413,true,2026-05-09T20:22:09.515254+00:00,921
+1072,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:22:09.586663+00:00,922
+1073,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lb_AAA=, attachments: 2",true,2026-05-09T20:22:13.694689+00:00,922
+1074,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:22:13.756589+00:00,923
+1075,submission_complete,Submitted successfully. Ticket: 88414,true,2026-05-09T20:22:31.849559+00:00,923
+1076,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:22:31.920521+00:00,933
+1077,submission_complete,Submitted successfully. Ticket: 88416,true,2026-05-09T20:22:47.618285+00:00,933
+1078,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:22:47.683637+00:00,925
+1079,submission_complete,Submitted successfully. Ticket: 88417,true,2026-05-09T20:23:06.297584+00:00,925
+1080,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:23:06.362165+00:00,926
+1081,submission_complete,Submitted successfully. Ticket: 88418,true,2026-05-09T20:23:23.194057+00:00,926
+1082,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:23:23.258585+00:00,927
+1083,submission_complete,Submitted successfully. Ticket: 88419,true,2026-05-09T20:23:40.863106+00:00,927
+1084,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:23:40.927702+00:00,928
+1085,submission_complete,Submitted successfully. Ticket: 88420,true,2026-05-09T20:23:57.745653+00:00,928
+1086,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:23:57.808451+00:00,929
+1087,submission_complete,Submitted successfully. Ticket: 88421,true,2026-05-09T20:24:15.017408+00:00,929
+1088,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:24:15.083539+00:00,930
+1089,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lb-AAA=, attachments: 6",true,2026-05-09T20:24:21.193209+00:00,930
+1090,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:24:21.253031+00:00,937
+1091,submission_complete,Submitted successfully. Ticket: 88422,true,2026-05-09T20:24:37.074772+00:00,937
+1092,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:24:37.138472+00:00,939
+1093,submission_complete,Submitted successfully. Ticket: 88423,true,2026-05-09T20:24:55.305491+00:00,939
+1094,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:24:55.369031+00:00,931
+1095,submission_complete,Submitted successfully. Ticket: 88424,true,2026-05-09T20:25:11.021881+00:00,931
+1096,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:25:11.094137+00:00,934
+1097,submission_complete,Submitted successfully. Ticket: 88425,true,2026-05-09T20:25:28.229944+00:00,934
+1098,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:25:28.294795+00:00,936
+1099,submission_complete,Submitted successfully. Ticket: 88426,true,2026-05-09T20:25:44.196601+00:00,936
+1100,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:25:44.269121+00:00,935
+1101,submission_complete,Submitted successfully. Ticket: 88427,true,2026-05-09T20:26:01.300663+00:00,935
+1102,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:26:01.363391+00:00,938
+1103,submission_complete,Submitted successfully. Ticket: 88428,true,2026-05-09T20:26:32.294815+00:00,938
+1104,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:26:32.894876+00:00,940
+1105,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:32:52.011351+00:00,1140
+1106,submission_complete,Submitted successfully. Ticket: 88429,true,2026-05-09T20:33:12.397108+00:00,940
+1107,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:33:13.195243+00:00,941
+1108,submission_complete,Submitted successfully. Ticket: 88431,true,2026-05-09T20:33:16.831674+00:00,1140
+1109,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:33:17.434862+00:00,1132
+1110,submission_complete,Submitted successfully. Ticket: 88432,true,2026-05-09T20:33:33.768328+00:00,1132
+1111,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:33:33.858044+00:00,1134
+1112,submission_complete,Submitted successfully. Ticket: 88433,true,2026-05-09T20:33:49.602332+00:00,1134
+1113,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:33:49.795551+00:00,1142
+1114,submission_complete,Submitted successfully. Ticket: 88434,true,2026-05-09T20:34:06.710329+00:00,1142
+1115,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:34:07.770603+00:00,1144
+1116,submission_complete,Submitted successfully. Ticket: 88435,true,2026-05-09T20:34:23.10332+00:00,1144
+1117,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:34:23.660212+00:00,970
+1118,submission_complete,Submitted successfully. Ticket: 88436,true,2026-05-09T20:34:39.259607+00:00,970
+1119,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:34:39.771068+00:00,976
+1120,submission_complete,Submitted successfully. Ticket: 88437,true,2026-05-09T20:34:55.393095+00:00,976
+1121,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:34:55.817162+00:00,942
+1122,submission_complete,Submitted successfully. Ticket: 88438,true,2026-05-09T20:35:11.65843+00:00,942
+1123,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:35:12.217173+00:00,944
+1124,submission_complete,Submitted successfully. Ticket: 88439,true,2026-05-09T20:35:30.594281+00:00,944
+1125,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:35:31.004661+00:00,945
+1126,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcAAAA=, attachments: 3",true,2026-05-09T20:35:35.88554+00:00,945
+1127,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:35:36.216006+00:00,946
+1128,submission_complete,Submitted successfully. Ticket: 88440,true,2026-05-09T20:35:52.591969+00:00,946
+1129,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:35:52.878463+00:00,992
+1130,submission_complete,Submitted successfully. Ticket: 88441,true,2026-05-09T20:36:08.482579+00:00,992
+1131,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:36:08.690022+00:00,948
+1132,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcBAAA=, attachments: 0",true,2026-05-09T20:36:10.936673+00:00,948
+1133,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:36:11.346221+00:00,949
+1134,submission_complete,Submitted successfully. Ticket: 88442,true,2026-05-09T20:36:28.978366+00:00,949
+1135,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:36:29.130851+00:00,950
+1136,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcCAAA=, attachments: 3",true,2026-05-09T20:36:33.977984+00:00,950
+1137,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:36:34.050212+00:00,951
+1138,submission_complete,Submitted successfully. Ticket: 88443,true,2026-05-09T20:36:51.493304+00:00,951
+1139,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:36:51.939309+00:00,968
+1140,submission_complete,Submitted successfully. Ticket: 88444,true,2026-05-09T20:37:07.632332+00:00,968
+1141,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:37:07.718167+00:00,952
+1142,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcDAAA=, attachments: 3",true,2026-05-09T20:37:12.619987+00:00,952
+1143,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:37:12.929028+00:00,953
+1144,submission_complete,Submitted successfully. Ticket: 88445,true,2026-05-09T20:37:30.389609+00:00,953
+1145,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:37:30.492061+00:00,954
+1146,submission_complete,Submitted successfully. Ticket: 88446,true,2026-05-09T20:37:49.193436+00:00,954
+1147,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:37:49.262311+00:00,955
+1148,submission_complete,Submitted successfully. Ticket: 88447,true,2026-05-09T20:38:05.808657+00:00,955
+1149,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:38:06.433119+00:00,958
+1150,submission_complete,Submitted successfully. Ticket: 88448,true,2026-05-09T20:38:22.32809+00:00,958
+1151,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:38:22.776683+00:00,959
+1152,submission_complete,Submitted successfully. Ticket: 88450,true,2026-05-09T20:38:39.620387+00:00,959
+1153,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:38:39.787877+00:00,977
+1154,submission_complete,Submitted successfully. Ticket: 88451,true,2026-05-09T20:38:57.144261+00:00,977
+1155,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:38:57.498172+00:00,960
+1156,submission_complete,Submitted successfully. Ticket: 88452,true,2026-05-09T20:39:15.73916+00:00,960
+1157,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:39:16.11193+00:00,961
+1158,batch_failed,"elementHandle.click: Timeout 30000ms exceeded.
+Call log:
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+ (retry 2/4 scheduled for 2026-05-09T20:44:15.987Z)",false,2026-05-09T20:39:16.412632+00:00,941
+1159,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:39:20.195601+00:00,956
+1160,submission_complete,Submitted successfully. Ticket: 88453,true,2026-05-09T20:39:31.717118+00:00,961
+1161,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:39:32.227094+00:00,962
+1162,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcEAAA=, attachments: 3",true,2026-05-09T20:39:36.881553+00:00,962
+1163,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:39:37.023836+00:00,963
+1164,submission_complete,Submitted successfully. Ticket: 88454,true,2026-05-09T20:39:54.603577+00:00,963
+1165,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:39:54.745064+00:00,964
+1166,submission_complete,Submitted successfully. Ticket: 88455,true,2026-05-09T20:40:10.398007+00:00,964
+1167,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:40:10.598461+00:00,965
+1168,submission_complete,Submitted successfully. Ticket: 88456,true,2026-05-09T20:40:28.605485+00:00,965
+1169,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:40:28.765653+00:00,966
+1170,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcFAAA=, attachments: 3",true,2026-05-09T20:40:33.210782+00:00,966
+1171,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:40:33.379009+00:00,967
+1172,submission_complete,Submitted successfully. Ticket: 88457,true,2026-05-09T20:40:49.751172+00:00,967
+1173,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:40:49.89739+00:00,969
+1174,submission_complete,Submitted successfully. Ticket: 88458,true,2026-05-09T20:41:06.780496+00:00,969
+1175,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:41:06.948278+00:00,971
+1176,submission_complete,Submitted successfully. Ticket: 88459,true,2026-05-09T20:41:25.122725+00:00,971
+1177,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:41:25.473206+00:00,972
+1178,submission_complete,Submitted successfully. Ticket: 88460,true,2026-05-09T20:41:42.303755+00:00,972
+1179,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:41:42.873415+00:00,973
+1180,submission_complete,Submitted successfully. Ticket: 88461,true,2026-05-09T20:41:59.726308+00:00,973
+1181,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:42:00.052739+00:00,974
+1182,submission_complete,Submitted successfully. Ticket: 88462,true,2026-05-09T20:42:16.089998+00:00,974
+1183,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:42:16.526333+00:00,975
+1184,submission_complete,Submitted successfully. Ticket: 88463,true,2026-05-09T20:42:32.267759+00:00,975
+1185,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:42:32.385424+00:00,978
+1186,submission_complete,Submitted successfully. Ticket: 88464,true,2026-05-09T20:42:47.877699+00:00,978
+1187,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:42:48.367292+00:00,979
+1188,submission_complete,Submitted successfully. Ticket: 88465,true,2026-05-09T20:43:06.874584+00:00,979
+1189,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:43:07.247014+00:00,981
+1190,submission_complete,Submitted successfully. Ticket: 88466,true,2026-05-09T20:43:22.905542+00:00,981
+1191,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:43:23.482839+00:00,983
+1192,submission_complete,Submitted successfully. Ticket: 88467,true,2026-05-09T20:43:40.691607+00:00,983
+1193,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:43:41.055985+00:00,984
+1194,submission_complete,Submitted successfully. Ticket: 88468,true,2026-05-09T20:43:56.782345+00:00,984
+1195,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:43:56.860578+00:00,980
+1196,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcGAAA=, attachments: 3",true,2026-05-09T20:44:01.586297+00:00,980
+1197,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:44:01.667415+00:00,982
+1198,submission_complete,Submitted successfully. Ticket: 88469,true,2026-05-09T20:44:19.70873+00:00,982
+1199,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:44:19.774324+00:00,985
+1200,submission_complete,Submitted successfully. Ticket: 88471,true,2026-05-09T20:44:35.790519+00:00,985
+1201,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:44:36.236689+00:00,986
+1202,submission_complete,Submitted successfully. Ticket: 88472,true,2026-05-09T20:44:51.508867+00:00,986
+1203,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:44:52.120411+00:00,987
+1204,submission_complete,Submitted successfully. Ticket: 88473,true,2026-05-09T20:45:08.354734+00:00,987
+1205,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:45:08.741469+00:00,988
+1206,submission_complete,Submitted successfully. Ticket: 88474,true,2026-05-09T20:45:25.279834+00:00,988
+1207,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:45:25.599237+00:00,989
+1208,submission_complete,Submitted successfully. Ticket: 88475,true,2026-05-09T20:45:41.872927+00:00,989
+1209,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:45:41.998634+00:00,990
+1210,submission_complete,Submitted successfully. Ticket: 88470,true,2026-05-09T20:45:54.795784+00:00,956
+1211,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:45:56.295705+00:00,957
+1212,submission_complete,Submitted successfully. Ticket: 88476,true,2026-05-09T20:46:01.470318+00:00,990
+1213,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:46:01.806899+00:00,1009
+1214,submission_complete,Submitted successfully. Ticket: 88477,true,2026-05-09T20:46:18.891112+00:00,1009
+1215,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:46:19.29145+00:00,991
+1216,submission_complete,Submitted successfully. Ticket: 88478,true,2026-05-09T20:46:35.965905+00:00,991
+1217,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:46:36.351828+00:00,993
+1218,submission_complete,Submitted successfully. Ticket: 88479,true,2026-05-09T20:46:53.521173+00:00,993
+1219,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:46:54.066588+00:00,994
+1220,submission_complete,Submitted successfully. Ticket: 88480,true,2026-05-09T20:47:11.342617+00:00,994
+1221,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:47:11.408755+00:00,995
+1222,submission_complete,Submitted successfully. Ticket: 88481,true,2026-05-09T20:47:27.903309+00:00,995
+1223,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:47:28.300814+00:00,997
+1224,submission_complete,Submitted successfully. Ticket: 88482,true,2026-05-09T20:47:45.281172+00:00,997
+1225,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:47:45.741078+00:00,998
+1226,submission_complete,Submitted successfully. Ticket: 88483,true,2026-05-09T20:48:04.09105+00:00,998
+1227,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:48:04.715511+00:00,999
+1228,submission_complete,Submitted successfully. Ticket: 88484,true,2026-05-09T20:48:22.954598+00:00,999
+1229,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:48:23.566336+00:00,1000
+1230,submission_complete,Submitted successfully. Ticket: 88485,true,2026-05-09T20:48:41.031088+00:00,1000
+1231,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:48:41.350157+00:00,1001
+1232,submission_complete,Submitted successfully. Ticket: 88487,true,2026-05-09T20:48:56.91304+00:00,1001
+1233,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:48:57.589094+00:00,1002
+1234,submission_complete,Submitted successfully. Ticket: 88488,true,2026-05-09T20:49:14.500786+00:00,1002
+1235,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:49:14.727625+00:00,1004
+1236,submission_complete,Submitted successfully. Ticket: 88489,true,2026-05-09T20:49:34.739604+00:00,1004
+1237,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:49:35.023213+00:00,1006
+1238,submission_complete,Submitted successfully. Ticket: 88486,true,2026-05-09T20:49:41.195686+00:00,957
+1239,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:49:47.294766+00:00,1003
+1240,submission_complete,Submitted successfully. Ticket: 88490,true,2026-05-09T20:49:53.413572+00:00,1006
+1241,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:49:53.478577+00:00,1007
+1242,submission_complete,Submitted successfully. Ticket: 88491,true,2026-05-09T20:50:10.712612+00:00,1007
+1243,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:50:10.880735+00:00,1005
+1244,submission_complete,Submitted successfully. Ticket: 88492,true,2026-05-09T20:50:28.885045+00:00,1005
+1245,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:50:29.372195+00:00,1008
+1246,submission_complete,Submitted successfully. Ticket: 88493,true,2026-05-09T20:50:47.547167+00:00,1008
+1247,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:50:48.248115+00:00,1010
+1248,submission_complete,Submitted successfully. Ticket: 88494,true,2026-05-09T20:51:06.946157+00:00,1010
+1249,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:51:07.239746+00:00,1011
+1250,submission_complete,Submitted successfully. Ticket: 88495,true,2026-05-09T20:51:25.036425+00:00,1011
+1251,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:51:25.627032+00:00,1012
+1252,submission_complete,Submitted successfully. Ticket: 88496,true,2026-05-09T20:51:43.551153+00:00,1012
+1253,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:51:43.795722+00:00,1013
+1254,submission_complete,Submitted successfully. Ticket: 88497,true,2026-05-09T20:52:00.496379+00:00,1013
+1255,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:52:01.066732+00:00,1014
+1256,submission_complete,Submitted successfully. Ticket: 88498,true,2026-05-09T20:52:16.955814+00:00,1014
+1257,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:52:17.189392+00:00,1015
+1258,submission_complete,Submitted successfully. Ticket: 88499,true,2026-05-09T20:52:34.523682+00:00,1015
+1259,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:52:34.937455+00:00,1016
+1260,submission_complete,Submitted successfully. Ticket: 88500,true,2026-05-09T20:52:52.574953+00:00,1016
+1261,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:52:52.814034+00:00,1018
+1262,submission_complete,Submitted successfully. Ticket: 88501,true,2026-05-09T20:53:10.700609+00:00,1018
+1263,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:53:10.77921+00:00,1019
+1264,submission_complete,Submitted successfully. Ticket: 88502,true,2026-05-09T20:53:29.031551+00:00,1019
+1265,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:53:29.249522+00:00,1020
+1266,submission_complete,Submitted successfully. Ticket: 88503,true,2026-05-09T20:53:47.728901+00:00,1020
+1267,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:53:47.800243+00:00,1021
+1268,submission_complete,Submitted successfully. Ticket: 88505,true,2026-05-09T20:54:04.589317+00:00,1021
+1269,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:54:05.027113+00:00,1023
+1270,submission_complete,Submitted successfully. Ticket: 88506,true,2026-05-09T20:54:20.182576+00:00,1023
+1271,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:54:20.806115+00:00,1025
+1272,submission_complete,Submitted successfully. Ticket: 88507,true,2026-05-09T20:54:36.254378+00:00,1025
+1273,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:54:36.809754+00:00,1029
+1274,submission_complete,Submitted successfully. Ticket: 88508,true,2026-05-09T20:54:52.265138+00:00,1029
+1275,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:54:52.648773+00:00,1031
+1276,submission_complete,Submitted successfully. Ticket: 88504,true,2026-05-09T20:54:56.496158+00:00,1003
+1277,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T20:54:58.395275+00:00,1017
+1278,submission_complete,Submitted successfully. Ticket: 88509,true,2026-05-09T20:55:07.941623+00:00,1031
+1279,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:55:08.515209+00:00,1034
+1280,submission_complete,Submitted successfully. Ticket: 88510,true,2026-05-09T20:55:26.122581+00:00,1034
+1281,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:55:26.214045+00:00,1036
+1282,submission_complete,Submitted successfully. Ticket: 88511,true,2026-05-09T20:55:41.67224+00:00,1036
+1283,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:55:42.197188+00:00,1038
+1284,submission_complete,Submitted successfully. Ticket: 88512,true,2026-05-09T20:55:57.424938+00:00,1038
+1285,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:55:57.649244+00:00,1040
+1286,submission_complete,Submitted successfully. Ticket: 88513,true,2026-05-09T20:56:14.087118+00:00,1040
+1287,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:56:14.757735+00:00,1045
+1288,submission_complete,Submitted successfully. Ticket: 88514,true,2026-05-09T20:56:30.658604+00:00,1045
+1289,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:56:30.878573+00:00,1047
+1290,submission_complete,Submitted successfully. Ticket: 88515,true,2026-05-09T20:56:46.952117+00:00,1047
+1291,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:56:47.691901+00:00,1048
+1292,submission_complete,Submitted successfully. Ticket: 88516,true,2026-05-09T20:57:07.141594+00:00,1048
+1293,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:57:07.404745+00:00,1050
+1294,submission_complete,Submitted successfully. Ticket: 88517,true,2026-05-09T20:57:25.034741+00:00,1050
+1295,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:57:25.116348+00:00,1051
+1296,submission_complete,Submitted successfully. Ticket: 88518,true,2026-05-09T20:57:40.985016+00:00,1051
+1297,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:57:41.070412+00:00,1052
+1298,submission_complete,Submitted successfully. Ticket: 88519,true,2026-05-09T20:57:56.073146+00:00,1052
+1299,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:57:56.883878+00:00,1054
+1300,submission_complete,Submitted successfully. Ticket: 88520,true,2026-05-09T20:58:12.52133+00:00,1054
+1301,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:58:13.10472+00:00,1057
+1302,submission_complete,Submitted successfully. Ticket: 88521,true,2026-05-09T20:58:27.991742+00:00,1057
+1303,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:58:28.769117+00:00,1058
+1304,submission_complete,Submitted successfully. Ticket: 88522,true,2026-05-09T20:58:46.102927+00:00,1058
+1305,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:58:46.416799+00:00,1059
+1306,submission_complete,Submitted successfully. Ticket: 88523,true,2026-05-09T20:59:04.30927+00:00,1059
+1307,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:59:04.532766+00:00,1064
+1308,submission_complete,Submitted successfully. Ticket: 88524,true,2026-05-09T20:59:22.15305+00:00,1064
+1309,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:59:22.754782+00:00,1060
+1310,submission_complete,Submitted successfully. Ticket: 88525,true,2026-05-09T20:59:38.592956+00:00,1060
+1311,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:59:38.980329+00:00,1061
+1312,submission_complete,Submitted successfully. Ticket: 88526,true,2026-05-09T20:59:56.126437+00:00,1061
+1313,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T20:59:56.364333+00:00,1062
+1314,submission_complete,Submitted successfully. Ticket: 88527,true,2026-05-09T21:00:13.028862+00:00,1062
+1315,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:00:13.767235+00:00,1063
+1316,submission_complete,Submitted successfully. Ticket: 88528,true,2026-05-09T21:00:30.986915+00:00,1063
+1317,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:00:31.233789+00:00,1110
+1318,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcHAAA=, attachments: 2",true,2026-05-09T21:00:35.63892+00:00,1110
+1319,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:00:35.76765+00:00,1065
+1320,submission_complete,Submitted successfully. Ticket: 88531,true,2026-05-09T21:00:54.909735+00:00,1065
+1321,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:00:55.170014+00:00,1066
+1322,submission_complete,Submitted successfully. Ticket: 88532,true,2026-05-09T21:01:12.661748+00:00,1066
+1323,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:01:13.323423+00:00,1067
+1324,submission_complete,Submitted successfully. Ticket: 88533,true,2026-05-09T21:01:28.533005+00:00,1067
+1325,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:01:28.818643+00:00,1068
+1326,submission_complete,Submitted successfully. Ticket: 88534,true,2026-05-09T21:01:44.327979+00:00,1068
+1327,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:01:44.889915+00:00,1076
+1328,submission_complete,Submitted successfully. Ticket: 88535,true,2026-05-09T21:02:00.983609+00:00,1076
+1329,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:02:01.129159+00:00,1082
+1330,submission_complete,Submitted successfully. Ticket: 88530,true,2026-05-09T21:02:13.394606+00:00,1017
+1331,batch_claimed,Claimed by batch job batch_1778357460308_2coy (triggered by Emil J),true,2026-05-09T21:02:14.994219+00:00,1042
+1332,submission_complete,Submitted successfully. Ticket: 88536,true,2026-05-09T21:02:19.854122+00:00,1082
+1333,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:02:19.924198+00:00,1069
+1334,submission_complete,Submitted successfully. Ticket: 88537,true,2026-05-09T21:02:35.387468+00:00,1069
+1335,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:02:35.942453+00:00,1072
+1336,submission_complete,Submitted successfully. Ticket: 88538,true,2026-05-09T21:02:52.006957+00:00,1072
+1337,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:02:52.659713+00:00,1080
+1338,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcIAAA=, attachments: 0",true,2026-05-09T21:02:54.772685+00:00,1080
+1339,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:02:55.197899+00:00,1087
+1340,submission_complete,Submitted successfully. Ticket: 88539,true,2026-05-09T21:03:11.440522+00:00,1087
+1341,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:03:11.977509+00:00,1090
+1342,submission_complete,Submitted successfully. Ticket: 88541,true,2026-05-09T21:03:29.116643+00:00,1090
+1343,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:03:29.606489+00:00,1070
+1344,submission_complete,Submitted successfully. Ticket: 88542,true,2026-05-09T21:03:45.209897+00:00,1070
+1345,batch_claimed,Claimed by batch job batch_1778358771908_an1r (triggered by Emil J),true,2026-05-09T21:03:45.600861+00:00,1095
+1346,submission_complete,Submitted successfully. Ticket: 88543,true,2026-05-09T21:04:04.064473+00:00,1095
+1347,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:28:09.665701+00:00,1153
+1348,submission_complete,Submitted successfully. Ticket: 88545,true,2026-05-09T21:28:34.121957+00:00,1153
+1349,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:28:34.243469+00:00,1154
+1350,submission_complete,Submitted successfully. Ticket: 88546,true,2026-05-09T21:28:51.314826+00:00,1154
+1351,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:28:51.524687+00:00,1156
+1352,submission_complete,Submitted successfully. Ticket: 88547,true,2026-05-09T21:29:07.631088+00:00,1156
+1353,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:29:07.698477+00:00,1158
+1354,submission_complete,Submitted successfully. Ticket: 88548,true,2026-05-09T21:29:23.846575+00:00,1158
+1355,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:29:24.12084+00:00,1078
+1356,submission_complete,Submitted successfully. Ticket: 88549,true,2026-05-09T21:29:39.617008+00:00,1078
+1357,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:29:39.955094+00:00,1103
+1358,submission_complete,Submitted successfully. Ticket: 88550,true,2026-05-09T21:29:55.42582+00:00,1103
+1359,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:29:55.637674+00:00,1112
+1360,submission_complete,Submitted successfully. Ticket: 88551,true,2026-05-09T21:30:14.700354+00:00,1112
+1361,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:30:15.035609+00:00,1073
+1362,submission_complete,Submitted successfully. Ticket: 88552,true,2026-05-09T21:30:31.131387+00:00,1073
+1363,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:30:31.415882+00:00,1079
+1364,submission_complete,Submitted successfully. Ticket: 88553,true,2026-05-09T21:30:48.954595+00:00,1079
+1365,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:30:49.226672+00:00,1083
+1366,submission_complete,Submitted successfully. Ticket: 88554,true,2026-05-09T21:31:08.939971+00:00,1083
+1367,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:31:09.009287+00:00,1086
+1368,submission_complete,Submitted successfully. Ticket: 88555,true,2026-05-09T21:31:25.77394+00:00,1086
+1369,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:31:25.873626+00:00,1099
+1370,submission_complete,Submitted successfully. Ticket: 88556,true,2026-05-09T21:31:41.952217+00:00,1099
+1371,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:31:42.213862+00:00,1074
+1372,submission_complete,Submitted successfully. Ticket: 88557,true,2026-05-09T21:31:58.037952+00:00,1074
+1373,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:31:58.111938+00:00,1077
+1374,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcJAAA=, attachments: 4",true,2026-05-09T21:32:03.086486+00:00,1077
+1375,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:32:03.261074+00:00,1091
+1376,submission_complete,Submitted successfully. Ticket: 88558,true,2026-05-09T21:32:21.922004+00:00,1091
+1377,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:32:22.086674+00:00,1093
+1378,submission_complete,Submitted successfully. Ticket: 88559,true,2026-05-09T21:32:37.983156+00:00,1093
+1379,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:32:38.060834+00:00,1075
+1380,submission_complete,Submitted successfully. Ticket: 88560,true,2026-05-09T21:32:53.538047+00:00,1075
+1381,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:32:53.605402+00:00,1096
+1382,submission_complete,Submitted successfully. Ticket: 88561,true,2026-05-09T21:33:11.236014+00:00,1096
+1383,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:33:11.310349+00:00,1043
+1384,submission_complete,Submitted successfully. Ticket: 88562,true,2026-05-09T21:33:26.603053+00:00,1043
+1385,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:33:26.67135+00:00,1094
+1386,submission_complete,Submitted successfully. Ticket: 88563,true,2026-05-09T21:33:44.724171+00:00,1094
+1387,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:33:44.787711+00:00,1105
+1388,submission_complete,Submitted successfully. Ticket: 88564,true,2026-05-09T21:34:05.689935+00:00,1105
+1389,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:34:05.767931+00:00,1084
+1390,submission_complete,Submitted successfully. Ticket: 88565,true,2026-05-09T21:34:23.879447+00:00,1084
+1391,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:34:24.069244+00:00,1085
+1392,submission_complete,Submitted successfully. Ticket: 88566,true,2026-05-09T21:34:39.692428+00:00,1085
+1393,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:34:39.76145+00:00,1104
+1394,submission_complete,Submitted successfully. Ticket: 88567,true,2026-05-09T21:34:55.623727+00:00,1104
+1395,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:34:55.696282+00:00,1114
+1396,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcKAAA=, attachments: 3",true,2026-05-09T21:34:59.56315+00:00,1114
+1397,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:34:59.736676+00:00,1089
+1398,submission_complete,Submitted successfully. Ticket: 88568,true,2026-05-09T21:35:14.915429+00:00,1089
+1399,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:35:14.979642+00:00,1092
+1400,submission_complete,Submitted successfully. Ticket: 88569,true,2026-05-09T21:35:31.069705+00:00,1092
+1401,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:35:31.14281+00:00,1097
+1402,submission_complete,Submitted successfully. Ticket: 88570,true,2026-05-09T21:35:47.036429+00:00,1097
+1403,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:35:47.104474+00:00,1101
+1404,submission_complete,Submitted successfully. Ticket: 88571,true,2026-05-09T21:36:02.507027+00:00,1101
+1405,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:36:02.581204+00:00,1113
+1406,submission_complete,Submitted successfully. Ticket: 88572,true,2026-05-09T21:36:20.336772+00:00,1113
+1407,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:36:20.404054+00:00,1108
+1408,submission_complete,Submitted successfully. Ticket: 88573,true,2026-05-09T21:36:36.920175+00:00,1108
+1409,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:36:37.14769+00:00,1111
+1410,submission_complete,Submitted successfully. Ticket: 88574,true,2026-05-09T21:36:54.530721+00:00,1111
+1411,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:36:54.744709+00:00,1116
+1412,submission_complete,Submitted successfully. Ticket: 88575,true,2026-05-09T21:37:13.474909+00:00,1116
+1413,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:37:13.651276+00:00,1117
+1414,submission_complete,Submitted successfully. Ticket: 88576,true,2026-05-09T21:37:32.712217+00:00,1117
+1415,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:37:32.77782+00:00,1119
+1416,submission_complete,Submitted successfully. Ticket: 88577,true,2026-05-09T21:37:50.576565+00:00,1119
+1417,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:37:50.813923+00:00,1121
+1418,submission_complete,Submitted successfully. Ticket: 88578,true,2026-05-09T21:38:08.668867+00:00,1121
+1419,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:38:08.860571+00:00,1124
+1420,submission_complete,Submitted successfully. Ticket: 88579,true,2026-05-09T21:38:24.499668+00:00,1124
+1421,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:38:24.585887+00:00,1125
+1422,submission_complete,Submitted successfully. Ticket: 88580,true,2026-05-09T21:38:41.205099+00:00,1125
+1423,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:38:41.53343+00:00,1126
+1424,submission_complete,Submitted successfully. Ticket: 88581,true,2026-05-09T21:38:57.27702+00:00,1126
+1425,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:38:57.345998+00:00,1130
+1426,submission_complete,Submitted successfully. Ticket: 88582,true,2026-05-09T21:39:16.108051+00:00,1130
+1427,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:39:16.33427+00:00,1071
+1428,submission_complete,Submitted successfully. Ticket: 88583,true,2026-05-09T21:39:31.529789+00:00,1071
+1429,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:39:31.794095+00:00,1136
+1430,submission_complete,Submitted successfully. Ticket: 88584,true,2026-05-09T21:39:47.659727+00:00,1136
+1431,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:39:47.753191+00:00,1098
+1432,submission_complete,Submitted successfully. Ticket: 88585,true,2026-05-09T21:40:04.017196+00:00,1098
+1433,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:40:04.215281+00:00,1100
+1434,submission_complete,Submitted successfully. Ticket: 88586,true,2026-05-09T21:40:20.907753+00:00,1100
+1435,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:40:21.123993+00:00,1109
+1436,submission_complete,Submitted successfully. Ticket: 88587,true,2026-05-09T21:40:38.518195+00:00,1109
+1437,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:40:38.657698+00:00,1122
+1438,submission_complete,Submitted successfully. Ticket: 88588,true,2026-05-09T21:40:54.589522+00:00,1122
+1439,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:40:54.823689+00:00,1115
+1440,submission_complete,Submitted successfully. Ticket: 88589,true,2026-05-09T21:41:13.620665+00:00,1115
+1441,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:41:13.698907+00:00,1160
+1442,submission_complete,Submitted successfully. Ticket: 88590,true,2026-05-09T21:41:29.674351+00:00,1160
+1443,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:41:29.865182+00:00,1118
+1444,submission_complete,Submitted successfully. Ticket: 88591,true,2026-05-09T21:41:47.747447+00:00,1118
+1445,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:41:47.955886+00:00,1162
+1446,submission_complete,Submitted successfully. Ticket: 88592,true,2026-05-09T21:42:03.094781+00:00,1162
+1447,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:42:03.309748+00:00,1102
+1448,submission_complete,Submitted successfully. Ticket: 88593,true,2026-05-09T21:42:19.414606+00:00,1102
+1449,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:42:19.531296+00:00,1107
+1450,submission_complete,Submitted successfully. Ticket: 88594,true,2026-05-09T21:42:35.509539+00:00,1107
+1451,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:42:35.607733+00:00,1081
+1452,submission_complete,Submitted successfully. Ticket: 88595,true,2026-05-09T21:42:51.466456+00:00,1081
+1453,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:42:51.545005+00:00,1138
+1454,submission_complete,Submitted successfully. Ticket: 88596,true,2026-05-09T21:43:08.087071+00:00,1138
+1455,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:43:08.193835+00:00,1088
+1456,submission_complete,Submitted successfully. Ticket: 88597,true,2026-05-09T21:43:23.942125+00:00,1088
+1457,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:43:24.048689+00:00,1164
+1458,submission_complete,Submitted successfully. Ticket: 88598,true,2026-05-09T21:43:41.4395+00:00,1164
+1459,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:43:41.685895+00:00,941
+1460,submission_complete,Submitted successfully. Ticket: 88599,true,2026-05-09T21:44:00.466509+00:00,941
+1461,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:44:00.70251+00:00,1146
+1462,submission_complete,Submitted successfully. Ticket: 88600,true,2026-05-09T21:44:17.047749+00:00,1146
+1463,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:44:17.26192+00:00,1148
+1464,submission_complete,Submitted successfully. Ticket: 88601,true,2026-05-09T21:44:33.228256+00:00,1148
+1465,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:44:33.418254+00:00,1106
+1466,submission_complete,Submitted successfully. Ticket: 88602,true,2026-05-09T21:44:48.574595+00:00,1106
+1467,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:44:48.821919+00:00,1123
+1468,submission_complete,Submitted successfully. Ticket: 88603,true,2026-05-09T21:45:04.611905+00:00,1123
+1469,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:45:04.727942+00:00,1150
+1470,submission_complete,Submitted successfully. Ticket: 88604,true,2026-05-09T21:45:20.682573+00:00,1150
+1471,batch_claimed,Claimed by batch job batch_1778362089569_o1h7 (triggered by Emil J),true,2026-05-09T21:45:20.897103+00:00,1128
+1472,submission_complete,Submitted successfully. Ticket: 88605,true,2026-05-09T21:45:36.263394+00:00,1128
+1473,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:25:46.887139+00:00,1299
+1474,submission_complete,Submitted successfully. Ticket: 88613,true,2026-05-09T23:26:14.436386+00:00,1299
+1475,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:26:14.512777+00:00,1304
+1476,submission_complete,Submitted successfully. Ticket: 88614,true,2026-05-09T23:26:30.060024+00:00,1304
+1477,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:26:30.402986+00:00,1302
+1478,submission_complete,Submitted successfully. Ticket: 88615,true,2026-05-09T23:26:46.617345+00:00,1302
+1479,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:26:47.034835+00:00,1306
+1480,submission_complete,Submitted successfully. Ticket: 88616,true,2026-05-09T23:27:02.607388+00:00,1306
+1481,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:27:03.0786+00:00,1307
+1482,submission_complete,Submitted successfully. Ticket: 88617,true,2026-05-09T23:27:19.508261+00:00,1307
+1483,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:27:19.90348+00:00,1308
+1484,submission_complete,Submitted successfully. Ticket: 88618,true,2026-05-09T23:27:36.381822+00:00,1308
+1485,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:27:36.817607+00:00,1310
+1486,submission_complete,Submitted successfully. Ticket: 88619,true,2026-05-09T23:27:53.388536+00:00,1310
+1487,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:27:53.705731+00:00,1317
+1488,submission_complete,Submitted successfully. Ticket: 88620,true,2026-05-09T23:28:10.384625+00:00,1317
+1489,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:28:10.740324+00:00,1313
+1490,submission_complete,Submitted successfully. Ticket: 88621,true,2026-05-09T23:28:26.837659+00:00,1313
+1491,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:28:26.970692+00:00,1314
+1492,submission_complete,Submitted successfully. Ticket: 88622,true,2026-05-09T23:28:44.533156+00:00,1314
+1493,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:28:44.885497+00:00,1330
+1494,submission_complete,Submitted successfully. Ticket: 88623,true,2026-05-09T23:29:01.157029+00:00,1330
+1495,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:29:01.249304+00:00,1316
+1496,submission_complete,Submitted successfully. Ticket: 88624,true,2026-05-09T23:29:19.277218+00:00,1316
+1497,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:29:19.646597+00:00,1336
+1498,submission_complete,Submitted successfully. Ticket: 88625,true,2026-05-09T23:29:38.039119+00:00,1336
+1499,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:29:38.446371+00:00,1318
+1500,submission_complete,Submitted successfully. Ticket: 88626,true,2026-05-09T23:29:54.313982+00:00,1318
+1501,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:29:54.606179+00:00,1320
+1502,stuck_reset,Auto-reset by stuck-submission watcher after 120 minutes of no activity,true,2026-05-09T23:30:00.108997+00:00,1042
+1503,submission_complete,Submitted successfully. Ticket: 88627,true,2026-05-09T23:30:12.734255+00:00,1320
+1504,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:30:12.863574+00:00,1319
+1505,submission_complete,Submitted successfully. Ticket: 88628,true,2026-05-09T23:30:28.80186+00:00,1319
+1506,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:30:28.887188+00:00,1322
+1507,submission_complete,Submitted successfully. Ticket: 88629,true,2026-05-09T23:30:45.58556+00:00,1322
+1508,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:30:45.664226+00:00,1328
+1509,submission_complete,Submitted successfully. Ticket: 88630,true,2026-05-09T23:31:04.006522+00:00,1328
+1510,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:31:04.213136+00:00,1323
+1511,submission_complete,Submitted successfully. Ticket: 88631,true,2026-05-09T23:31:21.286054+00:00,1323
+1512,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:31:21.359601+00:00,1324
+1513,submission_complete,Submitted successfully. Ticket: 88632,true,2026-05-09T23:31:39.784614+00:00,1324
+1514,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:31:39.863994+00:00,1327
+1515,submission_complete,Submitted successfully. Ticket: 88633,true,2026-05-09T23:31:56.264423+00:00,1327
+1516,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:31:56.498774+00:00,1165
+1517,submission_complete,Submitted successfully. Ticket: 88634,true,2026-05-09T23:32:12.226676+00:00,1165
+1518,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:32:12.316408+00:00,1325
+1519,submission_complete,Submitted successfully. Ticket: 88635,true,2026-05-09T23:32:33.230406+00:00,1325
+1520,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:32:33.30504+00:00,1343
+1521,submission_complete,Submitted successfully. Ticket: 88636,true,2026-05-09T23:32:50.458092+00:00,1343
+1522,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:32:50.657694+00:00,1166
+1523,submission_complete,Submitted successfully. Ticket: 88637,true,2026-05-09T23:33:07.140057+00:00,1166
+1524,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:33:07.263987+00:00,1329
+1525,submission_complete,Submitted successfully. Ticket: 88638,true,2026-05-09T23:33:24.029748+00:00,1329
+1526,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:33:24.498214+00:00,1331
+1527,submission_complete,Submitted successfully. Ticket: 88639,true,2026-05-09T23:33:42.711361+00:00,1331
+1528,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:33:43.168992+00:00,1332
+1529,submission_complete,Submitted successfully. Ticket: 88640,true,2026-05-09T23:34:00.181329+00:00,1332
+1530,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:34:00.258582+00:00,1169
+1531,submission_complete,Submitted successfully. Ticket: 88641,true,2026-05-09T23:34:17.839319+00:00,1169
+1532,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:34:18.256026+00:00,1333
+1533,submission_complete,Submitted successfully. Ticket: 88642,true,2026-05-09T23:34:35.018488+00:00,1333
+1534,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:34:35.437102+00:00,1334
+1535,submission_complete,Submitted successfully. Ticket: 88643,true,2026-05-09T23:34:53.17398+00:00,1334
+1536,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:34:53.578143+00:00,1339
+1537,submission_complete,Submitted successfully. Ticket: 88644,true,2026-05-09T23:35:09.945491+00:00,1339
+1538,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:35:10.174603+00:00,1335
+1539,submission_complete,Submitted successfully. Ticket: 88645,true,2026-05-09T23:35:29.741573+00:00,1335
+1540,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:35:29.943928+00:00,1337
+1541,submission_complete,Submitted successfully. Ticket: 88646,true,2026-05-09T23:35:48.367208+00:00,1337
+1542,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:35:48.588302+00:00,1338
+1543,submission_complete,Submitted successfully. Ticket: 88647,true,2026-05-09T23:36:06.637149+00:00,1338
+1544,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:36:06.89421+00:00,1340
+1545,submission_complete,Submitted successfully. Ticket: 88648,true,2026-05-09T23:36:25.905037+00:00,1340
+1546,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:36:25.98212+00:00,1341
+1547,submission_complete,Submitted successfully. Ticket: 88649,true,2026-05-09T23:36:44.663662+00:00,1341
+1548,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:36:44.875277+00:00,1342
+1549,submission_complete,Submitted successfully. Ticket: 88650,true,2026-05-09T23:37:02.264223+00:00,1342
+1550,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:37:02.497343+00:00,1347
+1551,submission_complete,Submitted successfully. Ticket: 88651,true,2026-05-09T23:37:19.812087+00:00,1347
+1552,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:37:20.045079+00:00,1344
+1553,submission_complete,Submitted successfully. Ticket: 88652,true,2026-05-09T23:37:36.752454+00:00,1344
+1554,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:37:36.899827+00:00,1345
+1555,submission_complete,Submitted successfully. Ticket: 88653,true,2026-05-09T23:37:55.179258+00:00,1345
+1556,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:37:55.518453+00:00,1346
+1557,submission_complete,Submitted successfully. Ticket: 88654,true,2026-05-09T23:38:13.884482+00:00,1346
+1558,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:38:14.036998+00:00,1348
+1559,submission_complete,Submitted successfully. Ticket: 88655,true,2026-05-09T23:38:31.557891+00:00,1348
+1560,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:38:31.84408+00:00,1350
+1561,submission_complete,Submitted successfully. Ticket: 88656,true,2026-05-09T23:38:47.388329+00:00,1350
+1562,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:38:47.53113+00:00,1351
+1563,submission_complete,Submitted successfully. Ticket: 88657,true,2026-05-09T23:39:03.426013+00:00,1351
+1564,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:39:03.500069+00:00,1352
+1565,submission_complete,Submitted successfully. Ticket: 88658,true,2026-05-09T23:39:19.108864+00:00,1352
+1566,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:39:19.325589+00:00,1264
+1567,submission_complete,Submitted successfully. Ticket: 88659,true,2026-05-09T23:39:34.928599+00:00,1264
+1568,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:39:35.1792+00:00,1275
+1569,submission_complete,Submitted successfully. Ticket: 88660,true,2026-05-09T23:39:51.089072+00:00,1275
+1570,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:39:51.32245+00:00,1276
+1571,submission_complete,Submitted successfully. Ticket: 88661,true,2026-05-09T23:40:07.101314+00:00,1276
+1572,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:40:07.177437+00:00,1277
+1573,submission_complete,Submitted successfully. Ticket: 88662,true,2026-05-09T23:40:23.344205+00:00,1277
+1574,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:40:23.414177+00:00,1278
+1575,submission_complete,Submitted successfully. Ticket: 88663,true,2026-05-09T23:40:39.124739+00:00,1278
+1576,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:40:39.189501+00:00,1265
+1577,submission_complete,Submitted successfully. Ticket: 88664,true,2026-05-09T23:40:54.498097+00:00,1265
+1578,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:40:54.564178+00:00,1267
+1579,submission_complete,Submitted successfully. Ticket: 88665,true,2026-05-09T23:41:10.210814+00:00,1267
+1580,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:41:10.278174+00:00,1272
+1581,submission_complete,Submitted successfully. Ticket: 88666,true,2026-05-09T23:41:27.788433+00:00,1272
+1582,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:41:27.858284+00:00,1303
+1583,submission_complete,Submitted successfully. Ticket: 88667,true,2026-05-09T23:41:43.297774+00:00,1303
+1584,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:41:43.361576+00:00,1315
+1585,submission_complete,Submitted successfully. Ticket: 88668,true,2026-05-09T23:42:00.460552+00:00,1315
+1586,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:42:00.531949+00:00,1266
+1587,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcLAAA=, attachments: 3",true,2026-05-09T23:42:04.878734+00:00,1266
+1588,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:42:05.104288+00:00,1311
+1589,submission_complete,Submitted successfully. Ticket: 88669,true,2026-05-09T23:42:21.919562+00:00,1311
+1590,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:42:22.102899+00:00,1312
+1591,submission_complete,Submitted successfully. Ticket: 88670,true,2026-05-09T23:42:37.478383+00:00,1312
+1592,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:42:37.68228+00:00,1349
+1593,submission_complete,Submitted successfully. Ticket: 88671,true,2026-05-09T23:42:52.821901+00:00,1349
+1594,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:42:52.895827+00:00,1353
+1595,submission_complete,Submitted successfully. Ticket: 88672,true,2026-05-09T23:43:08.165642+00:00,1353
+1596,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:43:08.238858+00:00,1268
+1597,submission_complete,Submitted successfully. Ticket: 88673,true,2026-05-09T23:43:25.621768+00:00,1268
+1598,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:43:25.686382+00:00,1279
+1599,submission_complete,Submitted successfully. Ticket: 88674,true,2026-05-09T23:43:40.546646+00:00,1279
+1600,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:43:40.968042+00:00,1294
+1601,submission_complete,Submitted successfully. Ticket: 88675,true,2026-05-09T23:43:56.387753+00:00,1294
+1602,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:43:56.507282+00:00,1295
+1603,submission_complete,Submitted successfully. Ticket: 88676,true,2026-05-09T23:44:12.217997+00:00,1295
+1604,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:44:12.36208+00:00,1305
+1605,submission_complete,Submitted successfully. Ticket: 88677,true,2026-05-09T23:44:28.605387+00:00,1305
+1606,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:44:28.830912+00:00,1269
+1607,submission_complete,Submitted successfully. Ticket: 88678,true,2026-05-09T23:44:46.672845+00:00,1269
+1608,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:44:47.051136+00:00,1270
+1609,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcMAAA=, attachments: 3",true,2026-05-09T23:44:50.557217+00:00,1270
+1610,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:44:50.939851+00:00,1271
+1611,submission_complete,Submitted successfully. Ticket: 88679,true,2026-05-09T23:45:07.092532+00:00,1271
+1612,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:45:07.160259+00:00,1287
+1613,submission_complete,Submitted successfully. Ticket: 88680,true,2026-05-09T23:45:23.255696+00:00,1287
+1614,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:45:23.464419+00:00,1309
+1615,submission_complete,Submitted successfully. Ticket: 88681,true,2026-05-09T23:45:39.798349+00:00,1309
+1616,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:45:40.058996+00:00,1273
+1617,submission_complete,Submitted successfully. Ticket: 88682,true,2026-05-09T23:45:57.855624+00:00,1273
+1618,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:45:58.112422+00:00,1274
+1619,submission_complete,Submitted successfully. Ticket: 88683,true,2026-05-09T23:46:15.150485+00:00,1274
+1620,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:46:15.377162+00:00,1281
+1621,submission_complete,Submitted successfully. Ticket: 88684,true,2026-05-09T23:46:31.35262+00:00,1281
+1622,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:46:31.608762+00:00,1291
+1623,submission_complete,Submitted successfully. Ticket: 88685,true,2026-05-09T23:46:47.167961+00:00,1291
+1624,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:46:47.529041+00:00,1354
+1625,submission_complete,Submitted successfully. Ticket: 88686,true,2026-05-09T23:47:02.632526+00:00,1354
+1626,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:47:02.882787+00:00,1280
+1627,submission_complete,Submitted successfully. Ticket: 88687,true,2026-05-09T23:47:20.836337+00:00,1280
+1628,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:47:21.047569+00:00,1282
+1629,submission_complete,"Direct email sent successfully. Message ID: AAMkAGFhMzgwZGJjLTNkNjktNDlhYS1hM2I4LTE3MmI4YTlkNzhmMgBGAAAAAAAUhYVsiS-zQLf1GEtAsll-BwBVKgS5MpITR5VyLl_UBcCwAAAAAAEPAABVKgS5MpITR5VyLl_UBcCwAAVG5lcNAAA=, attachments: 4",true,2026-05-09T23:47:25.587249+00:00,1282
+1630,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:47:25.78421+00:00,1283
+1631,submission_complete,Submitted successfully. Ticket: 88688,true,2026-05-09T23:47:41.016419+00:00,1283
+1632,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:47:41.257351+00:00,1285
+1633,submission_complete,Submitted successfully. Ticket: 88689,true,2026-05-09T23:47:57.153184+00:00,1285
+1634,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:47:57.634624+00:00,1355
+1635,submission_complete,Submitted successfully. Ticket: 88690,true,2026-05-09T23:48:13.583588+00:00,1355
+1636,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:48:13.725882+00:00,1284
+1637,submission_complete,Submitted successfully. Ticket: 88691,true,2026-05-09T23:48:31.017205+00:00,1284
+1638,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:48:31.397832+00:00,1286
+1639,submission_complete,Submitted successfully. Ticket: 88692,true,2026-05-09T23:48:48.67346+00:00,1286
+1640,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:48:48.910176+00:00,1288
+1641,submission_complete,Submitted successfully. Ticket: 88693,true,2026-05-09T23:49:04.278401+00:00,1288
+1642,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:49:04.759246+00:00,1289
+1643,submission_complete,Submitted successfully. Ticket: 88694,true,2026-05-09T23:49:22.002973+00:00,1289
+1644,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:49:22.71677+00:00,1290
+1645,submission_complete,Submitted successfully. Ticket: 88695,true,2026-05-09T23:49:37.985691+00:00,1290
+1646,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:49:38.428353+00:00,1293
+1647,submission_complete,Submitted successfully. Ticket: 88696,true,2026-05-09T23:49:53.593491+00:00,1293
+1648,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:49:53.862298+00:00,1292
+1649,submission_complete,Submitted successfully. Ticket: 88697,true,2026-05-09T23:50:09.514579+00:00,1292
+1650,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:50:09.608074+00:00,1301
+1651,submission_complete,Submitted successfully. Ticket: 88698,true,2026-05-09T23:50:26.227612+00:00,1301
+1652,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:50:26.335333+00:00,1296
+1653,submission_complete,Submitted successfully. Ticket: 88699,true,2026-05-09T23:50:42.424524+00:00,1296
+1654,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:50:42.773271+00:00,1321
+1655,submission_complete,Submitted successfully. Ticket: 88700,true,2026-05-09T23:50:58.527671+00:00,1321
+1656,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:50:58.758701+00:00,1326
+1657,submission_complete,Submitted successfully. Ticket: 88701,true,2026-05-09T23:51:14.684235+00:00,1326
+1658,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:51:14.897967+00:00,1297
+1659,submission_complete,Submitted successfully. Ticket: 88702,true,2026-05-09T23:51:31.822972+00:00,1297
+1660,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:51:32.162359+00:00,1298
+1661,submission_complete,Submitted successfully. Ticket: 88703,true,2026-05-09T23:51:47.269007+00:00,1298
+1662,batch_claimed,Claimed by batch job batch_1778369146777_jml7 (triggered by Emil J),true,2026-05-09T23:51:47.467301+00:00,1300
+1663,submission_complete,Submitted successfully. Ticket: 88704,true,2026-05-09T23:52:04.926136+00:00,1300
+1664,batch_claimed,Claimed by batch job batch_1778370901894_hacp (triggered by Emil J),true,2026-05-09T23:55:01.987014+00:00,1042
+1665,submission_complete,Submitted successfully. Ticket: 88705,true,2026-05-09T23:55:18.672015+00:00,1042

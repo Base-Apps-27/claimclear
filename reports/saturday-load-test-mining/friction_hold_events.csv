@@ -1,0 +1,10 @@
+ts,operator,action,claim_id,invoice_group_id,details
+2026-05-09T13:23:59.892361+00:00,someidy.s@agapeny.com,leg_hold_cleared,974,,Leg hold cleared
+2026-05-09T16:34:58.506777+00:00,emil.j@agapeny.com,leg_sop_hold_cleared,1205,,SOP hold cleared
+2026-05-09T16:40:09.09038+00:00,someidy.s@agapeny.com,leg_sop_hold_cleared,1194,,SOP hold cleared
+2026-05-09T16:42:15.167169+00:00,someidy.s@agapeny.com,leg_sop_hold_cleared,1194,,SOP hold cleared
+2026-05-09T16:56:36.214138+00:00,someidy.s@agapeny.com,leg_sop_hold_cleared,1683,,SOP hold cleared
+2026-05-09T17:08:22.866001+00:00,someidy.s@agapeny.com,leg_sop_hold_cleared,1675,,SOP hold cleared
+2026-05-09T17:25:39.609077+00:00,yahaira.d@agapeny.com,leg_hold_placed,1173,,Leg placed on hold: other
+2026-05-09T23:21:31.632461+00:00,emil.j@agapeny.com,leg_sop_hold_cleared,1624,,SOP hold cleared
+2026-05-09T23:23:12.506647+00:00,emil.j@agapeny.com,leg_sop_hold_cleared,1674,,SOP hold cleared

@@ -1,0 +1,48 @@
+{
+  "window_utc": {
+    "start": "2026-05-09T04:00:00Z",
+    "end": "2026-05-10T04:00:00Z"
+  },
+  "window_label": "EDT (UTC-4) — Saturday May 9, 2026 local",
+  "session_gap_minutes": 15,
+  "excluded_accounts": [
+    "system@claimclear",
+    "system@claimclear-heal",
+    "system",
+    "z7ytv7jcb4@privaterelay.appleid.com",
+    "(NULL user_email — system writes)"
+  ],
+  "operators": [
+    "alondra.n@agapeny.com",
+    "emil.j@agapeny.com",
+    "katia.h@agapeny.com",
+    "krisalys.p@agapeny.com",
+    "oliver.g@agapeny.com",
+    "olveris.g@agapeny.com",
+    "perla.f@agapeny.com",
+    "someidy.s@agapeny.com",
+    "victor.l@agapeny.com",
+    "yahaira.d@agapeny.com"
+  ],
+  "counts": {
+    "operators": 10,
+    "invoice_groups_touched": 497,
+    "claims_touched": 761,
+    "audit_events": 6489,
+    "state_events": 2694,
+    "presence_heartbeats": 133,
+    "portal_submissions_created": 729,
+    "bot_activity_rows": 700,
+    "sop_advance_events": 1557,
+    "sop_rewind_events": 38,
+    "sop_terminal_events": 513,
+    "leg_reclassified": 2,
+    "group_preview_generated": 375,
+    "group_draft_edited": 221,
+    "group_draft_reviewed": 358,
+    "portal_draft_created": 375,
+    "portal_submission_cancelled": 426,
+    "response_acknowledged": 0,
+    "sessions": 43
+  }
+}

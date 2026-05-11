@@ -1,0 +1,31 @@
+error_type,terminal_outcome,leg_count,pct_of_all_legs,pct_within_error_type
+Incomplete GPS,portal_dispute,183,24.05,97.86
+(unclassified),non_issue,139,18.27,99.29
+Time at Medical Facility Too Short,portal_dispute,98,12.88,94.23
+GPS Pickup Too Far from Residence,portal_dispute,73,9.59,94.81
+GPS Deviation Status,portal_dispute,62,8.15,93.94
+GPS Pickup Too Far from Medical Facility,portal_dispute,50,6.57,94.34
+Travel Time Too Short for Distance Traveled,portal_dispute,48,6.31,94.12
+Time at Medical Facility Too Long,portal_dispute,12,1.58,100.00
+Ineligible Enrollee,portal_dispute,11,1.45,33.33
+Ineligible Enrollee,disposed_expired,10,1.31,30.30
+GPS Destination Too Far from Medical Facility,portal_dispute,9,1.18,52.94
+Ineligible Enrollee,cannot_dispute,8,1.05,24.24
+Invoice Number Not in System,portal_dispute,8,1.05,66.67
+GPS Destination Too Far from Medical Facility,cannot_dispute,7,0.92,41.18
+Time at Medical Facility Too Short,cannot_dispute,6,0.79,5.77
+Ineligible Enrollee,(none),4,0.53,12.12
+Incomplete GPS,cannot_dispute,4,0.53,2.14
+GPS Pickup Too Far from Residence,cannot_dispute,4,0.53,5.19
+Invoice Number Not in System,(none),4,0.53,33.33
+Attesting Too Soon,portal_dispute,4,0.53,57.14
+GPS Pickup Too Far from Medical Facility,cannot_dispute,3,0.39,5.66
+GPS Deviation Status,cannot_dispute,3,0.39,4.55
+Travel Time Too Short for Distance Traveled,cannot_dispute,3,0.39,5.88
+Attesting Too Soon,disposed_expired,2,0.26,28.57
+(unclassified),hold,1,0.13,0.71
+GPS Destination Too Far from Medical Facility,hold,1,0.13,5.88
+Attesting Too Soon,(none),1,0.13,14.29
+Invoice Leg Data Corrupted,portal_dispute,1,0.13,100.00
+GPS Deviation Status,(none),1,0.13,1.52
+Travel Time Too Short for Distance,portal_dispute,1,0.13,100.00

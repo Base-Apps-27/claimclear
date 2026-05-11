@@ -1,0 +1,1 @@
+{"ts":"2026-05-10T00:04:04.804226+00:00","operator":"emil.j@agapeny.com","record_type":"group","record_id":412,"action":"portal_submission_cancelled","source":"audit","payload":{"details":"Portal submission #529 cancelled from \"draft\" status","metadata":{"source":"portal_submission_cancel","submissionId":529,"previousStatus":"draft"},"claim_id":806,"group_id":412}}

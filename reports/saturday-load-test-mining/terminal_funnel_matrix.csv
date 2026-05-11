@@ -1,0 +1,94 @@
+operator,error_type,terminal_outcome,count
+olveris.g@agapeny.com,Incomplete GPS,portal_dispute,50
+krisalys.p@agapeny.com,Incomplete GPS,portal_dispute,34
+someidy.s@agapeny.com,Incomplete GPS,portal_dispute,21
+victor.l@agapeny.com,GPS Deviation Status,portal_dispute,21
+alondra.n@agapeny.com,Incomplete GPS,portal_dispute,20
+victor.l@agapeny.com,Time at Medical Facility Too Short,portal_dispute,19
+oliver.g@agapeny.com,Time at Medical Facility Too Short,portal_dispute,16
+victor.l@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,16
+katia.h@agapeny.com,Incomplete GPS,portal_dispute,14
+victor.l@agapeny.com,Incomplete GPS,portal_dispute,13
+victor.l@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,13
+someidy.s@agapeny.com,Time at Medical Facility Too Short,portal_dispute,12
+victor.l@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,11
+olveris.g@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,10
+alondra.n@agapeny.com,GPS Deviation Status,portal_dispute,9
+someidy.s@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,9
+alondra.n@agapeny.com,Time at Medical Facility Too Short,portal_dispute,9
+katia.h@agapeny.com,Time at Medical Facility Too Short,portal_dispute,9
+katia.h@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,8
+katia.h@agapeny.com,GPS Deviation Status,portal_dispute,8
+someidy.s@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,7
+alondra.n@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,7
+someidy.s@agapeny.com,GPS Deviation Status,portal_dispute,6
+oliver.g@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,6
+perla.f@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,6
+yahaira.d@agapeny.com,Time at Medical Facility Too Short,portal_dispute,5
+someidy.s@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,5
+alondra.n@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,5
+perla.f@agapeny.com,GPS Deviation Status,portal_dispute,5
+katia.h@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,5
+victor.l@agapeny.com,GPS Destination Too Far from Medical Facility,portal_dispute,4
+katia.h@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,4
+victor.l@agapeny.com,Time at Medical Facility Too Short,cannot_dispute,4
+perla.f@agapeny.com,Time at Medical Facility Too Short,portal_dispute,4
+oliver.g@agapeny.com,Incomplete GPS,portal_dispute,4
+olveris.g@agapeny.com,Time at Medical Facility Too Short,portal_dispute,4
+yahaira.d@agapeny.com,Invoice Number Not in System,portal_dispute,4
+someidy.s@agapeny.com,Attesting Too Soon,hold,4
+olveris.g@agapeny.com,GPS Deviation Status,portal_dispute,4
+someidy.s@agapeny.com,Attesting Too Soon,portal_dispute,4
+olveris.g@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,4
+victor.l@agapeny.com,Ineligible Enrollee,cannot_dispute,4
+olveris.g@agapeny.com,Incomplete GPS,cannot_dispute,3
+yahaira.d@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,3
+oliver.g@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,3
+victor.l@agapeny.com,GPS Destination Too Far from Medical Facility,cannot_dispute,3
+perla.f@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,3
+perla.f@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,3
+olveris.g@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,3
+katia.h@agapeny.com,Ineligible Enrollee,portal_dispute,3
+yahaira.d@agapeny.com,GPS Pickup Too Far from Residence,portal_dispute,3
+krisalys.p@agapeny.com,Travel Time Too Short for Distance,cannot_dispute,2
+krisalys.p@agapeny.com,Travel Time Too Short for Distance,portal_dispute,2
+alondra.n@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,2
+someidy.s@agapeny.com,GPS Pickup Too Far from Medical Facility,cannot_dispute,2
+someidy.s@agapeny.com,GPS Destination Too Far from Medical Facility,hold,2
+yahaira.d@agapeny.com,Incomplete GPS,portal_dispute,2
+someidy.s@agapeny.com,GPS Deviation Status,cannot_dispute,2
+someidy.s@agapeny.com,Travel Time Too Short for Distance Traveled,cannot_dispute,2
+someidy.s@agapeny.com,Ineligible Enrollee,portal_dispute,2
+yahaira.d@agapeny.com,Travel Time Too Short for Distance Traveled,portal_dispute,2
+alondra.n@agapeny.com,Ineligible Enrollee,cannot_dispute,2
+oliver.g@agapeny.com,GPS Deviation Status,portal_dispute,2
+emil.j@agapeny.com,GPS Destination Too Far from Medical Facility,cannot_dispute,2
+perla.f@agapeny.com,Incomplete GPS,portal_dispute,2
+oliver.g@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,2
+yahaira.d@agapeny.com,Ineligible Enrollee,portal_dispute,2
+katia.h@agapeny.com,Invoice Number Not in System,portal_dispute,2
+krisalys.p@agapeny.com,GPS Pickup Too Far from Medical Facility,portal_dispute,1
+olveris.g@agapeny.com,Travel Time Too Short for Distance Traveled,cannot_dispute,1
+perla.f@agapeny.com,GPS Pickup Too Far from Residence,cannot_dispute,1
+someidy.s@agapeny.com,Invoice Leg Data Corrupted,portal_dispute,1
+katia.h@agapeny.com,Time at Medical Facility Too Short,cannot_dispute,1
+krisalys.p@agapeny.com,GPS Destination Too Far from Medical Facility,portal_dispute,1
+oliver.g@agapeny.com,Ineligible Enrollee,cannot_dispute,1
+katia.h@agapeny.com,GPS Pickup Too Far from Residence,cannot_dispute,1
+someidy.s@agapeny.com,Ineligible Enrollee,cannot_dispute,1
+krisalys.p@agapeny.com,Incomplete GPS,cannot_dispute,1
+victor.l@agapeny.com,GPS Pickup Too Far from Residence,cannot_dispute,1
+someidy.s@agapeny.com,(unclassified),hold,1
+alondra.n@agapeny.com,GPS Destination Too Far from Medical Facility,portal_dispute,1
+yahaira.d@agapeny.com,GPS Destination Too Far from Medical Facility,cannot_dispute,1
+katia.h@agapeny.com,GPS Pickup Too Far from Medical Facility,cannot_dispute,1
+perla.f@agapeny.com,GPS Destination Too Far from Medical Facility,hold,1
+oliver.g@agapeny.com,Ineligible Enrollee,portal_dispute,1
+olveris.g@agapeny.com,GPS Deviation Status,cannot_dispute,1
+olveris.g@agapeny.com,GPS Destination Too Far from Medical Facility,cannot_dispute,1
+someidy.s@agapeny.com,GPS Destination Too Far from Medical Facility,portal_dispute,1
+victor.l@agapeny.com,Incomplete GPS,cannot_dispute,1
+perla.f@agapeny.com,GPS Destination Too Far from Medical Facility,portal_dispute,1
+someidy.s@agapeny.com,Invoice Number Not in System,portal_dispute,1
+yahaira.d@agapeny.com,Travel Time Too Short for Distance Traveled,cannot_dispute,1
+yahaira.d@agapeny.com,GPS Deviation Status,portal_dispute,1

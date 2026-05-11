@@ -1,0 +1,45 @@
+node_id,question,visited,answered,back_stepped_past,restarted_past,reclassified_after,median_dwell_ms,dwell_samples,trouble_score
+node_1778278335139_e4fdk,Is GPS and trip timing data available for this trip?,57,57,0,0,2,5055,57,8
+node_1778278335139_10mic,Does the recorded travel time appear too short for the trip distance?,58,58,0,0,2,74167,53,8
+node_1778278335139_7e1cx,Is there a supportable explanation for the travel time discrepancy?,50,50,0,0,2,42618,1,8
+node_1775762257506_3t2v5,Is the invoice currently outside the attestation window?,10,10,0,0,1,8215,10,4
+node_1775762257506_q1vcd,Is the invoice expected to become eligible once the attestation window opens?,9,9,0,0,1,53034,3,4
+node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,170,170,0,0,0,3082,166,0
+node_1775760972671_tgdeo,Is the available GPS data sufficient to reasonably support trip completion?,161,161,0,0,0,62177,160,0
+node_1776176538080_9,Submit MAS GPS dispute with supporting evidence,160,160,0,0,0,,0,0
+node_1775761360559_edzzt,Is GPS breadcrumb data available for this trip?,47,47,0,0,0,5384,44,0
+node_1775761360559_dykku,Does the GPS data reasonably support pickup at or near the medical facility?,43,43,0,0,0,90168,41,0
+node_1776184643682_13,Submit MAS GPS dispute with supporting pickup evidence,42,42,0,0,0,,0,0
+node_1775761841834_unj4s,Is GPS and trip timing data available for this trip?,87,87,0,0,0,4596,86,0
+node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,89,89,0,0,0,63955,87,0
+node_1775761168843_cqkgd,Is GPS breadcrumb data available for this trip?,54,54,0,0,0,3455,52,0
+node_1775761168843_f54or,Does the GPS data reasonably support pickup at or near the member's residence?,53,53,0,0,0,76490,51,0
+node_1776196828946_22,Submit MAS timing dispute with supporting facility timing evidence,69,69,0,0,0,,0,0
+node_1776179596554_11,Submit MAS GPS dispute with supporting pickup evidence,51,51,0,0,0,,0,0
+node_1775761652235_04ve2,Is GPS breadcrumb data available for this trip?,63,63,0,0,0,4442,63,0
+node_1775761652235_kydhe,Does the GPS route reasonably support a valid trip from pickup to drop-off?,60,60,0,0,0,72644,58,0
+node_1776188580433_18,Submit portal dispute — GPS route supports valid trip completion,56,56,0,0,0,,0,0
+node_1775756909222_kdkgj,Was the trip or affected leg actually completed before MAS cancelled it?,11,11,0,0,0,3853,10,0
+node_1775761480762_zk37h,Is GPS breadcrumb data available for this trip?,18,18,0,0,0,15997,11,0
+node_1775761480762_75xup,Does the GPS data reasonably support dropoff at or near the medical facility?,12,12,0,0,0,55840,12,0
+node_1776186845093_16,Submit MAS GPS dispute with supporting destination evidence,8,8,0,0,0,,0,0
+node_1775761168843_8bztp,Is there a supportable explanation for the pickup variance?,1,1,0,0,0,,0,0
+node_1775761841834_crwet,Is there a supportable explanation for the short time at the medical facility?,11,11,0,0,0,77985,10,0
+node_1775762082257_mkupt,Is the affected invoice leg identifiable in the trip and dispatch records?,1,1,0,0,0,7296,1,0
+node_1775762082257_owm9q,Does the available documentation reasonably support the affected leg despite the data issue?,1,1,0,0,0,4724,1,0
+node_1775762082257_bu42w,Is the data issue correctable or appropriate for MAS review and dispute?,1,1,0,0,0,163819,1,0
+node_1776197826741_28,Submit MAS dispute or correction request for supported invoice leg,1,1,0,0,0,,0,0
+node_1775761841834_tr6t5,Can trip completion and short facility timing be supported by receipt and Limosys documentation alone?,3,3,0,0,0,,0,0
+node_1775756216873_zytah,Can the member and affected trip leg be confirmed in the available records?,22,22,0,0,0,8923,21,0
+node_1775756216873_4acu5,Does the available information indicate the enrollee was actually ineligible on the trip date?,20,20,0,0,0,3618,12,0
+node_1775761652235_kl48b,Is there a supportable explanation for the route deviation?,1,1,0,0,0,,0,0
+node_1775761480762_oge3d,Is there a supportable explanation for the destination variance?,4,4,0,0,0,,0,0
+node_1778278335139_5tizh,Can trip completion and route activity be supported by alternate documentation?,1,1,0,0,0,,0,0
+node_1775756216873_japcr,Does the available documentation reasonably support submitting the claim for MAS review or dispute?,12,12,0,0,0,63946,10,0
+node_1776198403385_30,Submit MAS review request for supported eligibility issue,8,8,0,0,0,,0,0
+node_1775756909222_t6jpj,"Can trip or leg completion be verified by GPS, signed receipt, and dispatch history?",11,11,0,0,0,227202,7,0
+node_1776196679792_21,Submit MAS timing dispute with explanation for short facility stay,10,10,0,0,0,,0,0
+node_1775756909222_83htk,Is the Correction Request option available in the MAS portal for this invoice?,7,7,0,0,0,,0,0
+node_1775762257506_ij8ic,Does the claim require internal review for a different timing or invoice issue?,1,1,0,0,0,,0,0
+node_1775761652235_r2ptq,Can the receipt and Limosys records support trip completion without GPS data?,2,2,0,0,0,,0,0
+node_1775760972671_pgw51,Can trip completion be supported by the Receipt with Member Signature and Limosys Job Prevalidation Issues Screenshot?,1,1,0,0,0,,0,0

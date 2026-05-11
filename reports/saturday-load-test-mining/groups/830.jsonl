@@ -1,0 +1,2 @@
+{"ts":"2026-05-09T19:14:13.933684+00:00","operator":"olveris.g@agapeny.com","record_type":"group","record_id":830,"action":"presence_heartbeat","source":"presence","payload":{"resource_type":"invoice_group","resource_id":830}}
+{"ts":"2026-05-09T19:14:46.095834+00:00","operator":"emil.j@agapeny.com","record_type":"group","record_id":830,"action":"presence_heartbeat","source":"presence","payload":{"resource_type":"invoice_group","resource_id":830}}

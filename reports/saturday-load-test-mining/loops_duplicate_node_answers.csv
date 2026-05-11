@@ -1,0 +1,37 @@
+operator,claim_id,node_id,question,answer_count
+krisalys.p@agapeny.com,977,node_1778278335139_10mic,Does the recorded travel time appear too short for the trip distance?,5
+krisalys.p@agapeny.com,977,node_1778278335139_e4fdk,Is GPS and trip timing data available for this trip?,4
+someidy.s@agapeny.com,1194,node_1775762257506_q1vcd,Is the invoice expected to become eligible once the attestation window opens?,4
+someidy.s@agapeny.com,1675,node_1775762257506_3t2v5,Is the invoice currently outside the attestation window?,3
+someidy.s@agapeny.com,1194,node_1775762257506_3t2v5,Is the invoice currently outside the attestation window?,3
+yahaira.d@agapeny.com,1173,node_1775756216873_zytah,Can the member and affected trip leg be confirmed in the available records?,3
+yahaira.d@agapeny.com,1173,node_1775756216873_4acu5,Does the available information indicate the enrollee was actually ineligible on the trip date?,3
+yahaira.d@agapeny.com,1173,node_1775756216873_japcr,Does the available documentation reasonably support submitting the claim for MAS review or dispute?,3
+olveris.g@agapeny.com,1328,node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,3
+krisalys.p@agapeny.com,977,node_1778278335139_7e1cx,Is there a supportable explanation for the travel time discrepancy?,2
+olveris.g@agapeny.com,1043,node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,2
+someidy.s@agapeny.com,1619,node_1775761360559_edzzt,Is GPS breadcrumb data available for this trip?,2
+katia.h@agapeny.com,1092,node_1775761841834_unj4s,Is GPS and trip timing data available for this trip?,2
+someidy.s@agapeny.com,1628,node_1775761652235_kydhe,Does the GPS route reasonably support a valid trip from pickup to drop-off?,2
+oliver.g@agapeny.com,986,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+someidy.s@agapeny.com,1683,node_1775762257506_q1vcd,Is the invoice expected to become eligible once the attestation window opens?,2
+olveris.g@agapeny.com,1188,node_1775761652235_04ve2,Is GPS breadcrumb data available for this trip?,2
+olveris.g@agapeny.com,1188,node_1775761652235_kydhe,Does the GPS route reasonably support a valid trip from pickup to drop-off?,2
+perla.f@agapeny.com,1180,node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,2
+perla.f@agapeny.com,1177,node_1775761360559_edzzt,Is GPS breadcrumb data available for this trip?,2
+someidy.s@agapeny.com,1806,node_1775761841834_unj4s,Is GPS and trip timing data available for this trip?,2
+victor.l@agapeny.com,1945,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+someidy.s@agapeny.com,1762,node_1778278335139_e4fdk,Is GPS and trip timing data available for this trip?,2
+someidy.s@agapeny.com,1762,node_1778278335139_10mic,Does the recorded travel time appear too short for the trip distance?,2
+victor.l@agapeny.com,2017,node_1775756216873_zytah,Can the member and affected trip leg be confirmed in the available records?,2
+victor.l@agapeny.com,2028,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+victor.l@agapeny.com,2036,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+victor.l@agapeny.com,1913,node_1775761652235_04ve2,Is GPS breadcrumb data available for this trip?,2
+victor.l@agapeny.com,1921,node_1778278335139_10mic,Does the recorded travel time appear too short for the trip distance?,2
+olveris.g@agapeny.com,1501,node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,2
+victor.l@agapeny.com,1940,node_1775761841834_unj4s,Is GPS and trip timing data available for this trip?,2
+victor.l@agapeny.com,1940,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+victor.l@agapeny.com,1850,node_1775761841834_d98yn,Does the timing data show a facility stay that appears shorter than expected?,2
+victor.l@agapeny.com,1849,node_1775761841834_unj4s,Is GPS and trip timing data available for this trip?,2
+victor.l@agapeny.com,1861,node_1775760972671_lhctj,Is GPS breadcrumb data available for this trip?,2
+victor.l@agapeny.com,1863,node_1775761652235_04ve2,Is GPS breadcrumb data available for this trip?,2
