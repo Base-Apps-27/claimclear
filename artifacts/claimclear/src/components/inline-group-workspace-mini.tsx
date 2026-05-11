@@ -22,7 +22,9 @@ import { AdminStatusOverride } from "@/components/admin-status-override";
 import type {
   ClaimResponse,
   ErrorTypeResponse,
+  LintResult,
 } from "@workspace/api-client-react";
+import { LintGateDialog, type LintGateMode } from "@/components/lint-gate-dialog";
 import type { DecisionTree } from "@/components/decision-tree/types";
 import {
   buildLegResolvedIndex,
@@ -1803,6 +1805,17 @@ function PinnedFooter({
   const [discardPending, setDiscardPending] = useState(false);
   const gate = derivePreviewGateState(detail, rides);
   const [serviceTokenExpired, setServiceTokenExpired] = useState(false);
+  // Task #703 follow-up — POST /portal-submissions now runs `lintDraft`
+  // on the prospective row before insert and 422s when there are hard
+  // failures or unacknowledged warnings. Pre-#703 the lint dialog was
+  // only wired into the standalone Portal Submissions page (via the
+  // now-removed /confirm step), so the queue mini just showed a generic
+  // "HTTP 422" toast and the operator had no way forward. We surface
+  // the failures inline and, for warnings, give them the same "Submit
+  // anyway + write a bypass reason" path the legacy flow had.
+  const [lintGateOpen, setLintGateOpen] = useState(false);
+  const [lintGateMode, setLintGateMode] = useState<LintGateMode>("warn");
+  const [lintResults, setLintResults] = useState<LintResult[]>([]);
 
   // Task #681 — Clear recorded verdict (per-leg DELETE
   // /claims/{id}/verdict/draft). Distinct from "Reopen walk" — that
@@ -1918,8 +1931,7 @@ function PinnedFooter({
     disabledReason = "Generate the preview first.";
   else if (!draftReviewed) disabledReason = "Mark the draft reviewed first.";
 
-  function onSubmit() {
-    setServiceTokenExpired(false);
+  function submitOnce(extra?: { ack: boolean; bypassReason: string }) {
     submit.mutate(
       {
         data: {
@@ -1936,10 +1948,12 @@ function PinnedFooter({
             detail.draftDescriptionHtml ??
             detail.aiBaselineDescriptionHtml ??
             "",
+          ...(extra ?? {}),
         },
       },
       {
         onSuccess: () => {
+          setLintGateOpen(false);
           qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
           qc.invalidateQueries({
             queryKey: getGetInvoiceGroupValidTransitionsQueryKey(groupId),
@@ -1948,12 +1962,27 @@ function PinnedFooter({
           successToast({ title: "Done", description: "Submitted to the portal" });
         },
         onError: (e: unknown) => {
-          const code =
+          const data =
             e instanceof ApiError && e.data && typeof e.data === "object"
-              ? (e.data as { code?: unknown }).code
+              ? (e.data as { code?: unknown; failures?: unknown })
               : undefined;
+          const code = data?.code;
           if (e instanceof ApiError && e.status === 401 && code === "token_expired") {
             setServiceTokenExpired(true);
+            return;
+          }
+          // Task #703 — 422 with `{ failures: LintResult[] }` is the
+          // lint gate. Hard fails (severity === "fail") need a code
+          // change to the draft; soft warnings can be acknowledged
+          // with a typed bypass reason. We open LintGateDialog instead
+          // of toasting "HTTP 422" so the operator sees what's wrong
+          // and either fixes it or owns the override on the audit row.
+          if (e instanceof ApiError && e.status === 422 && Array.isArray(data?.failures)) {
+            const failures = data.failures as LintResult[];
+            const hasHardFail = failures.some((r) => r.severity === "fail");
+            setLintResults(failures);
+            setLintGateMode(hasHardFail ? "fail" : "warn");
+            setLintGateOpen(true);
             return;
           }
           toast({
@@ -1964,6 +1993,11 @@ function PinnedFooter({
         },
       },
     );
+  }
+
+  function onSubmit() {
+    setServiceTokenExpired(false);
+    submitOnce();
   }
 
   const showReviewFooter =
@@ -2158,6 +2192,16 @@ function PinnedFooter({
               Hold invoice
             </Button>
           )}
+          <LintGateDialog
+            open={lintGateOpen}
+            mode={lintGateMode}
+            results={lintResults}
+            pending={submit.isPending}
+            onClose={() => setLintGateOpen(false)}
+            onConfirmAnyway={(bypassReason) =>
+              submitOnce({ ack: true, bypassReason })
+            }
+          />
           <AlertDialog
             open={discardOpen}
             onOpenChange={(next) => !discardPending && setDiscardOpen(next)}

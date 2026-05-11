@@ -16,7 +16,9 @@ import {
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
+  LintResult,
 } from "@workspace/api-client-react";
+import { LintGateDialog, type LintGateMode } from "@/components/lint-gate-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +108,13 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   // hook — we reuse A's wiring at the per-leg scope.
   const clearLegVerdictDraft = useClearLegVerdictDraft();
   const [submitError, setSubmitError] = useState<{ error: string; gate?: string } | null>(null);
+  // Task #703 follow-up — surface lint failures inline (same pattern
+  // as inline-group-workspace-mini). Pre-fix, a 422 from the lint gate
+  // collapsed into a generic "Submission failed" toast with no path
+  // to acknowledge soft warnings.
+  const [lintGateOpen, setLintGateOpen] = useState(false);
+  const [lintGateMode, setLintGateMode] = useState<LintGateMode>("warn");
+  const [lintResults, setLintResults] = useState<LintResult[]>([]);
   // Save-confirmation breath replaces the "Draft saved" toast on the
   // Save-draft button (Task #316). The counter increments on every
   // successful save so the Button's `breathTrigger` prop can detect the
@@ -361,8 +370,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
     }
   }
 
-  function onSubmitToPortal() {
-    setSubmitError(null);
+  function submitToPortalOnce(extra?: { ack: boolean; bypassReason: string }) {
     submitMutation.mutate(
       {
         data: {
@@ -378,6 +386,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
             group?.draftDescriptionHtml ??
             group?.aiBaselineDescriptionHtml ??
             draftBody,
+          ...(extra ?? {}),
         },
       },
       {
@@ -386,6 +395,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
           // invoice-group-detail-v2 page's "just shipped" microinteraction
           // fires for the operator who pressed Submit even when SSE author
           // tags are missing or replay-suppressed.
+          setLintGateOpen(false);
           markLocalAction(`group:${groupId}`);
           successToast({
             title: "__VERB__",
@@ -396,11 +406,30 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
         onError: (e: unknown) => {
           let errorMsg = e instanceof Error ? e.message : String(e);
           let gate: string | undefined;
+          let status: number | undefined;
+          let failures: LintResult[] | undefined;
           if (e != null && typeof e === "object" && "response" in e) {
-            const axiosErr = e as { response?: { data?: { error?: string; gate?: string } } };
+            const axiosErr = e as {
+              response?: {
+                status?: number;
+                data?: { error?: string; gate?: string; failures?: LintResult[] };
+              };
+            };
+            status = axiosErr.response?.status;
             const resp = axiosErr.response?.data;
             if (resp?.error) errorMsg = resp.error;
             if (resp?.gate) gate = resp.gate;
+            if (Array.isArray(resp?.failures)) failures = resp.failures;
+          }
+          // Task #703 — open LintGateDialog on the lint-gate 422 so the
+          // operator sees the actual rule names and, for warnings, can
+          // type a bypass reason rather than staring at "Submission failed".
+          if (status === 422 && failures && failures.length > 0) {
+            const hasHardFail = failures.some((r) => r.severity === "fail");
+            setLintResults(failures);
+            setLintGateMode(hasHardFail ? "fail" : "warn");
+            setLintGateOpen(true);
+            return;
           }
           if (gate) {
             setSubmitError({ error: errorMsg, gate });
@@ -415,6 +444,11 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
         },
       },
     );
+  }
+
+  function onSubmitToPortal() {
+    setSubmitError(null);
+    submitToPortalOnce();
   }
 
   // Task #678 follow-up — claim-ID strip. Operators have to map MAS's
@@ -1155,6 +1189,17 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                   </p>
                 )}
               </div>
+
+              <LintGateDialog
+                open={lintGateOpen}
+                mode={lintGateMode}
+                results={lintResults}
+                pending={submitMutation.isPending}
+                onClose={() => setLintGateOpen(false)}
+                onConfirmAnyway={(bypassReason) =>
+                  submitToPortalOnce({ ack: true, bypassReason })
+                }
+              />
 
               {submitError && (
                 <div

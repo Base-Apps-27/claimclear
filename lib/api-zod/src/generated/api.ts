@@ -26639,6 +26639,18 @@ export const CreatePortalSubmissionBody = zod.object({
     .describe(
       'Submission actor path. \"operator\" (default for human users) enforces all four readiness gates. \"system\" requires a valid bot service token and bypasses the readback and preview gates.',
     ),
+  ack: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Task #703 — bypass acknowledgement for lint \*\*warnings\*\* (not failures).\nPOST \/portal-submissions runs `lintDraft` on the prospective row before\ninsert. Hard `fail` results always 422 with `{ failures: LintResult[] }`.\nSoft `warn` results 422 with the same shape unless the caller passes\n`ack: true` AND `bypassReason` (≥ 10 chars). When set, a dedicated\n`lint_warnings_bypassed` audit row is written before the insert.\n",
+    ),
+  bypassReason: zod
+    .string()
+    .optional()
+    .describe(
+      "Free-text justification for bypassing lint warnings. Required when\n`ack: true`; minimum 10 characters. Stored in the metadata of the\n`lint_warnings_bypassed` audit row so the audit trail names \*why\* the\noperator overrode the warning, not just \*that\* they did.\n",
+    ),
 });
 
 /**
@@ -27314,6 +27326,18 @@ export const GeneratePortalSubmissionPreviewBody = zod.object({
     .optional()
     .describe(
       'Submission actor path. \"operator\" (default for human users) enforces all four readiness gates. \"system\" requires a valid bot service token and bypasses the readback and preview gates.',
+    ),
+  ack: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Task #703 — bypass acknowledgement for lint \*\*warnings\*\* (not failures).\nPOST \/portal-submissions runs `lintDraft` on the prospective row before\ninsert. Hard `fail` results always 422 with `{ failures: LintResult[] }`.\nSoft `warn` results 422 with the same shape unless the caller passes\n`ack: true` AND `bypassReason` (≥ 10 chars). When set, a dedicated\n`lint_warnings_bypassed` audit row is written before the insert.\n",
+    ),
+  bypassReason: zod
+    .string()
+    .optional()
+    .describe(
+      "Free-text justification for bypassing lint warnings. Required when\n`ack: true`; minimum 10 characters. Stored in the metadata of the\n`lint_warnings_bypassed` audit row so the audit trail names \*why\* the\noperator overrode the warning, not just \*that\* they did.\n",
     ),
 });
 

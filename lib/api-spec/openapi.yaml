@@ -8377,6 +8377,22 @@ components:
           type: string
           enum: [operator, system]
           description: Submission actor path. "operator" (default for human users) enforces all four readiness gates. "system" requires a valid bot service token and bypasses the readback and preview gates.
+        ack:
+          type: boolean
+          description: |
+            Task #703 — bypass acknowledgement for lint **warnings** (not failures).
+            POST /portal-submissions runs `lintDraft` on the prospective row before
+            insert. Hard `fail` results always 422 with `{ failures: LintResult[] }`.
+            Soft `warn` results 422 with the same shape unless the caller passes
+            `ack: true` AND `bypassReason` (≥ 10 chars). When set, a dedicated
+            `lint_warnings_bypassed` audit row is written before the insert.
+        bypassReason:
+          type: string
+          description: |
+            Free-text justification for bypassing lint warnings. Required when
+            `ack: true`; minimum 10 characters. Stored in the metadata of the
+            `lint_warnings_bypassed` audit row so the audit trail names *why* the
+            operator overrode the warning, not just *that* they did.
 
     PortalUnderstandingPreflightBody:
       type: object
