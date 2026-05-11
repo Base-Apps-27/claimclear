@@ -1,0 +1,15 @@
+A. AI-summary transparency (D3 / VariantA) — currently the operator sees a polished AI draft but no easy way to verify "did it actually use my SOP answers + that GPS evidence?" D3's side-by-side Input/Output and VariantA's expandable per-leg SOP transcript both solve this. Pick one — I lean D3 because it doubles as proof-of-work when the dispute is later challenged.
+
+B. Confidence Ledger (VariantC) — risk-tone pills (Strong/Watch/Risk) on each leg in the Ready hero based on evidence density and instruction-override count. Tells operators where to focus their review instead of skimming everything equally. Cheap to wire if we already track evidence counts and instruction overrides.
+
+C. V4 leg chips with embedded status — replace the current leg selector dropdown with horizontal chips that always show Ready / Needs walk / In progress / Hold so operators can scan group health without opening a menu. The most "free" UX win in the bunch.
+
+D. V5 color-coded footer per phase — the footer changes color (blue for Re-attest, amber for Close, green for Submit) based on what action is required. Makes the "what does this group need from me right now?" question answerable from peripheral vision.
+
+E. Q4–Q7 explicit off-ramps — instead of the binary "Queue for portal" CTA, surface Submit / Re-attest / Close as three first-class paths with reason selectors. Currently Re-attest and Close-out are buried behind context menus, so operators default to Submit even when it's wrong.
+
+4. Smaller visual / friction polish
+Step-breadcrumb pills (R-series) in the walk player — clickable answered-question chips above the current question, so the operator can jump back without opening the rewind dialog. Strictly better than what we shipped today; today's flow assumes the operator wants the "are you sure" friction; the breadcrumb assumes they don't.
+Resolve → Next leg auto-focus: today there's a click between "Resolved leg 3" and "start leg 4". Make it one click with a 2-second undo banner, like Gmail's archive.
+Gauntlet stepper consolidation: today MiniPhase appears in both the footer and the GauntletHero — two sources of progress truth. Pick one (footer) and remove the other.
+V3 LandingStartWalk — first-impression of an unstarted group is a wall of UI. The mockup drew a focused "Start walking" splash with the leg count and ETA. Worth lifting for the empty/cold-start state.
