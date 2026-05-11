@@ -6,6 +6,13 @@ import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
 import { computeGroupReadiness, readyToGenerateSqlConditions } from "../lib/group-packaging";
+import {
+  computeGroupEligibility,
+  isLegDisputable,
+  isLegHardSurvivor,
+  isReattestEligibleLeg,
+  type LegForEligibility,
+} from "../lib/group-eligibility";
 import { refreshGroupDerivedFields, refreshClaimDenormalizedCache } from "../lib/denormalized-cache";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -680,9 +687,16 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   // derivations — keeps the list endpoint at the same round-trip count.
   const legSubStatusByGroup = new Map<number, Record<string, number>>();
   const reasonLegsByGroup = new Map<number, ServiceDateReasonLeg[]>();
+  // Task #702: collect the per-leg shape required by `computeGroupEligibility`
+  // so we can surface bulk-action eligibility on every row of the list
+  // response without an N+1 round trip per group.
+  const legsForEligibilityByGroup = new Map<number, LegForEligibility[]>();
+  const activeSubmissionGroupIds = new Set<number>();
+  const verdictConfirmedLegIds = new Set<number>();
   if (groupIds.length > 0) {
     const legs = await db
       .select({
+        id: claimsTable.id,
         invoiceGroupId: claimsTable.invoiceGroupId,
         date: claimsTable.date,
         includedInDispute: claimsTable.includedInDispute,
@@ -693,6 +707,14 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
         // `duplicate` sub-status (Sibling Duplicate). Without it, those
         // legs would mis-tally into needs_classification/investigating.
         duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+        // Task #702: the next four fields feed `computeGroupEligibility`
+        // (disposition + sopOutcome drive the "disputable" / "survivor"
+        // checks; status is required by `evaluateDisputedLegsResolved`;
+        // attestationState is required by reattest's per-leg gate).
+        disposition: claimsTable.disposition,
+        outcome: claimsTable.outcome,
+        status: claimsTable.status,
+        attestationState: claimsTable.attestationState,
       })
       .from(claimsTable)
       .where(inArray(claimsTable.invoiceGroupId, groupIds));
@@ -710,6 +732,74 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
         duplicateOfClaimId: leg.duplicateOfClaimId,
       });
       reasonLegsByGroup.set(leg.invoiceGroupId, reasonBucket);
+
+      const eligBucket = legsForEligibilityByGroup.get(leg.invoiceGroupId) ?? [];
+      eligBucket.push({
+        id: leg.id,
+        includedInDispute: leg.includedInDispute,
+        duplicateOfClaimId: leg.duplicateOfClaimId,
+        disposition: leg.disposition,
+        sopOutcome: leg.sopOutcome,
+        outcome: leg.outcome,
+        holdReason: leg.holdReason,
+        errorTypeId: leg.errorTypeId,
+        status: leg.status,
+        attestationState: leg.attestationState,
+      });
+      legsForEligibilityByGroup.set(leg.invoiceGroupId, eligBucket);
+    }
+
+    // Task #702: bulk-reattest's per-leg gate requires the latest
+    // claim_verdict for each approved-survivor leg to be
+    // `source=operator_confirmed` with an Approved/Partial outcome.
+    // We mirror that gate exactly on the list endpoint by batch-loading
+    // the latest verdict per candidate leg in a single round trip
+    // (DISTINCT ON via subquery — Drizzle/Postgres) so list eligibility
+    // and the bulk endpoint cannot drift.
+    const candidateLegIds = legs
+      .filter((l) => l.outcome === "Approved" || l.outcome === "Partially Approved")
+      .map((l) => l.id);
+    if (candidateLegIds.length > 0) {
+      const verdicts = await db
+        .select({
+          claimId: claimVerdictTable.claimId,
+          outcome: claimVerdictTable.outcome,
+          source: claimVerdictTable.source,
+          createdAt: claimVerdictTable.createdAt,
+        })
+        .from(claimVerdictTable)
+        .where(inArray(claimVerdictTable.claimId, candidateLegIds))
+        .orderBy(claimVerdictTable.claimId, desc(claimVerdictTable.createdAt));
+      // Take the first (latest) verdict per claimId — driver returns
+      // rows ordered by claimId asc + createdAt desc.
+      const seen = new Set<number>();
+      for (const v of verdicts) {
+        if (seen.has(v.claimId)) continue;
+        seen.add(v.claimId);
+        if (
+          v.source === "operator_confirmed"
+          && (v.outcome === "Approved" || v.outcome === "Partial")
+        ) {
+          verdictConfirmedLegIds.add(v.claimId);
+        }
+      }
+    }
+
+    // Task #702: bulk submit-to-portal refuses any group with an active
+    // submission (pending / in_progress / submitted). Look these up in
+    // a single round trip so the per-row eligibility object can surface
+    // `already_submitted` before the operator clicks.
+    const activeSubs = await db
+      .select({ invoiceGroupId: portalSubmissionsTable.invoiceGroupId })
+      .from(portalSubmissionsTable)
+      .where(
+        and(
+          inArray(portalSubmissionsTable.invoiceGroupId, groupIds),
+          inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
+        ),
+      );
+    for (const sub of activeSubs) {
+      if (sub.invoiceGroupId != null) activeSubmissionGroupIds.add(sub.invoiceGroupId);
     }
   }
 
@@ -749,6 +839,15 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       serviceDateReason: classifyGroupServiceDateReason(
         earliestDate,
         reasonLegsByGroup.get(row.id) ?? [],
+      ),
+      // Task #702: per-row eligibility for the 5 bulk actions exposed
+      // on the rail. UX-only — every bulk-* endpoint still re-checks
+      // server-side. See `lib/group-eligibility.ts` for the rule list.
+      eligibility: computeGroupEligibility(
+        row,
+        legsForEligibilityByGroup.get(row.id) ?? [],
+        activeSubmissionGroupIds.has(row.id),
+        verdictConfirmedLegIds,
       ),
     };
   });
@@ -4621,52 +4720,46 @@ router.post("/invoice-groups/bulk-reattest", denyClerk, asyncHandler(async (req,
       .from(claimsTable)
       .where(eq(claimsTable.invoiceGroupId, gid));
 
-    let hasDisputable = false;
-    let hasSurvivor = false;
-    for (const leg of outlookLegs) {
-      const isDuplicate = leg.duplicateOfClaimId != null;
-      const isNonIssue = leg.disposition === "disposed_nonissue"
-        || leg.disposition === "final_nonissue"
-        || leg.sopOutcome === "non_issue";
-      const isCannotDispute = leg.disposition === "disposed_withdraw"
-        || leg.disposition === "final_withdrawn"
-        || leg.sopOutcome === "cannot_dispute";
-      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
-      const isDenied = leg.outcome === "Denied";
-      if (isNonIssue || isApproved) hasSurvivor = true;
-      if (leg.includedInDispute === true && !isDuplicate && !isCannotDispute && !isNonIssue && !isDenied) {
-        hasDisputable = true;
-      }
-    }
+    // Task #702: use shared predicates from lib/group-eligibility so
+    // bulk-reattest's gates and the list endpoint's pre-click
+    // eligibility cannot drift.
+    const hasDisputable = outlookLegs.some(isLegDisputable);
+    const hasSurvivor = outlookLegs.some(isLegHardSurvivor);
     if (hasDisputable || !hasSurvivor) {
       skipped.push({ id: gid, refNumber, reason: hasDisputable ? "has_disputable_legs" : "no_survivors" });
       continue;
     }
 
-    const eligibleLegs: typeof outlookLegs = [];
-    for (const leg of outlookLegs) {
-      if (leg.attestationState === "completed" || leg.attestationState === "queued") continue;
-      if (leg.duplicateOfClaimId != null) continue;
-      const isNonIssue = leg.disposition === "disposed_nonissue"
-        || leg.disposition === "final_nonissue"
-        || leg.sopOutcome === "non_issue";
-      if (isNonIssue) { eligibleLegs.push(leg); continue; }
-      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
-      if (!isApproved) continue;
-      const [latestVerdict] = await db
-        .select({ outcome: claimVerdictTable.outcome, source: claimVerdictTable.source })
+    // Per-leg verdict-source check: build the verdict-confirmed leg-id
+    // set once for all approved-survivor legs in this group, then reuse
+    // the shared `isReattestEligibleLeg` predicate.
+    const approvedSurvivorIds = outlookLegs
+      .filter((l) => l.outcome === "Approved" || l.outcome === "Partially Approved")
+      .map((l) => l.id);
+    const verdictConfirmed = new Set<number>();
+    if (approvedSurvivorIds.length > 0) {
+      const verdicts = await db
+        .select({
+          claimId: claimVerdictTable.claimId,
+          outcome: claimVerdictTable.outcome,
+          source: claimVerdictTable.source,
+        })
         .from(claimVerdictTable)
-        .where(eq(claimVerdictTable.claimId, leg.id))
-        .orderBy(desc(claimVerdictTable.createdAt))
-        .limit(1);
-      if (
-        latestVerdict
-        && latestVerdict.source === "operator_confirmed"
-        && (latestVerdict.outcome === "Approved" || latestVerdict.outcome === "Partial")
-      ) {
-        eligibleLegs.push(leg);
+        .where(inArray(claimVerdictTable.claimId, approvedSurvivorIds))
+        .orderBy(claimVerdictTable.claimId, desc(claimVerdictTable.createdAt));
+      const seen = new Set<number>();
+      for (const v of verdicts) {
+        if (seen.has(v.claimId)) continue;
+        seen.add(v.claimId);
+        if (
+          v.source === "operator_confirmed"
+          && (v.outcome === "Approved" || v.outcome === "Partial")
+        ) {
+          verdictConfirmed.add(v.claimId);
+        }
       }
     }
+    const eligibleLegs = outlookLegs.filter((l) => isReattestEligibleLeg(l, verdictConfirmed));
 
     if (eligibleLegs.length === 0) {
       skipped.push({ id: gid, refNumber, reason: "no_eligible_legs" });
@@ -4834,23 +4927,10 @@ router.post("/invoice-groups/bulk-close", denyClerk, asyncHandler(async (req, re
       continue;
     }
 
-    let hasDisputable = false;
-    let hasSurvivor = false;
-    for (const leg of legs) {
-      const isDuplicate = leg.duplicateOfClaimId != null;
-      const isNonIssue = leg.disposition === "disposed_nonissue"
-        || leg.disposition === "final_nonissue"
-        || leg.sopOutcome === "non_issue";
-      const isCannotDispute = leg.disposition === "disposed_withdraw"
-        || leg.disposition === "final_withdrawn"
-        || leg.sopOutcome === "cannot_dispute";
-      const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
-      const isDenied = leg.outcome === "Denied";
-      if (isNonIssue || isApproved) hasSurvivor = true;
-      if (leg.includedInDispute === true && !isDuplicate && !isCannotDispute && !isNonIssue && !isDenied) {
-        hasDisputable = true;
-      }
-    }
+    // Task #702: shared per-leg predicates so bulk-close and the
+    // list-side eligibility check cannot drift.
+    const hasDisputable = legs.some(isLegDisputable);
+    const hasSurvivor = legs.some(isLegHardSurvivor);
     if (hasDisputable) {
       skipped.push({ id: gid, refNumber, reason: "has_disputable_legs" });
       continue;

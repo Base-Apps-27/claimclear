@@ -578,6 +578,158 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
         ),
+      eligibility: zod
+        .object({
+          applyErrorType: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          submitToPortal: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          generateAndReview: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          reattest: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          close: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+        })
+        .optional()
+        .describe(
+          'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+        ),
     }),
   ),
   total: zod.number(),
@@ -1168,6 +1320,168 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             .nullish()
             .describe(
               "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+            ),
+          eligibility: zod
+            .object({
+              applyErrorType: zod
+                .object({
+                  eligible: zod.boolean(),
+                  reason: zod
+                    .union([
+                      zod.literal("tour_sample"),
+                      zod.literal("not_pre_submit"),
+                      zod.literal("already_submitted"),
+                      zod.literal("error_type_unset"),
+                      zod.literal("not_reviewed"),
+                      zod.literal("draft_empty"),
+                      zod.literal("legs_unresolved"),
+                      zod.literal("already_reviewed"),
+                      zod.literal("not_packageable"),
+                      zod.literal("terminal_phase"),
+                      zod.literal("has_disputable_legs"),
+                      zod.literal("no_survivors"),
+                      zod.literal("has_survivors"),
+                      zod.literal("already_closed"),
+                      zod.literal("no_legs"),
+                      zod.literal("no_eligible_legs"),
+                      zod.literal(null),
+                    ])
+                    .nullable()
+                    .describe(
+                      "Stable reason code; null when `eligible === true`.",
+                    ),
+                })
+                .describe(
+                  "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+                ),
+              submitToPortal: zod
+                .object({
+                  eligible: zod.boolean(),
+                  reason: zod
+                    .union([
+                      zod.literal("tour_sample"),
+                      zod.literal("not_pre_submit"),
+                      zod.literal("already_submitted"),
+                      zod.literal("error_type_unset"),
+                      zod.literal("not_reviewed"),
+                      zod.literal("draft_empty"),
+                      zod.literal("legs_unresolved"),
+                      zod.literal("already_reviewed"),
+                      zod.literal("not_packageable"),
+                      zod.literal("terminal_phase"),
+                      zod.literal("has_disputable_legs"),
+                      zod.literal("no_survivors"),
+                      zod.literal("has_survivors"),
+                      zod.literal("already_closed"),
+                      zod.literal("no_legs"),
+                      zod.literal("no_eligible_legs"),
+                      zod.literal(null),
+                    ])
+                    .nullable()
+                    .describe(
+                      "Stable reason code; null when `eligible === true`.",
+                    ),
+                })
+                .describe(
+                  "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+                ),
+              generateAndReview: zod
+                .object({
+                  eligible: zod.boolean(),
+                  reason: zod
+                    .union([
+                      zod.literal("tour_sample"),
+                      zod.literal("not_pre_submit"),
+                      zod.literal("already_submitted"),
+                      zod.literal("error_type_unset"),
+                      zod.literal("not_reviewed"),
+                      zod.literal("draft_empty"),
+                      zod.literal("legs_unresolved"),
+                      zod.literal("already_reviewed"),
+                      zod.literal("not_packageable"),
+                      zod.literal("terminal_phase"),
+                      zod.literal("has_disputable_legs"),
+                      zod.literal("no_survivors"),
+                      zod.literal("has_survivors"),
+                      zod.literal("already_closed"),
+                      zod.literal("no_legs"),
+                      zod.literal("no_eligible_legs"),
+                      zod.literal(null),
+                    ])
+                    .nullable()
+                    .describe(
+                      "Stable reason code; null when `eligible === true`.",
+                    ),
+                })
+                .describe(
+                  "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+                ),
+              reattest: zod
+                .object({
+                  eligible: zod.boolean(),
+                  reason: zod
+                    .union([
+                      zod.literal("tour_sample"),
+                      zod.literal("not_pre_submit"),
+                      zod.literal("already_submitted"),
+                      zod.literal("error_type_unset"),
+                      zod.literal("not_reviewed"),
+                      zod.literal("draft_empty"),
+                      zod.literal("legs_unresolved"),
+                      zod.literal("already_reviewed"),
+                      zod.literal("not_packageable"),
+                      zod.literal("terminal_phase"),
+                      zod.literal("has_disputable_legs"),
+                      zod.literal("no_survivors"),
+                      zod.literal("has_survivors"),
+                      zod.literal("already_closed"),
+                      zod.literal("no_legs"),
+                      zod.literal("no_eligible_legs"),
+                      zod.literal(null),
+                    ])
+                    .nullable()
+                    .describe(
+                      "Stable reason code; null when `eligible === true`.",
+                    ),
+                })
+                .describe(
+                  "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+                ),
+              close: zod
+                .object({
+                  eligible: zod.boolean(),
+                  reason: zod
+                    .union([
+                      zod.literal("tour_sample"),
+                      zod.literal("not_pre_submit"),
+                      zod.literal("already_submitted"),
+                      zod.literal("error_type_unset"),
+                      zod.literal("not_reviewed"),
+                      zod.literal("draft_empty"),
+                      zod.literal("legs_unresolved"),
+                      zod.literal("already_reviewed"),
+                      zod.literal("not_packageable"),
+                      zod.literal("terminal_phase"),
+                      zod.literal("has_disputable_legs"),
+                      zod.literal("no_survivors"),
+                      zod.literal("has_survivors"),
+                      zod.literal("already_closed"),
+                      zod.literal("no_legs"),
+                      zod.literal("no_eligible_legs"),
+                      zod.literal(null),
+                    ])
+                    .nullable()
+                    .describe(
+                      "Stable reason code; null when `eligible === true`.",
+                    ),
+                })
+                .describe(
+                  "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+                ),
+            })
+            .optional()
+            .describe(
+              'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
             ),
         }),
         legs: zod.array(
@@ -1966,6 +2280,158 @@ export const GetInvoiceGroupResponse = zod
       .nullish()
       .describe(
         "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+      ),
+    eligibility: zod
+      .object({
+        applyErrorType: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        submitToPortal: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        generateAndReview: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        reattest: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        close: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+      })
+      .optional()
+      .describe(
+        'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
       ),
   })
   .and(
@@ -3178,6 +3644,158 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -3542,6 +4160,158 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -3970,6 +4740,158 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -4341,6 +5263,158 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       .nullish()
       .describe(
         "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+      ),
+    eligibility: zod
+      .object({
+        applyErrorType: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        submitToPortal: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        generateAndReview: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        reattest: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+        close: zod
+          .object({
+            eligible: zod.boolean(),
+            reason: zod
+              .union([
+                zod.literal("tour_sample"),
+                zod.literal("not_pre_submit"),
+                zod.literal("already_submitted"),
+                zod.literal("error_type_unset"),
+                zod.literal("not_reviewed"),
+                zod.literal("draft_empty"),
+                zod.literal("legs_unresolved"),
+                zod.literal("already_reviewed"),
+                zod.literal("not_packageable"),
+                zod.literal("terminal_phase"),
+                zod.literal("has_disputable_legs"),
+                zod.literal("no_survivors"),
+                zod.literal("has_survivors"),
+                zod.literal("already_closed"),
+                zod.literal("no_legs"),
+                zod.literal("no_eligible_legs"),
+                zod.literal(null),
+              ])
+              .nullable()
+              .describe("Stable reason code; null when `eligible === true`."),
+          })
+          .describe(
+            "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+          ),
+      })
+      .optional()
+      .describe(
+        'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
       ),
   })
   .and(
@@ -4719,6 +5793,158 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -5083,6 +6309,158 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -5442,6 +6820,158 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -6096,6 +7626,158 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -6479,6 +8161,158 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -7443,6 +9277,158 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -7809,6 +9795,158 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -8183,6 +10321,158 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -8549,6 +10839,158 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
     ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
 });
 
 /**
@@ -8911,6 +11353,158 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -9276,6 +11870,158 @@ export const StampPreviewGeneratedResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -9671,6 +12417,158 @@ export const CompleteGroupReattestResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 
@@ -10071,6 +12969,158 @@ export const BulkQueueGroupReattestResponse = zod
         .nullish()
         .describe(
           "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+        ),
+      eligibility: zod
+        .object({
+          applyErrorType: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          submitToPortal: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          generateAndReview: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          reattest: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          close: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+        })
+        .optional()
+        .describe(
+          'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
         ),
     }),
     queuedLegIds: zod
@@ -26235,6 +29285,158 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
         ),
+      eligibility: zod
+        .object({
+          applyErrorType: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          submitToPortal: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          generateAndReview: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          reattest: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+          close: zod
+            .object({
+              eligible: zod.boolean(),
+              reason: zod
+                .union([
+                  zod.literal("tour_sample"),
+                  zod.literal("not_pre_submit"),
+                  zod.literal("already_submitted"),
+                  zod.literal("error_type_unset"),
+                  zod.literal("not_reviewed"),
+                  zod.literal("draft_empty"),
+                  zod.literal("legs_unresolved"),
+                  zod.literal("already_reviewed"),
+                  zod.literal("not_packageable"),
+                  zod.literal("terminal_phase"),
+                  zod.literal("has_disputable_legs"),
+                  zod.literal("no_survivors"),
+                  zod.literal("has_survivors"),
+                  zod.literal("already_closed"),
+                  zod.literal("no_legs"),
+                  zod.literal("no_eligible_legs"),
+                  zod.literal(null),
+                ])
+                .nullable()
+                .describe("Stable reason code; null when `eligible === true`."),
+            })
+            .describe(
+              "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+            ),
+        })
+        .optional()
+        .describe(
+          'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+        ),
     }),
   ),
   portalStats: zod.object({
@@ -29402,6 +32604,158 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .nullish()
     .describe(
       "Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.",
+    ),
+  eligibility: zod
+    .object({
+      applyErrorType: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      submitToPortal: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      generateAndReview: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      reattest: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+      close: zod
+        .object({
+          eligible: zod.boolean(),
+          reason: zod
+            .union([
+              zod.literal("tour_sample"),
+              zod.literal("not_pre_submit"),
+              zod.literal("already_submitted"),
+              zod.literal("error_type_unset"),
+              zod.literal("not_reviewed"),
+              zod.literal("draft_empty"),
+              zod.literal("legs_unresolved"),
+              zod.literal("already_reviewed"),
+              zod.literal("not_packageable"),
+              zod.literal("terminal_phase"),
+              zod.literal("has_disputable_legs"),
+              zod.literal("no_survivors"),
+              zod.literal("has_survivors"),
+              zod.literal("already_closed"),
+              zod.literal("no_legs"),
+              zod.literal("no_eligible_legs"),
+              zod.literal(null),
+            ])
+            .nullable()
+            .describe("Stable reason code; null when `eligible === true`."),
+        })
+        .describe(
+          "One flag in `InvoiceGroupEligibility`. Reports whether the\noperator can run a particular bulk action on this row right now,\nand — when ineligible — a stable reason code that the client\nmaps to a plain-English tooltip \/ skipped-toast string.\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
 });
 

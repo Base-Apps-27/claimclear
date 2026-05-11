@@ -5946,6 +5946,8 @@ components:
             duplicate:
               type: integer
               description: "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error)."
+        eligibility:
+          $ref: "#/components/schemas/InvoiceGroupEligibility"
       required:
         - id
         - invoiceNumber
@@ -5955,6 +5957,68 @@ components:
         - rideCount
         - disputeEmailSent
         - reattestRequired
+
+    InvoiceGroupEligibilityFlag:
+      type: object
+      description: |
+        One flag in `InvoiceGroupEligibility`. Reports whether the
+        operator can run a particular bulk action on this row right now,
+        and — when ineligible — a stable reason code that the client
+        maps to a plain-English tooltip / skipped-toast string.
+      properties:
+        eligible:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+          enum:
+            - tour_sample
+            - not_pre_submit
+            - already_submitted
+            - error_type_unset
+            - not_reviewed
+            - draft_empty
+            - legs_unresolved
+            - already_reviewed
+            - not_packageable
+            - terminal_phase
+            - has_disputable_legs
+            - no_survivors
+            - has_survivors
+            - already_closed
+            - no_legs
+            - no_eligible_legs
+            - null
+          description: "Stable reason code; null when `eligible === true`."
+      required:
+        - eligible
+        - reason
+
+    InvoiceGroupEligibility:
+      type: object
+      description: |
+        Task #702 — server-enforced eligibility for the 5 bulk actions
+        the invoice-group list rail exposes. Surfaced on every list row
+        so the UI can show "Queue 5 of 100 selected" labels and grey
+        out ineligible-selected rows BEFORE the operator clicks. Every
+        bulk-* endpoint still re-checks server-side; this object is a
+        UX hint, not the gate.
+      properties:
+        applyErrorType:
+          $ref: "#/components/schemas/InvoiceGroupEligibilityFlag"
+        submitToPortal:
+          $ref: "#/components/schemas/InvoiceGroupEligibilityFlag"
+        generateAndReview:
+          $ref: "#/components/schemas/InvoiceGroupEligibilityFlag"
+        reattest:
+          $ref: "#/components/schemas/InvoiceGroupEligibilityFlag"
+        close:
+          $ref: "#/components/schemas/InvoiceGroupEligibilityFlag"
+      required:
+        - applyErrorType
+        - submitToPortal
+        - generateAndReview
+        - reattest
+        - close
 
     NeedsClassificationInboxClaim:
       type: object

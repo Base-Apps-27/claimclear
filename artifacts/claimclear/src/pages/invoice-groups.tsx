@@ -46,6 +46,8 @@ import {
 } from "@/components/cohesion";
 import { StateBadge } from "@/components/state-badge";
 import { ActionsRail, ActionGroup as RailActionGroup, ActionRow } from "@/components/actions-rail";
+import { explainEligibilityReason } from "@/lib/eligibility-reasons";
+import { WrapTooltip } from "@/components/info-tooltip";
 import { UrgentTodayBadge } from "@/components/urgent-today-badge";
 import { RefNumber } from "@/components/ref-number";
 import {
@@ -343,6 +345,95 @@ export default function InvoiceGroupsList() {
 
   const allSelected = groups.length > 0 && groups.every(g => selectedIds.has(g.id));
   const someSelected = selectedIds.size > 0;
+
+  // Task #702 — per-row eligibility for the 5 bulk actions on the rail.
+  // The list endpoint returns an `eligibility` object on every row;
+  // we slice it three ways so the rail can label, gate, and recover.
+  type BulkActionKey = "submitToPortal" | "generateAndReview" | "reattest" | "close";
+  const BULK_ACTIONS: readonly BulkActionKey[] = [
+    "submitToPortal",
+    "generateAndReview",
+    "reattest",
+    "close",
+  ] as const;
+
+  const eligibilityById = useMemo(() => {
+    const m = new Map<number, InvoiceGroupResponse["eligibility"]>();
+    for (const g of groups) m.set(g.id, g.eligibility);
+    return m;
+  }, [groups]);
+
+  // IDs visible on the current page that are eligible for each action.
+  // Powers the "Select all eligible for X" sub-row.
+  const eligibleVisibleIdsByAction = useMemo(() => {
+    const m: Record<BulkActionKey, number[]> = {
+      submitToPortal: [],
+      generateAndReview: [],
+      reattest: [],
+      close: [],
+    };
+    for (const g of groups) {
+      const e = g.eligibility;
+      for (const k of BULK_ACTIONS) {
+        // Defensive fallback (Task #702): if a stale/cached payload
+        // omits `eligibility`, optimistically treat the row as
+        // eligible for every action and let the server have the final
+        // word in the bulk endpoint's `skipped[]`. The opposite
+        // (treating it as ineligible) would silently disable the
+        // entire rail when the field happens to be missing.
+        if (!e || e[k]?.eligible) m[k].push(g.id);
+      }
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
+
+  // Among the operator's current selection, the eligible-id subset for
+  // each action. Drives the "X of Y" label and is the actual list of
+  // ids we POST to the bulk endpoint (we never send ineligibles).
+  const eligibleSelectedIdsByAction = useMemo(() => {
+    const m: Record<BulkActionKey, number[]> = {
+      submitToPortal: [],
+      generateAndReview: [],
+      reattest: [],
+      close: [],
+    };
+    for (const id of selectedIds) {
+      const e = eligibilityById.get(id);
+      for (const k of BULK_ACTIONS) {
+        // Same defensive fallback as `eligibleVisibleIdsByAction`: a
+        // missing eligibility object means we let the row through and
+        // rely on the server to skip it if needed.
+        if (!e || e[k]?.eligible) m[k].push(id);
+      }
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, eligibilityById]);
+
+  // For per-row "ineligible" muting + tooltip — return a list of
+  // (action, plain-English reason) pairs for any selected row that
+  // would be skipped by at least one bulk action. applyErrorType is
+  // intentionally excluded: it's universally eligible, so listing it
+  // would always read as "Tour-sample groups can't…" on demo data only.
+  const ineligibleReasonsForRow = (id: number): { action: BulkActionKey; reason: string }[] => {
+    const e = eligibilityById.get(id);
+    if (!e) return [];
+    const out: { action: BulkActionKey; reason: string }[] = [];
+    for (const k of BULK_ACTIONS) {
+      if (!e[k]?.eligible) {
+        out.push({ action: k, reason: explainEligibilityReason(e[k]?.reason) });
+      }
+    }
+    return out;
+  };
+
+  const ACTION_NOUN: Record<BulkActionKey, string> = {
+    submitToPortal: "portal submission",
+    generateAndReview: "generate & review",
+    reattest: "re-attest",
+    close: "close",
+  };
 
   const handleSelectAll = () => {
     if (allSelected) setSelectedIds(new Set());
@@ -1180,17 +1271,38 @@ export default function InvoiceGroupsList() {
                         const isSettling = slot.isSettling;
                         const isJustSelected = settle.isJustSelected(group.id);
                         const isSel = selectedIds.has(group.id);
+                        // Task #702 — when a selected row is ineligible
+                        // for one or more bulk actions, dim it and
+                        // surface a tooltip listing the per-action
+                        // reason so the operator knows up front why the
+                        // rail's "X of Y" count fell short of Y.
+                        const ineligReasons = isSel ? ineligibleReasonsForRow(group.id) : [];
+                        const isIneligibleSelected = ineligReasons.length > 0;
+                        const ineligTooltip = isIneligibleSelected
+                          ? ineligReasons
+                              .map((r) => `${ACTION_NOUN[r.action]}: ${r.reason}`)
+                              .join("\n")
+                          : "";
                         return (
                           <tr
                             key={group.id}
-                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(group.id)} ${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""}`}
+                            className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${rowBreath.rowClassName(group.id)} ${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""} ${isIneligibleSelected ? "opacity-70" : ""}`}
                             style={isSel ? { background: purpleRowTint } : undefined}
                             data-testid={`row-group-${group.id}`}
                             data-settling={isSettling ? "true" : undefined}
+                            data-ineligible-selected={isIneligibleSelected ? "true" : undefined}
                           >
                             {!clerk && (
                               <td className={`px-4 ${tdPy}`}>
-                                <Checkbox checked={isSel} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber}`} disabled={isSettling} />
+                                {isIneligibleSelected ? (
+                                  <WrapTooltip content={ineligTooltip}>
+                                    <span className="inline-flex">
+                                      <Checkbox checked={isSel} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber} (ineligible for some bulk actions)`} disabled={isSettling} />
+                                    </span>
+                                  </WrapTooltip>
+                                ) : (
+                                  <Checkbox checked={isSel} onCheckedChange={() => handleToggle(group.id)} aria-label={`Select group ${group.invoiceNumber}`} disabled={isSettling} />
+                                )}
                               </td>
                             )}
                             {visibleCols.has("invoiceNumber") && (
@@ -1399,14 +1511,31 @@ export default function InvoiceGroupsList() {
                 "Draft reviewed" facet above is the natural way to
                 line up a clean selection first.
               */}
+              {(() => {
+                const eligibleIds = eligibleSelectedIdsByAction.submitToPortal;
+                const eligVisible = eligibleVisibleIdsByAction.submitToPortal;
+                const noneEligible = eligibleIds.length === 0;
+                return (<>
               <ActionRow
                 icon={bulkSubmitToPortal.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                label={someSelected ? `Queue ${selectedIds.size} for portal submission` : "Queue selected for portal submission"}
-                disabled={!someSelected || bulkSubmitToPortal.isPending}
-                disabledReason={!someSelected ? "Select one or more reviewed-draft rows first." : undefined}
+                label={
+                  !someSelected
+                    ? "Queue selected for portal submission"
+                    : eligibleIds.length === selectedIds.size
+                      ? `Queue ${eligibleIds.length} for portal submission`
+                      : `Queue ${eligibleIds.length} of ${selectedIds.size} selected for portal submission`
+                }
+                disabled={noneEligible || bulkSubmitToPortal.isPending}
+                disabledReason={
+                  !someSelected
+                    ? "Select one or more reviewed-draft rows first."
+                    : noneEligible
+                      ? `None of the ${selectedIds.size} selected ${selectedIds.size === 1 ? "row is" : "rows are"} ready for portal submission (need a reviewed draft and all disputed legs resolved).`
+                      : undefined
+                }
                 onClick={async () => {
-                  if (!someSelected || bulkSubmitToPortal.isPending) return;
-                  const ids = Array.from(selectedIds);
+                  if (noneEligible || bulkSubmitToPortal.isPending) return;
+                  const ids = eligibleIds;
                   try {
                     const res = await bulkSubmitToPortal.mutateAsync({ data: { groupIds: ids } });
                     const queued = res.queued ?? 0;
@@ -1415,7 +1544,7 @@ export default function InvoiceGroupsList() {
                     if (skipped.length > 0) {
                       const sample = skipped
                         .slice(0, 3)
-                        .map((s) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .map((s) => `${s.refNumber || `#${s.id}`} (${explainEligibilityReason(s.reason)})`)
                         .join(", ");
                       const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
                       msg += ` · skipped ${skipped.length} (${sample}${more})`;
@@ -1435,18 +1564,41 @@ export default function InvoiceGroupsList() {
                 }}
                 testId="rail-action-bulk-submit-portal"
               />
-              {filterReadyToGenerate && (
+              <ActionRow
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                label={`Select all eligible for portal submission (${eligVisible.length} on this page)`}
+                muted
+                disabled={eligVisible.length === 0}
+                disabledReason={eligVisible.length === 0 ? "No rows on this page are eligible for portal submission." : undefined}
+                onClick={() => setSelectedIds(new Set(eligVisible))}
+                testId="rail-action-bulk-submit-portal-select-eligible"
+              />
+                </>);
+              })()}
+              {filterReadyToGenerate && (() => {
+                const eligibleIds = eligibleSelectedIdsByAction.generateAndReview;
+                const eligVisible = eligibleVisibleIdsByAction.generateAndReview;
+                const noneEligible = eligibleIds.length === 0;
+                return (<>
               <ActionRow
                 icon={bulkGenProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                 label={
                   selectAllMatching
                     ? `Generate & mark all ${total} for approval`
-                    : someSelected
-                      ? `Generate & mark ${selectedIds.size} for approval`
-                      : "Generate & mark for approval"
+                    : !someSelected
+                      ? "Generate & mark for approval"
+                      : eligibleIds.length === selectedIds.size
+                        ? `Generate & mark ${eligibleIds.length} for approval`
+                        : `Generate & mark ${eligibleIds.length} of ${selectedIds.size} selected for approval`
                 }
-                disabled={(!someSelected && !selectAllMatching) || bulkGenProcessing}
-                disabledReason={(!someSelected && !selectAllMatching) ? "Select groups from the list first, or use Select all matching." : undefined}
+                disabled={(!selectAllMatching && noneEligible) || bulkGenProcessing}
+                disabledReason={
+                  (!someSelected && !selectAllMatching)
+                    ? "Select groups from the list first, or use Select all matching."
+                    : (!selectAllMatching && noneEligible)
+                      ? `None of the ${selectedIds.size} selected ${selectedIds.size === 1 ? "row is" : "rows are"} ready to generate & mark for approval (need all legs packageable and not already reviewed).`
+                      : undefined
+                }
                 onClick={async () => {
                   if (bulkGenProcessing) return;
 
@@ -1469,7 +1621,7 @@ export default function InvoiceGroupsList() {
                       return;
                     }
                   } else {
-                    ids = Array.from(selectedIds);
+                    ids = eligibleIds;
                   }
 
                   const results: BulkGenResult[] = [];
@@ -1503,15 +1655,42 @@ export default function InvoiceGroupsList() {
                 }}
                 testId="rail-action-bulk-generate-and-review"
               />
-              )}
+              <ActionRow
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                label={`Select all eligible for generate & review (${eligVisible.length} on this page)`}
+                muted
+                disabled={eligVisible.length === 0}
+                disabledReason={eligVisible.length === 0 ? "No rows on this page are eligible for generate & review." : undefined}
+                onClick={() => { setSelectAllMatching(false); setSelectedIds(new Set(eligVisible)); }}
+                testId="rail-action-bulk-generate-and-review-select-eligible"
+              />
+                </>);
+              })()}
+              {(() => {
+                const eligibleIds = eligibleSelectedIdsByAction.reattest;
+                const eligVisible = eligibleVisibleIdsByAction.reattest;
+                const noneEligible = eligibleIds.length === 0;
+                return (<>
               <ActionRow
                 icon={bulkReattest.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                label={someSelected ? `Re-attest ${selectedIds.size} groups` : "Re-attest selected groups"}
-                disabled={!someSelected || bulkReattest.isPending}
-                disabledReason={!someSelected ? "Select reattest-only groups first." : undefined}
+                label={
+                  !someSelected
+                    ? "Re-attest selected groups"
+                    : eligibleIds.length === selectedIds.size
+                      ? `Re-attest ${eligibleIds.length} groups`
+                      : `Re-attest ${eligibleIds.length} of ${selectedIds.size} selected groups`
+                }
+                disabled={noneEligible || bulkReattest.isPending}
+                disabledReason={
+                  !someSelected
+                    ? "Select reattest-only groups first."
+                    : noneEligible
+                      ? `None of the ${selectedIds.size} selected ${selectedIds.size === 1 ? "row has" : "rows have"} approved survivor legs ready for re-attestation.`
+                      : undefined
+                }
                 onClick={async () => {
-                  if (!someSelected || bulkReattest.isPending) return;
-                  const ids = Array.from(selectedIds);
+                  if (noneEligible || bulkReattest.isPending) return;
+                  const ids = eligibleIds;
                   try {
                     const res = await bulkReattest.mutateAsync({ data: { groupIds: ids } });
                     const queued = res.queued ?? 0;
@@ -1520,7 +1699,7 @@ export default function InvoiceGroupsList() {
                     if (skipped.length > 0) {
                       const sample = skipped
                         .slice(0, 3)
-                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${explainEligibilityReason(s.reason)})`)
                         .join(", ");
                       const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
                       msg += ` · skipped ${skipped.length} (${sample}${more})`;
@@ -1541,13 +1720,41 @@ export default function InvoiceGroupsList() {
                 testId="rail-action-bulk-reattest"
               />
               <ActionRow
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                label={`Select all eligible for re-attest (${eligVisible.length} on this page)`}
+                muted
+                disabled={eligVisible.length === 0}
+                disabledReason={eligVisible.length === 0 ? "No rows on this page are eligible for re-attest." : undefined}
+                onClick={() => setSelectedIds(new Set(eligVisible))}
+                testId="rail-action-bulk-reattest-select-eligible"
+              />
+                </>);
+              })()}
+              {(() => {
+                const eligibleIds = eligibleSelectedIdsByAction.close;
+                const eligVisible = eligibleVisibleIdsByAction.close;
+                const noneEligible = eligibleIds.length === 0;
+                return (<>
+              <ActionRow
                 icon={bulkClose.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
-                label={someSelected ? `Close ${selectedIds.size} groups` : "Close selected groups"}
-                disabled={!someSelected || bulkClose.isPending}
-                disabledReason={!someSelected ? "Select nothing-to-do groups first." : undefined}
+                label={
+                  !someSelected
+                    ? "Close selected groups"
+                    : eligibleIds.length === selectedIds.size
+                      ? `Close ${eligibleIds.length} groups`
+                      : `Close ${eligibleIds.length} of ${selectedIds.size} selected groups`
+                }
+                disabled={noneEligible || bulkClose.isPending}
+                disabledReason={
+                  !someSelected
+                    ? "Select nothing-to-do groups first."
+                    : noneEligible
+                      ? `None of the ${selectedIds.size} selected ${selectedIds.size === 1 ? "row is" : "rows are"} ready to close (only nothing-to-do groups with no surviving legs can be closed).`
+                      : undefined
+                }
                 onClick={async () => {
-                  if (!someSelected || bulkClose.isPending) return;
-                  const ids = Array.from(selectedIds);
+                  if (noneEligible || bulkClose.isPending) return;
+                  const ids = eligibleIds;
                   try {
                     const res = await bulkClose.mutateAsync({ data: { groupIds: ids } });
                     const closed = res.closed ?? 0;
@@ -1556,7 +1763,7 @@ export default function InvoiceGroupsList() {
                     if (skipped.length > 0) {
                       const sample = skipped
                         .slice(0, 3)
-                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${s.reason})`)
+                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${explainEligibilityReason(s.reason)})`)
                         .join(", ");
                       const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
                       msg += ` · skipped ${skipped.length} (${sample}${more})`;
@@ -1576,6 +1783,17 @@ export default function InvoiceGroupsList() {
                 }}
                 testId="rail-action-bulk-close"
               />
+              <ActionRow
+                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                label={`Select all eligible for close (${eligVisible.length} on this page)`}
+                muted
+                disabled={eligVisible.length === 0}
+                disabledReason={eligVisible.length === 0 ? "No rows on this page are eligible for close." : undefined}
+                onClick={() => setSelectedIds(new Set(eligVisible))}
+                testId="rail-action-bulk-close-select-eligible"
+              />
+                </>);
+              })()}
               <ActionRow
                 icon={<X className="w-3.5 h-3.5" />}
                 label="Clear selection"

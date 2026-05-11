@@ -672,6 +672,66 @@ export const PayorDenialReasonCode = {
   payor_other: "payor_other",
 } as const;
 
+/**
+ * Stable reason code; null when `eligible === true`.
+ * @nullable
+ */
+export type InvoiceGroupEligibilityFlagReason =
+  | (typeof InvoiceGroupEligibilityFlagReason)[keyof typeof InvoiceGroupEligibilityFlagReason]
+  | null;
+
+export const InvoiceGroupEligibilityFlagReason = {
+  tour_sample: "tour_sample",
+  not_pre_submit: "not_pre_submit",
+  already_submitted: "already_submitted",
+  error_type_unset: "error_type_unset",
+  not_reviewed: "not_reviewed",
+  draft_empty: "draft_empty",
+  legs_unresolved: "legs_unresolved",
+  already_reviewed: "already_reviewed",
+  not_packageable: "not_packageable",
+  terminal_phase: "terminal_phase",
+  has_disputable_legs: "has_disputable_legs",
+  no_survivors: "no_survivors",
+  has_survivors: "has_survivors",
+  already_closed: "already_closed",
+  no_legs: "no_legs",
+  no_eligible_legs: "no_eligible_legs",
+} as const;
+
+/**
+ * One flag in `InvoiceGroupEligibility`. Reports whether the
+operator can run a particular bulk action on this row right now,
+and — when ineligible — a stable reason code that the client
+maps to a plain-English tooltip / skipped-toast string.
+
+ */
+export interface InvoiceGroupEligibilityFlag {
+  eligible: boolean;
+  /**
+   * Stable reason code; null when `eligible === true`.
+   * @nullable
+   */
+  reason: InvoiceGroupEligibilityFlagReason;
+}
+
+/**
+ * Task #702 — server-enforced eligibility for the 5 bulk actions
+the invoice-group list rail exposes. Surfaced on every list row
+so the UI can show "Queue 5 of 100 selected" labels and grey
+out ineligible-selected rows BEFORE the operator clicks. Every
+bulk-* endpoint still re-checks server-side; this object is a
+UX hint, not the gate.
+
+ */
+export interface InvoiceGroupEligibility {
+  applyErrorType: InvoiceGroupEligibilityFlag;
+  submitToPortal: InvoiceGroupEligibilityFlag;
+  generateAndReview: InvoiceGroupEligibilityFlag;
+  reattest: InvoiceGroupEligibilityFlag;
+  close: InvoiceGroupEligibilityFlag;
+}
+
 export interface InvoiceGroupResponse {
   id: number;
   invoiceNumber: string;
@@ -907,6 +967,7 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    * @nullable
    */
   legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
+  eligibility?: InvoiceGroupEligibility;
 }
 
 export interface NeedsClassificationInboxClaim {

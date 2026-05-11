@@ -13,6 +13,7 @@ understanding readback / preview generation) instead.
  */
 import type { ClosurePersonRef } from "./closurePersonRef";
 import type { EvidenceFileRef } from "./evidenceFileRef";
+import type { InvoiceGroupEligibility } from "./invoiceGroupEligibility";
 import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
 import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupResponseClosureReviewState";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
@@ -259,4 +260,5 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    * @nullable
    */
   legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
+  eligibility?: InvoiceGroupEligibility;
 }
