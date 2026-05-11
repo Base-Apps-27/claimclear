@@ -394,8 +394,47 @@ export function SopAdvancePlayer(props: Props) {
           body: file,
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body?.error || `HTTP ${res.status}`);
+          // Diagnostic capture for 403/4xx/5xx that bypass Express
+          // (HTML error pages with `<title>403</title>` come from the
+          // edge proxy, not our handler — Express always returns JSON).
+          // Pull the edge identifiers so we can pinpoint which layer
+          // is rejecting on the next failure.
+          const rawText = await res.text().catch(() => "");
+          const isJson = (res.headers.get("content-type") || "").includes("application/json");
+          let parsedError: string | undefined;
+          if (isJson) {
+            try { parsedError = JSON.parse(rawText)?.error; } catch { /* noop */ }
+          }
+          const diag = {
+            status: res.status,
+            cfRay: res.headers.get("cf-ray"),
+            server: res.headers.get("server"),
+            via: res.headers.get("via"),
+            xAmznErr: res.headers.get("x-amzn-errortype"),
+            xReplit: res.headers.get("x-replit-request-id"),
+            ctype: res.headers.get("content-type"),
+            clen: res.headers.get("content-length"),
+            bodySnippet: rawText.slice(0, 240),
+            file: { name: file.name, type: file.type, size: file.size },
+          };
+          // eslint-disable-next-line no-console
+          console.error("[upload-diag]", diag);
+          const diagLine =
+            `${res.status}` +
+            (diag.cfRay ? ` · cf-ray:${diag.cfRay}` : "") +
+            (diag.server ? ` · server:${diag.server}` : "") +
+            (diag.xReplit ? ` · rid:${diag.xReplit}` : "") +
+            ` · ${file.type || "?"} ${(file.size / 1024).toFixed(0)}KB`;
+          toast({
+            title: "Upload failed",
+            description: `${parsedError || `HTTP ${res.status}`} — diag: ${diagLine}`,
+            variant: "destructive",
+          });
+          updatePending(nodeId, key, (cur) => ({
+            ...cur,
+            items: cur.items.filter((it) => it.id !== tempId),
+          }));
+          return;
         }
         const { objectPath } = (await res.json()) as { objectPath: string };
         updatePending(nodeId, key, (cur) => ({
