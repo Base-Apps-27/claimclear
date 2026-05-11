@@ -84,6 +84,7 @@ import {
   useSopJumpLeg,
   useSopRestartLeg,
   useReclassifyLeg,
+  useUnmarkLegDuplicate,
   getGetSopRewindImpactQueryKey,
 } from "@workspace/api-client-react";
 import { invalidateLegCache } from "@/lib/apply-mutation-result";
@@ -715,6 +716,24 @@ export function SopAdvancePlayer(props: Props) {
   const backStepMutation = useSopBackStepLeg<Error>();
   const jumpMutation = useSopJumpLeg<Error>();
   const restartMutation = useSopRestartLeg<Error>();
+  // Task #688 — Duplicate terminals had no back-out. `useSopRestartLeg`
+  // doesn't clear `duplicateOfClaimId`, so the un-mark needs its own
+  // mutation. Mirrors the on-success contract of the rewind mutations
+  // so the leg cache invalidates and the parent can advance.
+  const unmarkDuplicateMutation = useUnmarkLegDuplicate<Error>({
+    mutation: {
+      onSuccess: () => {
+        markLocalAction(`claim:${leg.id}`);
+        invalidateAfterRewind();
+        successToast({
+          title: "__VERB__",
+          description: "Sibling-duplicate link cleared — this leg can be walked again",
+        });
+        onAdvanced?.({ isTerminal: false, sopOutcome: null });
+      },
+      onError: handleRewindError,
+    },
+  });
   const reclassifyMutation = useReclassifyLeg<Error>({
     mutation: {
       onSuccess: () => {
@@ -1029,15 +1048,68 @@ export function SopAdvancePlayer(props: Props) {
               disabledReason={disabledReason}
               onAdvanced={onAdvanced}
             />
+            {/* Task #688 — Hold's Resume button only continues the walk
+                from where it left off; it doesn't help when the operator
+                walked into the hold by mistake. The shared rewind footer
+                lets them step back or restart, same as a closed terminal.
+                executeRewind clears `sopOutcome`, so Restart also
+                releases the hold. Gated on !isPreview so the admin
+                "Test Decision Tree" dialog (which bypasses live mutations)
+                doesn't surface buttons that would hit /sop-restart. */}
+            {!isPreview && (
+              <LegTerminalRewindFooter
+                variant="rewind"
+                hasAnswers={answers.length > 0}
+                interactionDisabled={!!disabled || anyRewindPending}
+                onChangeAnswer={() => openRewindDialog("back-step")}
+                onRestart={() => openRewindDialog("restart")}
+                onReclassify={
+                  onRequestReclassify ?? (() => setReclassifyOpen(true))
+                }
+                reclassifyDisabled={
+                  !!disabled || anyRewindPending || reclassifyMutation.isPending
+                }
+                testIdPrefix="sop-hold"
+              />
+            )}
           </>
         )}
         {terminalKind === "duplicate" && (
-          <DuplicateTerminal
-            leg={terminalLeg}
-            tree={tree}
-            disabledReason={disabledReason}
-            onAdvanced={onAdvanced}
-          />
+          <>
+            <DuplicateTerminal
+              leg={terminalLeg}
+              tree={tree}
+              disabledReason={disabledReason}
+              onAdvanced={onAdvanced}
+            />
+            {/* Task #688 — Sibling-duplicate is a dead-end if the
+                operator linked the wrong primary or shouldn't have
+                marked this leg at all. Unmark clears `duplicateOfClaimId`
+                via /claims/:id/duplicate-of (DELETE) and the leg
+                returns to the walk queue. Gated on !isPreview so the
+                admin "Test Decision Tree" dialog doesn't fire real
+                un-mark mutations. */}
+            {!isPreview && (
+              <LegTerminalRewindFooter
+                variant="duplicate"
+                hasAnswers={false}
+                interactionDisabled={!!disabled || unmarkDuplicateMutation.isPending}
+                onUnmarkDuplicate={() =>
+                  unmarkDuplicateMutation.mutate({ id: leg.id })
+                }
+                unmarkPending={unmarkDuplicateMutation.isPending}
+                onReclassify={
+                  onRequestReclassify ?? (() => setReclassifyOpen(true))
+                }
+                reclassifyDisabled={
+                  !!disabled ||
+                  unmarkDuplicateMutation.isPending ||
+                  reclassifyMutation.isPending
+                }
+                testIdPrefix="sop-duplicate"
+              />
+            )}
+          </>
         )}
         {!isPreview && rewindPending && (
           <RewindConfirmDialog
@@ -1103,16 +1175,111 @@ export function SopAdvancePlayer(props: Props) {
           disabled={disabled}
           disabledReason={disabledReason}
         />
+        {/* Task #688 — Include/Ready is the green "this leg is
+            disputable" terminal. If the operator walked here by
+            mistake, they need the same back-step / restart pair as
+            closed terminals. */}
+        {!isPreview && (
+          <LegTerminalRewindFooter
+            variant="rewind"
+            hasAnswers={answers.length > 0}
+            interactionDisabled={!!disabled || anyRewindPending}
+            onChangeAnswer={() => openRewindDialog("back-step")}
+            onRestart={() => openRewindDialog("restart")}
+            onReclassify={
+              onRequestReclassify ?? (() => setReclassifyOpen(true))
+            }
+            reclassifyDisabled={
+              !!disabled || anyRewindPending || reclassifyMutation.isPending
+            }
+            testIdPrefix="sop-include"
+          />
+        )}
+        {!isPreview && rewindPending && (
+          <RewindConfirmDialog
+            open={!!rewindPending}
+            onOpenChange={(next) => !next && closeRewindDialog()}
+            legId={leg.id}
+            legRef={legRefLabel}
+            action={rewindPending.action}
+            nodeId={rewindPending.nodeId ?? undefined}
+            currentVerdictLabel={leg.sopOutcome ?? null}
+            onConfirm={handleRewindConfirm}
+            isPending={anyRewindPending}
+          />
+        )}
+        {!isPreview && !onRequestReclassify && reclassifyOpen && (
+          <ReclassifyConfirmDialog
+            open={reclassifyOpen}
+            onOpenChange={(next) =>
+              !reclassifyMutation.isPending && setReclassifyOpen(next)
+            }
+            legRef={legRefLabel}
+            isPending={reclassifyMutation.isPending}
+            onConfirm={() => reclassifyMutation.mutate({ id: leg.id })}
+          />
+        )}
       </div>
     );
   }
 
   if (!currentNode) {
+    // Task #688 — The tree-config-error fallback used to be plain
+    // muted text telling the operator to reclassify. The actual recovery
+    // path is now a real button. Restart-walk is intentionally omitted
+    // because /sop-restart 400s when the tree can't be loaded.
     return (
-      <p className="text-sm text-muted-foreground">
-        Tree configuration error — node <code>{currentNodeId}</code> not found in the current
-        decision tree. Reclassify the leg to recover.
-      </p>
+      <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
+        <Card
+          className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900"
+          data-testid="sop-tree-error-card"
+        >
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 mt-0.5 text-amber-700 dark:text-amber-300 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-base font-semibold text-amber-800 dark:text-amber-200">
+                  Tree configuration error
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Step <code className="font-mono">{currentNodeId}</code> is no
+                  longer in the active decision tree. Reclassify the leg to pick
+                  a different tree and start over.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={
+                  onRequestReclassify ?? (() => setReclassifyOpen(true))
+                }
+                disabled={!!disabled || reclassifyMutation.isPending}
+                className="gap-1.5 h-8 text-xs"
+                data-testid="sop-tree-error-reclassify"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reclassify the leg
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                Wipes the SOP walk and returns the leg to needs-classification.
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+        {!isPreview && !onRequestReclassify && reclassifyOpen && (
+          <ReclassifyConfirmDialog
+            open={reclassifyOpen}
+            onOpenChange={(next) =>
+              !reclassifyMutation.isPending && setReclassifyOpen(next)
+            }
+            legRef={legRefLabel}
+            isPending={reclassifyMutation.isPending}
+            onConfirm={() => reclassifyMutation.mutate({ id: leg.id })}
+          />
+        )}
+      </div>
     );
   }
 
@@ -1927,6 +2094,126 @@ function ClosedTerminalRewindCard({
             onClick={onReclassify}
             disabled={interactionDisabled}
             data-testid="sop-terminal-reclassify"
+          >
+            Reclassify the leg
+          </button>{" "}
+          to pick a different decision tree.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #688 — Shared rewind footer for non-closed terminal screens
+// (Hold, Duplicate, Include/Ready). Mirrors the action row at the
+// bottom of `ClosedTerminalRewindCard` so every leg terminal exposes
+// a consistent way out: either rewind the SOP walk (Change/Restart)
+// or, for sibling-duplicates, unmark the duplicate link. The
+// Reclassify footnote stays demoted as on the closed card — same
+// recovery copy, same disabled rules.
+// ─────────────────────────────────────────────────────────────────────
+
+function LegTerminalRewindFooter({
+  variant,
+  hasAnswers,
+  interactionDisabled,
+  onChangeAnswer,
+  onRestart,
+  onUnmarkDuplicate,
+  unmarkPending,
+  onReclassify,
+  reclassifyDisabled,
+  testIdPrefix,
+}: {
+  variant: "rewind" | "duplicate";
+  hasAnswers: boolean;
+  interactionDisabled: boolean;
+  onChangeAnswer?: () => void;
+  onRestart?: () => void;
+  onUnmarkDuplicate?: () => void;
+  unmarkPending?: boolean;
+  onReclassify: () => void;
+  reclassifyDisabled: boolean;
+  testIdPrefix: string;
+}) {
+  return (
+    <Card
+      className="bg-muted/20 border-muted-foreground/20"
+      data-testid={`${testIdPrefix}-rewind-footer`}
+    >
+      <CardContent className="p-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {variant === "rewind" && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={onChangeAnswer}
+                disabled={interactionDisabled || !hasAnswers}
+                className="gap-1.5 h-8 text-xs"
+                data-testid={`${testIdPrefix}-change-answer`}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Change my answer
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onRestart}
+                disabled={interactionDisabled}
+                className="gap-1.5 h-8 text-xs"
+                data-testid={`${testIdPrefix}-restart`}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restart walk
+              </Button>
+              <span
+                className="text-[11px] text-muted-foreground ml-auto"
+                data-testid={`${testIdPrefix}-verb-helper`}
+              >
+                In case you mis-clicked · both keep the classification
+              </span>
+            </>
+          )}
+          {variant === "duplicate" && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={onUnmarkDuplicate}
+                disabled={interactionDisabled}
+                className="gap-1.5 h-8 text-xs"
+                data-testid={`${testIdPrefix}-unmark`}
+              >
+                {unmarkPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Undo2 className="h-3.5 w-3.5" />
+                )}
+                Unmark sibling duplicate
+              </Button>
+              <span
+                className="text-[11px] text-muted-foreground ml-auto"
+                data-testid={`${testIdPrefix}-verb-helper`}
+              >
+                In case this isn't actually a duplicate · the leg returns to the walk queue
+              </span>
+            </>
+          )}
+        </div>
+        <p
+          className="text-[11px] text-muted-foreground pt-1 border-t"
+          data-testid={`${testIdPrefix}-reclassify-footnote`}
+        >
+          Wrong error type altogether?{" "}
+          <button
+            type="button"
+            className="underline decoration-dotted hover:text-foreground disabled:opacity-60"
+            onClick={onReclassify}
+            disabled={reclassifyDisabled}
+            data-testid={`${testIdPrefix}-reclassify`}
           >
             Reclassify the leg
           </button>{" "}

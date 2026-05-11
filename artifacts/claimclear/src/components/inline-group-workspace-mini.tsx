@@ -10,6 +10,7 @@ import {
   useListErrorTypes,
   useCreatePortalSubmission,
   useClearLegVerdictDraft,
+  useSopRestartLeg,
   useExcludeLeg,
   getGetClaimQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
@@ -61,6 +62,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { RefNumber } from "@/components/ref-number";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { ClassifyDialog } from "@/components/classify-dialog";
@@ -1762,6 +1773,14 @@ function PinnedFooter({
   const { toast } = useToast();
   const submit = useCreatePortalSubmission();
   const clearLegVerdictDraft = useClearLegVerdictDraft();
+  // Task #688 — Group-level "Discard response & restart" reuses the
+  // per-leg sop-restart and clear-verdict-draft mutations, fanning
+  // them out across every leg in the invoice. We rely on the hook
+  // instance allowing concurrent in-flight `mutateAsync` calls (each
+  // returns its own promise); the loop below awaits them via Promise.all.
+  const sopRestartLeg = useSopRestartLeg();
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discardPending, setDiscardPending] = useState(false);
   const gate = derivePreviewGateState(detail, rides);
   const [serviceTokenExpired, setServiceTokenExpired] = useState(false);
 
@@ -1797,6 +1816,63 @@ function PinnedFooter({
           }),
       },
     );
+  }
+
+  // Task #688 — Discard the generated portal response and restart
+  // every leg's SOP walk. Used at the Queue-for-Portal stage when the
+  // operator realizes the generated response is wrong (e.g. they
+  // walked one or more legs incorrectly so the AI draft is built on
+  // bad inputs). Wipes per-leg verdict drafts where present, restarts
+  // every leg's SOP walk in parallel, then drops the operator back into
+  // walk mode. The draft body becomes stale once the legs are no
+  // longer concluded; the gauntlet will regenerate when they finish
+  // again.
+  async function onDiscardAndRestart() {
+    if (discardPending) return;
+    setDiscardPending(true);
+    try {
+      const ops: Promise<unknown>[] = [];
+      for (const r of rides) {
+        if (r.includedInDispute === false) continue;
+        // `discardDraft: true` opts the rewind into clearing the
+        // parent group's cached AI dispute draft + reviewed stamp
+        // (SopRewindBody contract). One leg restart with this flag
+        // is enough to wipe the group draft, but we send it on every
+        // leg so the call is idempotent regardless of order.
+        ops.push(
+          sopRestartLeg
+            .mutateAsync({ id: r.id, data: { discardDraft: true } })
+            .catch(() => undefined),
+        );
+        if (r.latestDraft != null) {
+          ops.push(
+            clearLegVerdictDraft
+              .mutateAsync({ id: r.id })
+              .catch(() => undefined),
+          );
+        }
+      }
+      await Promise.all(ops);
+      qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
+      for (const r of rides) {
+        qc.invalidateQueries({ queryKey: getGetClaimQueryKey(r.id) });
+      }
+      successToast({
+        title: "Done",
+        description:
+          "Generated response discarded. All walks reopened — redo each leg.",
+      });
+      setDiscardOpen(false);
+      onReopenWalk();
+    } catch (e: unknown) {
+      toast({
+        title: "Discard failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setDiscardPending(false);
+    }
   }
 
   const stepReady = previewGenerated && draftReviewed;
@@ -2014,6 +2090,29 @@ function PinnedFooter({
               Clear recorded verdict
             </Button>
           )}
+          {/* Task #688 — Operator's last chance to back out a wholly-
+              wrong response before it ships. Sits next to Queue so it
+              can't be missed but is styled destructive (outline +
+              destructive label) so it's clearly not the happy path.
+              Requires AlertDialog confirmation; on confirm wipes per-leg
+              verdict drafts + restarts every SOP walk + drops the
+              operator back into walk mode. */}
+          {previewExists && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={() => setDiscardOpen(true)}
+              disabled={discardPending}
+              data-testid="mini-discard-and-restart"
+              title="Throw away the generated portal response and reopen every leg's walk"
+            >
+              {discardPending ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : null}
+              Discard response &amp; restart
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={onSubmit}
@@ -2039,6 +2138,43 @@ function PinnedFooter({
               Hold invoice
             </Button>
           )}
+          <AlertDialog
+            open={discardOpen}
+            onOpenChange={(next) => !discardPending && setDiscardOpen(next)}
+          >
+            <AlertDialogContent data-testid="mini-discard-and-restart-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Discard generated response &amp; restart every walk?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This throws away the AI-drafted portal response and reopens
+                  every leg's SOP walk on this invoice. Per-leg verdict drafts
+                  are cleared. Anything you've already submitted to the portal
+                  is unaffected — this only resets in-progress work.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={discardPending}>
+                  Keep response
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void onDiscardAndRestart();
+                  }}
+                  disabled={discardPending}
+                  data-testid="mini-discard-and-restart-confirm"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {discardPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  ) : null}
+                  Discard &amp; restart all walks
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {!enabled && disabledReason && (
             <p className="text-[11px] text-muted-foreground w-full" data-testid="mini-submit-disabled-reason">
               {disabledReason}
