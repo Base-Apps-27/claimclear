@@ -264,13 +264,16 @@ export default function PortalSubmissions() {
 
   const pendingSubmissions = useMemo(() => normalizedSubs.filter(s => s._displayStatus === "pending"), [normalizedSubs]);
 
-  // Drafts ready to queue: drafts that have all required fields set
-  // (simple heuristic — issueType, subject, requesterEmail).
-  const draftsReadyToQueue = useMemo(() =>
-    normalizedSubs.filter(s =>
-      s.status === "draft" &&
-      !!s.issueType && !!s.subject && !!s.requesterEmail
-    ), [normalizedSubs]);
+  // Task #703: drafts no longer exist as `portal_submissions` rows.
+  // Generate-preview / Save-draft / Regenerate stamp text on
+  // `invoice_groups.draft*` only; the row is created at submit time
+  // landing directly in `pending`. The boot-time backfill in
+  // api-server's index.ts hard-deletes any leftover orphan ghost
+  // drafts. We force this list empty so the "Queue N drafts" banner
+  // and its underlying call to the now-410 /portal-submissions/:id/confirm
+  // endpoint can never fire — a defensive rail in case a row somehow
+  // sneaks in (manual seed, in-flight migration, etc.).
+  const draftsReadyToQueue = useMemo<PortalSubmissionResponse[]>(() => [], []);
 
   const handleToggle = (id: number) => {
     setCheckedIds(prev => {

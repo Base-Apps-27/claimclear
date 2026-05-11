@@ -99,6 +99,45 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
     logger.warn({ err }, "Task #273: stale errorMessage backfill failed");
   }
 
+  // Task #703: HARD-DELETE orphan ghost-draft `portal_submissions`
+  // rows.
+  //
+  // Pre-#703, /preview-generated, /draft/regenerate, and bulk-generate
+  // silently inserted a `status='draft'` row alongside the real text
+  // on `invoice_groups.draft*`. Those rows leaked into the Portal
+  // Submissions list/queue/drawer even though the operator had not
+  // submitted anything.
+  //
+  // First pass of this cleanup flipped them to `cancelled`. Code-review
+  // (Task #703 round 2) flagged that the Portal Submissions list shows
+  // every status by default, so the cancelled ghosts still surfaced in
+  // the "All" view. We delete instead, which is safe because every row
+  // matched here is provably untouched by the bot:
+  //   - status='draft'              → never queued
+  //   - attempts = 0                → never picked up by a worker
+  //   - portal_ticket_id IS NULL    → never made it to MAS
+  //   - claimed_by_batch_id IS NULL → not part of any in-flight batch
+  // No bot activity rows reference these submissions (bot activity is
+  // only written once a batch claims a row), and the canonical draft
+  // text lives on `invoice_groups.draft*`, not on the row — so deleting
+  // is non-destructive.
+  // Idempotent — subsequent runs match zero rows.
+  try {
+    const res = await runWithDbWarmupRetry("Task #703 ghost-draft cleanup", () => db.execute(sql`
+      DELETE FROM portal_submissions
+      WHERE status = 'draft'
+        AND attempts = 0
+        AND portal_ticket_id IS NULL
+        AND claimed_by_batch_id IS NULL
+    `));
+    const rowCount = (res as { rowCount?: number | null }).rowCount ?? 0;
+    if (rowCount > 0) {
+      logger.info({ rowCount }, "Task #703: deleted orphan ghost-draft portal_submissions rows");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Task #703: ghost-draft cleanup failed");
+  }
+
   // Removed (Task #258): Task #64 batch-submission re-queue backfill and the
   // Apr-27 attempts-reset followup. Both queries selected/returned
   // `portal_submissions.claim_id`, which migration 0014 dropped during the

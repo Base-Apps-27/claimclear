@@ -3176,15 +3176,19 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
 
+  // Task #703: stamp per-leg counters (formerly carried by the
+  // `portal_draft_created` audit on the now-deleted ghost row) onto the
+  // `group_preview_generated` audit so traceability stays on the
+  // invoice_groups timeline.
   await createGroupAuditLog(id, "group_preview_generated", "Dispute preview generated", req, {
-    sourceSubmissionId: draft.submission.id,
     descriptionLength: draft.descriptionHtml.length,
+    ...draft.auditCounters,
   });
   await emitStateEvent({
     eventKey: "group.preview_generated",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: { sourceSubmissionId: draft.submission.id },
+    metadata: { ...draft.auditCounters },
   });
   emitGroupEvent(id, "preview_generated", req);
   res.json(updated);
@@ -3328,14 +3332,17 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
 
+  // Task #703: per-leg counters move onto the group-level audit because
+  // the prior `portal_draft_created` audit (and the ghost
+  // `portal_submissions` row it was attached to) no longer exists.
   await createGroupAuditLog(id, "group_draft_regenerated", "Dispute draft regenerated from AI baseline", req, {
-    sourceSubmissionId: draft.submission.id,
+    ...draft.auditCounters,
   });
   await emitStateEvent({
     eventKey: "group.draft_regenerated",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: { sourceSubmissionId: draft.submission.id },
+    metadata: { ...draft.auditCounters },
   });
   emitGroupEvent(id, "draft_regenerated", req);
   res.json(updated);

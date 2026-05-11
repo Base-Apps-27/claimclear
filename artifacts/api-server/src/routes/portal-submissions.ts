@@ -964,10 +964,25 @@ export interface GeneratePortalDraftOpts {
   understandingReadback?: string | null;
 }
 
+// Task #703: this helper used to insert a `portal_submissions` row with
+// status='draft' and write a `portal_draft_created` audit alongside the
+// generated text. Both writes have been removed — the helper now produces
+// text only, and the only DB-write side effects live in the submit-time
+// callers (POST /portal-submissions, /portal-submissions/:id/confirm,
+// /invoice-groups/bulk-submit-to-portal). The `auditCounters` slice is
+// returned so the preview/regenerate routes that mirror text onto
+// `invoice_groups.draft*` columns can stamp the per-leg counters onto
+// the existing `group_preview_generated` / `group_draft_regenerated`
+// audit rows (preserves the contract pinned by
+// `audit-prompt-leg-counters.test.ts`).
 export interface GeneratePortalDraftResult {
-  submission: typeof portalSubmissionsTable.$inferSelect;
   subject: string;
   descriptionHtml: string;
+  promptLegInputs: PromptLegInputsResult;
+  auditCounters: ReturnType<typeof promptLegAuditCounters>;
+  groupId: number;
+  primaryClaimId: number;
+  isPartialSubmission: boolean;
 }
 
 interface PreparedDraftContent {
@@ -1052,106 +1067,39 @@ async function preparePortalDraftContent(
   };
 }
 
-function buildPortalDraftWriteData(
-  prepared: PreparedDraftContent,
-  req: { user?: { email?: string | null; displayName?: string | null } | null },
-) {
-  const {
-    ctx, filtered, totalLegs, isPartialSubmission, snap, issueType,
-    generatedDescription, attachmentUrls, gpsBreadcrumbs, trimmedSpecial,
-    trimmedReadback, reason, promptLegInputs, settings,
-  } = prepared;
-
-  const submissionValues = {
-    invoiceGroupId: ctx.group.id,
-    status: "draft" as const,
-    issueType,
-    subject: snap.subjectFallback,
-    requesterEmail: settings.contactEmail,
-    transportationProviderName: settings.providerName,
-    phoneNumber: settings.contactPhone,
-    invoiceNumber: snap.invoiceNumber,
-    gpsBreadcrumbsAvailable: gpsBreadcrumbs,
-    descriptionHtml: generatedDescription,
-    descriptionEditorEmail: req.user?.email ?? null,
-    descriptionEditorName: req.user?.displayName ?? null,
-    attachmentUrls,
-    confNumber: snap.confNumber,
-    serviceDate: snap.serviceDate,
-    refNumber: snap.refNumber,
-    clientNumber: snap.clientNumber,
-    carNumber: snap.carNumber,
-    claimAmount: snap.claimAmount,
-    errorTypeName: snap.errorTypeName,
-    errorDetails: snap.errorDetails,
-    disputeReason: reason,
-    specialCircumstances: trimmedSpecial || null,
-    understandingReadback: trimmedReadback || null,
-    understandingReadbackAt: trimmedReadback ? new Date() : null,
-    evidenceNotes: snap.evidenceNotes,
-    evidenceFiles: snap.evidenceFiles,
-    attempts: 0,
-    legs: ctx.rides.map((r) => ({
-      legId: r.id,
-      confNumber: r.confNumber || null,
-      ticked: false,
-    })),
-  };
-
-  const partialSuffix = isPartialSubmission
-    ? ` — partial: ${ctx.rides.length} of ${totalLegs} legs (${filtered.excludedHeld.length} on hold, ${filtered.excludedAlreadySubmitted.length} already submitted, ${filtered.excludedNonContestable.length} non-contestable)`
-    : "";
-  const contextSuffix = trimmedSpecial ? " — with operator special circumstances" : "";
-  const auditValues = {
-    claimId: ctx.primaryClaim.id,
-    invoiceGroupId: ctx.group.id,
-    action: "portal_draft_created" as const,
-    details: `Portal submission draft generated for review (${attachmentUrls.length} evidence files, ${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"})${partialSuffix}${contextSuffix}`,
-    metadata: {
-      hasSpecialCircumstances: trimmedSpecial.length > 0,
-      ...promptLegAuditCounters(promptLegInputs),
-      ...(isPartialSubmission ? {
-        includedLegs: ctx.rides.map(r => r.confNumber || r.id),
-        excludedHeld: filtered.excludedHeld.map(r => r.confNumber || r.id),
-        excludedAlreadySubmitted: filtered.excludedAlreadySubmitted.map(r => r.confNumber || r.id),
-        excludedNonContestable: filtered.excludedNonContestable.map(r => r.confNumber || r.id),
-      } : {}),
-    },
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
-  };
-
-  return { submissionValues, auditValues };
-}
+// Task #703: `buildPortalDraftWriteData` was deleted. It built the
+// `portal_submissions` row payload + the `portal_draft_created` audit
+// row that pre-#703 callers (preview / regenerate / bulk-generate)
+// inserted alongside the generated text. Those ghost rows leaked into
+// the Portal Submissions UI; row creation now lives only in submit-time
+// callers, which build their own payloads from `invoice_groups.draft*`
+// at submit time.
 
 export async function generatePortalDraftForGroup(
   opts: GeneratePortalDraftOpts,
-  req: { user?: { email?: string | null; displayName?: string | null } | null },
+  // `req` retained for API compatibility with prior call sites (audit
+  // attribution moved to caller routes that own the actual DB writes).
+  _req: { user?: { email?: string | null; displayName?: string | null } | null },
 ): Promise<GeneratePortalDraftResult> {
   const prepared = await preparePortalDraftContent(opts);
-
-  const existingDrafts = await db.select().from(portalSubmissionsTable)
-    .where(and(
-      eq(portalSubmissionsTable.invoiceGroupId, prepared.ctx.group.id),
-      eq(portalSubmissionsTable.status, "draft"),
-    ));
-  for (const draft of existingDrafts) {
-    await db.update(portalSubmissionsTable).set({ status: "cancelled" })
-      .where(eq(portalSubmissionsTable.id, draft.id));
-  }
-
-  const { submissionValues, auditValues } = buildPortalDraftWriteData(prepared, req);
-
-  const [submission] = await db.insert(portalSubmissionsTable).values(submissionValues).returning();
-  await db.insert(auditLogsTable).values(auditValues);
-
   return {
-    submission,
-    subject: submission.subject ?? prepared.snap.subjectFallback,
+    subject: prepared.snap.subjectFallback,
     descriptionHtml: prepared.generatedDescription,
+    promptLegInputs: prepared.promptLegInputs,
+    auditCounters: promptLegAuditCounters(prepared.promptLegInputs),
+    groupId: prepared.ctx.group.id,
+    primaryClaimId: prepared.ctx.primaryClaim.id,
+    isPartialSubmission: prepared.isPartialSubmission,
   };
 }
 
+// Task #703: thin text-only endpoint. Pre-#703 this route inserted a
+// ghost `portal_submissions` row with status='draft'; it is now a
+// stateless preview that returns the would-be subject/description.
+// The UI no longer calls it (the gauntlet uses
+// `/invoice-groups/:id/preview-generated` which stamps the draft on the
+// invoice_group), but we keep it as a backwards-compat surface for
+// scripts/tests.
 router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res): Promise<void> => {
   const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
     invoiceGroupId?: number;
@@ -1165,11 +1113,16 @@ router.post("/portal-submissions/generate-preview", asyncHandler(async (req, res
   }
 
   try {
-    const { submission } = await generatePortalDraftForGroup(
+    const result = await generatePortalDraftForGroup(
       { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback },
       req,
     );
-    res.json(await enrichOne(submission));
+    res.json({
+      subject: result.subject,
+      descriptionHtml: result.descriptionHtml,
+      isPartialSubmission: result.isPartialSubmission,
+    });
+    return;
   } catch (err) {
     if (err instanceof GroupNotFoundError) {
       res.status(404).json({ error: err.message });
@@ -1456,111 +1409,38 @@ router.post("/portal-submissions/:id/lint", asyncHandler(async (req, res): Promi
   res.json(results);
 }));
 
-router.post("/portal-submissions/:id/confirm", asyncHandler(async (req, res): Promise<void> => {
-  const id = parseId(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-
-  const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
-  if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
-  if (existing.status !== "draft") {
-    res.status(400).json({ error: "Only draft submissions can be confirmed" });
-    return;
-  }
-
-  const ack = req.body?.ack === true;
-  // Task #411 Tier 3: when ack=true and we're about to bypass lint
-  // warnings, require a written reason so the audit row names WHY
-  // the override happened. We deliberately enforce the floor server-
-  // side (min 10 chars after trim) so a programmatic caller can't
-  // submit ack:true with an empty reason — the contract is the same
-  // for the UI, the bot, and curl.
-  const bypassReasonRaw = (req.body?.bypassReason ?? "") as string;
-  const bypassReason = typeof bypassReasonRaw === "string" ? bypassReasonRaw.trim() : "";
-  const MIN_BYPASS_REASON_LENGTH = 10;
-
-  const { claim, evidence } = await loadLintInputs(existing);
-  if (!claim) { res.status(404).json({ error: "Claim not found for submission" }); return; }
-  const lintResults = lintDraft(existing, claim, evidence);
-  const failures = lintResults.filter(r => r.severity === "fail");
-  const warnings = lintResults.filter(r => r.severity === "warn");
-  if (failures.length > 0) {
-    res.status(422).json({ failures });
-    return;
-  }
-  if (warnings.length > 0 && !ack) {
-    res.status(422).json({ failures: warnings });
-    return;
-  }
-  if (warnings.length > 0 && ack && bypassReason.length < MIN_BYPASS_REASON_LENGTH) {
-    res.status(400).json({
-      error: `bypassReason is required and must be at least ${MIN_BYPASS_REASON_LENGTH} characters when bypassing lint warnings`,
-      code: "missing_bypass_reason",
-      field: "bypassReason",
-    });
-    return;
-  }
-
-  const [sub] = await db.update(portalSubmissionsTable).set({ status: "pending" })
-    .where(eq(portalSubmissionsTable.id, id)).returning();
-
-  const ctx = await loadContextForSubmission(existing);
-  if (ctx) {
-    await transitionContext({
-      ctx,
-      newStatus: "Portal Queued",
-      source: "portal_submission_confirm",
-      reason: `Portal submission #${id} confirmed and queued for processing`,
-      actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
-      submittedVia: "portal",
-    });
-  }
-
-  // Task #411 audit, Tier 3: when the operator clicked "Submit anyway"
-  // through the lint-warnings dialog, record that as its own dedicated
-  // audit row (`lint_warnings_bypassed`) so the timeline shows BOTH the
-  // bypass event and the subsequent confirm — not a single blended row
-  // that hides the bypass inside metadata. The bypass row is written
-  // first so it appears immediately above the confirm row in the
-  // descending-by-createdAt audit log.
-  const primaryClaimIdForAudit = await primaryClaimIdForGroup(existing.invoiceGroupId);
-  if (warnings.length > 0 && ack) {
-    await db.insert(auditLogsTable).values({
-      claimId: primaryClaimIdForAudit,
-      invoiceGroupId: existing.invoiceGroupId,
-      action: "lint_warnings_bypassed",
-      // The operator's typed bypassReason is included in the human
-      // `details` string so the activity feed surfaces it without
-      // having to drill into metadata. The same string is also
-      // stored in `metadata.bypassReason` so downstream tooling can
-      // read it programmatically without parsing free text.
-      details: `Operator bypassed ${warnings.length} lint warning(s) on submission #${id}: ${warnings.map(w => w.ruleKey).join(", ")} — reason: ${bypassReason}`,
-      metadata: {
-        submissionId: id,
-        bypassedCount: warnings.length,
-        bypassedWarnings: warnings,
-        bypassReason,
-      },
-      userEmail: req.user?.email ?? null,
-      userName: req.user?.displayName ?? null,
-    });
-  }
-
-  await db.insert(auditLogsTable).values({
-    claimId: primaryClaimIdForAudit,
-    invoiceGroupId: existing.invoiceGroupId,
-    action: "portal_submission_confirmed",
-    details: `Portal submission #${id} confirmed${warnings.length > 0 ? ` with ${warnings.length} warning(s) acknowledged` : ""}`,
-    metadata: {
-      submissionId: id,
-      lintWarningsAcknowledged: warnings.length > 0,
-      lintWarnings: warnings,
-    },
-    userEmail: req.user?.email ?? null,
-    userName: req.user?.displayName ?? null,
+// Task #703 — DEAD ROUTE.
+// Pre-#703, the operator UI followed a two-step submit dance: Generate
+// preview created a `portal_submissions` row with status='draft', and
+// the Submit button POSTed to this `/confirm` endpoint to flip that
+// row from `draft` to `pending`. Lint, ack, and bypass-reason gates
+// lived here because the row was already on disk before the operator
+// hit Submit.
+//
+// Post-#703 there is no draft-row step. Generate-preview only stamps
+// `invoice_groups.draft*`; the gauntlet's Submit button POSTs directly
+// to `POST /portal-submissions`, which now creates a fresh `pending`
+// row in one shot AND owns the lint / ack / bypass-reason gating + the
+// `lint_warnings_bypassed` and `portal_submission_confirmed` audit
+// rows that used to be written here. The boot-time backfill in
+// `index.ts` cancels any leftover ghost drafts so this endpoint has
+// nothing to act on. We leave it mounted as a hard 410 with a stable
+// `code` so any stale UI build / curl script gets a clear redirect to
+// the new shape instead of a silent 404 or a confusing "draft not
+// found".
+router.post("/portal-submissions/:id/confirm", asyncHandler(async (_req, res): Promise<void> => {
+  res.status(410).json({
+    error: "POST /portal-submissions/:id/confirm has been removed. Submit creates the portal_submissions row in one step via POST /portal-submissions.",
+    code: "confirm_removed_use_create",
   });
-
-  res.json(await enrichOne(sub));
 }));
+
+// Task #411 / Task #703 — minimum length for the operator's typed
+// bypass reason when overriding lint warnings. Enforced at the only
+// remaining row-insert sites (POST /portal-submissions and
+// /invoice-groups/bulk-submit-to-portal) so the contract is identical
+// for the gauntlet UI, the bot, and curl.
+const MIN_BYPASS_REASON_LENGTH = 10;
 
 router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> => {
   const { invoiceGroupId, issueType, subject, requesterEmail, transportationProviderName,
@@ -1698,6 +1578,53 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = gpsBreadcrumbsAvailable || resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
 
+  // Task #703: lint / ack / bypass-reason gating moved here from the
+  // removed `/portal-submissions/:id/confirm` route. Pre-#703 the row
+  // existed on disk before lint ran (status='draft' → confirm flips to
+  // pending). Post-#703 there is no draft step, so we lint the
+  // *prospective* row (the values about to be inserted) BEFORE the
+  // insert. Hard fails refuse with 422 + failures[]. Warnings refuse
+  // with 422 unless the caller passes `ack:true` AND a typed
+  // `bypassReason` of at least MIN_BYPASS_REASON_LENGTH chars — in
+  // which case the bypass is recorded as its own dedicated audit row
+  // (`lint_warnings_bypassed`) before the row is inserted, mirroring
+  // the historical contract operators and the bot already rely on.
+  const ack = req.body?.ack === true;
+  const bypassReasonRaw = (req.body?.bypassReason ?? "") as string;
+  const bypassReason = typeof bypassReasonRaw === "string" ? bypassReasonRaw.trim() : "";
+
+  // The lint helper signature already accepts a structural object
+  // (LintSubmission), not a row from the DB — we feed it the same
+  // fields the insert is about to write so the gate sees exactly
+  // what's about to ship.
+  const prospectiveSubmission = {
+    descriptionHtml: generatedDescription,
+    confNumber: snap.confNumber,
+    attachmentUrls,
+  };
+  const lintEvidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
+    .from(claimEvidenceTable)
+    .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+  const lintResults = lintDraft(prospectiveSubmission, ctx.primaryClaim, lintEvidence);
+  const lintFailures = lintResults.filter(r => r.severity === "fail");
+  const lintWarnings = lintResults.filter(r => r.severity === "warn");
+  if (lintFailures.length > 0) {
+    res.status(422).json({ failures: lintFailures });
+    return;
+  }
+  if (lintWarnings.length > 0 && !ack) {
+    res.status(422).json({ failures: lintWarnings });
+    return;
+  }
+  if (lintWarnings.length > 0 && ack && bypassReason.length < MIN_BYPASS_REASON_LENGTH) {
+    res.status(400).json({
+      error: `bypassReason is required and must be at least ${MIN_BYPASS_REASON_LENGTH} characters when bypassing lint warnings`,
+      code: "missing_bypass_reason",
+      field: "bypassReason",
+    });
+    return;
+  }
+
   const [submission] = await db.insert(portalSubmissionsTable).values({
     invoiceGroupId: ctx.group.id,
     status: "pending",
@@ -1735,6 +1662,48 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
       ticked: false,
     })),
   }).returning();
+
+  // Task #703 / Task #411 audit, Tier 3: when the operator clicked
+  // "Submit anyway" through the lint-warnings dialog, record that as
+  // its own dedicated audit row. The bypass row is written FIRST so
+  // it appears immediately above the confirm row in the descending-
+  // by-createdAt audit log, exactly as it did pre-#703 when this
+  // logic lived in /confirm.
+  if (lintWarnings.length > 0 && ack) {
+    await db.insert(auditLogsTable).values({
+      claimId: ctx.primaryClaim.id,
+      invoiceGroupId: ctx.group.id,
+      action: "lint_warnings_bypassed",
+      details: `Operator bypassed ${lintWarnings.length} lint warning(s) on submission #${submission.id}: ${lintWarnings.map(w => w.ruleKey).join(", ")} — reason: ${bypassReason}`,
+      metadata: {
+        submissionId: submission.id,
+        bypassedCount: lintWarnings.length,
+        bypassedWarnings: lintWarnings,
+        bypassReason,
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
+  }
+
+  // Task #703: write the same `portal_submission_confirmed` audit row
+  // /confirm used to write, so timeline consumers (activity feed,
+  // brief-personalization, audit-categories, oneshot script) see no
+  // shape change — only the submission's lifecycle skips the
+  // intermediate `draft` status.
+  await db.insert(auditLogsTable).values({
+    claimId: ctx.primaryClaim.id,
+    invoiceGroupId: ctx.group.id,
+    action: "portal_submission_confirmed",
+    details: `Portal submission #${submission.id} confirmed${lintWarnings.length > 0 ? ` with ${lintWarnings.length} warning(s) acknowledged` : ""}`,
+    metadata: {
+      submissionId: submission.id,
+      lintWarningsAcknowledged: lintWarnings.length > 0,
+      lintWarnings,
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+  });
 
   await transitionContext({
     ctx,
@@ -1986,6 +1955,31 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
     const gpsBreadcrumbs = resolveGpsBreadcrumbs(resolvedIssueType, settings.defaultGpsBreadcrumbs);
     const trimmedReadback = (ctx.group.understandingReadback || "").trim();
 
+    // Task #703: same lint gate the single-group POST /portal-submissions
+    // path now applies. We do NOT support per-group ack/bypass in the
+    // bulk surface (the operator hasn't seen each draft individually);
+    // a hard fail or any warning triggers a per-row skip with a stable
+    // reason string so the bulk batch keeps marching and the operator
+    // can drill into the offending groups one-by-one in the gauntlet.
+    const lintEvidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
+      .from(claimEvidenceTable)
+      .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+    const lintResults = lintDraft(
+      { descriptionHtml: draftHtml, confNumber: snap.confNumber, attachmentUrls },
+      ctx.primaryClaim,
+      lintEvidence,
+    );
+    const lintFail = lintResults.find(r => r.severity === "fail");
+    if (lintFail) {
+      skipped.push({ id: gid, refNumber, reason: `lint_fail:${lintFail.ruleKey}` });
+      continue;
+    }
+    const lintWarn = lintResults.find(r => r.severity === "warn");
+    if (lintWarn) {
+      skipped.push({ id: gid, refNumber, reason: `lint_warn:${lintWarn.ruleKey}` });
+      continue;
+    }
+
     const [submission] = await db.insert(portalSubmissionsTable).values({
       invoiceGroupId: ctx.group.id,
       status: "pending",
@@ -2021,6 +2015,25 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
         ticked: false,
       })),
     }).returning();
+
+    // Task #703: parity with POST /portal-submissions — every real
+    // pending row gets a `portal_submission_confirmed` audit row at
+    // creation time, so timeline consumers don't have to special-case
+    // bulk-queued submissions.
+    await db.insert(auditLogsTable).values({
+      claimId: ctx.primaryClaim.id,
+      invoiceGroupId: ctx.group.id,
+      action: "portal_submission_confirmed",
+      details: `Portal submission #${submission.id} created via bulk-submit-to-portal`,
+      metadata: {
+        submissionId: submission.id,
+        lintWarningsAcknowledged: false,
+        lintWarnings: [],
+        source: "portal_submission_bulk_create",
+      },
+      userEmail: req.user?.email ?? null,
+      userName: req.user?.displayName ?? null,
+    });
 
     await transitionContext({
       ctx,
@@ -2110,7 +2123,7 @@ router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(
         understandingReadback: ctx.group.understandingReadback ?? null,
       });
 
-      const { submissionValues, auditValues } = buildPortalDraftWriteData(prepared, req);
+      const auditCounters = promptLegAuditCounters(prepared.promptLegInputs);
 
       const now = new Date();
       const eligibilityGuard = and(
@@ -2118,6 +2131,13 @@ router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(
         ...readyToGenerateSqlConditions(),
       );
 
+      // Task #703: drop the in-tx `portal_submissions` ghost-row insert
+      // (and the `portal_draft_created` audit + prior-draft cancel block
+      // that propped it up). The bulk path now mirrors the single-group
+      // flow: stamp the invoice_group's draft + baseline + reviewed
+      // timestamps, write the `group_preview_generated` /
+      // `group_draft_reviewed` audits with the per-leg counters, and
+      // leave row creation to submit-time callers.
       const result = await db.transaction(async (tx) => {
         const [previewRow] = await tx
           .update(invoiceGroupsTable)
@@ -2138,27 +2158,14 @@ router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(
 
         if (!previewRow) return null;
 
-        const existingDrafts = await tx.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
-          .where(and(
-            eq(portalSubmissionsTable.invoiceGroupId, gid),
-            eq(portalSubmissionsTable.status, "draft"),
-          ));
-        for (const d of existingDrafts) {
-          await tx.update(portalSubmissionsTable).set({ status: "cancelled" })
-            .where(eq(portalSubmissionsTable.id, d.id));
-        }
-
-        const [submission] = await tx.insert(portalSubmissionsTable).values(submissionValues).returning();
-        await tx.insert(auditLogsTable).values(auditValues);
-
         await tx.insert(auditLogsTable).values({
           invoiceGroupId: gid,
           action: "group_preview_generated",
           details: `Dispute preview generated (bulk, Task #641)`,
           metadata: {
             bulk: true,
-            sourceSubmissionId: submission.id,
             descriptionLength: prepared.generatedDescription.length,
+            ...auditCounters,
           },
           userEmail: req.user?.email ?? null,
           userName: req.user?.displayName ?? null,
@@ -2172,7 +2179,7 @@ router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(
           userName: req.user?.displayName ?? null,
         });
 
-        return { submissionId: submission.id };
+        return { ok: true as const };
       });
 
       if (!result) {
@@ -2184,7 +2191,7 @@ router.post("/invoice-groups/bulk-generate-and-review", denyClerk, asyncHandler(
         eventKey: "group.preview_generated",
         invoiceGroupId: gid,
         actorUserId: req.user?.email ?? null,
-        metadata: { bulk: true, sourceSubmissionId: result.submissionId },
+        metadata: { bulk: true, ...auditCounters },
       });
       broadcastGroupEvent({
         type: "preview_generated",

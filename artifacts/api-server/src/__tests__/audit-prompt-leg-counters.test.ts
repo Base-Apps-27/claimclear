@@ -25,6 +25,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import { eq, and } from "drizzle-orm";
 
 import portalSubmissionsRouter from "../routes/portal-submissions";
+import invoiceGroupsRouter from "../routes/invoice-groups";
 import aiEmailRouter from "../routes/ai-email";
 import {
   db,
@@ -90,6 +91,7 @@ before(async () => {
   });
 
   app.use("/api", portalSubmissionsRouter);
+  app.use("/api", invoiceGroupsRouter);
   app.use("/api", aiEmailRouter);
 
   await new Promise<void>((resolveListen, rejectListen) => {
@@ -307,64 +309,80 @@ test("portal_understanding_preflight audit row includes per-leg counters", async
   }
 });
 
-test("portal_draft_created audit row includes per-leg counters", async () => {
+// Task #703: per-leg counters formerly carried by the
+// `portal_draft_created` audit (which fired alongside a ghost
+// `portal_submissions` row inserted on every Generate-preview click)
+// are now carried on the `group_preview_generated` audit on the
+// invoice-group's timeline. The Generate-preview UI flow calls
+// `/invoice-groups/:id/preview-generated`, not the legacy
+// `/portal-submissions/generate-preview` route.
+test("group_preview_generated audit row includes per-leg counters (Task #703)", async () => {
   const seed = await seedGroupWithPerLegContextAndSibling();
   try {
-    const res = await fetchJson("/api/portal-submissions/generate-preview", {
+    const res = await fetchJson(`/api/invoice-groups/${seed.groupId}/preview-generated`, {
       method: "POST",
-      body: {
-        invoiceGroupId: seed.groupId,
-        disputeReason: "Mileage mismatch",
-        specialCircumstances: "",
-        understandingReadback: "Confirmed AI understanding for Task #312 test.",
-      },
+      body: {},
     });
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
 
-    const meta = await latestAuditMetadata({ groupId: seed.groupId, action: "portal_draft_created" });
+    const meta = await latestAuditMetadata({ groupId: seed.groupId, action: "group_preview_generated" });
     assertCountersPresent(meta, {
       hasPerLegContext: true,
       perLegContextLegCount: 1,
       siblingDuplicateCount: 1,
     });
+
+    // Task #703 regression: the route must NOT insert a ghost
+    // `portal_submissions` row alongside the generated text. Pre-#703
+    // every preview click silently created a status='draft' row that
+    // leaked into the Portal Submissions list/queue/drawer.
+    const ghostRows = await db.select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, seed.groupId));
+    assert.equal(ghostRows.length, 0, `expected 0 portal_submissions rows after preview, found ${ghostRows.length}`);
   } finally {
     await cleanupSeed(seed);
   }
 });
 
-test("portal_draft_regenerated audit row includes per-leg counters", async () => {
+// Task #703: same migration for the regenerate path. The Regenerate-
+// from-preview UI button calls `/invoice-groups/:id/draft/regenerate`,
+// which now stamps per-leg counters onto the
+// `group_draft_regenerated` audit (formerly carried by the
+// `portal_draft_regenerated` audit on the ghost row). The remaining
+// `portal_draft_regenerated` audit is now only emitted by the drawer's
+// post-submit regenerate path (POST /portal-submissions/:id/regenerate)
+// against an already-existing real row, not on preview.
+test("group_draft_regenerated audit row includes per-leg counters (Task #703)", async () => {
   const seed = await seedGroupWithPerLegContextAndSibling();
   try {
-    // Step 1: generate the initial draft so a regenerate target exists.
-    const create = await fetchJson<{ id: number }>("/api/portal-submissions/generate-preview", {
+    // Step 1: stamp the initial preview so the group has draft text on file.
+    const preview = await fetchJson(`/api/invoice-groups/${seed.groupId}/preview-generated`, {
       method: "POST",
-      body: {
-        invoiceGroupId: seed.groupId,
-        disputeReason: "Mileage mismatch",
-        specialCircumstances: "",
-        understandingReadback: "Initial readback.",
-      },
+      body: {},
     });
-    assert.equal(create.status, 200, `draft create failed: ${JSON.stringify(create.json)}`);
-    const draftId = create.json.id;
-    assert.ok(typeof draftId === "number", "expected draft id from create");
+    assert.equal(preview.status, 200, `preview failed: ${JSON.stringify(preview.json)}`);
 
-    // Step 2: regenerate.
-    const regen = await fetchJson(`/api/portal-submissions/${draftId}/regenerate`, {
+    // Step 2: regenerate the draft.
+    const regen = await fetchJson(`/api/invoice-groups/${seed.groupId}/draft/regenerate`, {
       method: "POST",
       body: {},
     });
     assert.equal(regen.status, 200, `regenerate failed: ${regen.status} ${JSON.stringify(regen.json)}`);
 
-    const meta = await latestAuditMetadata({ groupId: seed.groupId, action: "portal_draft_regenerated" });
+    const meta = await latestAuditMetadata({ groupId: seed.groupId, action: "group_draft_regenerated" });
     assertCountersPresent(meta, {
       hasPerLegContext: true,
       perLegContextLegCount: 1,
       siblingDuplicateCount: 1,
     });
-    // Sanity: existing keys still present (no regression on the
-    // pre-existing metadata shape).
-    assert.equal(meta.submissionId, draftId);
+
+    // Task #703 regression: still no ghost portal_submissions rows
+    // after preview + regenerate.
+    const ghostRows = await db.select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, seed.groupId));
+    assert.equal(ghostRows.length, 0, `expected 0 portal_submissions rows after preview+regenerate, found ${ghostRows.length}`);
   } finally {
     await cleanupSeed(seed);
   }

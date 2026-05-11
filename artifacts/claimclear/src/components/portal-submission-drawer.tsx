@@ -211,11 +211,17 @@ export function PortalSubmissionDrawer({
     if (!open) return null;
   }
 
-  const isEditable = submission ? ["draft", "pending", "failed", "dry_run"].includes(submission.status) : false;
-  const canSandbox = submission ? ["draft", "pending", "failed", "dry_run"].includes(submission.status) : false;
+  // Task #703: drafts no longer exist as standalone `portal_submissions`
+  // rows pre-submit (they live on the invoice_group). The "draft"
+  // status is kept here only for legacy rows that pre-date the cleanup
+  // backfill — it's no longer treated as editable/sandboxable, and the
+  // "Confirm this draft" branch is gone because the gauntlet's Submit
+  // button is the only way to create a real row now.
+  const isEditable = submission ? ["pending", "failed", "dry_run"].includes(submission.status) : false;
+  const canSandbox = submission ? ["pending", "failed", "dry_run"].includes(submission.status) : false;
   const showProcessNow = !!onProcessNow;
   const processNowReason = !submission ? "Loading…"
-    : submission.status === "draft" ? "Confirm this draft on the invoice group page first to queue it."
+    : submission.status === "draft" ? "Legacy draft row — no longer used. Re-submit from the invoice group page."
     : submission.status === "in_progress" ? "Already processing."
     : submission.status === "submitted" ? "Already submitted."
     : submission.status === "failed" ? "Failed submissions retry automatically — use Retry from the row menu to override."

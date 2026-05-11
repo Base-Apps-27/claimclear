@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 import portalSubmissionsRouter from "../routes/portal-submissions";
 import invoiceGroupsRouter from "../routes/invoice-groups";
@@ -261,91 +261,222 @@ test("Tier 3: POST /portal-submissions refuses with 400 + code:missing_descripti
   }
 });
 
-test("Tier 3: POST /portal-submissions/:id/confirm with ack:true writes a dedicated lint_warnings_bypassed audit row (separate from portal_submission_confirmed)", async () => {
+// Task #703: lint+bypass gating moved from the now-removed
+// `/portal-submissions/:id/confirm` route onto POST /portal-submissions
+// (the submit-time row creator). The contract — dedicated
+// `lint_warnings_bypassed` audit row + verbatim operator reason — is
+// preserved verbatim, only the call shape changed.
+test("Tier 3 (#703 post-cutover): POST /portal-submissions with ack:true writes a dedicated lint_warnings_bypassed audit row (separate from portal_submission_confirmed)", async () => {
   const errType = await createSeedErrorType();
   const group = await createSeedGroup();
   const claim = await createSeedClaim({
     invoiceGroupId: group.id,
     errorTypeId: String(errType.id),
     errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
   });
-  // Build a draft submission that will trigger at least one lint
-  // warning. The deterministic way to do this without re-mocking
-  // every lint rule is to seed a minimal draft and rely on the
-  // lint result being non-empty for a missing-field draft. If the
-  // draft happens to lint clean we skip the assertion (so the test
-  // doesn't false-fail on lint logic changes), but we still verify
-  // that no `lint_warnings_bypassed` row is written when no warning
-  // existed — i.e. the audit row is gated, not unconditional.
-  const [submission] = await db.insert(portalSubmissionsTable).values({
-    invoiceGroupId: group.id,
-    status: "draft",
-    issueType: "other",
-    subject: "Test subject",
-    descriptionHtml: "<p>test</p>",
-    confNumber: claim.confNumber,
-    refNumber: null,
-    invoiceNumber: group.invoiceNumber,
-  }).returning();
+  // Make the group eligible for the submit-time creation path: pass
+  // the preview gate and the all-disputed-legs-resolved gate.
+  await db.update(invoiceGroupsTable)
+    .set({ previewGeneratedAt: new Date(), understandingReadbackAt: new Date() })
+    .where(eq(invoiceGroupsTable.id, group.id));
   try {
     const TEST_BYPASS_REASON = "Operator override: payor previously accepted similar wording, see attached PDF.";
-    const res = await fetchJson(`/api/portal-submissions/${submission.id}/confirm`, {
+    // Description deliberately references "photo" without a matching
+    // claim_evidence row → triggers the `unattached_evidence:photo`
+    // warning rule deterministically. Includes the conf number so
+    // the missing-conf hard-fail doesn't fire.
+    const descriptionHtml = `<p>Confirmation ${claim.confNumber}: please review the attached photo for proof.</p>`;
+    const res = await fetchJson("/api/portal-submissions", {
       method: "POST",
-      body: { ack: true, bypassReason: TEST_BYPASS_REASON },
+      body: {
+        invoiceGroupId: group.id,
+        actorType: "operator",
+        descriptionHtml,
+        ack: true,
+        bypassReason: TEST_BYPASS_REASON,
+      },
     });
-    // Either the confirm succeeded (200) or got blocked by a
-    // hard-fail lint (422). Both are valid lint engine outputs; we
-    // only assert that IF warnings were present and ack=true, the
-    // dedicated audit row is written AND it captures the operator's
-    // typed bypass reason.
-    if (res.status === 200) {
-      const bypassRows = await db.select().from(auditLogsTable).where(
-        and(
-          eq(auditLogsTable.invoiceGroupId, group.id),
-          eq(auditLogsTable.action, "lint_warnings_bypassed"),
-        ),
-      );
-      const confirmRows = await db.select().from(auditLogsTable).where(
-        and(
-          eq(auditLogsTable.invoiceGroupId, group.id),
-          eq(auditLogsTable.action, "portal_submission_confirmed"),
-        ),
-      );
-      // Confirm row must always be present after a successful confirm.
-      assert.ok(confirmRows.length >= 1, "expected portal_submission_confirmed audit row");
+    assert.equal(res.status, 201, `expected 201 created, got ${res.status} (${JSON.stringify(res.json)})`);
+    const submissionId = res.json.id as number;
 
-      // If a bypass row exists it must carry the bypassed warnings
-      // AND the operator's typed reason in metadata — proves it
-      // isn't a flag-only stamp.
-      if (bypassRows.length > 0) {
-        const meta = bypassRows[0].metadata as any;
-        assert.ok(Array.isArray(meta?.bypassedWarnings), "lint_warnings_bypassed must record the actual warnings, not just a flag");
-        assert.equal(typeof meta.bypassedCount, "number", "lint_warnings_bypassed must record how many warnings were bypassed");
-        assert.equal(meta.submissionId, submission.id, "lint_warnings_bypassed must reference the submission");
-        assert.equal(
-          meta.bypassReason,
-          TEST_BYPASS_REASON,
-          "lint_warnings_bypassed must record the operator's typed bypass reason verbatim",
-        );
-        assert.ok(
-          (bypassRows[0].details ?? "").includes(TEST_BYPASS_REASON),
-          "lint_warnings_bypassed details string must surface the bypass reason for the activity feed",
-        );
-      }
-    }
+    // Task #703 regression: exactly ONE portal_submissions row exists
+    // for the group, and it landed in `pending` directly — no ghost
+    // draft row got inserted along the way.
+    const allRows = await db.select().from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, group.id));
+    assert.equal(allRows.length, 1, `expected exactly 1 portal_submissions row, got ${allRows.length}`);
+    assert.equal(allRows[0].status, "pending", "submit-time creator must land the row in pending, never draft");
+
+    const bypassRows = await db.select().from(auditLogsTable).where(
+      and(
+        eq(auditLogsTable.invoiceGroupId, group.id),
+        eq(auditLogsTable.action, "lint_warnings_bypassed"),
+      ),
+    );
+    const confirmRows = await db.select().from(auditLogsTable).where(
+      and(
+        eq(auditLogsTable.invoiceGroupId, group.id),
+        eq(auditLogsTable.action, "portal_submission_confirmed"),
+      ),
+    );
+    assert.ok(confirmRows.length >= 1, "expected portal_submission_confirmed audit row from the submit-time creator");
+    assert.ok(bypassRows.length >= 1, "expected lint_warnings_bypassed audit row when ack=true with a real warning");
+
+    const meta = bypassRows[0].metadata as any;
+    assert.ok(Array.isArray(meta?.bypassedWarnings), "lint_warnings_bypassed must record the actual warnings, not just a flag");
+    assert.equal(typeof meta.bypassedCount, "number", "lint_warnings_bypassed must record how many warnings were bypassed");
+    assert.equal(meta.submissionId, submissionId, "lint_warnings_bypassed must reference the submission");
+    assert.equal(
+      meta.bypassReason,
+      TEST_BYPASS_REASON,
+      "lint_warnings_bypassed must record the operator's typed bypass reason verbatim",
+    );
+    assert.ok(
+      (bypassRows[0].details ?? "").includes(TEST_BYPASS_REASON),
+      "lint_warnings_bypassed details string must surface the bypass reason for the activity feed",
+    );
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
   }
 });
 
-test("Tier 3: POST /portal-submissions/:id/confirm with ack:true but missing bypassReason refuses with 400 + code:missing_bypass_reason", async () => {
-  // Bypassing lint warnings without a written reason must be a hard
-  // refusal — operators (and bots) cannot dismiss the warnings
-  // silently. The contract is enforced server-side so the same
-  // shape applies whether the caller is the UI dialog, the bot, or
-  // a curl. We seed a draft that's likely to lint warn (minimal
-  // content) and assert the 400 + named code shape.
+test("Tier 3 (#703 post-cutover): POST /portal-submissions with ack:true but missing bypassReason refuses with 400 + code:missing_bypass_reason", async () => {
+  // Bypassing lint warnings without a written reason must still be a
+  // hard refusal at the new submit-time row-creation site. Same
+  // contract that previously lived on /confirm.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup();
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  await db.update(invoiceGroupsTable)
+    .set({ previewGeneratedAt: new Date(), understandingReadbackAt: new Date() })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  try {
+    // Same warn-deterministic description: references "photo" with
+    // no matching evidence row → guaranteed warning, no hard-fail.
+    const descriptionHtml = `<p>Confirmation ${claim.confNumber}: please review the attached photo.</p>`;
+    const res = await fetchJson("/api/portal-submissions", {
+      method: "POST",
+      body: {
+        invoiceGroupId: group.id,
+        actorType: "operator",
+        descriptionHtml,
+        ack: true, // bypassReason intentionally omitted
+      },
+    });
+    assert.equal(res.status, 400, `expected 400 missing_bypass_reason, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json?.code, "missing_bypass_reason", `expected code:missing_bypass_reason, got ${res.json?.code}`);
+    assert.equal(res.json?.field, "bypassReason", `expected field:bypassReason, got ${res.json?.field}`);
+
+    // Task #703 regression: a refused submit must not have left ANY
+    // portal_submissions row behind for the group — neither a draft
+    // nor a pending row. The whole insert is gated by lint, so
+    // failure means zero rows.
+    const allRows = await db.select().from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, group.id));
+    assert.equal(allRows.length, 0, `expected 0 portal_submissions rows after refused submit, found ${allRows.length}`);
+    // No lint_warnings_bypassed row may exist on the refusal path —
+    // that row is only written when a real bypass with a real reason
+    // succeeds.
+    const bypassRows = await db.select().from(auditLogsTable).where(
+      and(
+        eq(auditLogsTable.invoiceGroupId, group.id),
+        eq(auditLogsTable.action, "lint_warnings_bypassed"),
+      ),
+    );
+    assert.equal(bypassRows.length, 0, "no lint_warnings_bypassed row may exist when the bypass refusal path fires");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// Task #703: full preview → save-draft → submit happy path. Asserts
+// (1) Generate-preview never inserts a portal_submissions row,
+// (2) saving the draft to invoice_groups.draft* never inserts one,
+// (3) Submit creates exactly one row landing in `pending` directly.
+test("Tier 3 (#703): preview → save draft → submit creates exactly one pending portal_submissions row at submit time, none before", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup();
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  try {
+    // Step 1: Generate preview. Pre-#703 this inserted a ghost
+    // status='draft' row; post-#703 it must only stamp invoice_groups.
+    const previewRes = await fetchJson(`/api/invoice-groups/${group.id}/preview-generated`, {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(previewRes.status, 200, `preview failed: ${JSON.stringify(previewRes.json)}`);
+    let rows = await db.select().from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, group.id));
+    assert.equal(rows.length, 0, `Generate-preview must not insert a portal_submissions row, found ${rows.length}`);
+
+    // Step 2: save the operator's edits to the draft. Same regression
+    // surface — must not insert a portal_submissions row.
+    const saveRes = await fetchJson(`/api/invoice-groups/${group.id}/draft`, {
+      method: "POST",
+      body: {
+        subject: `Dispute for ${group.invoiceNumber}`,
+        descriptionHtml: `<p>Confirmation ${claim.confNumber}: please refund this trip.</p>`,
+      },
+    });
+    assert.equal(saveRes.status, 200, `save draft failed: ${JSON.stringify(saveRes.json)}`);
+    rows = await db.select().from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, group.id));
+    assert.equal(rows.length, 0, `Save draft must not insert a portal_submissions row, found ${rows.length}`);
+
+    // Step 3: Submit. This is the ONE row-insert site post-#703.
+    // Mirrors the gauntlet's submit body shape — passes the operator-
+    // reviewed draft text inline.
+    const submitRes = await fetchJson("/api/portal-submissions", {
+      method: "POST",
+      body: {
+        invoiceGroupId: group.id,
+        actorType: "operator",
+        descriptionHtml: `<p>Confirmation ${claim.confNumber}: please refund this trip.</p>`,
+      },
+    });
+    assert.equal(submitRes.status, 201, `submit failed: ${submitRes.status} ${JSON.stringify(submitRes.json)}`);
+
+    rows = await db.select().from(portalSubmissionsTable)
+      .where(eq(portalSubmissionsTable.invoiceGroupId, group.id));
+    assert.equal(rows.length, 1, `expected exactly 1 portal_submissions row after submit, got ${rows.length}`);
+    assert.equal(rows[0].status, "pending", `the row must land in pending directly, got status=${rows[0].status}`);
+
+    // Confirm audit row written by the submit-time creator.
+    const confirmRows = await db.select().from(auditLogsTable).where(
+      and(
+        eq(auditLogsTable.invoiceGroupId, group.id),
+        eq(auditLogsTable.action, "portal_submission_confirmed"),
+      ),
+    );
+    assert.ok(confirmRows.length >= 1, "expected portal_submission_confirmed audit row from the submit-time creator");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+// Task #703 round 2 (per code review): the boot-time cleanup must
+// HARD-DELETE orphan ghost-draft rows so they vanish from the Portal
+// Submissions list, not just flip them to `cancelled` (which still
+// renders in the "All" view of the list page). This test simulates a
+// pre-#703 ghost row, runs the same DELETE the boot-time backfill in
+// `index.ts` runs, then asserts the list payload (GET
+// /portal-submissions, the same endpoint the UI's data hook uses)
+// returns zero rows for the group — proving the row truly is gone.
+test("Tier 3 (#703 r2): orphan ghost-draft rows are hard-deleted at boot and do not appear in GET /portal-submissions", async () => {
   const errType = await createSeedErrorType();
   const group = await createSeedGroup();
   const claim = await createSeedClaim({
@@ -353,49 +484,49 @@ test("Tier 3: POST /portal-submissions/:id/confirm with ack:true but missing byp
     errorTypeId: String(errType.id),
     errorTypeName: errType.name,
   });
-  const [submission] = await db.insert(portalSubmissionsTable).values({
+  // Simulate a pre-#703 ghost row exactly as the old generate-preview
+  // path would have written it: status='draft', no bot activity
+  // markers, all the orphan-criteria the cleanup matches on.
+  const [ghost] = await db.insert(portalSubmissionsTable).values({
     invoiceGroupId: group.id,
     status: "draft",
     issueType: "other",
-    subject: "Test subject",
-    descriptionHtml: "<p>x</p>", // minimal — likely to lint warn
+    subject: "ghost",
+    descriptionHtml: "<p>ghost</p>",
     confNumber: claim.confNumber,
     refNumber: null,
     invoiceNumber: group.invoiceNumber,
+    attempts: 0,
+    portalTicketId: null,
+    claimedByBatchId: null,
   }).returning();
   try {
-    const res = await fetchJson(`/api/portal-submissions/${submission.id}/confirm`, {
-      method: "POST",
-      body: { ack: true }, // bypassReason intentionally omitted
-    });
-    // Outcomes:
-    //   - 422 → lint hard-failed (no warnings to bypass; the
-    //     bypass-reason gate isn't reached). Acceptable; no
-    //     bypass row should exist.
-    //   - 200 → submission lint-clean (no warnings); bypass-reason
-    //     gate not reached. Acceptable; no bypass row should exist.
-    //   - 400 + code:missing_bypass_reason → lint warned and the
-    //     gate fired correctly. This is the case we're asserting.
-    if (res.status === 400) {
-      assert.equal(res.json?.code, "missing_bypass_reason", `expected code:missing_bypass_reason, got ${res.json?.code}`);
-      assert.equal(res.json?.field, "bypassReason", `expected field:bypassReason, got ${res.json?.field}`);
-      // The submission must NOT have flipped to pending — the bypass
-      // refusal path must be a clean refusal.
-      const [after] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, submission.id));
-      assert.equal(after.status, "draft", "missing-reason refusal must not have flipped the submission to pending");
-    }
-    // In all branches, no lint_warnings_bypassed row may exist for
-    // this group — the row is only written when a real bypass with
-    // a real reason succeeds.
-    if (res.status !== 200) {
-      const bypassRows = await db.select().from(auditLogsTable).where(
-        and(
-          eq(auditLogsTable.invoiceGroupId, group.id),
-          eq(auditLogsTable.action, "lint_warnings_bypassed"),
-        ),
-      );
-      assert.equal(bypassRows.length, 0, "no lint_warnings_bypassed row may exist when the bypass refusal path fires");
-    }
+    // Same DELETE statement as the boot-time backfill in
+    // artifacts/api-server/src/index.ts. Kept inline (not extracted)
+    // because the boot helper isn't exported and re-using its SQL
+    // text proves the regression at the exact point the operator's
+    // session hits it post-deploy.
+    await db.execute(sql`
+      DELETE FROM portal_submissions
+      WHERE status = 'draft'
+        AND attempts = 0
+        AND portal_ticket_id IS NULL
+        AND claimed_by_batch_id IS NULL
+    `);
+
+    // The exact endpoint the Portal Submissions page hits — no status
+    // filter, "All" view. Pre-fix this returned the ghost as
+    // status='cancelled' which still rendered in the list.
+    const res = await fetchJson("/api/portal-submissions");
+    assert.equal(res.status, 200, `list fetch failed: ${res.status} ${JSON.stringify(res.json)}`);
+    const list = Array.isArray(res.json) ? res.json : (res.json?.items ?? []);
+    const groupRows = (list as Array<{ id: number; invoiceGroupId: number }>)
+      .filter(r => r.invoiceGroupId === group.id);
+    assert.equal(
+      groupRows.length,
+      0,
+      `Portal Submissions list must return 0 rows for the group after ghost cleanup (ghost was id=${ghost.id}); found ${groupRows.length}`,
+    );
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);
