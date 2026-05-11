@@ -2,19 +2,33 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   usePromoteVerdictDrafts,
+  useSopRestartLeg,
+  useUnmarkLegDuplicate,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getListInvoiceGroupsQueryKey,
   getGetResponsesAwaitingReviewCountQueryKey,
+  getGetClaimQueryKey,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import { HideForClerk } from "@/lib/role";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Archive, ShieldCheck } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Archive, Loader2, ShieldCheck, Undo2 } from "lucide-react";
 import { InvoiceGroupSubmissionGauntlet } from "@/components/invoice-group-submission-gauntlet";
 import { ReattestModal } from "@/components/whats-next/reattest-modal";
 import { useClosureLauncher } from "@/components/closure/closure-launcher";
@@ -305,6 +319,31 @@ function NothingToDoCloseOut({
     // vocab-allow-next-line — comparing against the API enum value, not a label.
     (group.outcome === "Withdrawn" || group.outcome === "Non-Issue");
 
+  // Task #689 — Reopen path. Until now this card was an unconditional
+  // dead-end: the only forward CTA was "Mark as closed" and there was
+  // no way to back out a leg the operator had wrongly marked as
+  // sibling-duplicate or wrongly walked into a non-contestable
+  // terminal. The per-leg LegTerminalRewindFooter we shipped in #687
+  // never reaches this view because the workspace collapses straight
+  // to "closeout" when outlook === "nothing_to_do" and the SOP player
+  // is unmounted. So we surface the same back-out here, scoped to the
+  // legs that pushed the invoice into nothing-to-do (the `dropped`
+  // list). Each dropped leg is reopened with the correct API:
+  //   • duplicateOfClaimId set → DELETE /claims/:id/duplicate-of
+  //   • sopOutcome set         → POST /claims/:id/sop-restart
+  // After all undo calls settle we invalidate the group so the card
+  // recomputes its outlook and the operator falls back into the SOP
+  // player automatically.
+  const sopRestartLeg = useSopRestartLeg();
+  const unmarkDuplicate = useUnmarkLegDuplicate();
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenPending, setReopenPending] = useState(false);
+
+  const reopenable = dropped.filter(
+    (r) => r.duplicateOfClaimId != null || r.sopOutcome != null,
+  );
+  const reopenCount = reopenable.length;
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
     queryClient.invalidateQueries({
@@ -317,6 +356,43 @@ function NothingToDoCloseOut({
       queryKey: getGetResponsesAwaitingReviewCountQueryKey(),
     });
   };
+
+  async function onReopen() {
+    if (reopenPending || reopenCount === 0) return;
+    setReopenPending(true);
+    try {
+      const ops: Promise<unknown>[] = [];
+      for (const r of reopenable) {
+        if (r.duplicateOfClaimId != null) {
+          ops.push(
+            unmarkDuplicate.mutateAsync({ id: r.id }).catch(() => undefined),
+          );
+        } else if (r.sopOutcome != null) {
+          ops.push(
+            sopRestartLeg
+              .mutateAsync({ id: r.id, data: {} })
+              .catch(() => undefined),
+          );
+        }
+      }
+      await Promise.all(ops);
+      invalidate();
+      for (const r of reopenable) {
+        queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(r.id) });
+      }
+      successToast({
+        title:
+          reopenCount === 1
+            ? "Leg reopened"
+            : `${reopenCount} legs reopened`,
+        description:
+          "The terminal state was undone. You can re-walk the SOP from the workspace.",
+      });
+      setReopenOpen(false);
+    } finally {
+      setReopenPending(false);
+    }
+  }
 
   const body = (
     <div
@@ -358,24 +434,89 @@ function NothingToDoCloseOut({
             Closed · {group.outcome}
           </span>
         ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              openClosure({
-                target: { kind: "group", id: groupId },
-                reason: "cannot_dispute",
-                onSuccess: invalidate,
-              })
-            }
-            data-testid="invoice-nothing-to-do-close"
-          >
-            <Archive className="h-3.5 w-3.5 mr-1" />
-            Mark as closed
-          </Button>
+          <HideForClerk>
+            <div className="flex items-center gap-2">
+              {reopenCount > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-amber-900 hover:bg-amber-100/60"
+                onClick={() => setReopenOpen(true)}
+                disabled={reopenPending}
+                data-testid="invoice-nothing-to-do-reopen"
+                title={
+                  reopenCount === 1
+                    ? "Undo this leg's terminal state and return it to the SOP walk"
+                    : `Undo all ${reopenCount} legs' terminal states and return them to the SOP walk`
+                }
+              >
+                {reopenPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Undo2 className="h-3.5 w-3.5 mr-1" />
+                )}
+                {reopenCount === 1 ? "Reopen leg" : `Reopen ${reopenCount} legs`}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                openClosure({
+                  target: { kind: "group", id: groupId },
+                  reason: "cannot_dispute",
+                  onSuccess: invalidate,
+                })
+              }
+              data-testid="invoice-nothing-to-do-close"
+            >
+              <Archive className="h-3.5 w-3.5 mr-1" />
+              Mark as closed
+            </Button>
+            </div>
+          </HideForClerk>
         )}
       </div>
       {dialog}
+      <AlertDialog
+        open={reopenOpen}
+        onOpenChange={(next) => !reopenPending && setReopenOpen(next)}
+      >
+        <AlertDialogContent data-testid="invoice-nothing-to-do-reopen-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {reopenCount === 1
+                ? "Reopen this leg?"
+                : `Reopen ${reopenCount} legs?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {reopenCount === 1
+                ? "This undoes the leg's terminal state — sibling-duplicate marks are cleared and SOP outcomes are reset — and drops you back into the SOP walk so you can re-decide."
+                : `This undoes the terminal state on all ${reopenCount} legs that pushed this invoice into "nothing to do." Sibling-duplicate marks are cleared and SOP outcomes are reset, then you'll land back in the SOP walk to re-decide.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reopenPending}>
+              Keep as-is
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void onReopen();
+              }}
+              disabled={reopenPending}
+              data-testid="invoice-nothing-to-do-reopen-confirm"
+            >
+              {reopenPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Undo2 className="h-3.5 w-3.5 mr-1" />
+              )}
+              {reopenCount === 1 ? "Reopen leg" : `Reopen ${reopenCount} legs`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 

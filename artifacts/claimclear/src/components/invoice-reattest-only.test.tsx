@@ -40,6 +40,9 @@ mock.module("@workspace/api-client-react", {
     useBulkQueueGroupReattest: inertMutation,
     useMarkAwaitingPayorAgain: inertMutation,
     usePromoteVerdictDrafts: inertMutation,
+    useSopRestartLeg: inertMutation,
+    useUnmarkLegDuplicate: inertMutation,
+    getGetClaimQueryKey: (id: number) => ["claim", id],
     getGetInvoiceGroupQueryKey: (id: number) => ["invoice-group", id],
     getGetInvoiceGroupValidTransitionsQueryKey: (id: number) => [
       "invoice-group",
