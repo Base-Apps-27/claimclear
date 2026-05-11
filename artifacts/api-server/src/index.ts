@@ -25,7 +25,6 @@ import {
 import { recheckPreviousRunBounces } from "./routes/daily-brief";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 import { sweepExpiredGroups } from "./lib/expired-sweep";
-import { refreshClaimDenormalizedCache } from "./lib/denormalized-cache";
 
 // Cap on how long a cron-triggered worker run blocks its cron lane. On
 // timeout the cron row is recorded as degraded and the worker continues in
@@ -145,8 +144,6 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   // production builds (audit-log gated, idempotent), so leaving them in place
   // contributed nothing but a guaranteed boot-time exception against the
   // post-0014 schema.
-  const isProduction = process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1";
-
   // Removed (Task #512): Task #74 closure_reason backfill. The 240-line
   // boot-time block that classified historical Denied rows into
   // closure_reason was retired when the canonical terminal-state model
@@ -162,94 +159,27 @@ async function runWithDbWarmupRetry<T>(name: string, fn: () => Promise<T>, attem
   // removal); the new oneshot picks up only rows the new contract adds
   // (Expired → withdrawn/expired and Resolved/Non-Issue → withdrawn/non_issue).
 
-  // Disputed-child sync backfill (production only, idempotent).
-  // Heals claims whose status drifted from their invoice group's status because
-  // of the old `syncChildRides` terminal-only guard. A leg is "disputed" iff it
-  // has an error_type_id; clean legs are never touched. Held legs are never
-  // touched. Per-row audit entry written so the claim timeline reflects the
-  // backfilled change.
-  if (!isProduction) {
-    logger.info({ nodeEnv: process.env.NODE_ENV, replitDeployment: process.env.REPLIT_DEPLOYMENT }, "Disputed-child sync backfill: skipping (not production)");
-  } else try {
-    // "Needs Review" was missing here even though disputed legs can land in
-    // it after a payer response is auto-classified — without it, a leg in
-    // Needs Review on a group whose status is also Needs Review wouldn't
-    // be detected as drifted (no diff) but a *group* moved to Needs Review
-    // by the auto-classifier wouldn't pull its disputed legs along.
-    const SYNCABLE = ["Needs Review", "Portal Queued", "Generating Email", "Awaiting Response", "Ready to Review", "Resolved", "Denied"];
-    // Drizzle interpolates a JS array as a row literal ($1,$2,...) which
-    // Postgres rejects in ANY(). Use ARRAY[$1, $2, ...] instead so each
-    // element is passed as a separate parameter and the whole thing is a
-    // proper text array.
-    const SYNCABLE_SQL = sql.join(SYNCABLE.map((s) => sql`${s}`), sql`, `);
-    const drifted = await runWithDbWarmupRetry("Disputed-child sync backfill scan", () => db.execute(sql`
-      SELECT c.id            AS claim_id,
-             c.conf_number   AS conf_number,
-             c.status::text  AS claim_status,
-             c.outcome::text AS claim_outcome,
-             ig.id           AS group_id,
-             ig.invoice_number AS invoice_number,
-             ig.status::text AS group_status,
-             ig.outcome::text AS group_outcome
-      FROM claims c
-      INNER JOIN invoice_groups ig ON ig.id = c.invoice_group_id
-      WHERE c.error_type_id IS NOT NULL
-        AND c.status::text != 'On Hold'
-        AND ig.status::text = ANY(ARRAY[${SYNCABLE_SQL}])
-        AND c.status::text != ig.status::text
-    `));
-    const rows = (drifted.rows ?? []) as Array<{
-      claim_id: number; conf_number: string | null;
-      claim_status: string; claim_outcome: string;
-      group_id: number; invoice_number: string;
-      group_status: string; group_outcome: string;
-    }>;
-    if (rows.length === 0) {
-      logger.info("Disputed-child sync backfill: nothing to do (no drifted legs)");
-    } else {
-      for (const row of rows) {
-        await runWithDbWarmupRetry(`Disputed-child sync backfill claim ${row.claim_id}`, async () => {
-          await db.execute(sql`
-            UPDATE claims
-            SET status = ${row.group_status}::claim_status,
-                outcome = ${row.group_outcome}::claim_outcome
-            WHERE id = ${row.claim_id}
-          `);
-          await db.execute(sql`
-            INSERT INTO audit_logs (claim_id, invoice_group_id, action, details, metadata, user_email, user_name)
-            VALUES (
-              ${row.claim_id},
-              ${row.group_id},
-              'claim_status_changed',
-              ${`Status changed from ${row.claim_status} to ${row.group_status} (backfill: cascaded from invoice group)`},
-              ${JSON.stringify({
-                from: row.claim_status,
-                to: row.group_status,
-                previousOutcome: row.claim_outcome,
-                newOutcome: row.group_outcome,
-                source: "group_cascade:backfill",
-                cascadedFromGroupId: row.group_id,
-              })}::jsonb,
-              NULL,
-              'system (backfill)'
-            )
-          `);
-          // Audit 2026-05-08 v2 §A.1 — the raw-SQL UPDATE above
-          // bypasses `transitionClaimStatus` (which would have called
-          // refreshClaimDenormalizedCache for us). Without this call,
-          // the healed leg's canonical `disposition` column would
-          // remain stale until the next mutation. Idempotent and safe.
-          await refreshClaimDenormalizedCache(row.claim_id);
-        });
-      }
-      logger.info({
-        count: rows.length,
-        legs: rows.map((r) => ({ claimId: r.claim_id, conf: r.conf_number, invoice: r.invoice_number, from: r.claim_status, to: r.group_status })),
-      }, "Disputed-child sync backfill: re-synced drifted disputed legs with their groups");
-    }
-  } catch (err) {
-    logger.warn({ err }, "Disputed-child sync backfill: failed");
-  }
+  // Removed 2026-05-11: "Disputed-child sync backfill". This block ran
+  // on every API boot and raw-SQL'd `claims.status` to match the parent
+  // group's status, then called `refreshClaimDenormalizedCache(legId)`
+  // to refresh the canonical `disposition` column. The cache helper
+  // re-projects `claims.status` from `disposition` (see
+  // `denormalized-cache.ts` lines 215–230 — `dispositionToStatus(...)`),
+  // which for any leg whose `sopOutcome` had already advanced past the
+  // group's current status would IMMEDIATELY rewrite the just-cascaded
+  // status back to its pre-cascade value. Net effect:
+  //   1. Backfill UPDATE leg: Awaiting Response → Portal Queued
+  //   2. Audit row written ('system (backfill)')
+  //   3. refreshClaimDenormalizedCache → projects Portal Queued → Awaiting Response
+  //   4. Same drift re-appears on the very next boot, audit row #2 written
+  // Production proof (group 774 / invoice 1865732380, 2026-05-11): two
+  // identical 'Awaiting Response → Portal Queued' rows 16 minutes apart
+  // across two consecutive deploys; the same 8 groups were re-touched
+  // both times. Per the §8 lockdown referenced above, boot-time data
+  // backfills are forbidden — this one violated that rule and only
+  // produced audit-log noise. If real status drift recurs, it must be
+  // fixed at the cascade source (group-transitions.ts) or addressed via
+  // an on-demand oneshot script under src/scripts/.
 })().catch((err) => {
   // The IIFE above already wraps each backfill in its own try/catch, but a
   // surprise throw escaping all of them would otherwise become an
