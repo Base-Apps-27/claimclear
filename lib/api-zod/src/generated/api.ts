@@ -18707,9 +18707,17 @@ export const IncludeLegParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const IncludeLegBody = zod.object({
-  note: zod.string().nullish(),
-});
+export const IncludeLegBody = zod
+  .unknown()
+  .and(
+    zod.object({
+      note: zod.string().nullish(),
+      undoHandledOffline: zod.boolean().optional(),
+    }),
+  )
+  .describe(
+    'Body for `POST \/claims\/{id}\/include`. When `undoHandledOffline`\nis `true`, the server requires `note` (>=10 characters after\ntrimming) and verifies the leg\'s most recent exit was the\nTask #689 \"Removed — handled offline\" path; the audit row\nuses `claim_removed_handled_offline_undone` instead of the\ngeneric `leg_included` (Task #694). Plain re-includes (the\nlegacy path) leave both fields untouched.\n',
+  );
 
 export const IncludeLegResponse = zod.object({
   id: zod.number(),

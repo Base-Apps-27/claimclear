@@ -7228,9 +7228,31 @@ components:
 
     IncludeLegBody:
       type: object
+      description: |
+        Body for `POST /claims/{id}/include`. When `undoHandledOffline`
+        is `true`, the server requires `note` (>=10 characters after
+        trimming) and verifies the leg's most recent exit was the
+        Task #689 "Removed — handled offline" path; the audit row
+        uses `claim_removed_handled_offline_undone` instead of the
+        generic `leg_included` (Task #694). Plain re-includes (the
+        legacy path) leave both fields untouched.
       properties:
         note:
           type: ["string", "null"]
+        undoHandledOffline:
+          type: boolean
+      allOf:
+        - if:
+            properties:
+              undoHandledOffline:
+                const: true
+            required: [undoHandledOffline]
+          then:
+            required: [undoHandledOffline, note]
+            properties:
+              note:
+                type: string
+                minLength: 10
 
     MarkLegDuplicateBody:
       type: object

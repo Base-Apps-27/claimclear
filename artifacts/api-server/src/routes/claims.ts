@@ -2888,6 +2888,22 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   if (await blockMutationOnTourSampleClaim(id, res)) return;
   const note = (req.body?.note ?? null) as string | null;
+  // Task #694 — when the operator is undoing the "Removed — handled
+  // offline" exit (Task #689), the request carries `undoHandledOffline:
+  // true` so we can require a substantive note (>=10 chars), verify
+  // the leg's last exit really was handled-offline, and emit the
+  // distinct `claim_removed_handled_offline_undone` audit action so
+  // the activity timeline reads "Undone — re-included after handled-
+  // offline removal" instead of a generic re-include line. Legacy
+  // re-include callers (no flag) keep the existing `leg_included`
+  // behaviour with no note required.
+  const undoHandledOffline = req.body?.undoHandledOffline === true;
+  if (undoHandledOffline && (!note || note.trim().length < 10)) {
+    res.status(400).json({
+      error: "note required (>=10 characters) when undoHandledOffline=true",
+    });
+    return;
+  }
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2920,15 +2936,51 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
     }
   }
 
+  // For the undo path, confirm the most recent leg-exit audit really
+  // was handled-offline. Without this, a leg excluded for a different
+  // reason (clean_leg, out_of_scope, …) would also accept the undo
+  // payload and end up with a misleading audit row.
+  if (undoHandledOffline) {
+    const [lastExit] = await db
+      .select({ action: auditLogsTable.action })
+      .from(auditLogsTable)
+      .where(and(
+        eq(auditLogsTable.claimId, id),
+        inArray(auditLogsTable.action, [
+          "claim_removed_handled_offline",
+          "claim_removed_handled_offline_undone",
+          "leg_excluded",
+          "leg_included",
+        ]),
+      ))
+      .orderBy(desc(auditLogsTable.timestamp))
+      .limit(1);
+    if (lastExit?.action !== "claim_removed_handled_offline") {
+      res.status(409).json({
+        error: "Leg was not removed via handled-offline; nothing to undo",
+        expectedState: "claim_removed_handled_offline",
+        actualState: lastExit?.action ?? "none",
+      });
+      return;
+    }
+  }
+
   const [updated] = await db
     .update(claimsTable)
     .set({ includedInDispute: true })
     .where(eq(claimsTable.id, id))
     .returning();
 
-  await createAuditLog(id, "leg_included", `Leg re-included in dispute${note ? `: ${note}` : ""}`, req, {
+  const auditAction = undoHandledOffline
+    ? "claim_removed_handled_offline_undone"
+    : "leg_included";
+  const auditDetails = undoHandledOffline
+    ? `Undone — re-included after handled-offline removal${note ? ` — ${note}` : ""}`
+    : `Leg re-included in dispute${note ? `: ${note}` : ""}`;
+  await createAuditLog(id, auditAction, auditDetails, req, {
     note,
     previousSubStatus: "excluded",
+    ...(undoHandledOffline ? { undoHandledOffline: true } : {}),
   });
   await emitStateEvent({
     eventKey: "leg.included",

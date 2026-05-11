@@ -12,7 +12,18 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export interface IncludeLegBody {
+/**
+ * Body for `POST /claims/{id}/include`. When `undoHandledOffline`
+is `true`, the server requires `note` (>=10 characters after
+trimming) and verifies the leg's most recent exit was the
+Task #689 "Removed — handled offline" path; the audit row
+uses `claim_removed_handled_offline_undone` instead of the
+generic `leg_included` (Task #694). Plain re-includes (the
+legacy path) leave both fields untouched.
+
+ */
+export type IncludeLegBody = unknown & {
   /** @nullable */
   note?: string | null;
-}
+  undoHandledOffline?: boolean;
+};

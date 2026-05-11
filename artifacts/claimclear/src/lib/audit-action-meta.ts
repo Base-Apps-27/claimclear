@@ -112,6 +112,17 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
     iconClass: "text-slate-600",
     category: "status",
   },
+  // Task #694 — counterpart "Undo — re-include leg" action surfaced
+  // when the operator reverses a Task #689 handled-offline removal.
+  // Hard-coded label (vocab package is on this task's blocklist) and
+  // styled in the same status family with the Undo icon so the
+  // activity feed pairs the entry/exit visibly.
+  claim_removed_handled_offline_undone: {
+    label: "Undone — re-included after handled-offline removal",
+    icon: Undo2,
+    iconClass: "text-emerald-600",
+    category: "status",
+  },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {

@@ -1967,3 +1967,224 @@ test("POST /claims/:id/exclude with reason=handled_offline rejects from non-need
     await cleanupErrorType(errType.id);
   }
 });
+
+// --- Task #694: undo handled_offline path -------------------------------
+
+test("POST /claims/:id/include with undoHandledOffline rejects when note is missing", async () => {
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exitNote = "Already attested in MAS portal — refund posted.";
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: exitNote },
+    });
+    assert.equal(exit.status, 200);
+
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true },
+    });
+    assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(String(res.json.error ?? ""), /note required/);
+    // Leg must remain excluded.
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(row.includedInDispute, false);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include with undoHandledOffline rejects when trimmed note is shorter than 10 chars", async () => {
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "Already attested in MAS portal — refund posted." },
+    });
+    assert.equal(exit.status, 200);
+
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true, note: "   short   " },
+    });
+    assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(row.includedInDispute, false);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include with undoHandledOffline rejects when last exit was not handled_offline (409)", async () => {
+  // Excluded via the legacy `clean_leg` reason — the undo path must
+  // refuse so the audit trail can't be retro-fitted into a
+  // handled-offline reversal.
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "clean_leg" },
+    });
+    assert.equal(exit.status, 200);
+
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true, note: "Trying to undo via wrong path here." },
+    });
+    assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.expectedState, "claim_removed_handled_offline");
+    assert.equal(res.json.actualState, "leg_excluded");
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(row.includedInDispute, false);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include with undoHandledOffline restores the leg and emits claim_removed_handled_offline_undone audit", async () => {
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exitNote = "Already attested in MAS portal — refund posted.";
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: exitNote },
+    });
+    assert.equal(exit.status, 200);
+
+    const undoNote = "Refund was reversed — re-opening dispute path.";
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true, note: undoNote },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, true);
+
+    // Sub-status should snap back to needs_classification (the only
+    // state from which handled_offline could have been entered).
+    assert.equal(res.json.errorTypeId, null);
+
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(and(
+        eq(auditLogsTable.claimId, claim.id),
+        inArray(auditLogsTable.action, [
+          "claim_removed_handled_offline",
+          "claim_removed_handled_offline_undone",
+          "leg_included",
+        ]),
+      ))
+      .orderBy(desc(auditLogsTable.timestamp));
+    const undone = audits.find((a) => a.action === "claim_removed_handled_offline_undone");
+    assert.ok(undone, `expected claim_removed_handled_offline_undone audit row; got actions ${audits.map((a) => a.action).join(", ")}`);
+    assert.equal(
+      audits.find((a) => a.action === "leg_included"),
+      undefined,
+      "must NOT also emit the generic leg_included action — the undo path replaces it",
+    );
+    type Meta = { note?: string; previousSubStatus?: string; undoHandledOffline?: boolean } | null;
+    const meta = undone!.metadata as Meta;
+    assert.equal(meta?.note, undoNote);
+    assert.equal(meta?.previousSubStatus, "excluded");
+    assert.equal(meta?.undoHandledOffline, true);
+    assert.match(String(undone!.details ?? ""), /Undone — re-included after handled-offline removal/);
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include with undoHandledOffline rejects a second consecutive undo (409)", async () => {
+  // After a successful undo, the most recent exit-class audit row is
+  // `claim_removed_handled_offline_undone` (or — once the leg is
+  // re-excluded — a different reason). Either way, a fresh undo must
+  // not piggy-back on the original handled-offline entry.
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "Already attested in MAS portal — refund posted." },
+    });
+    assert.equal(exit.status, 200);
+
+    const undo1 = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true, note: "Refund reversed — re-opening dispute." },
+    });
+    assert.equal(undo1.status, 200);
+
+    // Re-exclude with the legacy reason to leave the leg excluded
+    // again, then attempt a second undo. The latest exit row is now
+    // `leg_excluded`, so the gate must reject.
+    const reExclude = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "clean_leg" },
+    });
+    assert.equal(reExclude.status, 200);
+
+    const undo2 = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: { undoHandledOffline: true, note: "Second undo attempt that must be refused." },
+    });
+    assert.equal(undo2.status, 409, `expected 409, got ${undo2.status} (${JSON.stringify(undo2.json)})`);
+    assert.equal(undo2.json.expectedState, "claim_removed_handled_offline");
+    assert.equal(undo2.json.actualState, "leg_excluded");
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("POST /claims/:id/include without undoHandledOffline still uses the legacy leg_included path", async () => {
+  // Even when the leg was originally excluded via handled_offline,
+  // a plain re-include (no flag) keeps the existing behaviour: no
+  // note required and the audit row is `leg_included`. This protects
+  // older clients that haven't picked up the new payload yet.
+  const group = await createSeedGroup({ status: "Needs Evidence" });
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: null,
+  });
+  try {
+    const exit = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "Already attested in MAS portal — refund posted." },
+    });
+    assert.equal(exit.status, 200);
+
+    const res = await fetchJson(`/api/claims/${claim.id}/include`, {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, true);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(audits.find((a) => a.action === "leg_included"), "expected legacy leg_included audit row");
+    assert.equal(
+      audits.find((a) => a.action === "claim_removed_handled_offline_undone"),
+      undefined,
+      "must NOT emit the undo-specific action when the flag is absent",
+    );
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});

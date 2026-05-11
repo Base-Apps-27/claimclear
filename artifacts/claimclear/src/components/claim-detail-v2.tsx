@@ -58,12 +58,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off,
+  Loader2, RotateCcw, AlertTriangle, RefreshCw, XCircle, FileText, Copy, Link2Off, Undo2,
   Edit2, Pin, Plus, Mail, ArrowUpRight, Lock, Activity, Paperclip,
   Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Tag, Sparkles,
 } from "lucide-react";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import { RemoveHandledOfflineDialog } from "@/components/remove-handled-offline-dialog";
+import { UndoHandledOfflineDialog } from "@/components/undo-handled-offline-dialog";
+import { wasMostRecentExitHandledOffline } from "@/components/undo-handled-offline-dialog-helpers";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatRelative, absoluteTooltip } from "@/lib/time";
@@ -298,6 +300,11 @@ export function ClaimDetailV2({
   // but lives next to the existing Exclude trigger so operators can
   // pick the right exit without a nested reason dropdown.
   const [removeHandledOfflineOpen, setRemoveHandledOfflineOpen] = useState(false);
+  // Task #694 — counterpart "Undo — re-include leg" exit. Eligibility
+  // is gated on the leg being currently `excluded` AND its most recent
+  // exit-class audit row being `claim_removed_handled_offline` (the
+  // server enforces the same predicate before accepting the undo).
+  const [undoHandledOfflineOpen, setUndoHandledOfflineOpen] = useState(false);
   const [excludeReason, setExcludeReason] = useState<ExcludeLegBodyReason | "">("");
   const [excludeNote, setExcludeNote] = useState("");
   const excludeValid =
@@ -573,6 +580,15 @@ export function ClaimDetailV2({
       subStatus === "blocked"
     );
 
+  // Task #694 — eligibility for the "Undo — re-include leg" affordance.
+  // Surface only when the leg is currently `excluded` AND the most
+  // recent exit-class audit row is `claim_removed_handled_offline`,
+  // matching the server-side gate. Plain exclude/include legacy
+  // entries stay on the existing /include path with no undo trigger.
+  const canUndoHandledOffline =
+    subStatus === "excluded" &&
+    wasMostRecentExitHandledOffline(sortedAudit);
+
   const canMarkDuplicate =
     !isDuplicate &&
     groupIsPreSubmit &&
@@ -822,6 +838,23 @@ export function ClaimDetailV2({
                   title="Remove this leg because it was already handled outside ClaimClear"
                 >
                   <Link2Off className="h-3.5 w-3.5" /> Remove — handled offline
+                </Button>
+              )}
+
+              {/* Task #694 — counterpart "Undo — re-include leg"
+                  trigger. Mirrors the entry path: confirmation dialog
+                  with required note (>=10 chars). Server enforces the
+                  same audit-history gate before accepting the request. */}
+              {canUndoHandledOffline && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1"
+                  onClick={() => setUndoHandledOfflineOpen(true)}
+                  data-testid="leg-undo-handled-offline-trigger"
+                  title="Re-include this leg in the dispute (reverses the earlier handled-offline removal)"
+                >
+                  <Undo2 className="h-3.5 w-3.5" /> Undo — re-include leg
                 </Button>
               )}
 
@@ -1707,6 +1740,15 @@ export function ClaimDetailV2({
         <RemoveHandledOfflineDialog
           open={removeHandledOfflineOpen}
           onOpenChange={setRemoveHandledOfflineOpen}
+          claimId={claim.id}
+          groupId={claim.invoiceGroupId ?? null}
+        />
+      ) : null}
+
+      {claim ? (
+        <UndoHandledOfflineDialog
+          open={undoHandledOfflineOpen}
+          onOpenChange={setUndoHandledOfflineOpen}
           claimId={claim.id}
           groupId={claim.invoiceGroupId ?? null}
         />
