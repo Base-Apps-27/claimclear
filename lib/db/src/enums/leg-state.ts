@@ -28,6 +28,15 @@ export const LEG_EXCLUSION_REASONS = [
   "duplicate",
   "non_issue",
   "cannot_dispute",
+  // Task #689 — operator confirmed the leg was already correctly
+  // attested / handled outside ClaimClear. Routed through the same
+  // exclude plumbing as the other reasons (sub-status `excluded`,
+  // hidden behind the Queue's "+N hidden" disclosure), but the
+  // `/claims/:id/exclude` route enforces a >=10-char trimmed note
+  // and emits the distinct `claim_removed_handled_offline` audit
+  // action so the activity timeline reads "Removed — handled
+  // offline" instead of the generic "leg excluded" entry.
+  "handled_offline",
   "other",
 ] as const;
 export type LegExclusionReason = typeof LEG_EXCLUSION_REASONS[number];

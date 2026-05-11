@@ -1878,3 +1878,92 @@ test("POST /claims/:id/exclude accepts reason=cannot_dispute", async () => {
     await cleanupClaim(claim.id);
   }
 });
+
+// --- Task #689: handled_offline reason path -----------------------------
+
+test("POST /claims/:id/exclude rejects reason=handled_offline without a note", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline" },
+    });
+    assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.match(String(res.json.error ?? ""), /handled_offline/);
+    // Leg must NOT have been excluded.
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(row.includedInDispute, true);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/exclude rejects reason=handled_offline when trimmed note is shorter than 10 chars", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "   short   " },
+    });
+    assert.equal(res.status, 400, `expected 400, got ${res.status} (${JSON.stringify(res.json)})`);
+    const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(row.includedInDispute, true);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/exclude with reason=handled_offline excludes the leg and emits claim_removed_handled_offline audit", async () => {
+  const claim = await createSeedClaim({ errorTypeId: null });
+  try {
+    const note = "Confirmed in MAS portal — already paid offline last week.";
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(eq(auditLogsTable.claimId, claim.id));
+    const handledOffline = audits.find((a) => a.action === "claim_removed_handled_offline");
+    assert.ok(handledOffline, `expected claim_removed_handled_offline audit row; got actions ${audits.map((a) => a.action).join(", ")}`);
+    assert.equal(
+      audits.find((a) => a.action === "leg_excluded"),
+      undefined,
+      "must NOT also emit the generic leg_excluded action — the handled_offline path replaces it",
+    );
+    type Meta = { reason?: string; note?: string; source?: string } | null;
+    const meta = handledOffline!.metadata as Meta;
+    assert.equal(meta?.reason, "handled_offline");
+    assert.equal(meta?.note, note);
+    assert.equal(meta?.source, "manual");
+    assert.match(String(handledOffline!.details ?? ""), /Removed — handled offline/);
+  } finally {
+    await cleanupClaim(claim.id);
+  }
+});
+
+test("POST /claims/:id/exclude with reason=handled_offline rejects from non-needs_classification leg state (409)", async () => {
+  // A classified leg derives to `investigating`, not `needs_classification`,
+  // so the reused source-state guard rejects the exit just like the
+  // legacy reasons would.
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "Already attested offline last week." },
+    });
+    assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.expectedState, "needs_classification");
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});

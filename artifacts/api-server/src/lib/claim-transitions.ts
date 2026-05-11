@@ -546,6 +546,18 @@ export interface ExcludeLegParams {
   // exclude route, auto-after-classify path) leave this undefined and
   // the field is omitted from metadata as before.
   backfillId?: string;
+  // Task #689 — when set, the helper writes this audit action key
+  // instead of the default `leg_excluded`. Used by the
+  // `handled_offline` reason path so the activity timeline renders a
+  // distinct "Removed — handled offline" entry. Pass `undefined`
+  // (the existing call shape) to keep the legacy `leg_excluded` key
+  // for every other reason.
+  auditAction?: string;
+  // Task #689 — when set, prefixes the audit row's free-text
+  // `details` column. Default behaviour ("Leg excluded: <reason>") is
+  // unchanged; the handled-offline path overrides this so the
+  // human-readable detail line matches the new audit action.
+  auditDetailsPrefix?: string;
 }
 
 export interface ExcludeLegResult {
@@ -553,7 +565,7 @@ export interface ExcludeLegResult {
 }
 
 export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeLegResult> {
-  const { claimId, reason, note, source, actor, leg, ex, backfillId } = params;
+  const { claimId, reason, note, source, actor, leg, ex, backfillId, auditAction, auditDetailsPrefix } = params;
   const executor = ex ?? db;
 
   // Wave D-PR2b: route through `setClaimDisposition` so the canonical
@@ -599,11 +611,12 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
   if (setNonIssueSopOutcome) metadata.sopOutcomeCoWritten = "non_issue";
   if (backfillId !== undefined) metadata.backfillId = backfillId;
 
+  const detailsPrefix = auditDetailsPrefix ?? `Leg excluded: ${reason}`;
   await executor.insert(auditLogsTable).values({
     claimId,
     invoiceGroupId: leg.invoiceGroupId,
-    action: "leg_excluded",
-    details: `Leg excluded: ${reason}${note ? ` — ${note}` : ""}`,
+    action: auditAction ?? "leg_excluded",
+    details: `${detailsPrefix}${note ? ` — ${note}` : ""}`,
     metadata,
     userEmail: actor.userEmail,
     userName: actor.userName,

@@ -50,9 +50,19 @@ mock.module("@/components/claim-detail-v2", {
   },
 });
 
+// Stub the handled-offline dialog with a sentinel that records what
+// the row would mount — `renderToStaticMarkup` doesn't fire effects,
+// so we only need to confirm the trigger is gated by sub-status.
+mock.module("@/components/remove-handled-offline-dialog", {
+  namedExports: {
+    RemoveHandledOfflineDialog: () => null,
+  },
+});
+
 const React = await import("react");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const { TooltipProvider } = await import("@/components/ui/tooltip");
 const { LegConclusionRow } = await import("./leg-conclusion-row");
 type ClaimResponse = import("@workspace/api-client-react").ClaimResponse;
 
@@ -62,8 +72,14 @@ function render(node: import("react").ReactElement): string {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  // needs_classification rows render a child that uses <Tooltip /> from
+  // Radix, which insists on a TooltipProvider ancestor at render time.
+  // Wrap once here so every test renders cleanly.
   return renderToStaticMarkup(
-    React.createElement(QueryClientProvider, { client: qc, children: node }),
+    React.createElement(QueryClientProvider, {
+      client: qc,
+      children: React.createElement(TooltipProvider, { children: node }),
+    }),
   );
 }
 
@@ -210,4 +226,56 @@ test("LegConclusionRow: non-duplicate investigating leg renders as active", () =
   });
   const html = render(row(c, [c]));
   assert.match(html, /data-variant="active"/);
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #689 — Queue overflow menu surfaces "Remove — handled offline"
+// only on a needs_classification leg, mirroring the route's
+// source-state guard at /claims/:id/exclude.
+// ─────────────────────────────────────────────────────────────────────
+test("LegConclusionRow: needs_classification leg renders the overflow trigger", () => {
+  const c = claim({
+    id: 700,
+    // No errorTypeId → sub-status = needs_classification.
+    errorTypeId: null,
+    sopOutcome: null,
+  });
+  const html = render(row(c, [c]));
+  assert.match(
+    html,
+    /data-testid="leg-row-overflow-trigger-700"/,
+    "needs_classification leg must expose the overflow trigger",
+  );
+});
+
+test("LegConclusionRow: investigating leg hides the overflow trigger", () => {
+  // With an error type assigned and SOP not started, the leg derives
+  // to `investigating`, which the route rejects for /exclude. The row
+  // must not surface the entry point that would 409.
+  const c = claim({
+    id: 701,
+    errorTypeId: "ET-1",
+    sopOutcome: null,
+  });
+  const html = render(row(c, [c]));
+  assert.equal(
+    html.includes(`data-testid="leg-row-overflow-trigger-701"`),
+    false,
+    "investigating leg must not expose the overflow trigger",
+  );
+});
+
+test("LegConclusionRow: terminal leg hides the overflow trigger", () => {
+  const c = claim({
+    id: 702,
+    outcome: "Approved",
+    errorTypeId: "ET-1",
+    sopOutcome: "portal_dispute",
+  });
+  const html = render(row(c, [c]));
+  assert.match(html, /data-variant="terminal"/);
+  assert.equal(
+    html.includes(`data-testid="leg-row-overflow-trigger-702"`),
+    false,
+  );
 });

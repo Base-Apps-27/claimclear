@@ -18289,19 +18289,23 @@ export const ExcludeLegParams = zod.object({
 });
 
 export const ExcludeLegBody = zod
-  .object({
-    reason: zod.enum([
-      "clean_leg",
-      "out_of_scope",
-      "duplicate",
-      "non_issue",
-      "cannot_dispute",
-      "other",
-    ]),
-    note: zod.string().nullish(),
-  })
+  .unknown()
+  .and(
+    zod.object({
+      reason: zod.enum([
+        "clean_leg",
+        "out_of_scope",
+        "duplicate",
+        "non_issue",
+        "cannot_dispute",
+        "handled_offline",
+        "other",
+      ]),
+      note: zod.string().nullish(),
+    }),
+  )
   .describe(
-    'Body for `POST \/claims\/{id}\/exclude`. When `reason` is `\"other\"`,\nthe `note` field is required and must be non-empty.\n',
+    'Body for `POST \/claims\/{id}\/exclude`. When `reason` is `\"other\"`,\nthe `note` field is required and must be non-empty. When `reason`\nis `\"handled_offline\"`, the `note` field is required and must\ncontain at least 10 characters (the server additionally rejects\nnotes whose trimmed length is below 10 — Task #689). The\n`handled_offline` path also emits a distinct\n`claim_removed_handled_offline` audit action instead of the\ngeneric `leg_excluded` entry.\n',
   );
 
 export const ExcludeLegResponse = zod.object({

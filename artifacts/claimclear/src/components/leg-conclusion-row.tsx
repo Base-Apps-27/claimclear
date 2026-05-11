@@ -19,6 +19,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
@@ -27,7 +33,10 @@ import {
   Loader2,
   Workflow,
   Tag,
+  MoreHorizontal,
+  Link2Off,
 } from "lucide-react";
+import { RemoveHandledOfflineDialog } from "@/components/remove-handled-offline-dialog";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 import { ClaimDetailV2 } from "@/components/claim-detail-v2";
@@ -287,6 +296,17 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
     // to a read-only "pick one from the queue" banner. The expand /
     // worktree path is still reachable through the row's own toggle.
     const [classifyOpen, setClassifyOpen] = useState(false);
+    // Task #689 — Queue overflow menu shows the "Remove — handled
+    // offline" exit when the leg is still in `needs_classification`,
+    // matching the eligibility on the leg-detail header trigger. The
+    // dialog itself fires the `useExcludeLeg` hook with the new
+    // `handled_offline` reason; the row only owns the open state.
+    const [removeHandledOfflineOpen, setRemoveHandledOfflineOpen] = useState(false);
+    // Eligibility mirrors the route's source-state guard
+    // (`/claims/:id/exclude` requires `subStatus === "needs_classification"`),
+    // so the overflow item only appears when the dialog can actually
+    // succeed.
+    const canRemoveHandledOffline = subStatus === "needs_classification";
 
     function handlePrimary() {
       if (needsClassify) {
@@ -307,14 +327,25 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
         className={cardClass}
       >
         <CardContent className="p-0">
-          {/* Header: identity + status pill + open/hide toggle. Click
-              anywhere on the strip to toggle expansion. */}
-          <button
-            type="button"
+          {/* Header strip — identity + status pill + open/hide toggle.
+              Click anywhere on the strip to toggle expansion. Rendered
+              as a focusable div (with role + keyboard handler) rather
+              than a <button> so the Task #689 per-leg overflow menu
+              can host its own real <button> trigger as a sibling
+              without producing invalid nested-interactive markup. */}
+          <div
+            role="button"
+            tabIndex={0}
             onClick={handleToggle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleToggle();
+              }
+            }}
             aria-expanded={expanded}
             data-testid={`leg-conclusion-toggle-${claim.id}`}
-            className="w-full text-left px-4 py-3 flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+            className="w-full cursor-pointer text-left px-4 py-3 flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
           >
             <span className="font-mono font-semibold text-sm shrink-0">
               #{claim.id}
@@ -353,7 +384,46 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
                 </>
               )}
             </span>
-          </button>
+            {/* Task #689 — per-leg overflow menu lives inside the
+                clickable header for layout stability (the header is
+                the row's full-width strip). The trigger swallows its
+                own click so the row toggle does not also fire. */}
+            {canRemoveHandledOffline && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    aria-label="More leg actions"
+                    data-testid={`leg-row-overflow-trigger-${claim.id}`}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setRemoveHandledOfflineOpen(true);
+                    }}
+                    data-testid={`leg-row-remove-handled-offline-${claim.id}`}
+                  >
+                    <Link2Off className="h-3.5 w-3.5 mr-2 text-slate-600" />
+                    Remove — handled offline
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
 
           {/* Strip action area. Shown only for active (open) legs. The
               primary action is the worktree button; quick-conclude
@@ -436,6 +506,15 @@ export const LegConclusionRow = forwardRef<LegConclusionRowHandle, RowProps>(
           onOpenChange={setClassifyOpen}
           groupId={groupId}
           highlightLegId={claim.id}
+        />
+        <RemoveHandledOfflineDialog
+          open={removeHandledOfflineOpen}
+          onOpenChange={setRemoveHandledOfflineOpen}
+          claimId={claim.id}
+          groupId={groupId}
+          onRemoved={() => {
+            invalidateGroup();
+          }}
         />
       </Card>
     );

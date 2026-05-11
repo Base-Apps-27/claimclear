@@ -21,5 +21,6 @@ export const ExcludeLegBodyReason = {
   duplicate: "duplicate",
   non_issue: "non_issue",
   cannot_dispute: "cannot_dispute",
+  handled_offline: "handled_offline",
   other: "other",
 } as const;

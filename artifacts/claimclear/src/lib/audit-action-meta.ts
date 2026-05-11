@@ -27,6 +27,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Inbox,
+  Link2Off,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { auditActionLabel } from "@workspace/vocab";
@@ -98,6 +99,19 @@ export const CLAIM_ACTION_META: Record<string, ActionMeta> = {
   attestation_self_confirmed: meta("attestation_self_confirmed", "claim", ShieldCheck, "text-emerald-600", "status"),
   attestation_queued: meta("attestation_queued", "claim", Inbox, "text-amber-600", "workflow"),
   attestation_queue_confirmed: meta("attestation_queue_confirmed", "claim", ShieldCheck, "text-emerald-600", "status"),
+  // Task #689 — distinct activity-feed entry for the "Remove —
+  // handled offline" exit (the per-leg counterpart to the
+  // group-level `closure_marked_non_issue` precedent). Label is
+  // hard-coded here rather than routed through @workspace/vocab
+  // because the vocab package is on this task's blocklist; the
+  // action key itself is emitted by `excludeLegCore` when the route
+  // forwards `reason === "handled_offline"`.
+  claim_removed_handled_offline: {
+    label: "Removed — handled offline",
+    icon: Link2Off,
+    iconClass: "text-slate-600",
+    category: "status",
+  },
 };
 
 export const GROUP_ACTION_META: Record<string, ActionMeta> = {

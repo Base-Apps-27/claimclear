@@ -2767,6 +2767,13 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
     res.status(400).json({ error: "note required when reason=other" });
     return;
   }
+  // Task #689 — `handled_offline` requires a substantive note (>=10
+  // chars after trimming) so the activity timeline carries enough
+  // context to explain why the leg was removed without re-opening it.
+  if (reason === "handled_offline" && (!note || note.trim().length < 10)) {
+    res.status(400).json({ error: "note required (>=10 characters) when reason=handled_offline" });
+    return;
+  }
 
   const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
@@ -2803,6 +2810,15 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
       leg,
       trustCallerStateGuard: true,
       ex: tx,
+      // Task #689 — distinct audit action for the "Remove — handled
+      // offline" exit so the activity timeline reads "Removed —
+      // handled offline" instead of the generic leg-excluded line.
+      ...(reason === "handled_offline"
+        ? {
+            auditAction: "claim_removed_handled_offline",
+            auditDetailsPrefix: "Removed — handled offline",
+          }
+        : {}),
     });
 
     if (leg.invoiceGroupId != null) {

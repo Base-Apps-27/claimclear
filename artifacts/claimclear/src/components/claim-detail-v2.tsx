@@ -63,6 +63,7 @@ import {
   Gavel, Stamp, Clock, Send, CheckCircle2, ListChecks, Tag, Sparkles,
 } from "lucide-react";
 import { ClassifyDialog } from "@/components/classify-dialog";
+import { RemoveHandledOfflineDialog } from "@/components/remove-handled-offline-dialog";
 import { buildSopTranscript, type TranscriptLine } from "@/lib/sop-transcript";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatRelative, absoluteTooltip } from "@/lib/time";
@@ -292,6 +293,11 @@ export function ClaimDetailV2({
 
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [excludeOpen, setExcludeOpen] = useState(false);
+  // Task #689 — "Remove — handled offline" exit. Reuses the
+  // excludeLeg plumbing under the hood (see RemoveHandledOfflineDialog),
+  // but lives next to the existing Exclude trigger so operators can
+  // pick the right exit without a nested reason dropdown.
+  const [removeHandledOfflineOpen, setRemoveHandledOfflineOpen] = useState(false);
   const [excludeReason, setExcludeReason] = useState<ExcludeLegBodyReason | "">("");
   const [excludeNote, setExcludeNote] = useState("");
   const excludeValid =
@@ -804,6 +810,19 @@ export function ClaimDetailV2({
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+              )}
+
+              {subStatus === "needs_classification" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1"
+                  onClick={() => setRemoveHandledOfflineOpen(true)}
+                  data-testid="leg-remove-handled-offline-trigger"
+                  title="Remove this leg because it was already handled outside ClaimClear"
+                >
+                  <Link2Off className="h-3.5 w-3.5" /> Remove — handled offline
+                </Button>
               )}
 
               {subStatus === "needs_classification" && (
@@ -1683,6 +1702,15 @@ export function ClaimDetailV2({
 
       {/* #687 — leg-note delete AlertDialog removed (delete moved to
           queue chrome). */}
+
+      {claim ? (
+        <RemoveHandledOfflineDialog
+          open={removeHandledOfflineOpen}
+          onOpenChange={setRemoveHandledOfflineOpen}
+          claimId={claim.id}
+          groupId={claim.invoiceGroupId ?? null}
+        />
+      ) : null}
 
       {claim ? (
         <ClassifyDialog

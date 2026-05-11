@@ -7200,13 +7200,31 @@ components:
       required: [reason]
       description: |
         Body for `POST /claims/{id}/exclude`. When `reason` is `"other"`,
-        the `note` field is required and must be non-empty.
+        the `note` field is required and must be non-empty. When `reason`
+        is `"handled_offline"`, the `note` field is required and must
+        contain at least 10 characters (the server additionally rejects
+        notes whose trimmed length is below 10 — Task #689). The
+        `handled_offline` path also emits a distinct
+        `claim_removed_handled_offline` audit action instead of the
+        generic `leg_excluded` entry.
       properties:
         reason:
           type: string
-          enum: [clean_leg, out_of_scope, duplicate, non_issue, cannot_dispute, other]
+          enum: [clean_leg, out_of_scope, duplicate, non_issue, cannot_dispute, handled_offline, other]
         note:
           type: ["string", "null"]
+      allOf:
+        - if:
+            properties:
+              reason:
+                const: handled_offline
+            required: [reason]
+          then:
+            required: [reason, note]
+            properties:
+              note:
+                type: string
+                minLength: 10
 
     IncludeLegBody:
       type: object

@@ -15,11 +15,17 @@ import type { ExcludeLegBodyReason } from "./excludeLegBodyReason";
 
 /**
  * Body for `POST /claims/{id}/exclude`. When `reason` is `"other"`,
-the `note` field is required and must be non-empty.
+the `note` field is required and must be non-empty. When `reason`
+is `"handled_offline"`, the `note` field is required and must
+contain at least 10 characters (the server additionally rejects
+notes whose trimmed length is below 10 — Task #689). The
+`handled_offline` path also emits a distinct
+`claim_removed_handled_offline` audit action instead of the
+generic `leg_excluded` entry.
 
  */
-export interface ExcludeLegBody {
+export type ExcludeLegBody = unknown & {
   reason: ExcludeLegBodyReason;
   /** @nullable */
   note?: string | null;
-}
+};
