@@ -271,8 +271,8 @@ function ReattestOnlyCta({
         <div className="pl-12">
           <Button
             size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs text-blue-900/80 hover:bg-blue-100/60"
+            variant="outline"
+            className="h-8 px-3 text-xs bg-white border-blue-300 text-blue-800 hover:bg-blue-100 hover:text-blue-900"
             onClick={() => {
               const target = survivors[0] ?? dropped[0];
               if (target) onJumpToLeg(target.id);
@@ -280,6 +280,7 @@ function ReattestOnlyCta({
             data-testid="invoice-reattest-only-reopen-leg"
             title="Go back to a leg to fix a verdict, classification, or evidence before re-attesting"
           >
+            <Undo2 className="h-3.5 w-3.5 mr-1" />
             Reopen a leg
           </Button>
         </div>
