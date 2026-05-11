@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatDateTime, formatCurrency } from "@/lib/format";
 import { RefNumber } from "@/components/ref-number";
+import { useIsQueuePreview } from "@/lib/preview-mode";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
@@ -87,6 +88,7 @@ interface Props {
 }
 
 export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, onReclassifyLeg, bare, footerStateRef, onFooterStateChange, onDirtyChange }: Props) {
+  const queuePreview = useIsQueuePreview();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -532,7 +534,12 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                 Closed · {closureReason}
               </Badge>
             )}
-            <div
+            {/* Stepper consolidation (queue-preview): the PinnedFooter
+                already renders a MiniPhase stepper for the same five
+                stages, so we hide this hero-level duplicate when the
+                operator is on /queue-preview. Production /queue keeps
+                both renders for back-compat with #687 muscle memory. */}
+            {!queuePreview && <div
               className="ml-auto flex items-center gap-1 rounded border border-border bg-muted/40 p-0.5"
               role="list"
               data-testid="gauntlet-hero-stages"
@@ -556,7 +563,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                   {s.label}
                 </span>
               ))}
-            </div>
+            </div>}
           </div>
 
           {/* Attachments rail — read-only chips for the group's

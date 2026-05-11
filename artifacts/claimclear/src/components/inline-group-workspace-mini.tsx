@@ -73,6 +73,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { RefNumber } from "@/components/ref-number";
+import { useIsQueuePreview } from "@/lib/preview-mode";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import {
@@ -640,6 +641,7 @@ function GroupSummaryHeader({
   onSelectLeg: (id: number) => void;
   onOpenChip: (k: ChipKey) => void;
 }) {
+  const queuePreview = useIsQueuePreview();
   return (
     <div className="cc-group-header" data-testid="mini-group-header">
       <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -716,6 +718,14 @@ function GroupSummaryHeader({
                 data-testid={`mini-leg-tab-${leg.id}`}
               >
                 Leg {i + 1} {legStateIcon(leg, resolvedIndex)}
+                {queuePreview && leg.confNumber && (
+                  <span
+                    className="mono text-[10px] opacity-70 ml-1"
+                    data-testid={`mini-leg-tab-conf-${leg.id}`}
+                  >
+                    {leg.confNumber}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1283,6 +1293,7 @@ function ReadyHero({
   rides: ClaimResponse[];
   resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
 }) {
+  const queuePreview = useIsQueuePreview();
   const isDirectEmail = detail.useDirectEmail === true;
   const destinationName = isDirectEmail
     ? (detail.payorEmail ? `Direct email (${detail.payorEmail})` : "Direct email")
@@ -1409,7 +1420,16 @@ function ReadyHero({
               >
                 <div className="flex items-center gap-1.5">
                   <span className="cc-meta text-[10px] font-semibold uppercase tracking-wider">Leg {i + 1}</span>
-                  <span className="mono text-[11px] font-semibold">{leg.confNumber ?? ""}</span>
+                  <span
+                    className={
+                      queuePreview
+                        ? "mono text-[12px] font-bold text-foreground"
+                        : "mono text-[11px] font-semibold"
+                    }
+                    data-testid={`ready-leg-card-conf-${leg.id}`}
+                  >
+                    {leg.confNumber ?? ""}
+                  </span>
                   <span className="cc-meta text-[11px] ml-auto">{formatCurrency(leg.claimAmount)}</span>
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">

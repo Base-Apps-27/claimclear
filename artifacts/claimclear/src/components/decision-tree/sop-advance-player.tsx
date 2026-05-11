@@ -88,6 +88,8 @@ import {
   getGetSopRewindImpactQueryKey,
 } from "@workspace/api-client-react";
 import { invalidateLegCache } from "@/lib/apply-mutation-result";
+import { RefNumber } from "@/components/ref-number";
+import { useIsQueuePreview } from "@/lib/preview-mode";
 import type {
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -1292,9 +1294,45 @@ export function SopAdvancePlayer(props: Props) {
     currentNode.instructionImageUrl ||
     currentNode.instructionLinkUrl;
 
+  // Queue-preview surface only — surface the leg's confirmation
+  // number inline in the player header so operators don't have to
+  // detour to claim/invoice detail just to know which record they're
+  // walking. Distinct from `isPreview` (the player's own sandbox
+  // mode); we read the route-level context to decide whether to show.
+  const queuePreview = useIsQueuePreview();
+  // `leg` is `LegLite` (live → ClaimResponse, preview → synthesized).
+  // Both shapes carry these as optional metadata, but the Lite type
+  // narrows them away. Read once via a single typed view rather than
+  // re-asserting at each call site.
+  const legMeta = leg as { confNumber?: string | null; errorTypeName?: string | null };
+  const headerLegConfNumber: string | null =
+    !isPreview && legMeta.confNumber ? legMeta.confNumber : null;
+  const headerLegErrorType: string | null = legMeta.errorTypeName ?? null;
+
   return (
     <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
       {isPreview && <PreviewModeBadge />}
+      {queuePreview && headerLegConfNumber && (
+        <div
+          className="flex items-center gap-2 text-[11px]"
+          data-testid="sop-player-claim-id-row"
+        >
+          <span className="text-muted-foreground uppercase tracking-wider text-[10px] font-semibold">
+            Claim
+          </span>
+          <RefNumber
+            value={headerLegConfNumber}
+            variant="inline"
+            className="font-semibold"
+          />
+          {headerLegErrorType && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">{headerLegErrorType}</span>
+            </>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Progress value={progress} className="flex-1 h-2" />
         <span className="text-xs text-muted-foreground whitespace-nowrap">
