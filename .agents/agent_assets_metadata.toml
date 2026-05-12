@@ -95,3 +95,9 @@ id = "fM04TwUqfpRV2neGTVufv"
 uri = "file://reports/test-instability-discovery.md"
 type = "text"
 title = "Test Instability Discovery Report"
+
+[[outputs]]
+id = "CdSgIT3TsYkaNmuBA6cGd"
+uri = "file://exports/silent-groups-2026-05-12.csv"
+type = "table"
+title = "Silent groups (Awaiting Response > 7 days, no payor response logged)"

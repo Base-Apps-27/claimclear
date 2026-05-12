@@ -1,0 +1,20 @@
+group_id,invoice_number,payor_email,error_type_name,status,in_state_since,days_silent,last_submitted_at,submitted_count,portal_ticket_id
+2,1854866980,,GPS Pickup Too Far from Residence,Awaiting Response,2026-05-02,9,2026-04-27,2,portal-1777418269408
+5,1859143100,,GPS Pickup Too Far from Residence,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777418252364
+6,1860808110,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777417512401
+11,1863023270,,GPS Pickup Too Far from Residence,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777417614872
+13,1861265860,,GPS Pickup Too Far from Medical Facility,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777418288773
+14,1806301210,,GPS Pickup Too Far from Residence,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777418137897
+19,1811814420,,GPS Pickup Too Far from Residence,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777417729141
+21,1852398750,,Time at Medical Facility Too Short,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777417632794
+33,1861920910,,Ineligible Enrollee,Awaiting Response,2026-05-02,9,2026-04-28,1,85151
+45,1859459440,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777418254962
+46,1863343350,,Ineligible Enrollee,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777418120324
+47,1863328680,,Ineligible Enrollee,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777418154718
+51,1861285490,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-27,1,portal-1777418271791
+57,1818324180,,GPS Pickup Too Far from Medical Facility,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777418139359
+97,1851962660,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777417609771
+115,1854100180,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777417642750
+120,1855534920,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777418155973
+123,1853920310,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777417627006
+138,1854207100,,Incomplete GPS,Awaiting Response,2026-05-02,9,2026-04-28,1,portal-1777417510603
