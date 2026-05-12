@@ -20,6 +20,7 @@
     "backfill:mas-bulk-combined-reconcile-pull2": "tsx ./src/migrations/2026-05-mas-bulk-combined-reconcile-pull2-backfill.ts",
     "backfill:typed-claims-date": "tsx ./src/migrations/2026-05-typed-claims-date-backfill.ts",
     "backfill:invoice-group-service-date": "tsx ./src/migrations/2026-05-invoice-group-service-date-backfill.ts",
+    "backfill:pre-submit-all-non-issue-close": "tsx ./src/migrations/2026-05-pre-submit-all-non-issue-close-backfill.ts",
     "check:vocab-drift": "tsx ./src/check-vocab-drift.ts",
     "check:invoice-state-derivation": "tsx ./src/check-invoice-state-derivation.ts"
   },

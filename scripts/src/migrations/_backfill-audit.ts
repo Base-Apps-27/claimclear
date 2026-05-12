@@ -150,6 +150,21 @@ export const BACKFILL_IDS = {
   // chosen target so the heal is fully traceable.
   healStuckNeedsReviewInbox: "2026-05-heal-stuck-needs-review-inbox",
 
+  // Task #714 retro: close pre-existing pre-submit invoice groups whose
+  // disputed legs ALL already sit at sop_outcome='non_issue'. The
+  // forward-going auto-close cascade only fires when a writer lands a
+  // leg at non_issue, so groups that crossed the threshold before the
+  // cascade shipped (or via paths that don't invoke it) stay stuck at
+  // (status varies, outcome=Pending). This backfill walks every
+  // pre-submit group, applies the same rollup predicate
+  // `autoCloseGroupIfAllNonIssue` uses (disputed legs only, with the
+  // included_in_dispute / sop_outcome filter), and routes qualifying
+  // groups through `transitionGroupStatusAndOutcome` to land at
+  // (Resolved, No Action Needed, closure_reason='non_issue'). Writes
+  // a per-group `group_auto_close_backfilled` audit row carrying the
+  // backfillId, prior status/outcome, and rollup-leg fingerprint.
+  preSubmitAllNonIssueClose: "2026-05-pre-submit-all-non-issue-close",
+
   // Task #350: populate the new `invoice_groups.service_date` column
   // (added by drizzle migration 0020 / lib migration 0022) by running
   // the canonical `recomputeGroupServiceDate` helper across every
