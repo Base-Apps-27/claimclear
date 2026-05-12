@@ -121,7 +121,7 @@ async function main() {
       const updateRes = await client.query(
         `UPDATE claims
             SET status            = 'Resolved'::claim_status,
-                attestation_state = 'completed'::attestation_state,
+                attestation_state = 'completed',
                 attested_at       = $2,
                 attested_by       = $3
           WHERE id = $1
