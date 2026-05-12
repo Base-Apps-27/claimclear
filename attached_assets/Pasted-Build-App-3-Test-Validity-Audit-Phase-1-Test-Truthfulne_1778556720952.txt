@@ -1,0 +1,284 @@
+Build App #3 Test Validity Audit Phase 1: Test Truthfulness and Coverage Review.
+
+Do not fix product code yet.
+Do not mass-update assertions.
+Do not delete tests yet.
+Do not rewrite the whole suite.
+Do not add new features.
+Do not quarantine tests casually.
+
+Purpose:
+The platform has changed substantially in a short period of time, including schema and behavioral changes. Existing tests may no longer reflect the current product contract. We need to determine whether the tests themselves are valid, outdated, over-specified, duplicative, or missing coverage.
+
+This is a test-quality audit, not a stability harness.
+
+Inputs:
+Use the Phase 1 stability harness outputs:
+- artifacts/test-stability/api-server-suspects/report.md
+- artifacts/test-stability/api-server-shuffle/report.md
+- artifacts/test-stability/api-server-serial/report.md
+- artifacts/test-stability/api-server-shuffle/summary.json
+- artifacts/test-stability/api-server-suspects/summary.json
+- artifacts/test-stability/api-server-serial/summary.json
+
+Also inspect:
+- current database schema in lib/db
+- current API routes in artifacts/api-server/src
+- current business logic/services
+- current package scripts
+- current docs/specs if available
+- all failing tests surfaced by the harness
+- representative passing tests in the same areas
+
+Goal:
+Produce a Test Validity Audit Report that answers:
+
+1. Which tests are still valid?
+2. Which tests are outdated?
+3. Which failures indicate real product regressions?
+4. Which failures indicate fixture/schema drift?
+5. Which tests are brittle because they assert implementation details?
+6. Which tests pass but prove little?
+7. Which current platform behaviors have no test coverage?
+
+Output only a report first.
+Do not fix tests yet unless explicitly asked later.
+
+Definitions:
+
+Valid test:
+- asserts a current business rule, API contract, safety rule, permission rule, or data invariant.
+
+Outdated test:
+- asserts behavior that is no longer part of the current product contract.
+
+Schema-drift test:
+- fails because fixtures or expectations were not updated after schema/model changes.
+
+Implementation-detail test:
+- asserts internal function shape, exact text, row ordering, private field names, or incidental behavior instead of user/business outcome.
+
+Weak test:
+- passes without meaningful assertions, only checks non-null, only checks status 200, snapshots huge objects, or mirrors implementation.
+
+Duplicate test:
+- same behavior covered elsewhere with equal or better fidelity.
+
+Missing coverage:
+- current important behavior has no clear test.
+
+Required process:
+
+1. Build current contract map
+
+Create a map of current system contracts from source/docs.
+
+Include:
+- API routes and expected status/permissions
+- database schema tables and important invariants
+- service-level business rules
+- auth/permission rules
+- mutation rules
+- audit/logging rules
+- current workflow/state-machine rules
+- error handling rules
+
+Output:
+docs/test-validity/current-contract-map.md
+
+2. Analyze failing tests first
+
+For each failing file from the stability harness:
+- attestation-gate-restore-backfill.test.ts
+- attestation.test.ts
+- closure-data-foundation.test.ts
+- email-thread-conversation.test.ts
+- list-count-past-deadline-parity.test.ts
+- must-file-today-parity.test.ts
+- payor-denial-reason-endpoints.test.ts
+- transition-helper-newstatus-contract.test.ts
+- shared-batch-view.test.ts
+
+For each:
+- run or inspect the failing assertion
+- identify the exact expected behavior
+- identify the current actual behavior
+- find the current source/schema route/service that defines the behavior
+- classify the failure:
+  - valid_product_regression
+  - outdated_test
+  - schema_fixture_drift
+  - implementation_detail_brittleness
+  - test_setup_defect
+  - order_dependency
+  - unknown_requires_human_decision
+- explain why
+- recommend action:
+  - fix product
+  - update test
+  - update fixture
+  - rewrite test to business outcome
+  - delete duplicate
+  - keep and fix setup
+  - needs product owner decision
+
+Create table:
+| Test File | Test Name | Expected | Actual | Current Contract Source | Classification | Recommendation | Confidence |
+
+3. Audit representative passing tests
+
+Select at least 30 passing tests across:
+- auth/security
+- claim lifecycle
+- invoice groups
+- attestations
+- email/threading
+- payor denial reasons
+- portal submissions
+- batch views
+- transition helpers
+- API endpoints
+- DB/schema invariants
+
+For each, classify:
+- valid
+- weak
+- over-specified
+- duplicate
+- outdated-but-passing
+- missing stronger assertion
+
+Create table:
+| Test File | Test Name | What It Proves | Classification | Problem If Any | Recommendation |
+
+4. Schema drift review
+
+Compare tests against current schema.
+
+Identify:
+- tests expecting removed columns
+- tests missing required new columns
+- tests using stale enum/status values
+- tests using old relationships
+- tests using old fixture shapes
+- tests relying on implicit defaults that changed
+- tests asserting old status transitions
+
+Create table:
+| Area | Test/File | Stale Assumption | Current Schema/Logic | Risk | Recommendation |
+
+5. Business-rule drift review
+
+Identify tests that assert old business rules.
+
+Focus on:
+- claim statuses
+- attestation behavior
+- closure behavior
+- transition helper logic
+- payor denial reason behavior
+- invoice group behavior
+- email/thread grouping
+- batch view behavior
+- audit behavior
+
+Create table:
+| Rule Area | Old Assumption in Tests | Current Rule Found in Source/Docs | Classification | Needs Human Decision? |
+
+6. Coverage gap review
+
+Identify important current behaviors with weak/no coverage.
+
+Look for:
+- routes without tests
+- mutations without audit tests
+- permission branches without denial tests
+- schema constraints without tests
+- error branches without tests
+- state transitions without tests
+- concurrency/idempotency rules without tests
+- external integration failure paths without tests
+
+Create table:
+| Area | Missing Coverage | Why It Matters | Suggested Test Type | Priority |
+
+7. Test smell inventory
+
+Search for:
+- tests with no meaningful assertions
+- snapshot-heavy tests
+- exact text assertions where behavior matters more than wording
+- tests asserting private/internal implementation
+- repeated setup copied across files
+- tests relying on global seed data
+- tests relying on wall-clock time
+- tests relying on row order without explicit order
+- tests using hardcoded IDs/emails
+- tests depending on process.env at module load
+
+Create table:
+| Smell | Files | Risk | Suggested Refactor |
+
+8. Validity scoring
+
+Assign each reviewed test/area a score:
+
+5 = strong current contract test  
+4 = valid but could be clearer  
+3 = useful but brittle  
+2 = outdated/weak, needs rewrite  
+1 = misleading or harmful  
+
+For failing tests, include score.
+For sampled passing tests, include score.
+For unreviewed areas, estimate area-level confidence.
+
+9. Final report
+
+Create:
+docs/test-validity-audit-phase1.md
+
+Include:
+
+# Executive Summary
+- percent of failing tests likely valid
+- percent likely outdated/schema drift
+- highest-risk test areas
+- biggest coverage gaps
+- whether current suite can be trusted
+- whether product fixes or test rewrites should happen first
+
+# Failing Test Classification
+(table)
+
+# Passing Test Sample Review
+(table)
+
+# Schema Drift Findings
+
+# Business Rule Drift Findings
+
+# Coverage Gaps
+
+# Test Smells
+
+# Validity Scores
+
+# Recommended Next Phase
+
+Recommended next phase must choose one:
+- fix valid product regressions
+- update outdated/schema-drift tests
+- build missing coverage
+- rewrite brittle tests
+- establish product contract docs
+- or human product decision needed
+
+Rules:
+- Do not hide uncertainty.
+- If the current product contract is unclear, mark "needs human decision."
+- If a test is outdated, do not call it a product bug.
+- If a test failure indicates product regression, say so clearly.
+- If a passing test proves nothing, say so.
+- If source and docs disagree, call it out.
+- Do not fix anything yet.
