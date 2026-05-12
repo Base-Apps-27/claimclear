@@ -89,3 +89,9 @@ id = "TKaw3HhaCIn-YrKa19649"
 uri = "file://artifacts/claimclear/test-results/queue-walk-scenarios-queue-ca212-th-·-2-viable-legs-→-portal-chromium/test-failed-1.png"
 type = "image"
 title = "happy-path failure screenshot"
+
+[[outputs]]
+id = "fM04TwUqfpRV2neGTVufv"
+uri = "file://reports/test-instability-discovery.md"
+type = "text"
+title = "Test Instability Discovery Report"
