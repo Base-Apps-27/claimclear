@@ -68,6 +68,19 @@ export interface ThreadMessage {
   // hopping back to Outlook. Null on inbound (we don't track payer
   // attachments today) and on outbound rows sent before this column existed.
   attachmentNames: string[] | null;
+
+  // Outbound-only: structured per-attachment metadata persisted on the
+  // outbound row's `metadata.attachments` jsonb bag. Lets the thread bubble
+  // render chips that link back to object storage for download. Null on
+  // inbound rows and on legacy outbound rows that pre-date Task #713.
+  attachments: ThreadAttachment[] | null;
+}
+
+export interface ThreadAttachment {
+  name: string;
+  size: number | null;
+  contentType: string;
+  downloadUrl: string;
 }
 
 export interface ThreadConversation {
@@ -143,6 +156,7 @@ export function inboundToMessage(
     siblingClaimRef: siblingRef,
     siblingClaimId: isSibling ? r.claimId : null,
     attachmentNames: null,
+    attachments: null,
   };
 }
 
@@ -183,7 +197,37 @@ export function outboundToMessage(
     attachmentNames: Array.isArray(o.attachmentNames) && o.attachmentNames.length > 0
       ? o.attachmentNames
       : null,
+    attachments: extractAttachments(o.metadata),
   };
+}
+
+/**
+ * Pull the structured attachments array out of the outbound row's
+ * `metadata` jsonb bag. Task #713 stores `{ name, size, contentType,
+ * storageKey }` per file; we map `storageKey` → server download URL so
+ * the thread bubble can render chips that link back to object storage.
+ * Tolerant of legacy rows (returns null) and of partially-shaped
+ * entries (only `name` + `storageKey` are required to render a chip).
+ */
+function extractAttachments(metadata: unknown): ThreadAttachment[] | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const bag = (metadata as { attachments?: unknown }).attachments;
+  if (!Array.isArray(bag) || bag.length === 0) return null;
+  const out: ThreadAttachment[] = [];
+  for (const raw of bag) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const name = typeof r.name === "string" ? r.name : null;
+    const storageKey = typeof r.storageKey === "string" ? r.storageKey : null;
+    if (!name || !storageKey) continue;
+    const size = typeof r.size === "number" && Number.isFinite(r.size) ? r.size : null;
+    const contentType = typeof r.contentType === "string" ? r.contentType : "application/octet-stream";
+    const downloadUrl = storageKey.startsWith("/objects/")
+      ? `/api/storage/objects/${storageKey.slice("/objects/".length)}`
+      : storageKey;
+    out.push({ name, size, contentType, downloadUrl });
+  }
+  return out.length > 0 ? out : null;
 }
 
 function toIso(v: Date | string | null | undefined): string {

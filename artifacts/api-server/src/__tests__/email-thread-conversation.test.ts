@@ -649,6 +649,7 @@ function makeMsg(id: string, overrides: Partial<ThreadMessage> = {}): ThreadMess
     siblingClaimRef: null,
     siblingClaimId: null,
     attachmentNames: null,
+    attachments: null,
     ...overrides,
   };
 }

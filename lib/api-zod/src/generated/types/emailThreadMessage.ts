@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { EmailThreadMessageAttachmentsItem } from "./emailThreadMessageAttachmentsItem";
 import type { EmailThreadMessageBodyFormat } from "./emailThreadMessageBodyFormat";
 import type { EmailThreadMessageDirection } from "./emailThreadMessageDirection";
 import type { EmailThreadMessageResponseType } from "./emailThreadMessageResponseType";
@@ -53,4 +54,13 @@ bar.png" line. Null on inbound messages and on outbound rows sent
 before attachment names were tracked.
  */
   attachmentNames?: string[] | null;
+  /** Outbound only. Structured attachment metadata (name, size,
+contentType, downloadUrl) for each file shipped with this reply.
+The download URL points back to object storage so staff can
+retrieve the original file from the thread bubble. Null on
+inbound rows and on legacy outbound rows that pre-date
+structured attachment tracking — those still expose
+`attachmentNames` for the chip label.
+ */
+  attachments?: EmailThreadMessageAttachmentsItem[] | null;
 }

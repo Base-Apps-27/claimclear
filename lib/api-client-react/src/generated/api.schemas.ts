@@ -4239,6 +4239,14 @@ export const EmailThreadMessageResponseType = {
   other: "other",
 } as const;
 
+export type EmailThreadMessageAttachmentsItem = {
+  name: string;
+  size?: number | null;
+  contentType: string;
+  /** Server-side URL that streams the original file from object storage. */
+  downloadUrl: string;
+};
+
 export interface EmailThreadMessage {
   id: string;
   direction: EmailThreadMessageDirection;
@@ -4277,6 +4285,15 @@ bar.png" line. Null on inbound messages and on outbound rows sent
 before attachment names were tracked.
  */
   attachmentNames?: string[] | null;
+  /** Outbound only. Structured attachment metadata (name, size,
+contentType, downloadUrl) for each file shipped with this reply.
+The download URL points back to object storage so staff can
+retrieve the original file from the thread bubble. Null on
+inbound rows and on legacy outbound rows that pre-date
+structured attachment tracking — those still expose
+`attachmentNames` for the chip label.
+ */
+  attachments?: EmailThreadMessageAttachmentsItem[] | null;
 }
 
 /**
@@ -5110,12 +5127,31 @@ export type GetInvoiceGroupEmailThread404 = {
   error?: string;
 };
 
+export type ReplyToInvoiceGroupEmailConversationBodyAttachmentsItem = {
+  /** Opaque id returned by `PUT /storage/reply-attachments/stage`. */
+  stagedId: string;
+};
+
 export type ReplyToInvoiceGroupEmailConversationBody = {
   subject: string;
   /** Plain-text body. Sent as text/plain to Graph; line breaks preserved. */
   bodyText: string;
   to: string[];
   cc?: string[];
+  /** Optional list of files previously staged via
+`PUT /storage/reply-attachments/stage`. The server looks
+each `stagedId` up in `reply_attachment_staging`,
+requires the row to belong to the sending user, enforces
+the reply-attachment caps (max 5 images, 10 attachments
+total, 25 MB combined) using the **server-recorded**
+MIME / size (not anything the client claims), downloads
+each blob from object storage, and POSTs them to the
+Outlook draft as real MIME attachments before sending.
+On a successful send the staging rows are stamped
+`consumed_at` so the 24h janitor leaves them in place
+for the audit trail.
+ */
+  attachments?: ReplyToInvoiceGroupEmailConversationBodyAttachmentsItem[];
 };
 
 export type ReplyToInvoiceGroupEmailConversation400 = {
@@ -5478,6 +5514,18 @@ export type GetDashboardRepeatOffendersParams = {
    * @maximum 50
    */
   limit?: number;
+};
+
+export type StageReplyAttachment200 = {
+  /** Opaque id to send back on the reply payload's `attachments[].stagedId`. */
+  stagedId: string;
+  name: string;
+  contentType: string;
+  size: number;
+};
+
+export type DeleteReplyAttachmentStage200 = {
+  ok?: boolean;
 };
 
 export type ListEvidenceTypes200 = {

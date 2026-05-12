@@ -83,6 +83,17 @@ function mapMessage(
     bodyPreview: m.bodyPreview ?? "",
     timestamp: m.timestamp,
     attachments: m.attachmentNames ?? [],
+    // Task #713 — structured chips with download URLs from object storage.
+    // Falls back to `attachmentNames` (legacy rows) so older outbound rows
+    // still render a label even though there's no link to click.
+    attachmentLinks: Array.isArray(m.attachments) && m.attachments.length > 0
+      ? m.attachments.map((a) => ({
+          name: a.name,
+          size: typeof a.size === "number" ? a.size : null,
+          contentType: a.contentType,
+          downloadUrl: a.downloadUrl,
+        }))
+      : null,
     mentionedLegIds: mentions,
     // Inbound messages that haven't been processed yet are "unread" from
     // the operator's perspective. Outbound rows aren't unread.

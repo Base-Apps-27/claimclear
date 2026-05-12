@@ -1292,6 +1292,8 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                         bodyText: htmlBodyToPlainText(input.bodyHtml),
                         to: input.to,
                         cc: input.cc.length > 0 ? input.cc : undefined,
+                        attachments:
+                          input.attachments.length > 0 ? input.attachments : undefined,
                       },
                     });
                     successToast({

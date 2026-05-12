@@ -3,6 +3,7 @@
 import { markServerStarted } from "./lib/startup-guard";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startReplyAttachmentStagingJanitor } from "./lib/reply-attachments";
 import cron from "node-cron";
 import { triggerWorkerRun, jobToCronOutcome, clearOrphanedBatchClaims, markOrphanedRunningBatchesAsFailed } from "./lib/batch-processor";
 import { db } from "@workspace/db";
@@ -216,6 +217,10 @@ app.listen(port, (err) => {
 
   markServerStarted();
   logger.info({ port }, "Server listening");
+
+  // Task #713 — sweep stale staged reply attachments hourly so unsent
+  // picks dropped by the composer don't sit in object storage forever.
+  startReplyAttachmentStagingJanitor(logger);
 
   // Boot cleanup: any rows still flagged as Queued by an in-memory batch from
   // a prior process are orphaned (the batch state was lost on restart). Clear

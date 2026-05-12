@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ReplyToInvoiceGroupEmailConversationBodyAttachmentsItem } from "./replyToInvoiceGroupEmailConversationBodyAttachmentsItem";
 
 export type ReplyToInvoiceGroupEmailConversationBody = {
   subject: string;
@@ -18,4 +19,18 @@ export type ReplyToInvoiceGroupEmailConversationBody = {
   bodyText: string;
   to: string[];
   cc?: string[];
+  /** Optional list of files previously staged via
+`PUT /storage/reply-attachments/stage`. The server looks
+each `stagedId` up in `reply_attachment_staging`,
+requires the row to belong to the sending user, enforces
+the reply-attachment caps (max 5 images, 10 attachments
+total, 25 MB combined) using the **server-recorded**
+MIME / size (not anything the client claims), downloads
+each blob from object storage, and POSTs them to the
+Outlook draft as real MIME attachments before sending.
+On a successful send the staging rows are stamped
+`consumed_at` so the 24h janitor leaves them in place
+for the audit trail.
+ */
+  attachments?: ReplyToInvoiceGroupEmailConversationBodyAttachmentsItem[];
 };

@@ -1639,8 +1639,13 @@ paths:
         via Microsoft Graph, persists an outbound_emails row tagged with this
         invoice group's id, and writes an `email_reply_sent` audit row on the
         group. Authorization: the conversation must include at least one row
-        attached to the group itself or to one of its child claims. Evidence
-        attachments are not supported on the group-level reply yet.
+        attached to the group itself or to one of its child claims. Optional
+        `attachments` carry files staged via
+        `PUT /storage/reply-attachments/stage`; the server resolves each
+        `stagedId` to its server-recorded MIME / size, enforces the
+        centralized reply-attachment limits (max 5 images, 10 attachments
+        total, 25 MB combined), confirms the staging row belongs to the
+        sending user, and only then forwards the bytes to Outlook.
       parameters:
         - name: id
           in: path
@@ -1673,6 +1678,28 @@ paths:
                   type: array
                   items:
                     type: string
+                attachments:
+                  type: array
+                  description: |
+                    Optional list of files previously staged via
+                    `PUT /storage/reply-attachments/stage`. The server looks
+                    each `stagedId` up in `reply_attachment_staging`,
+                    requires the row to belong to the sending user, enforces
+                    the reply-attachment caps (max 5 images, 10 attachments
+                    total, 25 MB combined) using the **server-recorded**
+                    MIME / size (not anything the client claims), downloads
+                    each blob from object storage, and POSTs them to the
+                    Outlook draft as real MIME attachments before sending.
+                    On a successful send the staging rows are stamped
+                    `consumed_at` so the 24h janitor leaves them in place
+                    for the audit trail.
+                  items:
+                    type: object
+                    required: [stagedId]
+                    properties:
+                      stagedId:
+                        type: string
+                        description: Opaque id returned by `PUT /storage/reply-attachments/stage`.
       responses:
         '200':
           description: Reply sent — returns the persisted outbound row so the UI can optimistically render it.
@@ -4324,6 +4351,92 @@ paths:
           description: File exceeds maximum allowed size.
         '415':
           description: Unsupported media type.
+
+  /storage/reply-attachments/stage:
+    put:
+      tags: [Storage]
+      operationId: stageReplyAttachment
+      summary: Stage a file for an outbound email reply
+      description: >
+        Task #713 — staged-upload endpoint for the reply composer. Streams
+        the file bytes to object storage AND records a
+        `reply_attachment_staging` row pinned to the calling user.
+        Returns an opaque `stagedId` that the composer hands back on the
+        reply request — clients never get to choose the storage key or
+        claim a different MIME / size than what the server recorded here.
+        Stricter MIME allowlist than `/storage/uploads`: only PNG, JPG,
+        GIF, WebP, and PDF are accepted.
+      parameters:
+        - name: x-upload-name
+          in: header
+          required: false
+          schema: { type: string }
+          description: Original filename (informational; clamped to 255 chars).
+        - name: Content-Length
+          in: header
+          required: false
+          schema: { type: integer }
+          description: Declared file size; rejected immediately if it exceeds the 25 MB reply cap.
+      requestBody:
+        required: true
+        content:
+          image/png: {}
+          image/jpeg: {}
+          image/gif: {}
+          image/webp: {}
+          application/pdf: {}
+      responses:
+        '200':
+          description: File staged successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stagedId, name, contentType, size]
+                properties:
+                  stagedId:
+                    type: string
+                    description: Opaque id to send back on the reply payload's `attachments[].stagedId`.
+                  name:
+                    type: string
+                  contentType:
+                    type: string
+                  size:
+                    type: integer
+        '413':
+          description: File exceeds maximum allowed size.
+        '415':
+          description: Unsupported media type for a reply attachment.
+
+  /storage/reply-attachments/stage/{stagedId}:
+    delete:
+      tags: [Storage]
+      operationId: deleteReplyAttachmentStage
+      summary: Drop a staged reply attachment
+      description: >
+        Best-effort: lets the composer drop a staged file when the operator
+        removes the chip before sending. Only the user that staged the
+        upload may delete it. Idempotent — already-purged ids return
+        `{ ok: true }`.
+      parameters:
+        - name: stagedId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Staged upload deleted (or never existed).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '403':
+          description: Staged upload belongs to a different user.
+        '409':
+          description: Staged upload was already attached to a sent reply.
 
   /evidence-types:
     get:
@@ -10295,6 +10408,31 @@ components:
             order, so the thread bubble can render an "Attached: foo.pdf,
             bar.png" line. Null on inbound messages and on outbound rows sent
             before attachment names were tracked.
+        attachments:
+          type: array
+          nullable: true
+          description: |
+            Outbound only. Structured attachment metadata (name, size,
+            contentType, downloadUrl) for each file shipped with this reply.
+            The download URL points back to object storage so staff can
+            retrieve the original file from the thread bubble. Null on
+            inbound rows and on legacy outbound rows that pre-date
+            structured attachment tracking — those still expose
+            `attachmentNames` for the chip label.
+          items:
+            type: object
+            required: [name, contentType, downloadUrl]
+            properties:
+              name:
+                type: string
+              size:
+                type: integer
+                nullable: true
+              contentType:
+                type: string
+              downloadUrl:
+                type: string
+                description: Server-side URL that streams the original file from object storage.
 
     EmailThreadConversation:
       type: object

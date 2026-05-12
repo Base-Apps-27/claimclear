@@ -1,11 +1,17 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
+import { randomUUID } from "crypto";
+import { eq, and } from "drizzle-orm";
 import {
   MAX_UPLOAD_SIZE_BYTES,
   ALLOWED_UPLOAD_CONTENT_TYPES_SET,
+  REPLY_ATTACHMENT_ALLOWED_MIME_SET,
+  REPLY_ATTACHMENT_TOTAL_BYTES,
 } from "@workspace/api-zod";
+import { db, replyAttachmentStagingTable } from "@workspace/db";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const SAFE_SERVE_CONTENT_TYPES = new Set([
   "image/png",
@@ -158,5 +164,185 @@ export async function serveObjectEntity(req: Request, res: Response): Promise<vo
 }
 
 router.get("/storage/objects/*path", serveObjectEntity);
+
+/**
+ * PUT /storage/reply-attachments/stage
+ *
+ * Task #713 — staged-upload endpoint for the reply composer.
+ *
+ * Streams the file bytes into object storage AND records a
+ * `reply_attachment_staging` row pinned to the calling user. Returns an
+ * opaque `stagedId` the composer hands back on the reply request. The
+ * server then resolves that id to the authoritative storage key and
+ * server-recorded MIME / size — clients never get to choose which object
+ * gets attached or what we say its content type is.
+ *
+ * Differs from `PUT /storage/uploads` (the SOP-evidence path) in two
+ * important ways:
+ *   1. Tighter MIME allowlist — only the reply-attachment subset
+ *      (PNG/JPG/GIF/WebP + PDF), not arbitrary office docs.
+ *   2. Returns a `stagedId` token instead of the raw `objectPath`, so
+ *      the reply-attachment trust boundary lives entirely server-side.
+ *
+ * Required headers:
+ *   Content-Type: must be one of REPLY_ATTACHMENT_ALLOWED_MIME
+ *   x-upload-name: original filename (informational; clamped to 255 chars)
+ */
+router.put(
+  "/storage/reply-attachments/stage",
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const rawContentType = (req.headers["content-type"] || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(rawContentType)) {
+      res.status(415).json({
+        error:
+          "Unsupported media type. Reply attachments must be PNG, JPG, GIF, WebP, or PDF.",
+      });
+      return;
+    }
+
+    const declaredLength = parseInt(
+      req.headers["content-length"] || "0",
+      10,
+    );
+    if (
+      !Number.isNaN(declaredLength) &&
+      declaredLength > REPLY_ATTACHMENT_TOTAL_BYTES
+    ) {
+      res.status(413).json({
+        error: `File size exceeds maximum allowed size of ${REPLY_ATTACHMENT_TOTAL_BYTES} bytes`,
+      });
+      return;
+    }
+
+    const fileName = String(req.headers["x-upload-name"] || "upload").slice(0, 255);
+
+    let storageKey: string;
+    try {
+      storageKey = await objectStorageService.uploadStream(
+        req,
+        rawContentType,
+        REPLY_ATTACHMENT_TOTAL_BYTES,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("exceeds maximum allowed size")) {
+        res.status(413).json({ error: msg });
+        return;
+      }
+      req.log.error({ err: error }, "Failed to stage reply attachment");
+      res.status(500).json({ error: "Failed to upload file" });
+      return;
+    }
+
+    // Re-stat the just-written object so the size we record matches what
+    // ended up on disk (uploadStream's byte-guard caps but doesn't return
+    // the final size).
+    let actualSize = 0;
+    try {
+      const file = await objectStorageService.getObjectEntityFile(storageKey);
+      const [meta] = await file.getMetadata();
+      actualSize =
+        typeof meta.size === "number" ? meta.size : Number(meta.size ?? 0);
+    } catch (err) {
+      req.log.error({ err, storageKey }, "Could not re-stat staged upload");
+      await objectStorageService.tryDeleteObjectEntity(storageKey);
+      res.status(500).json({ error: "Failed to record upload" });
+      return;
+    }
+
+    const stagedId = randomUUID();
+    try {
+      await db.insert(replyAttachmentStagingTable).values({
+        id: stagedId,
+        userEmail: req.user?.email ?? null,
+        storageKey,
+        fileName,
+        contentType: rawContentType,
+        sizeBytes: actualSize,
+      });
+    } catch (err) {
+      req.log.error({ err, storageKey }, "Failed to insert staging row");
+      await objectStorageService.tryDeleteObjectEntity(storageKey);
+      res.status(500).json({ error: "Failed to record upload" });
+      return;
+    }
+
+    res.json({
+      stagedId,
+      name: fileName,
+      contentType: rawContentType,
+      size: actualSize,
+    });
+  }),
+);
+
+/**
+ * DELETE /storage/reply-attachments/stage/:stagedId
+ *
+ * Best-effort: lets the composer drop a staged file when the operator
+ * removes the chip before sending. Only the user that staged the file may
+ * delete it. Idempotent — already-purged ids return 200 so the UI doesn't
+ * have to track double-clicks. Errors are logged but the response stays
+ * successful so the composer can clear its chip regardless.
+ */
+router.delete(
+  "/storage/reply-attachments/stage/:stagedId",
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const stagedId = String(req.params.stagedId || "").trim();
+    if (!stagedId) {
+      res.status(400).json({ error: "stagedId is required" });
+      return;
+    }
+    const userEmail = req.user?.email ?? null;
+
+    const [row] = await db
+      .select()
+      .from(replyAttachmentStagingTable)
+      .where(eq(replyAttachmentStagingTable.id, stagedId))
+      .limit(1);
+
+    if (!row) {
+      res.json({ ok: true });
+      return;
+    }
+    if (row.consumedAt) {
+      // Already attached to a sent reply — refuse to delete the underlying
+      // blob (the audit trail still references it).
+      res.status(409).json({ error: "Attachment already sent" });
+      return;
+    }
+    // Strict equality: a row owned by user A cannot be deleted by user B,
+    // and a logged-in user cannot reach in to delete an anonymous row
+    // (or vice versa). Mirrors the send-path ownership check in
+    // `resolveReplyAttachments`.
+    if (row.userEmail !== userEmail) {
+      res.status(403).json({ error: "Not your attachment" });
+      return;
+    }
+
+    try {
+      await objectStorageService.tryDeleteObjectEntity(row.storageKey);
+    } catch (err) {
+      req.log.warn({ err, stagedId }, "Best-effort delete of staged blob failed");
+    }
+    await db
+      .delete(replyAttachmentStagingTable)
+      .where(
+        and(
+          eq(replyAttachmentStagingTable.id, stagedId),
+          // Defensive — extra guard so a stale row created mid-flight by
+          // a different user can't be deleted via this handler.
+          row.userEmail
+            ? eq(replyAttachmentStagingTable.userEmail, row.userEmail)
+            : undefined,
+        ),
+      );
+
+    res.json({ ok: true });
+  }),
+);
 
 export default router;

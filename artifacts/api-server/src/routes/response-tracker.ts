@@ -1,6 +1,11 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, or, inArray } from "drizzle-orm";
-import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
+import {
+  EMAIL_MESSAGE_MAX_BYTES,
+  MAX_REPLY_ATTACHMENT_FILES,
+  REPLY_ATTACHMENT_ALLOWED_MIME_SET,
+  REPLY_ATTACHMENT_TOTAL_BYTES,
+} from "@workspace/api-zod";
 import {
   CONFIRMED_VERDICT_DISPOSITIONS,
   isPhaseAtLeast,
@@ -13,6 +18,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
 import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
+import { resolveReplyAttachments, markStagedAttachmentsConsumed } from "../lib/reply-attachments";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor, MATCHER_CLASSIFIED_TARGET_STATUS } from "../lib/response-matcher";
 import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
@@ -935,6 +941,7 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     siblingClaimRef: null,
     siblingClaimId: null,
     attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
+    attachments: null,
   };
 
   res.json(message);
@@ -1074,7 +1081,7 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
   const conversationId = String(req.params.conversationId || "").trim();
   if (!conversationId) { res.status(400).json({ error: "Missing conversationId" }); return; }
 
-  const { subject, bodyText, to, cc } = req.body ?? {};
+  const { subject, bodyText, to, cc, attachments: rawAttachments } = req.body ?? {};
   if (typeof subject !== "string" || subject.trim().length === 0) {
     res.status(400).json({ error: "subject is required" });
     return;
@@ -1096,6 +1103,25 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
 
   const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
   if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  // Validate + download any staged attachments (Task #713). Bad input → 400;
+  // storage / download failure → 502 so the composer can keep the draft and
+  // chips intact while the operator retries.
+  const attachmentsResult = await resolveReplyAttachments(
+    rawAttachments,
+    req.user?.email ?? null,
+    `group-${group.invoiceNumber || group.id}`,
+  );
+  if (!attachmentsResult.ok) {
+    res.status(attachmentsResult.status).json({ error: attachmentsResult.error });
+    return;
+  }
+  const {
+    forGraph: attachmentsForGraph,
+    names: attachmentNamesForRow,
+    metadata: attachmentMetadata,
+    stagedIds: attachmentStagedIds,
+  } = attachmentsResult.value;
 
   // Authorize: the conversation must include at least one row pinned to
   // this group OR to one of its child claims. Sibling-claim rows alone
@@ -1157,6 +1183,7 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
       bodyText,
       to: toList,
       cc: ccList.length > 0 ? ccList : undefined,
+      attachments: attachmentsForGraph.length > 0 ? attachmentsForGraph : undefined,
     });
   } catch (err) {
     logger.error({ err, groupId, conversationId }, "Failed to send group reply via Outlook");
@@ -1180,16 +1207,25 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
     subject,
     recipients: [...toList, ...ccList],
     bodyPreview,
-    attachmentNames: null,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
+    metadata: attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : null,
     sentByUserEmail: req.user?.email ?? null,
     sentByUserName: req.user?.displayName ?? null,
   }).returning();
+
+  // Stamp the staging rows so the 24h janitor leaves them alone — they're
+  // now part of the audit trail referenced by `metadata.attachments`.
+  await markStagedAttachmentsConsumed(attachmentStagedIds);
+
+  const attachmentDetailsSuffix = attachmentNamesForRow.length > 0
+    ? ` with ${attachmentNamesForRow.length} attachment${attachmentNamesForRow.length === 1 ? "" : "s"} (${attachmentNamesForRow.join(", ")})`
+    : "";
 
   await db.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
     claimId: persistClaimId,
     action: "email_reply_sent",
-    details: `Reply sent to ${toList.join(", ")}: "${subject}"`,
+    details: `Reply sent to ${toList.join(", ")}: "${subject}"${attachmentDetailsSuffix}`,
     metadata: {
       outboundEmailId: persisted.id,
       conversationId: persistConversationId,
@@ -1198,6 +1234,8 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
       cc: ccList,
       subject,
       scope: "invoice_group",
+      attachmentNames: attachmentNamesForRow,
+      attachments: attachmentMetadata,
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? "User",
@@ -1228,7 +1266,17 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
     claimId: persistClaimId,
     siblingClaimRef: null,
     siblingClaimId: null,
-    attachmentNames: null,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
+    attachments: attachmentMetadata.length > 0
+      ? attachmentMetadata.map((a) => ({
+          name: a.name,
+          size: a.size,
+          contentType: a.contentType,
+          downloadUrl: a.storageKey.startsWith("/objects/")
+            ? `/api/storage/objects/${a.storageKey.slice("/objects/".length)}`
+            : a.storageKey,
+        }))
+      : null,
   };
 
   res.json(message);

@@ -16,6 +16,7 @@ export * from "./messages";
 export * from "./app-settings";
 export * from "./portal-responses";
 export * from "./outbound-emails";
+export * from "./reply-attachment-staging";
 export * from "./system-health";
 export * from "./notification-preferences";
 export * from "./portal-batch-runs";

@@ -1,7 +1,14 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
 import { useUpgradeReplyDraft } from "@workspace/api-client-react";
+import {
+  MAX_REPLY_ATTACHMENT_FILES,
+  MAX_REPLY_ATTACHMENT_IMAGES,
+  REPLY_ATTACHMENT_ALLOWED_MIME_SET,
+  REPLY_ATTACHMENT_IMAGE_MIME_SET,
+  REPLY_ATTACHMENT_TOTAL_BYTES,
+} from "@workspace/api-zod";
 import { useToast } from "@/hooks/use-toast";
 import {
   Mail,
@@ -18,6 +25,9 @@ import {
   Loader2,
   Undo2,
   Wand2,
+  X,
+  FileText,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDateTime } from "@/lib/format";
 import { RichTextEditor } from "./rich-text-editor";
+import { extractClipboardFiles } from "@/components/decision-tree/evidence-paste";
 
 export interface GroupEmailMessage {
   id: string;
@@ -45,9 +56,35 @@ export interface GroupEmailMessage {
   bodyPreview: string;
   timestamp: string;
   attachments: string[];
+  /**
+   * Task #713 — structured per-attachment download metadata. When present
+   * the bubble renders chips that link to the file in object storage; when
+   * null we fall back to plain `attachments` filename labels.
+   */
+  attachmentLinks?: GroupEmailAttachment[] | null;
   mentionedLegIds: { id: number; label: string }[];
   unread?: boolean;
   responseType?: string | null;
+}
+
+export interface GroupEmailAttachment {
+  name: string;
+  size: number | null;
+  contentType: string;
+  downloadUrl: string;
+}
+
+/**
+ * Reply-composer payload shape exported so callers can type the mutation.
+ *
+ * Task #713 trust-boundary fix: the composer no longer sends raw
+ * `objectPath` / `contentType` / `size`. Instead it forwards an opaque
+ * `stagedId` returned by `PUT /api/storage/reply-attachments/stage`. The
+ * server resolves that id to the authoritative storage key + MIME and
+ * never trusts client-supplied filenames or types.
+ */
+export interface ReplyAttachmentInput {
+  stagedId: string;
 }
 
 export interface GroupConversation {
@@ -70,6 +107,7 @@ interface Props {
     bodyHtml: string;
     to: string[];
     cc: string[];
+    attachments: ReplyAttachmentInput[];
   }) => Promise<void>;
   /**
    * When true, render only the inner conversation list — no Card chrome and
@@ -376,16 +414,36 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
         )}
 
         <div className="flex items-center gap-2 flex-wrap text-[11px] mt-2">
-          {msg.attachments.length > 0 &&
-            msg.attachments.map((a) => (
-              <span
-                key={a}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
-              >
-                <Paperclip className="w-2.5 h-2.5" />
-                <span className="font-mono">{a}</span>
-              </span>
-            ))}
+          {msg.attachmentLinks && msg.attachmentLinks.length > 0
+            ? msg.attachmentLinks.map((a) => (
+                <a
+                  key={`${a.downloadUrl}|${a.name}`}
+                  href={a.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                  data-testid={`group-thread-attachment-link-${msg.id}`}
+                  title={a.size != null ? `${a.name} · ${formatBytes(a.size)}` : a.name}
+                >
+                  <Paperclip className="w-2.5 h-2.5" />
+                  <span className="font-mono">{a.name}</span>
+                  {a.size != null && (
+                    <span className="text-[10px] opacity-70">
+                      {formatBytes(a.size)}
+                    </span>
+                  )}
+                </a>
+              ))
+            : msg.attachments.length > 0 &&
+              msg.attachments.map((a) => (
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
+                >
+                  <Paperclip className="w-2.5 h-2.5" />
+                  <span className="font-mono">{a}</span>
+                </span>
+              ))}
           {msg.mentionedLegIds.length > 0 && (
             <span className="inline-flex items-center gap-1 text-muted-foreground">
               Mentions:
@@ -402,6 +460,31 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
       </div>
     </div>
   );
+}
+
+interface ReplyChip {
+  /** Stable client-side id used as React key + remove handle. */
+  id: string;
+  name: string;
+  size: number;
+  contentType: string;
+  /** "uploading" while the PUT is in flight; "ready" once the server has
+   *  returned a `stagedId`; "error" if the upload failed (chip stays so
+   *  the user can remove it and try again). */
+  status: "uploading" | "ready" | "error";
+  /** 0-100 progress hint while uploading. */
+  progress: number;
+  /** Server-issued staging id, present iff status === "ready". This — not
+   *  the storage path — is what gets sent on the reply payload. */
+  stagedId: string | null;
+  /** Friendly error message for the chip's tooltip when status === "error". */
+  errorMessage: string | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ReplyComposer({
@@ -422,6 +505,7 @@ function ReplyComposer({
     bodyHtml: string;
     to: string[];
     cc: string[];
+    attachments: ReplyAttachmentInput[];
   }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -430,6 +514,216 @@ function ReplyComposer({
   const [subject, setSubject] = useState(defaultSubject);
   const [bodyHtml, setBodyHtml] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [chips, setChips] = useState<ReplyChip[]>([]);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Stable id generator for chips. `crypto.randomUUID` isn't available in
+  // every preview / iframe sandbox, so we fall back to a counter.
+  const chipIdCounter = useRef(0);
+  const nextChipId = useCallback(() => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    chipIdCounter.current += 1;
+    return `chip-${Date.now()}-${chipIdCounter.current}`;
+  }, []);
+
+  const totalBytes = chips.reduce((sum, c) => sum + c.size, 0);
+  const imageCount = chips.filter((c) =>
+    REPLY_ATTACHMENT_IMAGE_MIME_SET.has(c.contentType),
+  ).length;
+  const isUploading = chips.some((c) => c.status === "uploading");
+
+  const removeChip = useCallback((id: string) => {
+    setChips((prev) => {
+      const target = prev.find((c) => c.id === id);
+      // Best-effort tell the server to drop the staged blob so the
+      // 24h janitor doesn't have to. Ignored on failure — the
+      // janitor will sweep it eventually.
+      if (target?.stagedId) {
+        void fetch(
+          `/api/storage/reply-attachments/stage/${encodeURIComponent(target.stagedId)}`,
+          { method: "DELETE", credentials: "include" },
+        ).catch(() => {});
+      }
+      return prev.filter((c) => c.id !== id);
+    });
+  }, []);
+
+  /**
+   * Validates each candidate file against the centralized reply-attachment
+   * limits, then kicks off a streaming PUT to
+   * `/api/storage/reply-attachments/stage` per file. The endpoint runs the
+   * authoritative MIME / size validation server-side and returns an opaque
+   * `stagedId` we attach to the chip — only that id is sent on the reply
+   * payload. Files that fail validation never become chips; files that
+   * fail the network call become error chips so the operator can remove
+   * them and retry without losing the rest of the draft.
+   *
+   * Caps enforced here (mirrored on the server):
+   *   - up to MAX_REPLY_ATTACHMENT_IMAGES image files (PNG/JPG/GIF/WebP)
+   *   - up to MAX_REPLY_ATTACHMENT_FILES total chips
+   *   - REPLY_ATTACHMENT_TOTAL_BYTES combined size
+   */
+  const ingestFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+
+      const accepted: File[] = [];
+      let runningCount = chips.length;
+      let runningImages = imageCount;
+      let runningBytes = totalBytes;
+      const rejections: string[] = [];
+
+      for (const f of files) {
+        if (runningCount >= MAX_REPLY_ATTACHMENT_FILES) {
+          rejections.push(`Skipped "${f.name}" — max ${MAX_REPLY_ATTACHMENT_FILES} attachments per reply.`);
+          continue;
+        }
+        if (!REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(f.type)) {
+          rejections.push(`Skipped "${f.name}" — only PNG, JPG, GIF, WebP, and PDF are allowed.`);
+          continue;
+        }
+        const isImage = REPLY_ATTACHMENT_IMAGE_MIME_SET.has(f.type);
+        if (isImage && runningImages >= MAX_REPLY_ATTACHMENT_IMAGES) {
+          rejections.push(
+            `Skipped "${f.name}" — max ${MAX_REPLY_ATTACHMENT_IMAGES} image attachments per reply.`,
+          );
+          continue;
+        }
+        if (runningBytes + f.size > REPLY_ATTACHMENT_TOTAL_BYTES) {
+          rejections.push(
+            `Skipped "${f.name}" — total size would exceed ${formatBytes(REPLY_ATTACHMENT_TOTAL_BYTES)}.`,
+          );
+          continue;
+        }
+        accepted.push(f);
+        runningCount += 1;
+        runningBytes += f.size;
+        if (isImage) runningImages += 1;
+      }
+
+      if (rejections.length > 0) {
+        setError(rejections.join(" "));
+      } else {
+        setError(null);
+      }
+
+      if (accepted.length === 0) return;
+
+      const newChips: ReplyChip[] = accepted.map((f) => ({
+        id: nextChipId(),
+        name: f.name,
+        size: f.size,
+        contentType: f.type,
+        status: "uploading" as const,
+        progress: 5,
+        stagedId: null,
+        errorMessage: null,
+      }));
+      setChips((prev) => [...prev, ...newChips]);
+
+      // Fire one streaming PUT per file to the staging endpoint. We don't
+      // have native progress events on `fetch` without ReadableStream
+      // wiring, so we jump to 60% during the request and 100% on success —
+      // matching how the rest of the app already handles object-storage
+      // uploads.
+      newChips.forEach(async (chip, idx) => {
+        const file = accepted[idx];
+        try {
+          setChips((prev) =>
+            prev.map((c) => (c.id === chip.id ? { ...c, progress: 60 } : c)),
+          );
+          const resp = await fetch("/api/storage/reply-attachments/stage", {
+            method: "PUT",
+            credentials: "include",
+            headers: {
+              "Content-Type": file.type,
+              "x-upload-name": file.name,
+            },
+            body: file,
+          });
+          if (!resp.ok) {
+            const body = (await resp.json().catch(() => ({}))) as { error?: string };
+            throw new Error(body.error || `Upload failed (${resp.status})`);
+          }
+          const data = (await resp.json()) as {
+            stagedId: string;
+            size: number;
+            contentType: string;
+          };
+          setChips((prev) =>
+            prev.map((c) =>
+              c.id === chip.id
+                ? {
+                    ...c,
+                    status: "ready",
+                    progress: 100,
+                    stagedId: data.stagedId,
+                    // Trust the server's recorded size/type from now on
+                    // so chip totals match what the server will enforce.
+                    size: data.size || c.size,
+                    contentType: data.contentType || c.contentType,
+                  }
+                : c,
+            ),
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Upload failed";
+          setChips((prev) =>
+            prev.map((c) =>
+              c.id === chip.id
+                ? { ...c, status: "error", progress: 0, errorMessage: message }
+                : c,
+            ),
+          );
+        }
+      });
+    },
+    [chips.length, imageCount, totalBytes, nextChipId],
+  );
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    ingestFiles(Array.from(list));
+    // Reset so picking the same file twice still fires onChange.
+    e.target.value = "";
+  };
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      // Pass every clipboard file through `ingestFiles` (don't pre-filter
+      // by MIME) so the operator sees the same inline rejection message
+      // they'd get from picker / drop. Silently dropping pasted PSDs etc.
+      // looked like the paste did nothing.
+      const files = extractClipboardFiles(e.clipboardData, { acceptPdf: true });
+      if (files.length === 0) return;
+      e.preventDefault();
+      ingestFiles(files);
+    },
+    [ingestFiles],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDraggingOver(false);
+      const files = Array.from(e.dataTransfer.files ?? []);
+      if (files.length > 0) ingestFiles(files);
+    },
+    [ingestFiles],
+  );
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (Array.from(e.dataTransfer.types).includes("Files")) {
+      e.preventDefault();
+      setIsDraggingOver(true);
+    }
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget === e.target) setIsDraggingOver(false);
+  };
   // Stash of the pre-upgrade draft so we can offer a one-step Undo back
   // to exactly what the user typed. Cleared on send/cancel and replaced
   // every time the user upgrades again.
@@ -496,6 +790,24 @@ function ReplyComposer({
       setError("Reply body cannot be empty.");
       return;
     }
+    if (isUploading) {
+      setError("Please wait for attachments to finish uploading.");
+      return;
+    }
+    // Drop any error chips silently — they never made it to storage so
+    // there's nothing to send. Operators see the chip turn red and can
+    // remove it themselves; we don't want to surprise them by sending a
+    // reply with fewer attachments than they expected.
+    const readyAttachments: ReplyAttachmentInput[] = chips
+      .filter((c) => c.status === "ready" && c.stagedId)
+      .map((c) => ({ stagedId: c.stagedId as string }));
+    const errorChipCount = chips.filter((c) => c.status === "error").length;
+    if (errorChipCount > 0) {
+      setError(
+        `${errorChipCount} attachment${errorChipCount === 1 ? "" : "s"} failed to upload. Remove them or retry before sending.`,
+      );
+      return;
+    }
     setError(null);
     try {
       await onSend({
@@ -507,6 +819,7 @@ function ReplyComposer({
           .split(/[,;]/)
           .map((s) => s.trim())
           .filter(Boolean),
+        attachments: readyAttachments,
       });
     } catch (err) {
       setError(
@@ -517,8 +830,12 @@ function ReplyComposer({
 
   return (
     <div
-      className="px-4 py-3 space-y-2 bg-blue-50/30 dark:bg-blue-950/10"
+      className={`px-4 py-3 space-y-2 bg-blue-50/30 dark:bg-blue-950/10 ${isDraggingOver ? "ring-2 ring-primary ring-inset" : ""}`}
       data-testid="group-thread-reply-composer"
+      onPaste={handlePaste}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
     >
       <div className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">
         Compose reply
@@ -574,6 +891,95 @@ function ReplyComposer({
         Rich text formatting — bold, italic, lists, links, and quotes are
         supported.
       </div>
+      <div data-testid="group-thread-attachments">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={Array.from(REPLY_ATTACHMENT_ALLOWED_MIME_SET).join(",")}
+          className="hidden"
+          onChange={handleFileInputChange}
+          data-testid="group-thread-attach-file-input"
+        />
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={
+              isSending ||
+              chips.length >= MAX_REPLY_ATTACHMENT_FILES ||
+              totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES
+            }
+            data-testid="group-thread-attach-button"
+          >
+            <Paperclip className="h-3 w-3 mr-1" /> Attach files
+          </Button>
+          <span className="text-muted-foreground">
+            {chips.length} / {MAX_REPLY_ATTACHMENT_FILES} files · {imageCount} /{" "}
+            {MAX_REPLY_ATTACHMENT_IMAGES} images ·{" "}
+            {formatBytes(totalBytes)} / {formatBytes(REPLY_ATTACHMENT_TOTAL_BYTES)}
+          </span>
+          <span className="text-muted-foreground hidden sm:inline">
+            · Drop files or paste from clipboard
+          </span>
+        </div>
+        {chips.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {chips.map((chip) => {
+              const isImage = chip.contentType.startsWith("image/");
+              const isError = chip.status === "error";
+              const isUploadingChip = chip.status === "uploading";
+              return (
+                <span
+                  key={chip.id}
+                  data-testid={`group-thread-attachment-chip-${chip.id}`}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] max-w-full ${
+                    isError
+                      ? "bg-destructive/10 border-destructive/30 text-destructive"
+                      : isUploadingChip
+                        ? "bg-muted border-muted-foreground/20 text-muted-foreground"
+                        : "bg-background border-border text-foreground"
+                  }`}
+                  title={
+                    isError
+                      ? chip.errorMessage || "Upload failed"
+                      : `${chip.name} · ${formatBytes(chip.size)}`
+                  }
+                >
+                  {isUploadingChip ? (
+                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  ) : isImage ? (
+                    <ImageIcon className="h-3 w-3 shrink-0" />
+                  ) : (
+                    <FileText className="h-3 w-3 shrink-0" />
+                  )}
+                  <span className="truncate max-w-[180px]">{chip.name}</span>
+                  <span className="text-[10px] opacity-70 shrink-0">
+                    {formatBytes(chip.size)}
+                  </span>
+                  {isUploadingChip && (
+                    <span className="text-[10px] opacity-70 shrink-0">
+                      {chip.progress}%
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeChip(chip.id)}
+                    disabled={isSending}
+                    className="ml-0.5 hover:bg-muted-foreground/10 rounded p-0.5 shrink-0"
+                    aria-label={`Remove ${chip.name}`}
+                    data-testid={`group-thread-attachment-remove-${chip.id}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
       {error && (
         <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded p-2">
           {error}
@@ -622,10 +1028,20 @@ function ReplyComposer({
             </>
           )}
         </Button>
-        <Button size="sm" onClick={handleSend} disabled={isSending || upgradeMutation.isPending}>
+        <Button
+          size="sm"
+          onClick={handleSend}
+          disabled={isSending || upgradeMutation.isPending || isUploading}
+          data-testid="group-thread-send-reply"
+          title={isUploading ? "Waiting for attachment uploads to finish…" : undefined}
+        >
           {isSending ? (
             <>
               <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Sending…
+            </>
+          ) : isUploading ? (
+            <>
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Uploading…
             </>
           ) : (
             <>

@@ -13227,6 +13227,23 @@ export const GetInvoiceGroupEmailThreadResponse = zod.object({
           .describe(
             'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
           ),
+        attachments: zod
+          .array(
+            zod.object({
+              name: zod.string(),
+              size: zod.number().nullish(),
+              contentType: zod.string(),
+              downloadUrl: zod
+                .string()
+                .describe(
+                  "Server-side URL that streams the original file from object storage.",
+                ),
+            }),
+          )
+          .nullish()
+          .describe(
+            "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
+          ),
       }),
     )
     .describe(
@@ -13347,6 +13364,23 @@ export const GetInvoiceGroupEmailThreadResponse = zod.object({
               .describe(
                 'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
               ),
+            attachments: zod
+              .array(
+                zod.object({
+                  name: zod.string(),
+                  size: zod.number().nullish(),
+                  contentType: zod.string(),
+                  downloadUrl: zod
+                    .string()
+                    .describe(
+                      "Server-side URL that streams the original file from object storage.",
+                    ),
+                }),
+              )
+              .nullish()
+              .describe(
+                "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
+              ),
           }),
         ),
       }),
@@ -13362,8 +13396,13 @@ Posts a reply to the latest message in the given Outlook conversation
 via Microsoft Graph, persists an outbound_emails row tagged with this
 invoice group's id, and writes an `email_reply_sent` audit row on the
 group. Authorization: the conversation must include at least one row
-attached to the group itself or to one of its child claims. Evidence
-attachments are not supported on the group-level reply yet.
+attached to the group itself or to one of its child claims. Optional
+`attachments` carry files staged via
+`PUT /storage/reply-attachments/stage`; the server resolves each
+`stagedId` to its server-recorded MIME / size, enforces the
+centralized reply-attachment limits (max 5 images, 10 attachments
+total, 25 MB combined), confirms the staging row belongs to the
+sending user, and only then forwards the bytes to Outlook.
 
  * @summary Send an in-app reply on a group-level email conversation
  */
@@ -13381,6 +13420,20 @@ export const ReplyToInvoiceGroupEmailConversationBody = zod.object({
     ),
   to: zod.array(zod.string()),
   cc: zod.array(zod.string()).optional(),
+  attachments: zod
+    .array(
+      zod.object({
+        stagedId: zod
+          .string()
+          .describe(
+            "Opaque id returned by `PUT \/storage\/reply-attachments\/stage`.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Optional list of files previously staged via\n`PUT \/storage\/reply-attachments\/stage`. The server looks\neach `stagedId` up in `reply_attachment_staging`,\nrequires the row to belong to the sending user, enforces\nthe reply-attachment caps (max 5 images, 10 attachments\ntotal, 25 MB combined) using the \*\*server-recorded\*\*\nMIME \/ size (not anything the client claims), downloads\neach blob from object storage, and POSTs them to the\nOutlook draft as real MIME attachments before sending.\nOn a successful send the staging rows are stamped\n`consumed_at` so the 24h janitor leaves them in place\nfor the audit trail.\n",
+    ),
 });
 
 export const ReplyToInvoiceGroupEmailConversationResponse = zod.object({
@@ -13458,6 +13511,23 @@ export const ReplyToInvoiceGroupEmailConversationResponse = zod.object({
     .nullish()
     .describe(
       'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+    ),
+  attachments: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        size: zod.number().nullish(),
+        contentType: zod.string(),
+        downloadUrl: zod
+          .string()
+          .describe(
+            "Server-side URL that streams the original file from object storage.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
     ),
 });
 
@@ -30239,6 +30309,48 @@ export const UploadFileResponse = zod.object({
 });
 
 /**
+ * Task #713 — staged-upload endpoint for the reply composer. Streams the file bytes to object storage AND records a `reply_attachment_staging` row pinned to the calling user. Returns an opaque `stagedId` that the composer hands back on the reply request — clients never get to choose the storage key or claim a different MIME / size than what the server recorded here. Stricter MIME allowlist than `/storage/uploads`: only PNG, JPG, GIF, WebP, and PDF are accepted.
+
+ * @summary Stage a file for an outbound email reply
+ */
+export const StageReplyAttachmentHeader = zod.object({
+  "x-upload-name": zod
+    .string()
+    .optional()
+    .describe("Original filename (informational; clamped to 255 chars)."),
+  "Content-Length": zod
+    .number()
+    .optional()
+    .describe(
+      "Declared file size; rejected immediately if it exceeds the 25 MB reply cap.",
+    ),
+});
+
+export const StageReplyAttachmentResponse = zod.object({
+  stagedId: zod
+    .string()
+    .describe(
+      "Opaque id to send back on the reply payload's `attachments[].stagedId`.",
+    ),
+  name: zod.string(),
+  contentType: zod.string(),
+  size: zod.number(),
+});
+
+/**
+ * Best-effort: lets the composer drop a staged file when the operator removes the chip before sending. Only the user that staged the upload may delete it. Idempotent — already-purged ids return `{ ok: true }`.
+
+ * @summary Drop a staged reply attachment
+ */
+export const DeleteReplyAttachmentStageParams = zod.object({
+  stagedId: zod.coerce.string(),
+});
+
+export const DeleteReplyAttachmentStageResponse = zod.object({
+  ok: zod.boolean().optional(),
+});
+
+/**
  * @summary List all evidence types
  */
 export const ListEvidenceTypesResponse = zod.object({
@@ -30964,6 +31076,23 @@ export const GetClaimEmailThreadResponse = zod.object({
           .describe(
             'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
           ),
+        attachments: zod
+          .array(
+            zod.object({
+              name: zod.string(),
+              size: zod.number().nullish(),
+              contentType: zod.string(),
+              downloadUrl: zod
+                .string()
+                .describe(
+                  "Server-side URL that streams the original file from object storage.",
+                ),
+            }),
+          )
+          .nullish()
+          .describe(
+            "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
+          ),
       }),
     )
     .describe(
@@ -31084,6 +31213,23 @@ export const GetClaimEmailThreadResponse = zod.object({
               .describe(
                 'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
               ),
+            attachments: zod
+              .array(
+                zod.object({
+                  name: zod.string(),
+                  size: zod.number().nullish(),
+                  contentType: zod.string(),
+                  downloadUrl: zod
+                    .string()
+                    .describe(
+                      "Server-side URL that streams the original file from object storage.",
+                    ),
+                }),
+              )
+              .nullish()
+              .describe(
+                "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
+              ),
           }),
         ),
       }),
@@ -31199,6 +31345,23 @@ export const ReplyToEmailConversationResponse = zod.object({
     .nullish()
     .describe(
       'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+    ),
+  attachments: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        size: zod.number().nullish(),
+        contentType: zod.string(),
+        downloadUrl: zod
+          .string()
+          .describe(
+            "Server-side URL that streams the original file from object storage.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
     ),
 });
 

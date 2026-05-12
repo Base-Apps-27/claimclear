@@ -92,6 +92,7 @@ import type {
   DashboardTimeInPhase,
   DashboardTimeseries,
   DashboardUserProductivity,
+  DeleteReplyAttachmentStage200,
   EmailBouncesResponse,
   EmailCheckResult,
   EmailThreadMessage,
@@ -201,6 +202,7 @@ import type {
   SopRewindBody,
   SopRewindDraftConflictResponse,
   SopRewindImpactResponse,
+  StageReplyAttachment200,
   StateConflictResponse,
   SuccessResponse,
   SystemHealthRollupResponse,
@@ -3933,8 +3935,13 @@ Posts a reply to the latest message in the given Outlook conversation
 via Microsoft Graph, persists an outbound_emails row tagged with this
 invoice group's id, and writes an `email_reply_sent` audit row on the
 group. Authorization: the conversation must include at least one row
-attached to the group itself or to one of its child claims. Evidence
-attachments are not supported on the group-level reply yet.
+attached to the group itself or to one of its child claims. Optional
+`attachments` carry files staged via
+`PUT /storage/reply-attachments/stage`; the server resolves each
+`stagedId` to its server-recorded MIME / size, enforces the
+centralized reply-attachment limits (max 5 images, 10 attachments
+total, 25 MB combined), confirms the staging row belongs to the
+sending user, and only then forwards the bytes to Outlook.
 
  * @summary Send an in-app reply on a group-level email conversation
  */
@@ -12469,6 +12476,183 @@ export const useUploadFile = <
   TContext
 > => {
   return useMutation(getUploadFileMutationOptions(options));
+};
+
+/**
+ * Task #713 — staged-upload endpoint for the reply composer. Streams the file bytes to object storage AND records a `reply_attachment_staging` row pinned to the calling user. Returns an opaque `stagedId` that the composer hands back on the reply request — clients never get to choose the storage key or claim a different MIME / size than what the server recorded here. Stricter MIME allowlist than `/storage/uploads`: only PNG, JPG, GIF, WebP, and PDF are accepted.
+
+ * @summary Stage a file for an outbound email reply
+ */
+export const getStageReplyAttachmentUrl = () => {
+  return `/api/storage/reply-attachments/stage`;
+};
+
+export const stageReplyAttachment = async (
+  stageReplyAttachmentBody: Blob,
+  options?: RequestInit,
+): Promise<StageReplyAttachment200> => {
+  return customFetch<StageReplyAttachment200>(getStageReplyAttachmentUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "image/png", ...options?.headers },
+    body: JSON.stringify(stageReplyAttachmentBody),
+  });
+};
+
+export const getStageReplyAttachmentMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageReplyAttachment>>,
+    TError,
+    { data: BodyType<Blob> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stageReplyAttachment>>,
+  TError,
+  { data: BodyType<Blob> },
+  TContext
+> => {
+  const mutationKey = ["stageReplyAttachment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stageReplyAttachment>>,
+    { data: BodyType<Blob> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return stageReplyAttachment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StageReplyAttachmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof stageReplyAttachment>>
+>;
+export type StageReplyAttachmentMutationBody = BodyType<Blob>;
+export type StageReplyAttachmentMutationError = ErrorType<void>;
+
+/**
+ * @summary Stage a file for an outbound email reply
+ */
+export const useStageReplyAttachment = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageReplyAttachment>>,
+    TError,
+    { data: BodyType<Blob> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stageReplyAttachment>>,
+  TError,
+  { data: BodyType<Blob> },
+  TContext
+> => {
+  return useMutation(getStageReplyAttachmentMutationOptions(options));
+};
+
+/**
+ * Best-effort: lets the composer drop a staged file when the operator removes the chip before sending. Only the user that staged the upload may delete it. Idempotent — already-purged ids return `{ ok: true }`.
+
+ * @summary Drop a staged reply attachment
+ */
+export const getDeleteReplyAttachmentStageUrl = (stagedId: string) => {
+  return `/api/storage/reply-attachments/stage/${stagedId}`;
+};
+
+export const deleteReplyAttachmentStage = async (
+  stagedId: string,
+  options?: RequestInit,
+): Promise<DeleteReplyAttachmentStage200> => {
+  return customFetch<DeleteReplyAttachmentStage200>(
+    getDeleteReplyAttachmentStageUrl(stagedId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteReplyAttachmentStageMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteReplyAttachmentStage>>,
+    TError,
+    { stagedId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteReplyAttachmentStage>>,
+  TError,
+  { stagedId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteReplyAttachmentStage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteReplyAttachmentStage>>,
+    { stagedId: string }
+  > = (props) => {
+    const { stagedId } = props ?? {};
+
+    return deleteReplyAttachmentStage(stagedId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteReplyAttachmentStageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteReplyAttachmentStage>>
+>;
+
+export type DeleteReplyAttachmentStageMutationError = ErrorType<void>;
+
+/**
+ * @summary Drop a staged reply attachment
+ */
+export const useDeleteReplyAttachmentStage = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteReplyAttachmentStage>>,
+    TError,
+    { stagedId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteReplyAttachmentStage>>,
+  TError,
+  { stagedId: string },
+  TContext
+> => {
+  return useMutation(getDeleteReplyAttachmentStageMutationOptions(options));
 };
 
 /**
