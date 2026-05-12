@@ -761,7 +761,7 @@ export default function Dashboard() {
                 ? "submitted but unconfirmed past deadline"
                 : "submitted but unconfirmed past deadline"
             }
-            seeAllHref="/queue?tab=portal-queued&expiring=stuck"
+            seeAllHref="/portal-submissions"
             isLoading={false}
             itemsEmpty="No stuck submissions — portal confirmations are current."
             items={stuckItems.map(g => (
