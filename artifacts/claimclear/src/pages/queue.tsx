@@ -102,9 +102,14 @@ const LANE_LABEL: Record<LaneId, string> = {
   week: "This week & later",
   hold: "On hold",
 };
+// Portal-Queued groups were removed from the lane stack (operator
+// asked to hide already-submitted groups from the Queue entirely —
+// they live in the Response Tracker now). Both the clock and week
+// lanes are pure "actionable" buckets, so they share the empty-state
+// copy.
 const LANE_EMPTY_KEY: Record<LaneId, "actionable" | "portal-queued" | "on-hold"> = {
   clock: "actionable",
-  week: "portal-queued",
+  week: "actionable",
   hold: "on-hold",
 };
 
@@ -238,7 +243,6 @@ function QueueRow({
       data-on-hold={onHold ? "true" : "false"}
       data-needs-classification={needsClassification > 0 ? "true" : "false"}
       data-ready-to-generate={readyToGenerate ? "true" : "false"}
-      data-portal-queued={group.status === "Portal Queued" ? "true" : "false"}
       className={`w-full text-left rounded-md border bg-card transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         isSelected ? "ring-2 ring-primary border-primary" : "hover:bg-accent/40"
       } ${onHold ? "opacity-90" : ""} ${isSettling ? "cc-row-settling" : ""}`}
@@ -275,20 +279,9 @@ function QueueRow({
               · on hold
             </span>
           )}
-          {!compact && group.status === "Portal Queued" && (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-semibold"
-              data-testid={`queue-row-portal-queued-${group.id}`}
-              style={{
-                background: "hsl(var(--cc-blue-bg))",
-                color: "hsl(var(--cc-blue-fg))",
-                borderColor: "hsl(var(--cc-blue-border))",
-              }}
-            >
-              Portal Queued
-            </Badge>
-          )}
+          {/* Portal-Queued badge removed alongside the lane-stack
+              filtering: submitted groups no longer appear in the
+              Queue at all (they live in the Response Tracker). */}
           <span className="flex-1 min-w-0" />
           {needsClassification > 0 && (
             <Badge
@@ -835,7 +828,8 @@ export default function Queue() {
   const newParams = { status: "New", ...baseQueryShape } as const;
   const needsEvidenceParams = { status: "Needs Evidence", ...baseQueryShape } as const;
   const generatingEmailParams = { status: "Generating Email", ...baseQueryShape } as const;
-  const portalQueuedParams = { status: "Portal Queued", ...baseQueryShape } as const;
+  // Portal-Queued is intentionally NOT fetched into the lane stack:
+  // submitted groups belong on the Response Tracker, not the Queue.
   const onHoldParams = { status: "On Hold", ...baseQueryShape } as const;
   // The Lane Stack is a stable three-lane shape (clock / week / hold),
   // so the hold lane is always rendered and its query is always
@@ -858,12 +852,6 @@ export default function Queue() {
       refetchOnWindowFocus: true,
     },
   });
-  const portalQueuedQuery = useListInvoiceGroups(portalQueuedParams, {
-    query: {
-      queryKey: getListInvoiceGroupsQueryKey(portalQueuedParams),
-      refetchOnWindowFocus: true,
-    },
-  });
   const onHoldQuery = useListInvoiceGroups(onHoldParams, {
     query: {
       queryKey: getListInvoiceGroupsQueryKey(onHoldParams),
@@ -875,7 +863,6 @@ export default function Queue() {
   const newGroups = newQuery.data?.groups || [];
   const needsGroups = needsEvidenceQuery.data?.groups || [];
   const generatingEmailGroups = generatingEmailQuery.data?.groups || [];
-  const portalQueuedGroups = portalQueuedQuery.data?.groups || [];
   const onHoldGroups = onHoldQuery.data?.groups || [];
 
   // ── Error types for the popover facet ────────────────────────────────
@@ -917,7 +904,6 @@ export default function Queue() {
         ...newGroups,
         ...needsGroups,
         ...generatingEmailGroups,
-        ...portalQueuedGroups,
         ...(showHoldLane ? onHoldGroups : []),
       ]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -925,7 +911,6 @@ export default function Queue() {
       newGroups,
       needsGroups,
       generatingEmailGroups,
-      portalQueuedGroups,
       onHoldGroups,
       showHoldLane,
     ],
@@ -990,7 +975,6 @@ export default function Queue() {
     newQuery.data?.today,
     needsEvidenceQuery.data?.today,
     generatingEmailQuery.data?.today,
-    portalQueuedQuery.data?.today,
     onHoldQuery.data?.today,
     inboxQuery.data?.today,
   );
