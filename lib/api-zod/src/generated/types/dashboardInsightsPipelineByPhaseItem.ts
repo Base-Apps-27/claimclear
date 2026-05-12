@@ -11,16 +11,11 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { DashboardInsightsPipelineByPhaseItemPhase } from "./dashboardInsightsPipelineByPhaseItemPhase";
 
-export type DashboardInsightsGroupOutcomeBreakdownItemOutcome =
-  (typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome)[keyof typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome];
-
-export const DashboardInsightsGroupOutcomeBreakdownItemOutcome = {
-  Approved: "Approved",
-  Partially_Approved: "Partially Approved",
-  Denied: "Denied",
-  Withdrawn: "Withdrawn",
-  Pending: "Pending",
-  "Non-Issue": "Non-Issue",
-  No_Action_Needed: "No Action Needed",
-} as const;
+export type DashboardInsightsPipelineByPhaseItem = {
+  phase: DashboardInsightsPipelineByPhaseItemPhase;
+  count: number;
+  /** Σ `totalAmount` for invoices in this phase, or null for clerks. */
+  openAmount: string | null;
+};

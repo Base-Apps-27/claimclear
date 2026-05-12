@@ -17,5 +17,13 @@ export type DashboardTimeseriesPointsItem = {
   date: string;
   claimsCreated: number;
   claimsResolved: number;
-  dollarsRecovered: number;
+  /** Distinct invoice groups whose `created_at` falls on this day. */
+  invoicesCreated: number;
+  /** Distinct invoice groups whose status moved to `Portal Queued` on this day. */
+  invoicesSubmitted: number;
+  /** Distinct invoice groups whose `group_resolved` / `group_denied` audit log was emitted on this day. */
+  invoicesResolved: number;
+  dollarsRecovered: number | null;
+  /** Recovered $ from the equivalent calendar slot in the prior equal-length window. Powers the prior-period overlay on the Outcomes recovered-$ trend. */
+  priorDollarsRecovered: number | null;
 };

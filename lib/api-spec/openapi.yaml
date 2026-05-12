@@ -9154,13 +9154,31 @@ components:
                 type: integer
               claimsResolved:
                 type: integer
+              invoicesCreated:
+                type: integer
+                description: Distinct invoice groups whose `created_at` falls on this day.
+              invoicesSubmitted:
+                type: integer
+                description: Distinct invoice groups whose status moved to `Portal Queued` on this day.
+              invoicesResolved:
+                type: integer
+                description: Distinct invoice groups whose `group_resolved` / `group_denied` audit log was emitted on this day.
               dollarsRecovered:
                 type: number
+                nullable: true
+              priorDollarsRecovered:
+                type: number
+                nullable: true
+                description: Recovered $ from the equivalent calendar slot in the prior equal-length window. Powers the prior-period overlay on the Outcomes recovered-$ trend.
             required:
               - date
               - claimsCreated
               - claimsResolved
+              - invoicesCreated
+              - invoicesSubmitted
+              - invoicesResolved
               - dollarsRecovered
+              - priorDollarsRecovered
       required:
         - days
         - points
@@ -9216,22 +9234,98 @@ components:
               count:
                 type: integer
             required: [outcome, count]
+        priorPeriodRecoveredAmount:
+          type: string
+          nullable: true
+          description: |
+            Settled-positive Σ approved across claims created in the
+            equal-length window immediately preceding the active one.
+            Powers the "Net change vs prior window" tile on the CFO
+            Money scorecard.
+        atRiskAmount:
+          type: string
+          nullable: true
+          description: |
+            Snapshot (NOT windowed) of currently open invoice exposure:
+            Σ (`invoice_groups.totalAmount` − `approvedAmount`) over
+            invoice groups still in flight (outcome not Withdrawn /
+            Non-Issue, deadline not missed, phase not closed OR a
+            re-attestation is still pending). Mirrors the open-exposure
+            predicate used by `/dashboard/summary.amounts.atRiskClaim`
+            but at INVOICE grain.
+        atRiskGroupCount:
+          type: integer
+          description: Count of invoice groups contributing to `atRiskAmount`.
+        pipelineByPhase:
+          type: array
+          description: |
+            Snapshot rollup of currently open invoices by macro phase.
+            Always returns the same four entries in pipeline order:
+            `pre-submit`, `in-flight`, `response-pending`, `closed`.
+            `pre-submit` folds in On-Hold groups; `response-pending`
+            folds in MAS-required and awaiting-payout. `closed`
+            represents in-window resolved invoices for funnel context.
+          items:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: [pre-submit, in-flight, response-pending, closed]
+              count:
+                type: integer
+              openAmount:
+                type: string
+                nullable: true
+                description: Σ `totalAmount` for invoices in this phase, or null for clerks.
+            required: [phase, count, openAmount]
+        payorConcentrationByGroup:
+          type: array
+          description: |
+            Top 5 payors by open at-risk $ at INVOICE grain. Each row
+            counts distinct invoice groups (not legs) and a
+            window-scoped win-rate over invoices created in the active
+            window.
+          items:
+            type: object
+            properties:
+              payorEmail:
+                type: string
+              openCount:
+                type: integer
+                description: Number of currently open invoices touching this payor.
+              invoiceCountInWindow:
+                type: integer
+                description: Number of invoices CREATED in the active window touching this payor.
+              openAtRiskAmount:
+                type: string
+                nullable: true
+                description: Σ open at-risk $ for this payor's currently open invoices.
+              winRate:
+                type: number
+                nullable: true
+                description: |
+                  (Approved + Partially Approved) / (Approved +
+                  Partially Approved + Denied), counted over invoices
+                  CREATED in the active window. `null` when no decided
+                  invoices fall in the window.
+            required: [payorEmail, openCount, invoiceCountInWindow, openAtRiskAmount, winRate]
         groupOutcomeBreakdown:
           type: array
           description: |
             Invoice-level (not claim-level) outcome rollup, computed
             from `invoice_groups.outcome` over groups whose
             `created_at` is in the window. Always returns the same
-            five buckets in this order: `Approved`, `Partially
-            Approved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum
-            values `Pending` and `Non-Issue` both fold into `Mixed`.
-            Counts sum to total invoice groups in the window.
+            seven buckets in this order: `Approved`, `Partially
+            Approved`, `Denied`, `Withdrawn`, `Pending`, `Non-Issue`,
+            `No Action Needed`. Counts sum to total invoice groups in
+            the window. Task #712 split out the legacy "Mixed"
+            pseudo-bucket; Task #714 added "No Action Needed".
           items:
             type: object
             properties:
               outcome:
                 type: string
-                enum: [Approved, Partially Approved, Denied, Withdrawn, Mixed]
+                enum: [Approved, Partially Approved, Denied, Withdrawn, Pending, Non-Issue, No Action Needed]
               count:
                 type: integer
             required: [outcome, count]
@@ -9275,6 +9369,11 @@ components:
         - totalClaimedAmount
         - totalRecoveredAmount
         - totalDeniedAmount
+        - priorPeriodRecoveredAmount
+        - atRiskAmount
+        - atRiskGroupCount
+        - pipelineByPhase
+        - payorConcentrationByGroup
         - statusBreakdown
         - outcomeBreakdown
         - groupOutcomeBreakdown

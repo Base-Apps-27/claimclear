@@ -1,3 +1,10 @@
+// Insights vocab (matches Dashboard/daily brief):
+//   Disputed = Σ invoice totalAmount in window (invoice-grain)
+//   Recovered = Σ invoice approvedAmount in window
+//   At risk = open invoice exposure NOW (snapshot, not windowed)
+//   Pipeline.closed = resolved within window (other buckets = snapshot)
+//   Deep link = /invoice-groups?macroPhase=… (Queue contract)
+
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
@@ -7,9 +14,7 @@ import {
   BarChart3,
   CheckCircle2,
   Download,
-  FileText,
   Printer,
-  Send,
   TrendingUp,
   Truck,
   UserCircle2,
@@ -22,15 +27,13 @@ import {
   useGetDashboardTimeseries,
   useGetDashboardUserProductivity,
   useGetDashboardRepeatOffenders,
-  useGetDashboardTimeInPhase,
   getExportClaimsCsvUrl,
+  getExportInvoiceGroupsCsvUrl,
 } from "@workspace/api-client-react";
 import { useDashboardLiveUpdates } from "@/hooks/use-claim-events";
 import { Button } from "@/components/ui/button";
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   CartesianGrid,
@@ -38,34 +41,22 @@ import {
   XAxis,
   YAxis,
   Legend,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
 } from "recharts";
 import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } from "@/components/cohesion";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 import { formatChartTick, getDisplayTimezoneShort } from "@/lib/time";
-import { useRole, HideForClerk } from "@/lib/role";
+import { useRole } from "@/lib/role";
 
-// Macro-phase display labels — keep in lockstep with the
-// `MacroPhase` enum in api-server `lib/macro-phase.ts`.
-const PHASE_LABELS: Record<string, string> = {
-  "pre-submit": "Pre-submit",
-  "in-flight": "In flight",
-  "response-pending": "Response pending",
-  "closed": "Closed",
-  "on-hold": "On hold",
-};
-
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return "0m";
-  const min = ms / 60000;
-  if (min < 60) return `${Math.round(min)}m`;
-  const hr = min / 60;
-  if (hr < 36) return `${hr.toFixed(hr < 10 ? 1 : 0)}h`;
-  const days = hr / 24;
-  return `${days.toFixed(days < 10 ? 1 : 0)}d`;
-}
-
+// ─── Time range ────────────────────────────────────────────────────────
+// Task #712 — default range is QTD. CFO/COO read by quarter, not by an
+// arbitrary trailing window, so QTD anchors all of the money / pipeline
+// math on the same boundary the books close on.
 type RangeKey = "7" | "30" | "90" | "qtd" | "ytd";
 const RANGE_TABS: FilterStripTab<RangeKey>[] = [
   { key: "7", label: "7 days" },
@@ -94,18 +85,12 @@ function rangeWindowLabel(key: RangeKey, days: number): string {
   const end = new Date();
   const start = new Date();
   start.setDate(end.getDate() - days);
-  // Render the bracket dates in the operator app's display TZ via the
-  // shared chart-tick formatter, so the bracket and the chart axis can
-  // never disagree on the day boundary (#562).
   const fmt = (d: Date) => formatChartTick(d.toISOString());
   if (key === "qtd") return `Quarter to date · ${fmt(start)} – ${fmt(end)}`;
   if (key === "ytd") return `Year to date · ${fmt(start)} – ${fmt(end)}`;
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-// Calendar-day axis label. Server timeseries returns YYYY-MM-DD keys,
-// which `formatChartTick` renders without TZ conversion so the axis
-// label is always the authored day (#562).
 function formatShortDate(ymd: string): string {
   return formatChartTick(ymd);
 }
@@ -114,12 +99,6 @@ function formatCompactCurrency(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
   return `$${value.toFixed(0)}`;
-}
-
-function TrendArrow({ d }: { d: "up" | "down" | "flat" }) {
-  if (d === "up") return <span title="more rejections vs prior window" style={{ color: "hsl(var(--destructive))" }}>▲</span>;
-  if (d === "down") return <span title="fewer rejections vs prior window" style={{ color: "hsl(var(--cc-success))" }}>▼</span>;
-  return <span className="text-muted-foreground">—</span>;
 }
 
 function MiniBar({ pct, tone = "blue" }: { pct: number; tone?: "blue" | "amber" | "red" | "green" }) {
@@ -136,122 +115,141 @@ function MiniBar({ pct, tone = "blue" }: { pct: number; tone?: "blue" | "amber" 
   );
 }
 
+function TrendArrow({ d }: { d: "up" | "down" | "flat" }) {
+  if (d === "up") return <span title="more rejections vs prior window" style={{ color: "hsl(var(--destructive))" }}>▲</span>;
+  if (d === "down") return <span title="fewer rejections vs prior window" style={{ color: "hsl(var(--cc-success))" }}>▼</span>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+// Per-phase visual/copy. The order here matches the API contract's
+// pipeline order (pre-submit → in-flight → response-pending → closed)
+// so the funnel and the JSON response can never drift apart.
+const PIPELINE_PHASE_META: Array<{ key: string; label: string; tone: "amber" | "blue" | "green" | "muted"; barColor: string; deepLinkValue: string | null }> = [
+  { key: "pre-submit", label: "Pre-submit", tone: "amber", barColor: "hsl(var(--cc-warning))", deepLinkValue: "pre-submit" },
+  { key: "in-flight", label: "In flight", tone: "blue", barColor: "hsl(var(--primary))", deepLinkValue: "in-flight" },
+  { key: "response-pending", label: "Response pending", tone: "amber", barColor: "hsl(var(--cc-warning))", deepLinkValue: "response-pending" },
+  { key: "closed", label: "Closed", tone: "green", barColor: "hsl(var(--cc-success))", deepLinkValue: "closed" },
+];
+
+// Outcome row presentation. Approved-family is green, Denied/Withdrawn
+// are negative tones, Pending is neutral, Non-Issue is closed-grey.
+function outcomeStyle(o: string): { color: string; Icon: typeof CheckCircle2 } {
+  if (o === "Approved" || o === "Partially Approved") return { color: "hsl(var(--cc-success))", Icon: CheckCircle2 };
+  if (o === "Denied" || o === "Withdrawn") return { color: "hsl(var(--destructive))", Icon: XCircle };
+  return { color: "hsl(var(--muted-foreground))", Icon: Activity };
+}
+
+// ─── Page ──────────────────────────────────────────────────────────────
 export default function Insights() {
-  // Clerks see Insights but with money figures masked to "—". The server
-  // already nulls money on /claims, /dashboard/*, /dashboard/timeseries,
-  // and /dashboard/repeat-offenders for clerks, so most downstream
-  // formatCurrency calls render "—" automatically. We only need to
-  // short-circuit client-computed sums (which would otherwise add nulls
-  // as 0 and display "$0.00") via the HideForClerk wrappers below.
+  // Clerks see Insights but with money figures masked to "—". The
+  // server already nulls money fields for clerks, so most renders fall
+  // through to formatCurrency's "—" path automatically.
   const { isClerk: clerk } = useRole();
-  const [rangeKey, setRangeKey] = useState<RangeKey>("30");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("qtd");
   const days = daysForRange(rangeKey);
+
+  // Daily Flow chart unit toggle. Default is INVOICES (the unit a CFO
+  // reads books in); operators can flip to legs when they're debugging
+  // claim-grain throughput. Per-leg sections elsewhere on the page are
+  // explicitly tagged with a "Per leg" badge so the unit is never
+  // ambiguous.
+  const [flowUnit, setFlowUnit] = useState<"invoices" | "legs">("invoices");
 
   useDashboardLiveUpdates();
   const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
-  // Server-side aggregation for the topline tiles and breakdowns.
-  // Replaces the prior in-memory reductions over the first 500 claims
-  // returned by /claims — those silently understated everything once
-  // the window held more than 500 rows. Now `totalClaims`, the dollar
-  // sums, and every breakdown reflect the entire window exactly.
   const { data: insights, isLoading: insightsLoading } = useGetDashboardInsights({ days });
   const { data: timeseries, isLoading: tsLoading } = useGetDashboardTimeseries({ days });
   const { data: productivity, isLoading: prodLoading } = useGetDashboardUserProductivity({ days });
   const { data: repeat, isLoading: repeatLoading } = useGetDashboardRepeatOffenders({ days, limit: 5 });
-  // Task #563 — time-in-phase rollups powering the Bottleneck row,
-  // Time-in-Phase chart, and Time-in-MAS-Action sub-stats.
-  const { data: tip, isLoading: tipLoading } = useGetDashboardTimeInPhase({ days });
 
-  const phaseChartData = useMemo(() => {
-    return (tip?.phases ?? [])
-      .filter(p => p.phase !== "closed" && p.count > 0)
-      .map(p => ({
-        phase: PHASE_LABELS[p.phase] ?? p.phase,
-        rawPhase: p.phase,
-        median: Math.round(p.medianMs / 3600000 * 10) / 10,
-        p90: Math.round(p.p90Ms / 3600000 * 10) / 10,
-        count: p.count,
-      }));
-  }, [tip?.phases]);
-
-  const bottleneck = tip?.bottleneck ?? null;
   const tzShort = getDisplayTimezoneShort();
 
-  const totalClaims = insights?.totalClaims ?? 0;
-  const totalClaimed = parseFloat(insights?.totalClaimedAmount ?? "0") || 0;
-  const totalApproved = parseFloat(insights?.totalRecoveredAmount ?? "0") || 0;
+  // ─── Money scorecard ─────────────────────────────────────────────────
+  // Recovered $ in window — settled-positive only, matches Dashboard
+  // "Reclaimed" tile. At-risk $ is a SNAPSHOT (current open exposure),
+  // matches Dashboard "At risk" tile, but invoice-grain (no ×1.7 vendor
+  // prepay multiplier — that lived on the Dashboard exposure tile and
+  // confused operators on Insights). Denied $ is windowed claim total
+  // for outcome=Denied. Net change tile compares recovered $ against
+  // the equal-length prior window.
+  const totalRecovered = parseFloat(insights?.totalRecoveredAmount ?? "0") || 0;
+  const totalDisputed = parseFloat(insights?.totalClaimedAmount ?? "0") || 0;
+  const priorRecovered = parseFloat(insights?.priorPeriodRecoveredAmount ?? "0") || 0;
+  const atRiskAmount = parseFloat(insights?.atRiskAmount ?? "0") || 0;
+  const atRiskGroupCount = insights?.atRiskGroupCount ?? 0;
+  const recoveryRate = totalDisputed > 0 ? Math.round((totalRecovered / totalDisputed) * 100) : null;
+  const netChange = totalRecovered - priorRecovered;
+  const netChangePct = priorRecovered > 0 ? Math.round((netChange / priorRecovered) * 100) : null;
+  const netChangeTone: "green" | "red" | "muted" = netChange > 0 ? "green" : netChange < 0 ? "red" : "muted";
+  const netChangeSign = netChange > 0 ? "+" : "";
 
-  const trendTotals = useMemo(() => {
-    const points = timeseries?.points || [];
-    return {
-      created: points.reduce((s, p) => s + p.claimsCreated, 0),
-      resolved: points.reduce((s, p) => s + p.claimsResolved, 0),
-      recovered: points.reduce((s, p) => s + p.dollarsRecovered, 0),
-    };
-  }, [timeseries]);
-
-  const trendData = (timeseries?.points || []).map(p => ({
-    ...p,
-    label: formatShortDate(p.date),
-  }));
-
-  const bestDay = useMemo(() => {
-    return (timeseries?.points || []).reduce<{ date: string; dollars: number } | null>((best, p) => {
-      if (!best || p.dollarsRecovered > best.dollars) return { date: p.date, dollars: p.dollarsRecovered };
-      return best;
-    }, null);
-  }, [timeseries]);
-
-  // Per-error-type bars. Counts and dollar sums come straight from the
-  // server's `errorTypeBreakdown`, so a window with thousands of claims
-  // is summarized exactly rather than from a leading 500-row sample.
-  const errorTypeBars = useMemo(() => {
-    const rows = (insights?.errorTypeBreakdown ?? []).map(b => ({
-      name: b.name,
-      count: b.count,
-      recovered: parseFloat(b.recoveredAmount ?? "0") || 0,
-      denied: parseFloat(b.deniedAmount ?? "0") || 0,
-    }));
-    const entries = rows.sort((a, b) => b.recovered - a.recovered).slice(0, 6);
-    const maxRecovered = entries.reduce((m, e) => Math.max(m, e.recovered), 0) || 1;
-    // Percentage of windowed claims that fell into this error type. Use
-    // the global windowed total (not just the top-6 sum) so the
-    // numbers add up to a meaningful share of all claims, not a share
-    // of "claims that made the bar list".
-    const totalForPct = totalClaims || rows.reduce((s, e) => s + e.count, 0) || 1;
-    return entries.map(e => ({
-      ...e,
-      pct: Math.round((e.count / totalForPct) * 100),
-      barPct: Math.round((e.recovered / maxRecovered) * 100),
-    }));
-  }, [insights?.errorTypeBreakdown, totalClaims]);
-
-  // Status / outcome / payor breakdowns also come from the server.
-  // We materialize them as Maps keyed by the dimension so the JSX
-  // doesn't need to know whether the source was a client reduction
-  // or a typed array — same shape it consumed before.
-  const statusBreakdown = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const r of insights?.statusBreakdown ?? []) m[r.status] = r.count;
-    return m;
-  }, [insights?.statusBreakdown]);
-  // Invoice-level rollup (Task #583). The server returns the five
-  // display buckets in a fixed order over invoice groups in the window
-  // — preserve that order in the card so Approved → Mixed reads top
-  // to bottom every render, instead of reshuffling by count.
-  const groupOutcomeBreakdown = insights?.groupOutcomeBreakdown ?? [];
-  const totalGroupOutcomes = groupOutcomeBreakdown.reduce((s, r) => s + r.count, 0);
-  const payorBreakdown = useMemo(() => {
-    const m: Record<string, { count: number; atRisk: number }> = {};
-    for (const r of insights?.payorBreakdown ?? []) {
-      m[r.payorEmail] = {
-        count: r.count,
-        atRisk: parseFloat(r.atRiskAmount ?? "0") || 0,
-      };
+  // ─── Pipeline snapshot ──────────────────────────────────────────────
+  const pipelineRows = insights?.pipelineByPhase ?? [];
+  const pipelineByKey = useMemo(() => {
+    const m = new Map<string, { count: number; openAmount: number }>();
+    for (const r of pipelineRows) {
+      m.set(r.phase, { count: r.count, openAmount: parseFloat(r.openAmount ?? "0") || 0 });
     }
     return m;
-  }, [insights?.payorBreakdown]);
+  }, [pipelineRows]);
+  const pipelineOpenInvoices = PIPELINE_PHASE_META
+    .filter(p => p.key !== "closed")
+    .reduce((s, p) => s + (pipelineByKey.get(p.key)?.count ?? 0), 0);
+  const pipelineMaxCount = Math.max(1, ...PIPELINE_PHASE_META.map(p => pipelineByKey.get(p.key)?.count ?? 0));
 
+  // ─── Daily flow ─────────────────────────────────────────────────────
+  const dailyFlow = useMemo(() => {
+    const points = timeseries?.points ?? [];
+    return points.map(p => {
+      const created = flowUnit === "invoices" ? p.invoicesCreated : p.claimsCreated;
+      const submitted = flowUnit === "invoices" ? p.invoicesSubmitted : 0;
+      const resolved = flowUnit === "invoices" ? p.invoicesResolved : p.claimsResolved;
+      return {
+        label: formatShortDate(p.date),
+        created,
+        submitted,
+        resolved,
+        // Net pipeline change per day = inflow − outflow. Positive = backlog
+        // grew that day; negative = backlog drained.
+        netChange: created - resolved,
+      };
+    });
+  }, [timeseries, flowUnit]);
+  const flowTotals = useMemo(() => {
+    const denom = Math.max(1, dailyFlow.length);
+    const created = dailyFlow.reduce((s, p) => s + p.created, 0);
+    const submitted = dailyFlow.reduce((s, p) => s + p.submitted, 0);
+    const resolved = dailyFlow.reduce((s, p) => s + p.resolved, 0);
+    return {
+      created,
+      submitted,
+      resolved,
+      avgCreatedPerDay: created / denom,
+      avgResolvedPerDay: resolved / denom,
+      // Backlog delta over window = total in − total out. Equivalent to
+      // Σ netChange but expressed in CFO terms (units accumulated/drained).
+      backlogDelta: created - resolved,
+    };
+  }, [dailyFlow]);
+
+  // ─── Outcomes recovered-$ trend (current window vs prior window
+  // overlay). Only meaningful for users who can see money — clerks
+  // get the buckets but no overlay chart.
+  const recoveredTrend = useMemo(() => {
+    const points = timeseries?.points ?? [];
+    return points.map(p => ({
+      label: formatShortDate(p.date),
+      current: p.dollarsRecovered ?? 0,
+      prior: p.priorDollarsRecovered ?? 0,
+    }));
+  }, [timeseries]);
+
+  // ─── Outcomes ───────────────────────────────────────────────────────
+  const groupOutcomeBreakdown = insights?.groupOutcomeBreakdown ?? [];
+  const totalGroupOutcomes = groupOutcomeBreakdown.reduce((s, r) => s + r.count, 0);
+
+  // ─── Risk & accountability ──────────────────────────────────────────
+  const payorConcentration = insights?.payorConcentrationByGroup ?? [];
   const teamRows = useMemo(() => {
     const users = productivity?.users || [];
     return users.slice(0, 8).map(u => {
@@ -262,29 +260,99 @@ export default function Insights() {
     });
   }, [productivity]);
 
-  const exportClaimsHref = useMemo(() => {
+  // Deadline risk side card — sourced from /dashboard/summary so the
+  // numbers stay in lockstep with the daily brief and the Queue
+  // ?expiring=urgent CTA.
+  const expiringGroups = summary?.expiringGroups ?? [];
+  const urgentCount = summary?.urgentCount ?? 0;
+  const expiringExposure = useMemo(
+    () => expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0),
+    [expiringGroups],
+  );
+
+  // ─── Causes ─────────────────────────────────────────────────────────
+  // Top denial reasons — ranked by $ DENIED (the dollar bleed each
+  // cause is responsible for), per Task #712 spec. Recovered $ is
+  // shown alongside as context but does NOT drive the ranking.
+  const errorTypeBars = useMemo(() => {
+    const rows = (insights?.errorTypeBreakdown ?? []).map(b => ({
+      name: b.name,
+      count: b.count,
+      recovered: parseFloat(b.recoveredAmount ?? "0") || 0,
+      denied: parseFloat(b.deniedAmount ?? "0") || 0,
+    }));
+    const entries = rows.sort((a, b) => b.denied - a.denied).slice(0, 6);
+    const maxDenied = entries.reduce((m, e) => Math.max(m, e.denied), 0) || 1;
+    const totalForPct = (insights?.totalClaims ?? 0) || rows.reduce((s, e) => s + e.count, 0) || 1;
+    return entries.map(e => ({
+      ...e,
+      pct: Math.round((e.count / totalForPct) * 100),
+      barPct: Math.round((e.denied / maxDenied) * 100),
+    }));
+  }, [insights?.errorTypeBreakdown, insights?.totalClaims]);
+
+  // ─── Export ─────────────────────────────────────────────────────────
+  // Default export is INVOICE-grain (one row per invoice group), since
+  // the page's primary unit is the invoice. The dropdown still lets
+  // operators grab the per-leg view when they need it.
+  const exportInvoicesHref = useMemo(() => {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const iso = since.toISOString().slice(0, 10);
+    return getExportInvoiceGroupsCsvUrl({ createdFrom: iso });
+  }, [days]);
+  const exportLegsHref = useMemo(() => {
     const since = new Date();
     since.setDate(since.getDate() - days);
     const iso = since.toISOString().slice(0, 10);
     return getExportClaimsCsvUrl({ createdFrom: iso });
   }, [days]);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
-  // Opens the browser's native print dialog scoped to this page. The
-  // CTA used to read "Monthly PDF report", which implied a server-rendered
-  // PDF artifact — there is none. The button now matches the action it
-  // actually performs (window.print). See Task #411 audit, Tier 1.
-  const handlePrintThisView = () => {
-    window.print();
-  };
+  const handlePrintThisView = () => window.print();
 
   const headerActions = (
     <div className="flex items-center gap-2">
-      <Button asChild variant="outline" size="sm" data-testid="btn-export-view">
-        <a href={exportClaimsHref} download>
-          <Download className="w-4 h-4 mr-1.5" />
-          Export view
-        </a>
-      </Button>
+      <div className="relative">
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          data-testid="btn-export-invoices"
+        >
+          <a href={exportInvoicesHref} download>
+            <Download className="w-4 h-4 mr-1.5" />
+            Export invoices
+          </a>
+        </Button>
+        <button
+          type="button"
+          className="ml-1 inline-flex items-center justify-center px-2 h-8 rounded border border-border bg-background text-xs hover:bg-muted"
+          onClick={() => setShowExportMenu(v => !v)}
+          aria-expanded={showExportMenu}
+          aria-haspopup="menu"
+          data-testid="btn-export-toggle"
+        >
+          ▾
+        </button>
+        {showExportMenu && (
+          <div
+            className="absolute right-0 mt-1 z-30 w-56 rounded-md border border-border bg-popover shadow-md text-sm"
+            role="menu"
+          >
+            <a
+              href={exportLegsHref}
+              download
+              className="block px-3 py-2 hover:bg-muted"
+              onClick={() => setShowExportMenu(false)}
+              data-testid="btn-export-legs"
+            >
+              Export per-leg (claims) CSV
+              <div className="text-[10px] text-muted-foreground">One row per claim</div>
+            </a>
+          </div>
+        )}
+      </div>
       <Button
         variant="outline"
         size="sm"
@@ -297,15 +365,15 @@ export default function Insights() {
     </div>
   );
 
-  if (summaryLoading) {
+  if (summaryLoading || insightsLoading) {
     return (
       <div className="space-y-5">
         <PageHeader title="Insights" sub={`Loading… · times in ${tzShort}`} accent="green" actions={headerActions} />
         <SkeletonSwap
           loading
           skeleton={
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
           }
         >
@@ -319,53 +387,14 @@ export default function Insights() {
     return <div className="text-center py-12 text-muted-foreground">No data available</div>;
   }
 
-  // Use the vendor-prepay rate the API computed against, so insights and the
-  // dashboard / brief never disagree if the rate changes.
-  const vendorPrepayRate = summary.amounts.vendorPrepayRate ?? 0.70;
-  const exposureMultiplier = 1 + vendorPrepayRate;
-  const totalExposure = totalClaimed * exposureMultiplier;
-  const recoveryRate = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0;
-
-  const drivers = repeat?.drivers ?? [];
-  const members = repeat?.members ?? [];
-
   return (
     <div className="space-y-5 pb-8">
       <PageHeader
         title="Insights"
-        sub={`Recovery analytics and pattern detection · times shown in ${tzShort}`}
+        sub={`Money at stake and pipeline status · times shown in ${tzShort}`}
         accent="green"
         actions={headerActions}
       />
-
-      {/* Task #563 — Bottleneck row card. Top non-terminal macro phase
-          by p90 over the selected window, with a click-through to the
-          queue filtered to that phase. Hidden when there isn't enough
-          signal (need >= 3 samples on a non-terminal phase). */}
-      {bottleneck && (
-        <Link
-          href={`/invoice-groups?phase=${encodeURIComponent(bottleneck.phase)}`}
-          className="block"
-          data-testid="insights-bottleneck-row"
-        >
-          <div
-            className="rounded-md border bg-card p-3.5 flex items-center gap-3 text-sm hover:bg-muted/40 transition-colors"
-            style={{ borderColor: "hsl(var(--cc-amber-border))" }}
-          >
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: "hsl(var(--cc-warning))" }} />
-            <span>
-              <strong>Biggest hold-up:</strong>{" "}
-              <span className="font-medium">{PHASE_LABELS[bottleneck.phase] ?? bottleneck.phase}</span>{" "}
-              <span className="text-muted-foreground">
-                · p90 <strong className="text-foreground">{formatDuration(bottleneck.p90Ms)}</strong>{" "}
-                · median {formatDuration(bottleneck.medianMs)}{" "}
-                · {bottleneck.count} transition{bottleneck.count === 1 ? "" : "s"} in last {days}d
-              </span>
-            </span>
-            <ArrowUpRight className="w-4 h-4 ml-auto text-muted-foreground" />
-          </div>
-        </Link>
-      )}
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <FilterStrip
@@ -378,116 +407,482 @@ export default function Insights() {
         <span className="text-xs text-muted-foreground">{rangeWindowLabel(rangeKey, days)}</span>
       </div>
 
-      {/* Topline metric tiles — windowed to the selected time range.
-          Money tiles render "—" for clerks; non-money tiles (claim count
-          and recovery rate) stay visible to everyone. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="insights-topline">
-        <MetricTile label="Total claims" value={totalClaims} sub={`in last ${days}d`} />
-        <MetricTile label="Disputed" value={clerk ? "—" : formatCurrency(String(totalClaimed))} sub={`filed in last ${days}d`} tone="blue" />
-        <MetricTile
-          label="Recovered"
-          value={clerk ? "—" : formatCurrency(String(totalApproved))}
-          sub={!clerk && trendTotals.recovered > 0 ? `${formatCompactCurrency(trendTotals.recovered)} in last ${days}d` : `last ${days}d`}
-          tone="green"
-        />
-        <MetricTile label="Total exposure" value={clerk ? "—" : formatCurrency(String(totalExposure))} sub="claim + ~70% vendor prepay" tone="red" />
-        <MetricTile label="Recovery rate" value={clerk ? "—" : `${recoveryRate}%`} sub="recovered / disputed" tone="muted" />
-      </div>
+      {/* ─── Money scorecard (CFO) ─────────────────────────────────── */}
+      <Section
+        title={<span className="flex items-center gap-2">Money scorecard <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
+        icon={<TrendingUp className="w-4 h-4" />}
+      >
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="money-scorecard">
+          <MetricTile
+            label="Disputed (window)"
+            value={clerk ? "—" : formatCurrency(String(totalDisputed))}
+            sub={`Σ claim $ · last ${days}d`}
+            tone="muted"
+          />
+          <MetricTile
+            label="Recovered (window)"
+            value={clerk ? "—" : formatCurrency(String(totalRecovered))}
+            sub={`Settled-positive · last ${days}d`}
+            tone="green"
+          />
+          <MetricTile
+            label="At risk (now)"
+            value={clerk ? "—" : formatCurrency(String(atRiskAmount))}
+            sub={`${atRiskGroupCount} open invoice${atRiskGroupCount === 1 ? "" : "s"}`}
+            tone="red"
+          />
+          <MetricTile
+            label="Recovery rate"
+            value={clerk ? "—" : recoveryRate === null ? "—" : `${recoveryRate}%`}
+            sub={clerk ? undefined : "Recovered ÷ Disputed"}
+            tone={recoveryRate === null ? "muted" : recoveryRate >= 70 ? "green" : recoveryRate >= 40 ? "amber" : "red"}
+          />
+          <MetricTile
+            label="Net change vs prior window"
+            value={
+              clerk
+                ? "—"
+                : (priorRecovered === 0 && totalRecovered === 0)
+                  ? "—"
+                  : `${netChangeSign}${formatCurrency(String(netChange))}`
+            }
+            sub={
+              clerk
+                ? undefined
+                : netChangePct === null
+                  ? "No prior-window recovery"
+                  : `${netChangeSign}${netChangePct}% vs prior ${days}d`
+            }
+            tone={netChangeTone}
+          />
+        </div>
+        <div className="mt-3 text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <InfoTooltip content="Recovered = settled-positive approved $ created in the window. At risk = current open invoice exposure (snapshot, not windowed). These match the Dashboard tiles by definition." />
+          <span>Definitions match the Dashboard and the daily brief.</span>
+        </div>
+      </Section>
 
-      {/* Recovery over time block */}
-      <Section title="Recovery over time" icon={<TrendingUp className="w-4 h-4" />}>
-        <div className="flex items-stretch gap-6 flex-wrap">
-          <div className="min-w-[200px]">
-            <div className="text-3xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-success))" }}>
-              {clerk ? "—" : formatCompactCurrency(trendTotals.recovered)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">recovered in last {days} days</div>
-            {!clerk && bestDay && bestDay.dollars > 0 && (
-              <div className="text-xs mt-2 text-muted-foreground">
-                Best day: <strong>{formatShortDate(bestDay.date)}</strong> · {formatCompactCurrency(bestDay.dollars)} recovered
+      {/* ─── Pipeline snapshot (COO) ───────────────────────────────── */}
+      {/* Single segmented funnel: each phase is one stripe of one
+          horizontal bar, sized by invoice count, click-through to the
+          Queue filtered by macroPhase. The bar lives full-width so the
+          funnel reads left→right (pre-submit → closed). */}
+      <Section
+        title={<span className="flex items-center gap-2">Pipeline snapshot <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
+        icon={<BarChart3 className="w-4 h-4" />}
+        action={
+          <span className="text-[11px] text-muted-foreground">
+            {pipelineOpenInvoices} open invoice{pipelineOpenInvoices === 1 ? "" : "s"} now
+          </span>
+        }
+      >
+        {(() => {
+          const totalForBar = PIPELINE_PHASE_META.reduce((s, p) => s + (pipelineByKey.get(p.key)?.count ?? 0), 0) || 1;
+          return (
+            <div data-testid="pipeline-snapshot">
+              <div className="flex h-7 w-full rounded-md overflow-hidden border border-border" role="img" aria-label="Pipeline funnel by macro phase">
+                {PIPELINE_PHASE_META.map(p => {
+                  const row = pipelineByKey.get(p.key);
+                  const count = row?.count ?? 0;
+                  if (count === 0) return null;
+                  const pct = (count / totalForBar) * 100;
+                  const href = p.deepLinkValue ? `/invoice-groups?macroPhase=${encodeURIComponent(p.deepLinkValue)}` : "#";
+                  return (
+                    <Link
+                      key={p.key}
+                      href={href}
+                      className="h-full transition-opacity hover:opacity-80 flex items-center justify-center text-[11px] font-semibold text-white"
+                      style={{ width: `${pct}%`, background: p.barColor, minWidth: count > 0 ? 24 : 0 }}
+                      title={`${p.label} · ${count}`}
+                      data-testid={`pipeline-segment-${p.key}`}
+                    >
+                      {pct >= 8 ? count : ""}
+                    </Link>
+                  );
+                })}
               </div>
-            )}
-            <div className="text-xs mt-2 text-muted-foreground">
-              {trendTotals.created} claims created · {trendTotals.resolved} resolved
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3" data-testid="pipeline-legend">
+                {PIPELINE_PHASE_META.map(p => {
+                  const row = pipelineByKey.get(p.key);
+                  const count = row?.count ?? 0;
+                  const open = row?.openAmount ?? 0;
+                  const href = p.deepLinkValue ? `/invoice-groups?macroPhase=${encodeURIComponent(p.deepLinkValue)}` : "#";
+                  return (
+                    <Link
+                      key={p.key}
+                      href={href}
+                      className="flex items-start gap-2 rounded px-2 py-1.5 -mx-2 hover:bg-muted/40 transition-colors"
+                      data-testid={`pipeline-phase-${p.key}`}
+                    >
+                      <span className="mt-1 inline-block h-2.5 w-2.5 rounded-sm flex-shrink-0" style={{ background: p.barColor }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          {p.label}
+                          <ArrowUpRight className="w-3 h-3" />
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-base font-bold tabular-nums">{count}</span>
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {clerk
+                              ? "—"
+                              : p.key === "closed"
+                                ? `${formatCompactCurrency(open)} in window`
+                                : `${formatCompactCurrency(open)} open`}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </Section>
+
+      {/* ─── Daily flow ────────────────────────────────────────────── */}
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            Daily flow
+            <span className="text-[10px] font-normal text-muted-foreground uppercase">
+              {flowUnit === "invoices" ? "Invoices" : "Per leg"}
+            </span>
+          </span>
+        }
+        icon={<Activity className="w-4 h-4" />}
+        action={
+          <div className="inline-flex rounded border border-border overflow-hidden text-xs" role="tablist">
+            <button
+              type="button"
+              className={`px-2.5 py-1 ${flowUnit === "invoices" ? "bg-muted font-semibold" : "bg-transparent"}`}
+              onClick={() => setFlowUnit("invoices")}
+              data-testid="flow-unit-invoices"
+              aria-pressed={flowUnit === "invoices"}
+            >
+              Invoices
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-1 border-l border-border ${flowUnit === "legs" ? "bg-muted font-semibold" : "bg-transparent"}`}
+              onClick={() => setFlowUnit("legs")}
+              data-testid="flow-unit-legs"
+              aria-pressed={flowUnit === "legs"}
+            >
+              Per leg
+            </button>
+          </div>
+        }
+      >
+        <div className="flex items-stretch gap-6 flex-wrap">
+          <div className="min-w-[180px] text-xs space-y-2.5">
+            <div>
+              <div className="text-muted-foreground">Avg created / day</div>
+              <div className="text-xl font-bold tabular-nums">{flowTotals.avgCreatedPerDay.toFixed(1)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Avg resolved / day</div>
+              <div className="text-xl font-bold tabular-nums">{flowTotals.avgResolvedPerDay.toFixed(1)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Backlog delta</div>
+              <div
+                className="text-xl font-bold tabular-nums"
+                style={{
+                  color:
+                    flowTotals.backlogDelta > 0
+                      ? "hsl(var(--destructive))"
+                      : flowTotals.backlogDelta < 0
+                        ? "hsl(var(--cc-success))"
+                        : "hsl(var(--foreground))",
+                }}
+                title="Created − Resolved across the window. Positive = backlog grew."
+              >
+                {flowTotals.backlogDelta > 0 ? "+" : ""}{flowTotals.backlogDelta}
+              </div>
+              <div className="text-[10px] text-muted-foreground">created − resolved</div>
             </div>
           </div>
-          <div className="flex-1 min-w-[280px] h-32" data-testid="recovery-trend-chart">
-            <SkeletonSwap
-              loading={tsLoading}
-              className="h-full"
-              skeleton={<Skeleton className="h-full w-full" />}
-            >
-            {trendData.length === 0 || trendTotals.recovered === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-                No dollars recovered in this window
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="insightsGreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--cc-success))" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="hsl(var(--cc-success))" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" width={40} tickFormatter={formatCompactCurrency} />
-                  <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                    formatter={(v: number) => [formatCurrency(String(v)), "Recovered"]}
-                  />
-                  <Area type="monotone" dataKey="dollarsRecovered" stroke="hsl(var(--cc-success))" strokeWidth={2} fill="url(#insightsGreen)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+          <div className="flex-1 min-w-[280px] h-52" data-testid="daily-flow-chart">
+            <SkeletonSwap loading={tsLoading} className="h-full" skeleton={<Skeleton className="h-full w-full" />}>
+              {dailyFlow.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                  No activity in this window
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyFlow} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" width={32} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Line type="monotone" dataKey="created" name="Created" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                    {flowUnit === "invoices" && (
+                      <Line type="monotone" dataKey="submitted" name="Submitted" stroke="hsl(var(--cc-warning))" strokeWidth={2} dot={false} />
+                    )}
+                    <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="netChange" name="Net change (in − out)" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </SkeletonSwap>
           </div>
         </div>
       </Section>
 
-      {/* Task #563 — Time in Phase chart + MAS-Action sub-stats. Sourced
-          from the audit_logs `group_status_changed` stream rolled up
-          server-side; one sample per (group, transition). */}
+      {/* ─── Outcomes ──────────────────────────────────────────────── */}
       <Section
-        title={`Time in phase · last ${days}d`}
-        icon={<Activity className="w-4 h-4" />}
+        title={<span className="flex items-center gap-2">Outcomes <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
+        icon={<CheckCircle2 className="w-4 h-4" />}
       >
-        <SkeletonSwap loading={tipLoading} skeleton={<Skeleton className="h-40 w-full" />}>
-          {phaseChartData.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No phase transitions in this window.</p>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
-              <div className="lg:col-span-2 h-44" data-testid="time-in-phase-chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={phaseChartData}
-                    margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="phase" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis
-                      tick={{ fontSize: 10 }}
-                      stroke="hsl(var(--muted-foreground))"
-                      width={36}
-                      tickFormatter={(v: number) => `${v}h`}
-                    />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      formatter={(v: number, name: string) => [`${v}h`, name === "median" ? "Median" : "p90"]}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="median" name="Median" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="p90" name="p90" fill="hsl(var(--cc-warning))" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+        {!clerk && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Recovered $ trend · current vs prior {days}d</span>
+              <span className="text-[10px] text-muted-foreground">
+                Now: <strong className="text-foreground">{formatCompactCurrency(totalRecovered)}</strong> · Prior: <strong className="text-foreground">{formatCompactCurrency(priorRecovered)}</strong>
+              </span>
             </div>
+            <div className="h-32" data-testid="outcomes-recovered-trend">
+              <SkeletonSwap loading={tsLoading} className="h-full" skeleton={<Skeleton className="h-full w-full" />}>
+                {recoveredTrend.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                    No recovered $ in this window
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={recoveredTrend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="recoveredCurrent" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="hsl(var(--cc-success))" stopOpacity={0.45} />
+                          <stop offset="100%" stopColor="hsl(var(--cc-success))" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" width={42} tickFormatter={(v: number) => formatCompactCurrency(v)} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: number) => formatCurrency(String(v))} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Area type="monotone" dataKey="current" name="This window" stroke="hsl(var(--cc-success))" strokeWidth={2} fill="url(#recoveredCurrent)" />
+                      <Line type="monotone" dataKey="prior" name="Prior window" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </SkeletonSwap>
+            </div>
+          </div>
+        )}
+        {totalGroupOutcomes > 0 && (
+          <div className="mb-4" data-testid="outcomes-mix-bar">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Outcome mix · {totalGroupOutcomes} invoice{totalGroupOutcomes === 1 ? "" : "s"} resolved in window</span>
+            </div>
+            <div className="flex h-6 w-full rounded-md overflow-hidden border border-border" role="img" aria-label="Outcome mix stacked bar">
+              {groupOutcomeBreakdown.map(({ outcome: o, count: n }) => {
+                if (n === 0) return null;
+                const { color } = outcomeStyle(o);
+                const pct = (n / totalGroupOutcomes) * 100;
+                return (
+                  <div
+                    key={o}
+                    className="h-full flex items-center justify-center text-[10px] font-semibold text-white"
+                    style={{ width: `${pct}%`, background: color, minWidth: 18 }}
+                    title={`${o} · ${n} (${Math.round(pct)}%)`}
+                    data-testid={`outcome-mix-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    {pct >= 8 ? `${Math.round(pct)}%` : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="outcomes-breakdown">
+          {totalGroupOutcomes === 0 ? (
+            <p className="text-sm text-muted-foreground col-span-full">No invoice outcomes in this window.</p>
+          ) : (
+            groupOutcomeBreakdown.map(({ outcome: o, count: n }) => {
+              const { color, Icon } = outcomeStyle(o);
+              const pct = totalGroupOutcomes > 0 ? Math.round((n / totalGroupOutcomes) * 100) : 0;
+              return (
+                <div
+                  key={o}
+                  className="rounded-md border border-border bg-card p-3"
+                  data-testid={`outcome-${o.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color }}>
+                    <Icon className="w-3.5 h-3.5" />
+                    {o}
+                  </div>
+                  <div className="text-2xl font-bold tabular-nums mt-1">{n}</div>
+                  <div className="text-[11px] text-muted-foreground">{pct}% of {totalGroupOutcomes}</div>
+                </div>
+              );
+            })
           )}
-        </SkeletonSwap>
+        </div>
       </Section>
 
-      {/* Repeat offenders amber-bordered block */}
+      {/* ─── Risk & accountability — row 5 (Deadline risk + Top payors) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <Section
+          title={<span className="flex items-center gap-2">Deadline risk <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
+          icon={<AlertTriangle className="w-4 h-4" />}
+        >
+          <div className="space-y-3 text-sm" data-testid="deadline-risk">
+            <div className="flex items-baseline justify-between">
+              <span className="text-muted-foreground">Urgent</span>
+              <Link
+                href="/invoice-groups?expiring=urgent"
+                className="text-2xl font-bold tabular-nums hover:underline"
+                style={{ color: urgentCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))" }}
+                data-testid="deadline-urgent-link"
+              >
+                {urgentCount}
+              </Link>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-muted-foreground">Expiring soon</span>
+              <Link
+                href="/invoice-groups?expiring=soon"
+                className="text-2xl font-bold tabular-nums hover:underline"
+                style={{ color: expiringGroups.length > 0 ? "hsl(var(--cc-warning))" : "hsl(var(--muted-foreground))" }}
+                data-testid="deadline-soon-link"
+              >
+                {expiringGroups.length}
+              </Link>
+            </div>
+            {!clerk && expiringExposure > 0 && (
+              <div className="text-xs text-muted-foreground pt-1 border-t border-border">
+                Invoice $ on those rows: <strong className="text-foreground">{formatCurrency(String(expiringExposure))}</strong>
+              </div>
+            )}
+          </div>
+        </Section>
+
+        <Section
+          className="lg:col-span-2"
+          title={<span className="flex items-center gap-2">Top payors by open exposure <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
+          icon={<AlertTriangle className="w-4 h-4" />}
+          padded={false}
+        >
+          <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground">
+            <span className="flex-1">Payor</span>
+            <span style={{ minWidth: 56, textAlign: "right" }}>Open</span>
+            <span style={{ minWidth: 84, textAlign: "right" }}>$ at risk</span>
+            <span style={{ minWidth: 64, textAlign: "right" }}>Win rate</span>
+          </div>
+          {payorConcentration.length === 0 ? (
+            <div className="p-6 text-center text-xs text-muted-foreground">No open exposure tracked by payor.</div>
+          ) : (
+            payorConcentration.map((p, i) => {
+              const open = parseFloat(p.openAtRiskAmount ?? "0") || 0;
+              const winRate = p.winRate;
+              return (
+                <div
+                  key={p.payorEmail}
+                  className="px-4 py-2.5 flex items-center gap-3 text-sm"
+                  style={{ borderBottom: i === payorConcentration.length - 1 ? "none" : "1px solid hsl(var(--border))" }}
+                  data-testid={`payor-row-${i}`}
+                >
+                  <span className="flex-1 truncate" title={p.payorEmail}>{p.payorEmail}</span>
+                  <span className="font-mono tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{p.openCount}</span>
+                  <span
+                    className="font-mono text-xs tabular-nums"
+                    style={{ minWidth: 84, textAlign: "right", color: !clerk && open > 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))" }}
+                  >
+                    {clerk ? "—" : open > 0 ? formatCompactCurrency(open) : "—"}
+                  </span>
+                  <span
+                    className="font-mono text-xs tabular-nums"
+                    style={{
+                      minWidth: 64,
+                      textAlign: "right",
+                      color: winRate === null ? "hsl(var(--muted-foreground))" : winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
+                    }}
+                    title="Approved + Partially Approved / decided invoices created in window"
+                  >
+                    {winRate === null ? "—" : `${Math.round(winRate * 100)}%`}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </Section>
+
+      </div>
+
+      {/* ─── Causes & people — row 6 (Top denial reasons + Team productivity) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Section
+          title={<span className="flex items-center gap-2">Top denial reasons <span className="text-[10px] font-normal text-muted-foreground uppercase">Per leg</span></span>}
+          icon={<BarChart3 className="w-4 h-4" />}
+          action={<Link href="/error-types" className="text-xs text-primary hover:underline">Open Error Types →</Link>}
+        >
+          <div className="text-[11px] text-muted-foreground mb-2">Ranked by $ denied — what each cause is costing.</div>
+          <div className="space-y-2.5" data-testid="error-type-bars">
+            {errorTypeBars.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No classifications to display</p>
+            ) : (
+              errorTypeBars.map(b => (
+                <div key={b.name} className="text-sm">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="flex-1 truncate">{b.name}</span>
+                    <span className="text-xs font-mono text-muted-foreground">{b.pct}%</span>
+                    <span className="text-xs font-semibold font-mono" style={{ color: "hsl(var(--destructive))" }} title="$ denied — drives ranking">
+                      {clerk ? "—" : `-${formatCompactCurrency(b.denied)}`}
+                    </span>
+                    <span className="text-xs font-mono opacity-70" style={{ color: "hsl(var(--cc-success))" }} title="$ recovered (context only)">
+                      {clerk ? "—" : `+${formatCompactCurrency(b.recovered)}`}
+                    </span>
+                  </div>
+                  <MiniBar pct={b.barPct} tone="red" />
+                </div>
+              ))
+            )}
+          </div>
+        </Section>
+
+        <Section title={<span className="flex items-center gap-2">Team productivity <span className="text-[10px] font-normal text-muted-foreground uppercase">Per leg</span></span>} icon={<Users className="w-4 h-4" />} padded={false}>
+          <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground">
+            <span style={{ minWidth: 140 }}>Owner</span>
+            <span style={{ minWidth: 50, textAlign: "right" }}>Filed</span>
+            <span style={{ minWidth: 50, textAlign: "right" }}>Won</span>
+            <span className="flex-1">Win rate</span>
+          </div>
+          <SkeletonSwap loading={prodLoading} skeleton={<Skeleton className="h-24 w-full" />}>
+            {teamRows.length === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">No tracked user activity in this window</div>
+            ) : (
+              teamRows.map(t => (
+                <div key={t.who} className="px-4 py-2.5 flex items-center gap-3 text-sm border-b border-border last:border-b-0" data-testid={`team-row-${t.who}`}>
+                  <span className="font-medium truncate" style={{ minWidth: 140 }}>{t.who}</span>
+                  <span className="font-mono tabular-nums" style={{ minWidth: 50, textAlign: "right" }}>{t.filed}</span>
+                  <span className="font-mono tabular-nums" style={{ minWidth: 50, textAlign: "right" }}>{t.won}</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    {t.rate === null ? (
+                      <span className="text-xs text-muted-foreground">no resolutions</span>
+                    ) : (
+                      <>
+                        <MiniBar pct={t.rate} tone={t.rate >= 85 ? "green" : t.rate >= 75 ? "blue" : "amber"} />
+                        <span
+                          className="text-xs font-mono tabular-nums"
+                          style={{ minWidth: 32, textAlign: "right", color: t.rate >= 85 ? "hsl(var(--cc-success))" : "hsl(var(--foreground))" }}
+                        >
+                          {t.rate}%
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </SkeletonSwap>
+        </Section>
+      </div>
+
+      {/* ─── Repeat offenders ──────────────────────────────────────── */}
       <div
         className="rounded-md overflow-hidden bg-card"
         style={{ borderColor: "hsl(var(--cc-amber-border))", borderWidth: 2, borderStyle: "solid" }}
@@ -495,15 +890,15 @@ export default function Insights() {
       >
         <div
           className="px-5 py-3 flex items-center justify-between flex-wrap gap-2"
-          style={{
-            background: "hsl(var(--cc-amber-bg))",
-            borderBottom: "1px solid hsl(var(--cc-amber-border))",
-          }}
+          style={{ background: "hsl(var(--cc-amber-bg))", borderBottom: "1px solid hsl(var(--cc-amber-border))" }}
         >
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" style={{ color: "hsl(var(--cc-warning))" }} />
             <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "hsl(var(--cc-amber-fg))" }}>
               Repeat offenders
+            </span>
+            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded" style={{ color: "hsl(var(--cc-amber-fg))", background: "hsl(var(--cc-amber-border))" }}>
+              Per leg
             </span>
             <span className="text-xs" style={{ color: "hsl(var(--cc-amber-fg))", opacity: 0.85 }}>
               · vehicles &amp; members generating most rejected claims
@@ -515,21 +910,14 @@ export default function Insights() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2">
-          {/* Drivers / vehicles by carNumber */}
           <div className="border-b md:border-b-0 md:border-r border-border" data-testid="repeat-drivers">
-            <div
-              className="px-4 py-2.5 flex items-center justify-between"
-              style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}
-            >
+            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                 <Truck className="w-3.5 h-3.5" />Drivers / vehicles
                 <span className="text-[10px] font-normal normal-case opacity-80">(by car #)</span>
               </div>
-
             </div>
-            <div
-              className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground"
-            >
+            <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground">
               <span style={{ minWidth: 84 }}>Vehicle</span>
               <span style={{ minWidth: 100 }} className="hidden md:inline">Last invoice</span>
               <span className="flex-1">Top error type</span>
@@ -539,75 +927,60 @@ export default function Insights() {
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
               <span style={{ width: 56 }} />
             </div>
-            <SkeletonSwap
-              loading={repeatLoading}
-              skeleton={<Skeleton className="h-24 w-full" />}
-            >
-            {drivers.length === 0 ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">
-                No repeat offenders in this window.
-              </div>
-            ) : (
-              drivers.map((d, i) => (
-                <div
-                  key={`${d.carNumber}-${i}`}
-                  className="px-4 py-2.5 flex items-center gap-3 text-sm"
-                  style={{ borderBottom: i === drivers.length - 1 ? "none" : "1px solid hsl(var(--border))" }}
-                  data-testid={`repeat-driver-row-${d.carNumber}`}
-                >
-                  <span className="font-mono text-xs font-semibold" style={{ minWidth: 84 }}>{d.carNumber}</span>
-                  <span
-                    className="font-mono text-[11px] text-muted-foreground truncate hidden md:inline"
-                    style={{ minWidth: 100 }}
-                    title={d.lastInvoiceNumber ?? undefined}
+            <SkeletonSwap loading={repeatLoading} skeleton={<Skeleton className="h-24 w-full" />}>
+              {(repeat?.drivers ?? []).length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">No repeat offenders in this window.</div>
+              ) : (
+                (repeat?.drivers ?? []).map((d, i, arr) => (
+                  <div
+                    key={`${d.carNumber}-${i}`}
+                    className="px-4 py-2.5 flex items-center gap-3 text-sm"
+                    style={{ borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))" }}
+                    data-testid={`repeat-driver-row-${d.carNumber}`}
                   >
-                    {d.lastInvoiceNumber ?? "—"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] truncate text-muted-foreground">{d.topErrorTypeName ?? "—"}</div>
+                    <span className="font-mono text-xs font-semibold" style={{ minWidth: 84 }}>{d.carNumber}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground truncate hidden md:inline" style={{ minWidth: 100 }} title={d.lastInvoiceNumber ?? undefined}>
+                      {d.lastInvoiceNumber ?? "—"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] truncate text-muted-foreground">{d.topErrorTypeName ?? "—"}</div>
+                    </div>
+                    <span className="font-mono font-semibold tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{d.rejectionCount}</span>
+                    <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
+                      {formatCurrency(d.atRiskAmount)}
+                    </span>
+                    <span
+                      className="font-mono text-xs tabular-nums"
+                      style={{
+                        minWidth: 56,
+                        textAlign: "right",
+                        color: d.winRate === null ? "hsl(var(--muted-foreground))" : d.winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
+                      }}
+                    >
+                      {d.winRate === null ? "—" : `${Math.round(d.winRate * 100)}%`}
+                    </span>
+                    <span style={{ minWidth: 28, textAlign: "right", fontSize: 12 }}>
+                      <TrendArrow d={d.trend} />
+                    </span>
+                    <Link
+                      href={`/claims?carNumber=${encodeURIComponent(d.carNumber)}`}
+                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                      style={{ width: 56, justifyContent: "flex-end" }}
+                    >
+                      Open <ArrowUpRight className="w-3 h-3" />
+                    </Link>
                   </div>
-                  <span className="font-mono font-semibold tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{d.rejectionCount}</span>
-                  <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
-                    {formatCurrency(d.atRiskAmount)}
-                  </span>
-                  <span
-                    className="font-mono text-xs tabular-nums"
-                    style={{
-                      minWidth: 56,
-                      textAlign: "right",
-                      color: d.winRate === null ? "hsl(var(--muted-foreground))" : d.winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
-                    }}
-                    title="Approved / (Approved + Denied) for resolved claims in this window"
-                  >
-                    {d.winRate === null ? "—" : `${Math.round(d.winRate * 100)}%`}
-                  </span>
-                  <span style={{ minWidth: 28, textAlign: "right", fontSize: 12 }}>
-                    <TrendArrow d={d.trend} />
-                  </span>
-                  <Link
-                    href={`/claims?carNumber=${encodeURIComponent(d.carNumber)}`}
-                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-                    style={{ width: 56, justifyContent: "flex-end" }}
-                  >
-                    Open <ArrowUpRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              ))
-            )}
+                ))
+              )}
             </SkeletonSwap>
           </div>
 
-          {/* Members by clientNumber */}
           <div data-testid="repeat-members">
-            <div
-              className="px-4 py-2.5 flex items-center justify-between"
-              style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}
-            >
+            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                 <UserCircle2 className="w-3.5 h-3.5" />Members
                 <span className="text-[10px] font-normal normal-case opacity-80">(by client #)</span>
               </div>
-
             </div>
             <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted text-muted-foreground">
               <span style={{ minWidth: 100 }}>Member</span>
@@ -618,60 +991,48 @@ export default function Insights() {
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
               <span style={{ width: 56 }} />
             </div>
-            <SkeletonSwap
-              loading={repeatLoading}
-              skeleton={<Skeleton className="h-24 w-full" />}
-            >
-            {members.length === 0 ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">
-                No repeat-offender members in this window.
-              </div>
-            ) : (
-              members.map((m, i) => (
-                <div
-                  key={`${m.clientNumber}-${i}`}
-                  className="px-4 py-2.5 flex items-center gap-3 text-sm"
-                  style={{ borderBottom: i === members.length - 1 ? "none" : "1px solid hsl(var(--border))" }}
-                  data-testid={`repeat-member-row-${m.clientNumber}`}
-                >
-                  <span className="font-mono text-xs font-semibold" style={{ minWidth: 100 }}>{m.clientNumber}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] truncate text-muted-foreground">{m.topErrorTypeName ?? "—"}</div>
+            <SkeletonSwap loading={repeatLoading} skeleton={<Skeleton className="h-24 w-full" />}>
+              {(repeat?.members ?? []).length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">No repeat-offender members in this window.</div>
+              ) : (
+                (repeat?.members ?? []).map((m, i, arr) => (
+                  <div
+                    key={`${m.clientNumber}-${i}`}
+                    className="px-4 py-2.5 flex items-center gap-3 text-sm"
+                    style={{ borderBottom: i === arr.length - 1 ? "none" : "1px solid hsl(var(--border))" }}
+                    data-testid={`repeat-member-row-${m.clientNumber}`}
+                  >
+                    <span className="font-mono text-xs font-semibold" style={{ minWidth: 100 }}>{m.clientNumber}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] truncate text-muted-foreground">{m.topErrorTypeName ?? "—"}</div>
+                    </div>
+                    <span className="font-mono font-semibold tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{m.rejectionCount}</span>
+                    <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
+                      {formatCurrency(m.atRiskAmount)}
+                    </span>
+                    <span
+                      className="font-mono text-xs tabular-nums"
+                      style={{
+                        minWidth: 56,
+                        textAlign: "right",
+                        color: m.winRate === null ? "hsl(var(--muted-foreground))" : m.winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
+                      }}
+                    >
+                      {m.winRate === null ? "—" : `${Math.round(m.winRate * 100)}%`}
+                    </span>
+                    <span style={{ minWidth: 28, textAlign: "right", fontSize: 12 }}>
+                      <TrendArrow d={m.trend} />
+                    </span>
+                    <Link
+                      href={`/claims?clientNumber=${encodeURIComponent(m.clientNumber)}`}
+                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                      style={{ width: 56, justifyContent: "flex-end" }}
+                    >
+                      Open <ArrowUpRight className="w-3 h-3" />
+                    </Link>
                   </div>
-                  <span
-                    className="font-mono font-semibold tabular-nums"
-                    style={{ minWidth: 56, textAlign: "right" }}
-                    title="Total rejected trips for this member in the window"
-                  >
-                    {m.rejectionCount}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
-                    {formatCurrency(m.atRiskAmount)}
-                  </span>
-                  <span
-                    className="font-mono text-xs tabular-nums"
-                    style={{
-                      minWidth: 56,
-                      textAlign: "right",
-                      color: m.winRate === null ? "hsl(var(--muted-foreground))" : m.winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
-                    }}
-                    title="Approved / (Approved + Denied) for resolved claims in this window"
-                  >
-                    {m.winRate === null ? "—" : `${Math.round(m.winRate * 100)}%`}
-                  </span>
-                  <span style={{ minWidth: 28, textAlign: "right", fontSize: 12 }}>
-                    <TrendArrow d={m.trend} />
-                  </span>
-                  <Link
-                    href={`/claims?clientNumber=${encodeURIComponent(m.clientNumber)}`}
-                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-                    style={{ width: 56, justifyContent: "flex-end" }}
-                  >
-                    Open <ArrowUpRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              ))
-            )}
+                ))
+              )}
             </SkeletonSwap>
           </div>
         </div>
@@ -684,203 +1045,6 @@ export default function Insights() {
           <span>Click <strong>Open</strong> on any row to see all rejected claims for that vehicle or member.</span>
         </div>
       </div>
-
-      {/* Recovered by error type + Team productivity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Section
-          title="Recovered by error type"
-          icon={<BarChart3 className="w-4 h-4" />}
-          action={<Link href="/error-types" className="text-xs text-primary hover:underline">Open Error Types →</Link>}
-        >
-          <div className="space-y-2.5" data-testid="error-type-bars">
-            {errorTypeBars.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No classifications to display</p>
-            ) : (
-              errorTypeBars.map(b => (
-                <div key={b.name} className="text-sm">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="flex-1 truncate">{b.name}</span>
-                    <span className="text-xs font-mono text-muted-foreground">{b.pct}%</span>
-                    <span className="text-xs font-medium font-mono" style={{ color: "hsl(var(--cc-success))" }}>
-                      {clerk ? "—" : `+${formatCompactCurrency(b.recovered)}`}
-                    </span>
-                    <span className="text-xs font-mono opacity-70" style={{ color: "hsl(var(--destructive))" }}>
-                      {clerk ? "—" : `-${formatCompactCurrency(b.denied)}`}
-                    </span>
-                  </div>
-                  <MiniBar pct={b.barPct} tone="green" />
-                </div>
-              ))
-            )}
-          </div>
-        </Section>
-
-        <Section title="Team productivity" icon={<Users className="w-4 h-4" />} padded={false}>
-          <div className="text-[10px] uppercase font-semibold px-4 py-1.5 flex items-center gap-3 bg-muted border-b border-border text-muted-foreground">
-            <span style={{ minWidth: 140 }}>Owner</span>
-            <span style={{ minWidth: 50, textAlign: "right" }}>Filed</span>
-            <span style={{ minWidth: 50, textAlign: "right" }}>Won</span>
-            <span className="flex-1">Win rate</span>
-          </div>
-          <SkeletonSwap
-            loading={prodLoading}
-            skeleton={<Skeleton className="h-24 w-full" />}
-          >
-          {teamRows.length === 0 ? (
-            <div className="p-6 text-center text-xs text-muted-foreground">No tracked user activity in this window</div>
-          ) : (
-            teamRows.map(t => (
-              <div
-                key={t.who}
-                className="px-4 py-2.5 flex items-center gap-3 text-sm border-b border-border last:border-b-0"
-                data-testid={`team-row-${t.who}`}
-              >
-                <span className="font-medium truncate" style={{ minWidth: 140 }}>{t.who}</span>
-                <span className="font-mono tabular-nums" style={{ minWidth: 50, textAlign: "right" }}>{t.filed}</span>
-                <span className="font-mono tabular-nums" style={{ minWidth: 50, textAlign: "right" }}>{t.won}</span>
-                <div className="flex-1 flex items-center gap-2">
-                  {t.rate === null ? (
-                    <span className="text-xs text-muted-foreground">no resolutions</span>
-                  ) : (
-                    <>
-                      <MiniBar pct={t.rate} tone={t.rate >= 85 ? "green" : t.rate >= 75 ? "blue" : "amber"} />
-                      <span
-                        className="text-xs font-mono tabular-nums"
-                        style={{ minWidth: 32, textAlign: "right", color: t.rate >= 85 ? "hsl(var(--cc-success))" : "hsl(var(--foreground))" }}
-                      >
-                        {t.rate}%
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-          </SkeletonSwap>
-        </Section>
-      </div>
-
-      {/* Footer breakdowns: status / outcome / portal */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="insights-footer-breakdowns">
-        <div className="rounded-md border border-border bg-card p-3.5">
-          <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-            By status (in flight)
-            <InfoTooltip content="Distribution of all claims by their current workflow status." />
-          </div>
-          <div className="text-xs space-y-1">
-            {Object.keys(statusBreakdown).length === 0 ? (
-              <p className="text-muted-foreground">No claims to display</p>
-            ) : (
-              Object.entries(statusBreakdown)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 6)
-                .map(([s, n]) => (
-                  <div key={s} className="flex justify-between">
-                    <span className="truncate mr-2">{s}</span>
-                    <span className="font-mono tabular-nums">{n}</span>
-                  </div>
-                ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-border bg-card p-3.5" data-testid="group-outcome-breakdown">
-          <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-            By outcome
-            <InfoTooltip content="Distribution of invoice groups by outcome. Counts sum to total invoice groups in the window." />
-          </div>
-          <div className="text-xs space-y-1">
-            {totalGroupOutcomes === 0 ? (
-              <p className="text-muted-foreground">No outcomes to display</p>
-            ) : (
-              groupOutcomeBreakdown.map(({ outcome: o, count: n }) => {
-                  const color =
-                    o === "Approved" || o === "Partially Approved"
-                      ? "hsl(var(--cc-success))"
-                      : o === "Denied"
-                        ? "hsl(var(--destructive))"
-                        : "hsl(var(--muted-foreground))";
-                  const Icon = o === "Approved" || o === "Partially Approved" ? CheckCircle2 : o === "Denied" ? XCircle : Activity;
-                  return (
-                    <div key={o} className="flex justify-between items-center">
-                      <span className="flex items-center gap-1.5 truncate" style={{ color }}>
-                        <Icon className="w-3 h-3" />
-                        {o}
-                      </span>
-                      <span className="font-mono tabular-nums">{n}</span>
-                    </div>
-                  );
-                })
-            )}
-            <div className="text-[10px] text-muted-foreground pt-1">
-              {totalGroupOutcomes} total invoice group{totalGroupOutcomes === 1 ? "" : "s"}
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-md border border-border bg-card p-3.5" data-testid="payor-breakdown">
-          <div className="text-[11px] uppercase font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-            By payor
-            <InfoTooltip content="Top payors by claim volume in the sample. Denied $ shows current at-risk exposure with that payor." />
-          </div>
-          <div className="text-xs space-y-1">
-            {Object.keys(payorBreakdown).length === 0 ? (
-              <p className="text-muted-foreground">No payor data to display</p>
-            ) : (
-              Object.entries(payorBreakdown)
-                .sort((a, b) => b[1].count - a[1].count)
-                .slice(0, 6)
-                .map(([email, agg]) => (
-                  <div key={email} className="flex justify-between items-baseline gap-2">
-                    <span className="truncate flex-1" title={email}>{email}</span>
-                    <span className="font-mono tabular-nums">{agg.count}</span>
-                    <span
-                      className="font-mono tabular-nums text-[10px]"
-                      style={{ color: !clerk && agg.atRisk > 0 ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))" }}
-                      title="Sum of denied claim amounts attributed to this payor"
-                    >
-                      {clerk ? "—" : agg.atRisk > 0 ? `-${formatCompactCurrency(agg.atRisk)}` : "—"}
-                    </span>
-                  </div>
-                ))
-            )}
-            <div className="text-[10px] text-muted-foreground pt-1">
-              {Object.keys(payorBreakdown).length} distinct payor{Object.keys(payorBreakdown).length === 1 ? "" : "s"} sampled
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {totalExposure > 0 && summary.expiringGroups.length > 0 && (
-        <div
-          className="rounded-md border border-border bg-card p-3.5 flex items-center gap-3 text-sm flex-wrap"
-          data-testid="exposure-callout"
-        >
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: summary.urgentCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--cc-warning))" }} />
-          <span>
-            {summary.urgentCount > 0 ? (
-              <>
-                <strong style={{ color: "hsl(var(--destructive))" }}>{summary.urgentCount} urgent</strong> ·{" "}
-              </>
-            ) : null}
-            <strong>{summary.expiringGroups.length}</strong> invoice group{summary.expiringGroups.length === 1 ? "" : "s"} approaching the dispute deadline{!clerk && (
-              <>
-                {" "}· est. exposure{" "}
-                <strong style={{ color: "hsl(var(--destructive))" }}>
-                  {formatCurrency(String(summary.expiringGroups.reduce((s, g) => s + (parseFloat(g.totalAmount || "0") || 0), 0) * exposureMultiplier))}
-                </strong>{" "}
-                <span className="text-xs text-muted-foreground">(claim + ~{Math.round(vendorPrepayRate * 100)}% vendor prepay, approx.)</span>
-              </>
-            )}
-          </span>
-          <Link
-            href={summary.urgentCount > 0 ? "/invoice-groups?expiring=urgent" : "/invoice-groups?expiring=soon"}
-            className="ml-auto text-xs text-primary hover:underline"
-          >
-            {summary.urgentCount > 0 ? "Open urgent worklist →" : "Open worklist →"}
-          </Link>
-        </div>
-      )}
     </div>
   );
 }

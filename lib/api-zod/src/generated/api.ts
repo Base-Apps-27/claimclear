@@ -29723,7 +29723,28 @@ export const GetDashboardTimeseriesResponse = zod.object({
       date: zod.string().describe("ISO date (YYYY-MM-DD) at UTC midnight"),
       claimsCreated: zod.number(),
       claimsResolved: zod.number(),
-      dollarsRecovered: zod.number(),
+      invoicesCreated: zod
+        .number()
+        .describe(
+          "Distinct invoice groups whose `created_at` falls on this day.",
+        ),
+      invoicesSubmitted: zod
+        .number()
+        .describe(
+          "Distinct invoice groups whose status moved to `Portal Queued` on this day.",
+        ),
+      invoicesResolved: zod
+        .number()
+        .describe(
+          "Distinct invoice groups whose `group_resolved` \/ `group_denied` audit log was emitted on this day.",
+        ),
+      dollarsRecovered: zod.number().nullable(),
+      priorDollarsRecovered: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recovered $ from the equivalent calendar slot in the prior equal-length window. Powers the prior-period overlay on the Outcomes recovered-$ trend.",
+        ),
     }),
   ),
 });
@@ -29786,6 +29807,71 @@ export const GetDashboardInsightsResponse = zod
         count: zod.number(),
       }),
     ),
+    priorPeriodRecoveredAmount: zod
+      .string()
+      .nullable()
+      .describe(
+        'Settled-positive Σ approved across claims created in the\nequal-length window immediately preceding the active one.\nPowers the \"Net change vs prior window\" tile on the CFO\nMoney scorecard.\n',
+      ),
+    atRiskAmount: zod
+      .string()
+      .nullable()
+      .describe(
+        "Snapshot (NOT windowed) of currently open invoice exposure:\nΣ (`invoice_groups.totalAmount` − `approvedAmount`) over\ninvoice groups still in flight (outcome not Withdrawn \/\nNon-Issue, deadline not missed, phase not closed OR a\nre-attestation is still pending). Mirrors the open-exposure\npredicate used by `\/dashboard\/summary.amounts.atRiskClaim`\nbut at INVOICE grain.\n",
+      ),
+    atRiskGroupCount: zod
+      .number()
+      .describe("Count of invoice groups contributing to `atRiskAmount`."),
+    pipelineByPhase: zod
+      .array(
+        zod.object({
+          phase: zod.enum([
+            "pre-submit",
+            "in-flight",
+            "response-pending",
+            "closed",
+          ]),
+          count: zod.number(),
+          openAmount: zod
+            .string()
+            .nullable()
+            .describe(
+              "Σ `totalAmount` for invoices in this phase, or null for clerks.",
+            ),
+        }),
+      )
+      .describe(
+        "Snapshot rollup of currently open invoices by macro phase.\nAlways returns the same four entries in pipeline order:\n`pre-submit`, `in-flight`, `response-pending`, `closed`.\n`pre-submit` folds in On-Hold groups; `response-pending`\nfolds in MAS-required and awaiting-payout. `closed`\nrepresents in-window resolved invoices for funnel context.\n",
+      ),
+    payorConcentrationByGroup: zod
+      .array(
+        zod.object({
+          payorEmail: zod.string(),
+          openCount: zod
+            .number()
+            .describe("Number of currently open invoices touching this payor."),
+          invoiceCountInWindow: zod
+            .number()
+            .describe(
+              "Number of invoices CREATED in the active window touching this payor.",
+            ),
+          openAtRiskAmount: zod
+            .string()
+            .nullable()
+            .describe(
+              "Σ open at-risk $ for this payor's currently open invoices.",
+            ),
+          winRate: zod
+            .number()
+            .nullable()
+            .describe(
+              "(Approved + Partially Approved) \/ (Approved +\nPartially Approved + Denied), counted over invoices\nCREATED in the active window. `null` when no decided\ninvoices fall in the window.\n",
+            ),
+        }),
+      )
+      .describe(
+        "Top 5 payors by open at-risk $ at INVOICE grain. Each row\ncounts distinct invoice groups (not legs) and a\nwindow-scoped win-rate over invoices created in the active\nwindow.\n",
+      ),
     groupOutcomeBreakdown: zod
       .array(
         zod.object({
@@ -29794,13 +29880,15 @@ export const GetDashboardInsightsResponse = zod
             "Partially Approved",
             "Denied",
             "Withdrawn",
-            "Mixed",
+            "Pending",
+            "Non-Issue",
+            "No Action Needed",
           ]),
           count: zod.number(),
         }),
       )
       .describe(
-        "Invoice-level (not claim-level) outcome rollup, computed\nfrom `invoice_groups.outcome` over groups whose\n`created_at` is in the window. Always returns the same\nfive buckets in this order: `Approved`, `Partially\nApproved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum\nvalues `Pending` and `Non-Issue` both fold into `Mixed`.\nCounts sum to total invoice groups in the window.\n",
+        'Invoice-level (not claim-level) outcome rollup, computed\nfrom `invoice_groups.outcome` over groups whose\n`created_at` is in the window. Always returns the same\nseven buckets in this order: `Approved`, `Partially\nApproved`, `Denied`, `Withdrawn`, `Pending`, `Non-Issue`,\n`No Action Needed`. Counts sum to total invoice groups in\nthe window. Task #712 split out the legacy \"Mixed\"\npseudo-bucket; Task #714 added \"No Action Needed\".\n',
       ),
     errorTypeBreakdown: zod.array(
       zod.object({

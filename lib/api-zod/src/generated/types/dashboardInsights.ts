@@ -15,6 +15,8 @@ import type { DashboardInsightsErrorTypeBreakdownItem } from "./dashboardInsight
 import type { DashboardInsightsGroupOutcomeBreakdownItem } from "./dashboardInsightsGroupOutcomeBreakdownItem";
 import type { DashboardInsightsOutcomeBreakdownItem } from "./dashboardInsightsOutcomeBreakdownItem";
 import type { DashboardInsightsPayorBreakdownItem } from "./dashboardInsightsPayorBreakdownItem";
+import type { DashboardInsightsPayorConcentrationByGroupItem } from "./dashboardInsightsPayorConcentrationByGroupItem";
+import type { DashboardInsightsPipelineByPhaseItem } from "./dashboardInsightsPipelineByPhaseItem";
 import type { DashboardInsightsStatusBreakdownItem } from "./dashboardInsightsStatusBreakdownItem";
 
 /**
@@ -42,13 +44,45 @@ Mirrors the dashboard "Reclaimed" KPI definition exactly.
   totalDeniedAmount: string | null;
   statusBreakdown: DashboardInsightsStatusBreakdownItem[];
   outcomeBreakdown: DashboardInsightsOutcomeBreakdownItem[];
+  /** Settled-positive Σ approved across claims created in the
+equal-length window immediately preceding the active one.
+Powers the "Net change vs prior window" tile on the CFO
+Money scorecard.
+ */
+  priorPeriodRecoveredAmount: string | null;
+  /** Snapshot (NOT windowed) of currently open invoice exposure:
+Σ (`invoice_groups.totalAmount` − `approvedAmount`) over
+invoice groups still in flight (outcome not Withdrawn /
+Non-Issue, deadline not missed, phase not closed OR a
+re-attestation is still pending). Mirrors the open-exposure
+predicate used by `/dashboard/summary.amounts.atRiskClaim`
+but at INVOICE grain.
+ */
+  atRiskAmount: string | null;
+  /** Count of invoice groups contributing to `atRiskAmount`. */
+  atRiskGroupCount: number;
+  /** Snapshot rollup of currently open invoices by macro phase.
+Always returns the same four entries in pipeline order:
+`pre-submit`, `in-flight`, `response-pending`, `closed`.
+`pre-submit` folds in On-Hold groups; `response-pending`
+folds in MAS-required and awaiting-payout. `closed`
+represents in-window resolved invoices for funnel context.
+ */
+  pipelineByPhase: DashboardInsightsPipelineByPhaseItem[];
+  /** Top 5 payors by open at-risk $ at INVOICE grain. Each row
+counts distinct invoice groups (not legs) and a
+window-scoped win-rate over invoices created in the active
+window.
+ */
+  payorConcentrationByGroup: DashboardInsightsPayorConcentrationByGroupItem[];
   /** Invoice-level (not claim-level) outcome rollup, computed
 from `invoice_groups.outcome` over groups whose
 `created_at` is in the window. Always returns the same
-five buckets in this order: `Approved`, `Partially
-Approved`, `Denied`, `Withdrawn`, `Mixed`. Stored enum
-values `Pending` and `Non-Issue` both fold into `Mixed`.
-Counts sum to total invoice groups in the window.
+seven buckets in this order: `Approved`, `Partially
+Approved`, `Denied`, `Withdrawn`, `Pending`, `Non-Issue`,
+`No Action Needed`. Counts sum to total invoice groups in
+the window. Task #712 split out the legacy "Mixed"
+pseudo-bucket; Task #714 added "No Action Needed".
  */
   groupOutcomeBreakdown: DashboardInsightsGroupOutcomeBreakdownItem[];
   errorTypeBreakdown: DashboardInsightsErrorTypeBreakdownItem[];

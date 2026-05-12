@@ -652,6 +652,12 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   const days = parseDays(req.query.days, 30);
   const start = startOfWindow(days);
   const buckets = buildDateBuckets(days);
+  // Prior-window for the Insights "Outcomes" recovered-$ trend overlay.
+  // We pull recovered-$ per day for the equivalent calendar slot one
+  // window back (e.g. for a 30d window: days [now-60..now-30]) and emit
+  // it as `priorDollarsRecovered` aligned to each current point's index.
+  const priorStart = new Date(start.getTime() - days * 86400000);
+  const priorEnd = start;
 
   const createdRows = await db
     .select({
@@ -674,6 +680,50 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
     ))
     .groupBy(sql`1`);
 
+  // Invoice-grain (group) created/resolved/submitted per day. Powers the
+  // CFO/COO Insights Daily Flow chart, where the unit-of-work is the
+  // invoice, not the leg. `claimsCreated` / `claimsResolved` above are
+  // kept for backward compatibility with the dashboard's own series.
+  const invoicesCreatedRows = await db
+    .select({
+      bucket: sql<string>`to_char((${invoiceGroupsTable.createdAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: count(),
+    })
+    .from(invoiceGroupsTable)
+    .where(and(gte(invoiceGroupsTable.createdAt, start), HIDE_TOUR_SAMPLE_GROUP))
+    .groupBy(sql`1`);
+
+  // Invoice-resolved counts a distinct invoice group per day — multiple
+  // resolve/deny audit rows for the same group on the same day collapse.
+  const invoicesResolvedRows = await db
+    .select({
+      bucket: sql<string>`to_char((${auditLogsTable.timestamp}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: sql<number>`COUNT(DISTINCT ${auditLogsTable.invoiceGroupId})::int`,
+    })
+    .from(auditLogsTable)
+    .where(and(
+      gte(auditLogsTable.timestamp, start),
+      inArray(auditLogsTable.action, ["group_resolved", "group_denied"]),
+      isNotNull(auditLogsTable.invoiceGroupId),
+    ))
+    .groupBy(sql`1`);
+
+  // Invoice-submitted counts distinct invoice groups whose status moved
+  // to Portal Queued on a given day (one submission per invoice).
+  const invoicesSubmittedRows = await db
+    .select({
+      bucket: sql<string>`to_char((${auditLogsTable.timestamp}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: sql<number>`COUNT(DISTINCT ${auditLogsTable.invoiceGroupId})::int`,
+    })
+    .from(auditLogsTable)
+    .where(and(
+      gte(auditLogsTable.timestamp, start),
+      eq(auditLogsTable.action, "group_status_changed"),
+      sql`${auditLogsTable.metadata} ->> 'to' = 'Portal Queued'`,
+      isNotNull(auditLogsTable.invoiceGroupId),
+    ))
+    .groupBy(sql`1`);
+
   const recoveredRows = await db
     .select({
       bucket: sql<string>`to_char((${invoiceGroupsTable.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
@@ -687,21 +737,56 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
     ))
     .groupBy(sql`1`);
 
+  // Prior-window recovered-$ per day, used as the overlay on the
+  // current window's recovered-$ trend.
+  const priorRecoveredRows = await db
+    .select({
+      bucket: sql<string>`to_char((${invoiceGroupsTable.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      total: sum(invoiceGroupsTable.approvedAmount),
+    })
+    .from(invoiceGroupsTable)
+    .where(and(
+      gte(invoiceGroupsTable.updatedAt, priorStart),
+      sql`${invoiceGroupsTable.updatedAt} < ${priorEnd}`,
+      isNotNull(invoiceGroupsTable.approvedAmount),
+      inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
+    ))
+    .groupBy(sql`1`);
+
   const createdMap = new Map(createdRows.map(r => [r.bucket, r.count]));
   const resolvedMap = new Map(resolvedRows.map(r => [r.bucket, r.count]));
   const recoveredMap = new Map(recoveredRows.map(r => [r.bucket, parseFloat(r.total || "0")]));
+  const invoicesCreatedMap = new Map(invoicesCreatedRows.map(r => [r.bucket, Number(r.count)]));
+  const invoicesResolvedMap = new Map(invoicesResolvedRows.map(r => [r.bucket, Number(r.count)]));
+  const invoicesSubmittedMap = new Map(invoicesSubmittedRows.map(r => [r.bucket, Number(r.count)]));
+  const priorRecoveredMap = new Map(priorRecoveredRows.map(r => [r.bucket, parseFloat(r.total || "0")]));
 
   // Clerks don't see money — null out the dollarsRecovered series so the
   // Insights page renders "—" via formatCurrency rather than $0.00.
   const showAmounts = canSeeAmounts(req.user);
-  const points = buckets.map(date => ({
-    date,
-    claimsCreated: createdMap.get(date) ?? 0,
-    claimsResolved: resolvedMap.get(date) ?? 0,
-    dollarsRecovered: showAmounts
-      ? Number((recoveredMap.get(date) ?? 0).toFixed(2))
-      : null,
-  }));
+  const priorBuckets: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(priorStart);
+    d.setUTCDate(d.getUTCDate() + i);
+    priorBuckets.push(d.toISOString().slice(0, 10));
+  }
+  const points = buckets.map((date, idx) => {
+    const priorDate = priorBuckets[idx];
+    return {
+      date,
+      claimsCreated: createdMap.get(date) ?? 0,
+      claimsResolved: resolvedMap.get(date) ?? 0,
+      invoicesCreated: invoicesCreatedMap.get(date) ?? 0,
+      invoicesSubmitted: invoicesSubmittedMap.get(date) ?? 0,
+      invoicesResolved: invoicesResolvedMap.get(date) ?? 0,
+      dollarsRecovered: showAmounts
+        ? Number((recoveredMap.get(date) ?? 0).toFixed(2))
+        : null,
+      priorDollarsRecovered: showAmounts && priorDate
+        ? Number((priorRecoveredMap.get(priorDate) ?? 0).toFixed(2))
+        : null,
+    };
+  });
 
   res.json({ days, points });
 }));
@@ -738,19 +823,21 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
   const isSettledApprovedExpr = sql`${claimsTable.outcome} IN ('Approved','Partially Approved')
     AND ${claimsTable.attestationState} IN ('completed','not_required')`;
   const inWindow = and(gte(claimsTable.createdAt, start), HIDE_TOUR_SAMPLE_CLAIM);
+  // Prior window of equal length, used for the "Net change vs prior
+  // window" tile on the CFO scorecard. Bracketed [priorStart, start)
+  // so a claim never lands in both windows.
+  const priorStart = new Date(start.getTime() - days * 86400000);
+  const inPriorWindow = and(
+    gte(claimsTable.createdAt, priorStart),
+    sql`${claimsTable.createdAt} < ${start}`,
+    HIDE_TOUR_SAMPLE_CLAIM,
+  );
 
-  // Totals. One pass with conditional sums so the Insights topline
-  // tiles (count, disputed, recovered, denied) are always internally
-  // consistent — they're computed from the same row set in one query.
+  // Per-leg totals (denied $, claim count) — kept claim-grain since
+  // the page surfaces those in per-leg sections.
   const [totalsRow] = await db
     .select({
       totalClaims: count(),
-      totalClaimedAmount: sql<string>`COALESCE(SUM(COALESCE(${claimsTable.claimAmount}, 0)), 0)`,
-      totalRecoveredAmount: sql<string>`COALESCE(SUM(CASE
-        WHEN ${isSettledApprovedExpr}
-          THEN COALESCE(${claimsTable.approvedAmount}, 0)
-        ELSE 0
-      END), 0)`,
       totalDeniedAmount: sql<string>`COALESCE(SUM(CASE
         WHEN ${claimsTable.outcome} = 'Denied'
           THEN COALESCE(${claimsTable.claimAmount}, 0)
@@ -776,7 +863,50 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
   // stored enum's "Pending" and "Non-Issue" values both fold into Mixed
   // since they're not clean terminal states for the operator.
   const groupInWindow = and(gte(invoiceGroupsTable.createdAt, start), HIDE_TOUR_SAMPLE_GROUP);
-  const [statusRows, outcomeRows, errorTypeRows, payorRows, groupOutcomeRows] = await Promise.all([
+
+  // Money totals — invoice-grain (Task #712).
+  const [invoiceMoneyRow] = await db
+    .select({
+      totalClaimedAmount: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)), 0)`,
+      totalRecoveredAmount: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+    })
+    .from(invoiceGroupsTable)
+    .where(groupInWindow);
+
+  const openExposurePredicate = and(
+    HIDE_TOUR_SAMPLE_GROUP,
+    sql`${invoiceGroupsTable.outcome} NOT IN ('Withdrawn','Non-Issue')`,
+    sql`NOT (${invoiceGroupsTable.status} = 'Expired'
+        OR (${invoiceGroupsTable.status} = 'On Hold'
+            AND ${invoiceGroupsTable.serviceDate} IS NOT NULL
+            AND (
+              CASE EXTRACT(DOW FROM (${invoiceGroupsTable.serviceDate} + INTERVAL '30 days'))
+                WHEN 6 THEN ((${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date - INTERVAL '1 day')::date
+                WHEN 0 THEN ((${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date - INTERVAL '2 days')::date
+                ELSE (${invoiceGroupsTable.serviceDate} + INTERVAL '30 days')::date
+              END
+            ) < CURRENT_DATE))`,
+    or(
+      ne(invoiceGroupsTable.phase, "closed"),
+      sql`EXISTS (
+        SELECT 1 FROM ${claimsTable}
+        WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+          AND ${claimsTable.attestationState} IN ('pending','queued')
+      )`,
+    ),
+  );
+  const [
+    statusRows,
+    outcomeRows,
+    errorTypeRows,
+    payorRows,
+    groupOutcomeRows,
+    [priorRecoveredRow],
+    pipelineRows,
+    [atRiskRow],
+    payorConcentrationRows,
+    [closedInWindowRow],
+  ] = await Promise.all([
     db
       .select({ key: claimsTable.status, count: count() })
       .from(claimsTable)
@@ -823,48 +953,235 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
       .from(invoiceGroupsTable)
       .where(groupInWindow)
       .groupBy(invoiceGroupsTable.outcome),
+    // Prior-period recovered (invoice-grain) for "Net change vs prior".
+    db
+      .select({
+        priorRecovered: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(
+        gte(invoiceGroupsTable.createdAt, priorStart),
+        sql`${invoiceGroupsTable.createdAt} < ${start}`,
+        HIDE_TOUR_SAMPLE_GROUP,
+      )),
+    // Pipeline snapshot — currently open invoices grouped by macro
+    // phase (pre-submit, in-flight, response-pending). `phase` collapses
+    // MAS-required and awaiting-payout into response-pending so the
+    // funnel reads as the operator-facing stages. On-hold is folded
+    // into pre-submit since holds are pre-submission blockers from the
+    // CFO's POV. The `closed` bucket is computed separately below from
+    // window-scoped resolutions, NOT from this snapshot, so the funnel
+    // reads "open now → closed in window" instead of "open + ancient
+    // closed forever".
+    db
+      .select({
+        phase: sql<string>`CASE
+          WHEN ${invoiceGroupsTable.status} = 'On Hold' THEN 'pre-submit'
+          WHEN ${invoiceGroupsTable.phase} IN ('triage','ready_to_submit') THEN 'pre-submit'
+          WHEN ${invoiceGroupsTable.phase} = 'submitted' THEN 'in-flight'
+          WHEN ${invoiceGroupsTable.phase} IN ('response_received','reviewed','awaiting_reattestation') THEN 'response-pending'
+          WHEN ${invoiceGroupsTable.reattestCompletedAt} IS NOT NULL AND ${invoiceGroupsTable.phase} <> 'closed' THEN 'response-pending'
+          ELSE 'pre-submit'
+        END`,
+        count: count(),
+        totalAmount: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)), 0)`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(HIDE_TOUR_SAMPLE_GROUP, openExposurePredicate!))
+      .groupBy(sql`1`),
+    // At-risk snapshot — invoice-grain Σ totalAmount for groups still
+    // on the books with money in flight.
+    db
+      .select({
+        atRisk: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)
+          - COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+        groupCount: count(),
+      })
+      .from(invoiceGroupsTable)
+      .where(openExposurePredicate!),
+    // Payor concentration at INVOICE grain. Pull one row per (invoice,
+    // payor) and aggregate in JS so we get a clean win-rate alongside
+    // the open at-risk $ — Drizzle's conditional sum syntax is friendlier
+    // when split into per-row data we can roll up.
+    db
+      .select({
+        payorEmail: invoiceGroupsTable.payorEmail,
+        outcome: invoiceGroupsTable.outcome,
+        totalAmount: invoiceGroupsTable.totalAmount,
+        approvedAmount: invoiceGroupsTable.approvedAmount,
+        status: invoiceGroupsTable.status,
+        phase: invoiceGroupsTable.phase,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+        serviceDate: invoiceGroupsTable.serviceDate,
+        createdAt: invoiceGroupsTable.createdAt,
+        hasPendingAttest: sql<boolean>`EXISTS (
+          SELECT 1 FROM ${claimsTable}
+          WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+            AND ${claimsTable.attestationState} IN ('pending','queued')
+        )`,
+      })
+      .from(invoiceGroupsTable)
+      .where(HIDE_TOUR_SAMPLE_GROUP),
+    // Closed-in-window: count of distinct invoice groups that hit a
+    // resolution event (group_resolved / group_denied) inside the
+    // selected window, plus the Σ totalAmount of those groups. This
+    // backs the `closed` cell of the Pipeline funnel so it reads as
+    // "groups closed in the selected window" instead of every group
+    // ever closed.
+    //
+    // We MUST aggregate per distinct invoice_group_id BEFORE summing —
+    // a naive `SUM(DISTINCT totalAmount)` would dedupe by dollar value
+    // and silently drop two different invoices that happen to have the
+    // same total. We therefore filter invoice groups by an EXISTS
+    // against the audit log instead of joining (joins fan-out per audit
+    // row).
+    db
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        amount: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)), 0)`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(
+        HIDE_TOUR_SAMPLE_GROUP,
+        sql`EXISTS (
+          SELECT 1 FROM ${auditLogsTable}
+          WHERE ${auditLogsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+            AND ${auditLogsTable.action} IN ('group_resolved','group_denied')
+            AND ${auditLogsTable.timestamp} >= ${start}
+        )`,
+      )),
   ]);
 
-  // Roll the 7-value `claim_outcome` enum into the 6 display buckets
-  // the Insights "By outcome" card renders. Pending + Non-Issue both
-  // collapse into "Mixed" — neither is a clean operator-facing verdict.
-  // "No Action Needed" (Task #714) gets its own bucket — it's a clean
-  // system-asserted terminal verdict and folding it into Mixed or
-  // Withdrawn would mis-credit the operator's day.
-  const GROUP_OUTCOME_BUCKETS = ["Approved", "Partially Approved", "Denied", "Withdrawn", "No Action Needed", "Mixed"] as const;
+  // Roll the claim_outcome enum into display buckets. Task #712 split
+  // the legacy "Mixed" pseudo-bucket: Pending and Non-Issue are first-
+  // class (Pending = in flight; Non-Issue = closed without dispute).
+  // Task #714 added "No Action Needed" as its own terminal bucket.
+  const GROUP_OUTCOME_BUCKETS = ["Approved", "Partially Approved", "Denied", "Withdrawn", "Pending", "Non-Issue", "No Action Needed"] as const;
   const groupOutcomeCounts: Record<typeof GROUP_OUTCOME_BUCKETS[number], number> = {
     "Approved": 0,
     "Partially Approved": 0,
     "Denied": 0,
     "Withdrawn": 0,
+    "Pending": 0,
+    "Non-Issue": 0,
     "No Action Needed": 0,
-    "Mixed": 0,
   };
   for (const r of groupOutcomeRows) {
     const key = r.key;
     if (
-      key === "Approved" ||
-      key === "Partially Approved" ||
-      key === "Denied" ||
-      key === "Withdrawn" ||
-      key === "No Action Needed"
+      key === "Approved" || key === "Partially Approved" || key === "Denied"
+      || key === "Withdrawn" || key === "Pending" || key === "Non-Issue"
+      || key === "No Action Needed"
     ) {
       groupOutcomeCounts[key] += r.count;
-    } else {
-      // "Pending" and "Non-Issue" both fall in here.
-      groupOutcomeCounts["Mixed"] += r.count;
     }
   }
 
   const moneyOrNull = (raw: string) =>
     showAmounts ? parseFloat(raw || "0").toFixed(2) : null;
 
+  // Roll the pipeline rows into the four display phases. The DB query
+  // already collapses statuses, but we materialise the full set here so
+  // the API contract always emits exactly four entries in a known order.
+  const PIPELINE_PHASES = ["pre-submit", "in-flight", "response-pending", "closed"] as const;
+  const pipelineCounts: Record<typeof PIPELINE_PHASES[number], { count: number; openAmount: number }> = {
+    "pre-submit": { count: 0, openAmount: 0 },
+    "in-flight": { count: 0, openAmount: 0 },
+    "response-pending": { count: 0, openAmount: 0 },
+    "closed": { count: 0, openAmount: 0 },
+  };
+  for (const r of pipelineRows) {
+    const k = r.phase as typeof PIPELINE_PHASES[number];
+    if (k in pipelineCounts && k !== "closed") {
+      pipelineCounts[k].count += Number(r.count);
+      pipelineCounts[k].openAmount += parseFloat(r.totalAmount || "0");
+    }
+  }
+  // Closed bucket is window-scoped (resolutions inside the selected
+  // range), not a snapshot — see closedInWindowRow query above.
+  pipelineCounts["closed"].count = Number(closedInWindowRow?.count ?? 0);
+  pipelineCounts["closed"].openAmount = parseFloat(closedInWindowRow?.amount ?? "0");
+
+  // Payor concentration — at INVOICE grain. We compute open at-risk $
+  // per payor (currently open, exposure predicate matches the snapshot
+  // tile) plus a window-scoped win-rate over invoices created in the
+  // window.
+  const todayDate = new Date();
+  const concentrationByPayor = new Map<string, {
+    payorEmail: string;
+    openCount: number;
+    openAtRiskAmount: number;
+    wonInWindow: number;
+    lostInWindow: number;
+    invoiceCountInWindow: number;
+  }>();
+  for (const row of payorConcentrationRows) {
+    const email = row.payorEmail ?? "Unassigned";
+    let bucket = concentrationByPayor.get(email);
+    if (!bucket) {
+      bucket = { payorEmail: email, openCount: 0, openAtRiskAmount: 0, wonInWindow: 0, lostInWindow: 0, invoiceCountInWindow: 0 };
+      concentrationByPayor.set(email, bucket);
+    }
+    // Open / at-risk: matches openExposurePredicate. Replicated in JS
+    // because we needed full per-row data for the win-rate calc and
+    // re-querying just for sums would double the round-trips.
+    const isOutcomeOpen = row.outcome !== "Withdrawn" && row.outcome !== "Non-Issue";
+    let isDeadlineMissed = false;
+    if (row.serviceDate && row.status === "On Hold") {
+      const sd = new Date(row.serviceDate as unknown as string);
+      const deadline = new Date(sd.getTime() + 30 * 86400000);
+      const dow = deadline.getUTCDay();
+      if (dow === 6) deadline.setUTCDate(deadline.getUTCDate() - 1);
+      else if (dow === 0) deadline.setUTCDate(deadline.getUTCDate() - 2);
+      isDeadlineMissed = deadline < todayDate;
+    }
+    if (row.status === "Expired") isDeadlineMissed = true;
+    const isOpenPhase = row.phase !== "closed" || row.hasPendingAttest === true;
+    if (isOutcomeOpen && !isDeadlineMissed && isOpenPhase) {
+      bucket.openCount += 1;
+      const total = parseFloat((row.totalAmount as unknown as string) || "0");
+      const approved = parseFloat((row.approvedAmount as unknown as string) || "0");
+      bucket.openAtRiskAmount += Math.max(0, total - approved);
+    }
+    // Win-rate: scoped to invoices CREATED in the window so the rate
+    // moves with the selected range and isn't dominated by ancient
+    // invoice history.
+    if (row.createdAt && new Date(row.createdAt as unknown as string) >= start) {
+      bucket.invoiceCountInWindow += 1;
+      if (row.outcome === "Approved" || row.outcome === "Partially Approved") bucket.wonInWindow += 1;
+      else if (row.outcome === "Denied") bucket.lostInWindow += 1;
+    }
+  }
+  const payorConcentrationByGroup = Array.from(concentrationByPayor.values())
+    .filter(b => b.openCount > 0 || b.invoiceCountInWindow > 0)
+    .sort((a, b) => b.openAtRiskAmount - a.openAtRiskAmount)
+    .slice(0, 5)
+    .map(b => {
+      const decided = b.wonInWindow + b.lostInWindow;
+      return {
+        payorEmail: b.payorEmail,
+        openCount: b.openCount,
+        invoiceCountInWindow: b.invoiceCountInWindow,
+        openAtRiskAmount: showAmounts ? b.openAtRiskAmount.toFixed(2) : null,
+        winRate: decided > 0 ? Number((b.wonInWindow / decided).toFixed(4)) : null,
+      };
+    });
+
   res.json({
     days,
     totalClaims: Number(totalsRow?.totalClaims ?? 0),
-    totalClaimedAmount: moneyOrNull(totalsRow?.totalClaimedAmount ?? "0"),
-    totalRecoveredAmount: moneyOrNull(totalsRow?.totalRecoveredAmount ?? "0"),
+    totalClaimedAmount: moneyOrNull(invoiceMoneyRow?.totalClaimedAmount ?? "0"),
+    totalRecoveredAmount: moneyOrNull(invoiceMoneyRow?.totalRecoveredAmount ?? "0"),
     totalDeniedAmount: moneyOrNull(totalsRow?.totalDeniedAmount ?? "0"),
+    priorPeriodRecoveredAmount: moneyOrNull(priorRecoveredRow?.priorRecovered ?? "0"),
+    atRiskAmount: moneyOrNull(atRiskRow?.atRisk ?? "0"),
+    atRiskGroupCount: Number(atRiskRow?.groupCount ?? 0),
+    pipelineByPhase: PIPELINE_PHASES.map(p => ({
+      phase: p,
+      count: pipelineCounts[p].count,
+      openAmount: showAmounts ? pipelineCounts[p].openAmount.toFixed(2) : null,
+    })),
+    payorConcentrationByGroup,
     statusBreakdown: statusRows.map(r => ({ status: r.key, count: r.count })),
     outcomeBreakdown: outcomeRows.map(r => ({ outcome: r.key, count: r.count })),
     groupOutcomeBreakdown: GROUP_OUTCOME_BUCKETS.map(b => ({ outcome: b, count: groupOutcomeCounts[b] })),

@@ -12,15 +12,12 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type DashboardInsightsGroupOutcomeBreakdownItemOutcome =
-  (typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome)[keyof typeof DashboardInsightsGroupOutcomeBreakdownItemOutcome];
+export type DashboardInsightsPipelineByPhaseItemPhase =
+  (typeof DashboardInsightsPipelineByPhaseItemPhase)[keyof typeof DashboardInsightsPipelineByPhaseItemPhase];
 
-export const DashboardInsightsGroupOutcomeBreakdownItemOutcome = {
-  Approved: "Approved",
-  Partially_Approved: "Partially Approved",
-  Denied: "Denied",
-  Withdrawn: "Withdrawn",
-  Pending: "Pending",
-  "Non-Issue": "Non-Issue",
-  No_Action_Needed: "No Action Needed",
+export const DashboardInsightsPipelineByPhaseItemPhase = {
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  closed: "closed",
 } as const;
