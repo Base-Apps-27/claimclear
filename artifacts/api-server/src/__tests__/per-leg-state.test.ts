@@ -1157,15 +1157,28 @@ test("getAiCalibration does not count AI/operator mismatches as agreement", asyn
 });
 
 test("POST /invoice-groups/:id/reattest/complete on a group that doesn't need reattest returns 409", async () => {
-  const group = await createSeedGroup();
+  // Force a pre-submit fingerprint so neither the phase gate nor the
+  // outlook gate accepts the call — see commentary in the assertion
+  // below for why a bare seed group (status=Needs Review →
+  // phase=response_received → macro=response-pending) is now an
+  // ACCEPTED state and would no longer 409.
+  const group = await createSeedGroup({ status: "Needs Evidence" });
   try {
     const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
       method: "POST", body: {},
     });
     assert.equal(res.status, 409);
-    // The endpoint now enforces the derived macro phase rather than the
-    // raw flag — see invoice-groups.ts:/reattest/complete.
-    assert.equal(res.json.expectedState, "mas-action-required");
+    // The endpoint enforces the queue-gate's three-condition accept-set
+    // (mas-action-required OR response-pending OR reattest_only outlook)
+    // rather than the raw flag — see invoice-groups.ts:/reattest/complete.
+    // A bare seed group has status="Needs Review" → macro=response-pending,
+    // which would now be ACCEPTED by the phase gate; force the group into
+    // a pre-submit phase with no legs so neither phase nor outlook
+    // qualifies and the 409 path remains exercised.
+    assert.equal(
+      res.json.expectedState,
+      "macroPhase in (mas-action-required, response-pending) OR outlook=reattest_only",
+    );
   } finally {
     await cleanupGroup(group.id);
   }

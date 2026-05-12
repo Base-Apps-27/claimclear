@@ -3972,13 +3972,35 @@ async function createAuditLog(
 }
 
 // POST /invoice-groups/:id/reattest/complete — stamps the group's MAS
-// re-attest as complete and engages the attestation gate. Pre: phase
-// is mas-action-required AND every leg with mas_action_required='cancel'
-// has been completed.
+// re-attest as complete and engages the attestation gate.
+//
+// Standard-path preconditions (mirror the bulk-queue gate, the
+// frontend `canQueueOrCompleteReattest`, and the audit script's
+// `reattestGateAccepts` — single source of truth, all four must move
+// together):
+//   * macro phase ∈ {mas-action-required, response-pending}, OR
+//   * outlook = reattest_only from any non-terminal/non-on-hold phase
+//     (Early Re-attest, Task #476).
+// AND every leg with `mas_action_required='cancel'` must already be
+// completed (`mas_action_completed_at` stamped).
+//
+// Why the `response-pending` accept: the bulk-queue route's
+// response-pending branch intentionally does NOT promote
+// phase → awaiting_reattestation (a group can have a mix of
+// disputable + survivor legs, and the disputed ones still need MAS
+// dispute submission). When the group is all-survivor-after-queue,
+// the operator finishes the MAS work and clicks "Re-attested in MAS"
+// — without this branch the call 409'd with "Group is not in the
+// mas-action-required phase" (see 2026-05-12 regression on group #354 /
+// invoice 1849951770). The wizard's `needsMasCancel = outcome ===
+// "Denied" || masActionRequired === "cancel"` keeps the operator on
+// the cancel step until disputed legs are processed, so the broader
+// gate is safe in practice; the cancel-completeness check below is
+// the defense-in-depth backstop.
 //
 // Admin override (Task #333): when `recordedOffline=true` is set on
 // the body, an admin actor with a >=10-char trimmed `offlineNote`
-// bypasses the macro-phase + cancel-completeness preconditions and
+// bypasses the phase + cancel-completeness preconditions and
 // stamps the same columns. The audit row uses the distinct
 // `mas_reattest_recorded_offline` action so the activity feed can
 // distinguish a checklist-driven completion from an after-the-fact
@@ -4014,19 +4036,82 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
       return;
     }
   } else {
-    // Standard path: source-state contract — the group must be in
-    // the `mas-action-required` derived macro phase. The phase is
-    // computed from {status, reattestRequired, reattestCompletedAt} —
-    // see getGroupMacroPhase. Enforcing the phase (rather than the
-    // raw `reattest_required` bit) keeps the contract honest if we
-    // later add intermediate phases between response-pending and
-    // reattest.
+    // Standard path: source-state contract. Three valid entry conditions —
+    // the SAME set the bulk-queue gate accepts and the frontend
+    // `canQueueOrCompleteReattest` (see
+    // artifacts/claimclear/src/lib/whats-next-derivation.ts) and the
+    // audit script `reattestGateAccepts` mirror. The function name
+    // literally says "QueueOrComplete"; keeping the complete-gate in
+    // lock-step with the queue-gate is the contract.
+    //
+    //   * `mas-action-required` — the canonical post-bulk-queue phase
+    //     (status=MAS Eligible / phase=awaiting_reattestation).
+    //
+    //   * `response-pending` — the bulk-queue route's response-pending
+    //     branch only stamps `awaitingPayorAgainAt` and intentionally
+    //     does NOT promote phase → awaiting_reattestation (a group can
+    //     have a mix of disputable + survivor legs, and the disputed
+    //     ones still need MAS dispute submission). When the group is
+    //     all-survivor-after-queue, the operator finishes the MAS
+    //     re-attestation work and clicks "Re-attested in MAS" — the
+    //     gate must accept it. Before this branch was added, the call
+    //     409'd with "Group is not in the mas-action-required phase"
+    //     (see bug report 2026-05-12, group #354 / invoice 1849951770).
+    //
+    //   * Early Re-attest (`outlook = reattest_only`) from any
+    //     non-terminal/non-on-hold phase — Task #476. Mirrors the
+    //     queue gate's `isEarlyReattest` branch.
+    //
+    // Terminal phases (closed, on-hold) are still rejected for the
+    // same reason the queue gate rejects them.
     const phase = getGroupMacroPhase(group);
-    if (phase !== "mas-action-required") {
+    const outlookLegs = await db
+      .select({
+        includedInDispute: claimsTable.includedInDispute,
+        duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+        sopOutcome: claimsTable.sopOutcome,
+        disposition: claimsTable.disposition,
+        outcome: claimsTable.outcome,
+      })
+      .from(claimsTable)
+      .where(eq(claimsTable.invoiceGroupId, id));
+    const isReattestOnlyOutlook = (() => {
+      let hasDisputable = false;
+      let hasSurvivor = false;
+      for (const leg of outlookLegs) {
+        const isDuplicate = leg.duplicateOfClaimId != null;
+        const isNonIssue = leg.disposition === "disposed_nonissue"
+          || leg.disposition === "final_nonissue"
+          || leg.sopOutcome === "non_issue";
+        const isCannotDispute = leg.disposition === "disposed_withdraw"
+          || leg.disposition === "final_withdrawn"
+          || leg.sopOutcome === "cannot_dispute";
+        const isApproved = leg.outcome === "Approved" || leg.outcome === "Partially Approved";
+        const isDenied = leg.outcome === "Denied";
+        if (isNonIssue || isApproved) hasSurvivor = true;
+        if (
+          leg.includedInDispute === true
+          && !isDuplicate
+          && !isCannotDispute
+          && !isNonIssue
+          && !isDenied
+        ) {
+          hasDisputable = true;
+        }
+      }
+      return !hasDisputable && hasSurvivor;
+    })();
+    const acceptsReattestOnly =
+      isReattestOnlyOutlook && phase !== "closed" && phase !== "on-hold";
+    if (
+      phase !== "mas-action-required"
+      && phase !== "response-pending"
+      && !acceptsReattestOnly
+    ) {
       res.status(409).json({
-        error: "Group is not in the mas-action-required phase",
-        expectedState: "mas-action-required",
-        actualState: phase,
+        error: "Group is not eligible for re-attestation completion",
+        expectedState: "macroPhase in (mas-action-required, response-pending) OR outlook=reattest_only",
+        actualState: `phase=${phase}, reattestOnlyOutlook=${isReattestOnlyOutlook}`,
       });
       return;
     }

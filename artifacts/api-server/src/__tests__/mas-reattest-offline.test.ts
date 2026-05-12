@@ -544,10 +544,12 @@ test("Task #543: recordedOffline=true also lands status=Resolved + outcome=Appro
   }
 });
 
-test("POST /invoice-groups/:id/reattest/complete WITHOUT recordedOffline still enforces the standard preconditions for non-admin actors", async () => {
-  // Sanity-check that the standard 409 path is unaffected by the new
-  // branch: non-admin, no recordedOffline flag, group not in
-  // mas-action-required phase → 409.
+test("POST /invoice-groups/:id/reattest/complete WITHOUT recordedOffline still 409s for groups in pre-submit/in-flight phase with no reattest-only outlook", async () => {
+  // Sanity-check that the standard 409 path still rejects groups
+  // outside the {mas-action-required, response-pending,
+  // reattest_only-outlook} accept-set: non-admin, no recordedOffline
+  // flag, group in pre-submit (Needs Evidence → phase=ready_to_submit)
+  // with zero legs (no reattest-only outlook either) → 409.
   currentRole = "operator";
   const group = await createSeedGroup({ status: "Needs Evidence" });
   try {
@@ -555,9 +557,137 @@ test("POST /invoice-groups/:id/reattest/complete WITHOUT recordedOffline still e
       method: "POST", body: {},
     });
     assert.equal(res.status, 409);
-    assert.equal(res.json.expectedState, "mas-action-required");
+    assert.equal(
+      res.json.expectedState,
+      "macroPhase in (mas-action-required, response-pending) OR outlook=reattest_only",
+    );
   } finally {
     await cleanupGroup(group.id);
     currentRole = "admin";
+  }
+});
+
+// 2026-05-12 regression — invoice 1849951770 (group #354) shipped to prod
+// with phase=response_received, reattest_required=true, both legs Approved
+// + queued for re-attestation, mas_action_required='none'. The bulk-queue
+// route's response-pending branch (invoice-groups.ts L4578) intentionally
+// does NOT promote phase → awaiting_reattestation (mixed
+// disputable+survivor groups still need MAS dispute submission for the
+// disputed legs), so the canonical macro-phase stayed at "response-pending".
+// /reattest/complete then 409'd with "Group is not in the
+// mas-action-required phase" even though the operator had completed the
+// MAS work and clicked "Re-attested in MAS". The frontend gate
+// (canQueueOrCompleteReattest) accepted the click; only the server
+// gate refused. The fix is to mirror the queue-gate's three accept
+// conditions on the complete-gate too.
+test("/reattest/complete accepts response-pending groups with reattest-only outlook (2026-05-12 regression)", async () => {
+  currentRole = "operator";
+  const errType = await createSeedErrorType();
+  // Reproduce prod fingerprint: phase=response_received,
+  // reattest_required=true, status=Ready to Review.
+  const group = await createSeedGroup({ status: "Ready to Review" });
+  await db.update(invoiceGroupsTable).set({
+    reattestRequired: true,
+    phase: "response_received",
+  }).where(eq(invoiceGroupsTable.id, group.id));
+  // Two Approved legs, both queued for re-attestation, no MAS cancels
+  // owed — outlook = reattest_only.
+  const claim1 = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  const claim2 = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  for (const id of [claim1.id, claim2.id]) {
+    await db.update(claimsTable).set({
+      attestationState: "queued",
+      masActionRequired: "none",
+    }).where(eq(claimsTable.id, id));
+    await db.insert(claimVerdictTable).values({
+      claimId: id,
+      source: "operator_confirmed",
+      outcome: "Approved",
+      createdBy: TEST_USER.email,
+    });
+  }
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST",
+      body: { note: "Re-attested both legs in MAS", masReference: "MAS-354" },
+    });
+    assert.equal(
+      res.status,
+      200,
+      `expected 200, got ${res.status} (${JSON.stringify(res.json)}) — the complete-gate must accept response-pending groups with a reattest_only outlook, mirroring the bulk-queue gate and the frontend canQueueOrCompleteReattest mirror.`,
+    );
+
+    const [post] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.ok(post.reattestCompletedAt, "reattest_completed_at must be stamped");
+    assert.equal(post.phase, "closed", "group must close out via the standard transition");
+    assert.equal(post.status, "Resolved");
+    assert.equal(post.outcome, "Approved");
+    assert.equal(post.closureReason, "reattested");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("/reattest/complete still 409s on outstanding MAS cancels even from the response-pending branch", async () => {
+  // Defense in depth: relaxing the phase gate must NOT let a group
+  // through with an unfinished MAS cancel. The cancel-completeness
+  // check still runs after the phase check.
+  currentRole = "operator";
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Ready to Review" });
+  await db.update(invoiceGroupsTable).set({
+    reattestRequired: true,
+    phase: "response_received",
+  }).where(eq(invoiceGroupsTable.id, group.id));
+  const survivor = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  await db.update(claimsTable).set({ masActionRequired: "none" })
+    .where(eq(claimsTable.id, survivor.id));
+  // A second leg with an outstanding MAS cancel — outlook is no longer
+  // reattest_only (it has a denied/disputable leg) AND it has an
+  // incomplete cancel, so the call must 409.
+  const denied = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Denied",
+  });
+  await db.update(claimsTable).set({ masActionRequired: "cancel" })
+    .where(eq(claimsTable.id, denied.id));
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST", body: {},
+    });
+    // Group has a Denied disputable leg, so outlook is NOT
+    // reattest_only — the response-pending phase is still accepted by
+    // the gate, but the cancel-completeness check 409s next.
+    assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.expectedState, "all-cancels-complete");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
   }
 });
