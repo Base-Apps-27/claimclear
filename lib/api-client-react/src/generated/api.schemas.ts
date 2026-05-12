@@ -3154,6 +3154,7 @@ export type LintResultSeverity =
   (typeof LintResultSeverity)[keyof typeof LintResultSeverity];
 
 export const LintResultSeverity = {
+  info: "info",
   warn: "warn",
   fail: "fail",
 } as const;

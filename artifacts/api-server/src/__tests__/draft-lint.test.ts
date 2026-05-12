@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { lintDraft, type LintSubmission, type LintClaim, type LintEvidence } from "../lib/draft-lint";
+import {
+  lintDraft,
+  requiredEvidenceNodeIdsFromTree,
+  type LintSubmission,
+  type LintClaim,
+  type LintEvidence,
+  type LintLeg,
+} from "../lib/draft-lint";
 
 const baseClaim: LintClaim = { confNumber: null, claimAmount: null };
 
@@ -98,113 +105,228 @@ test("claim-level conf number is used when submission conf number is empty", () 
   assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined);
 });
 
-// --- evidence keyword matcher ---------------------------------------------
+// --- demoted keyword family (Task #707) ----------------------------------
 //
-// The Quality Check warning "Description references X, but no matching
-// evidence is attached" must NOT fire when the SOP runner has already
-// attached files for the dispute. In production every SOP-attached row
-// carries an opaque `evidence_type_name = "ev_<Date.now()>"` (the editor's
-// synthetic key with an empty default label), so the historical implementation
-// — which compared the keyword against `evidence_type_name` only — produced a
-// warning on EVERY dispute that mentioned a tracked keyword. The new matcher
-// also considers the file basename and notes, and falls back to "any
-// attachment present" suppression when none of the rows produces a textual
-// match.
-const gpsConfClaim: LintClaim = { confNumber: "15004552", claimAmount: null };
-const gpsConfDescription =
-  "<p>Conf #15004552 — disputing the Incomplete GPS flag; breadcrumb data attached.</p>";
+// The keyword matcher used to fire as `warn` and gate the submission. Now
+// that the structural rules carry the real ground truth, the matcher is
+// demoted to `info` and the GPS / screenshot keywords are retired entirely
+// (the structural `requires_evidence_node` rule covers their intent).
 
-test("GPS keyword: warns when description mentions GPS and zero evidence is attached", () => {
-  const sub = makeSubmission(gpsConfDescription, "15004552");
-  const results = lintDraft(sub, gpsConfClaim, []);
-  const r = results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence");
-  assert.ok(r, "expected GPS unattached_evidence warning when nothing is attached");
-  assert.equal(r!.severity, "warn");
-});
-
-test("GPS keyword: matches against file basename when type name is opaque (`ev_<digits>`)", () => {
-  const sub = makeSubmission(gpsConfDescription, "15004552");
-  const evidence: LintEvidence[] = [
-    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/gps_breadcrumb_2026-05-12.png", notes: null },
-  ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
+test("retired keywords (gps, screenshot) do not produce any lint result", () => {
+  const sub = makeSubmission(
+    "<p>Conf #14879280 — disputing the Incomplete GPS flag; screenshot attached.</p>",
+    "14879280",
+  );
+  const results = lintDraft(sub, baseClaim, []);
   assert.equal(
-    results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence"),
+    results.find((r) => r.ruleKey.startsWith("unattached_evidence:GPS")),
     undefined,
-    "filename containing 'gps_breadcrumb' should satisfy the GPS keyword rule",
+    "GPS keyword family was retired in Task #707",
+  );
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("unattached_evidence:screenshot")),
+    undefined,
+    "screenshot keyword family was retired in Task #707",
   );
 });
 
-test("GPS keyword: matches against operator notes when type name is opaque", () => {
-  const sub = makeSubmission(gpsConfDescription, "15004552");
+test("surviving keyword (manifest) is now advisory `info` severity", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — see attached manifest.</p>", "14879280");
+  const results = lintDraft(sub, baseClaim, []);
+  const r = results.find((r) => r.ruleKey === "unattached_evidence:manifest");
+  assert.ok(r, "manifest keyword should still fire as advisory");
+  assert.equal(r!.severity, "info", "demoted from warn to info in Task #707");
+});
+
+// --- structural rule: requires evidence node -----------------------------
+
+const errorTypeTree = {
+  rootId: "n1",
+  nodes: [
+    {
+      id: "n1",
+      question: "Did the bot capture the GPS breadcrumb?",
+      options: [],
+      evidenceRequirements: [
+        { key: "gps_breadcrumb", label: "GPS breadcrumb screenshot", required: true },
+      ],
+    },
+    {
+      id: "n2",
+      question: "Optional follow-up",
+      options: [],
+      evidenceRequirements: [
+        { key: "extra_note", label: "Optional note", required: false },
+      ],
+    },
+  ],
+};
+
+test("requiredEvidenceNodeIdsFromTree returns only nodes whose requirements are required:true", () => {
+  assert.deepEqual(requiredEvidenceNodeIdsFromTree(errorTypeTree), ["n1"]);
+  assert.deepEqual(requiredEvidenceNodeIdsFromTree(null), []);
+  assert.deepEqual(requiredEvidenceNodeIdsFromTree({ nodes: [] }), []);
+});
+
+const disputingLeg = (overrides: Partial<LintLeg> = {}): LintLeg => ({
+  id: 101,
+  confNumber: "15004552",
+  errorTypeId: "7",
+  errorTypeName: "Incomplete GPS",
+  disposition: "disposed_portal",
+  sopOutcome: "portal_dispute",
+  includedInDispute: true,
+  requiredEvidenceNodeIds: ["n1"],
+  ...overrides,
+});
+
+test("structural rule: errorType requires evidence node BUT no claim_evidence carries that tree_node_id → fail", () => {
+  const sub = makeSubmission(
+    "<p>Conf #15004552 — disputing.</p>",
+    "15004552",
+  );
   const evidence: LintEvidence[] = [
-    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/abc123", notes: "GPS report showing on-route detour" },
+    { evidenceTypeName: "ev_1", imageUrl: "/objects/uploads/abc", notes: null, treeNodeId: null, claimId: 101 },
   ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [disputingLeg()] });
+  const r = results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:"));
+  assert.ok(r, "expected structural_missing_evidence_node fail");
+  assert.equal(r!.severity, "fail");
+  assert.match(r!.message, /n1/);
+  assert.match(r!.message, /Incomplete GPS/);
+});
+
+test("structural rule: requirement satisfied when an evidence row carries the matching tree_node_id", () => {
+  const sub = makeSubmission(
+    "<p>Conf #15004552 — disputing.</p>",
+    "15004552",
+  );
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "ev_1", imageUrl: "/objects/uploads/gps.png", notes: null, treeNodeId: "n1", claimId: 101 },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [disputingLeg()] });
   assert.equal(
-    results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence"),
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
     undefined,
-    "notes containing 'GPS' should satisfy the GPS keyword rule",
+    "row with matching treeNodeId should satisfy the structural rule",
   );
 });
 
-test("GPS keyword: suppresses warning when at least one evidence row IS attached, even if no field matches the keyword", () => {
-  const sub = makeSubmission(gpsConfDescription, "15004552");
-  // This is the exact production shape that produced the false positive on
-  // invoice 1864796540 / conf 15004552: 3 SOP-attached rows whose type name
-  // is the editor's synthetic `ev_<Date.now()>` key, image_url is an opaque
-  // /objects/upload-<id> path, and notes is null.
+test("structural rule: group-scoped evidence (claimId null) counts for every leg", () => {
+  const sub = makeSubmission(
+    "<p>Conf #15004552 — disputing.</p>",
+    "15004552",
+  );
   const evidence: LintEvidence[] = [
-    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/abc", notes: null },
-    { evidenceTypeName: "ev_1776176572894", imageUrl: "/objects/uploads/def", notes: null },
-    { evidenceTypeName: "ev_1776176581435", imageUrl: "/objects/uploads/ghi", notes: null },
+    { evidenceTypeName: "ev_1", imageUrl: "/objects/uploads/gps.png", notes: null, treeNodeId: "n1", claimId: null },
   ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [disputingLeg()] });
   assert.equal(
-    results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence"),
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
     undefined,
-    "with attachments present, the bot will upload them; the keyword warning would just be noise",
   );
 });
 
-test("GPS keyword: still matches against a meaningful evidenceTypeName (back-compat)", () => {
-  const sub = makeSubmission(gpsConfDescription, "15004552");
-  const evidence: LintEvidence[] = [
-    { evidenceTypeName: "GPS deviation report", imageUrl: "/objects/uploads/abc123", notes: null },
-  ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
+test("structural rule: leg with includedInDispute=false is exempt from required-evidence check", () => {
+  const sub = makeSubmission("<p>Conf #15004552 noted.</p>", "15004552");
+  const results = lintDraft(sub, baseClaim, [], {
+    legs: [disputingLeg({ includedInDispute: false })],
+  });
   assert.equal(
-    results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence"),
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
     undefined,
-    "a non-opaque type name like 'GPS deviation report' should keep matching as before",
   );
 });
 
-test("evidence-keyword: non-/objects/ URLs do not count as attached (parity with collectGroupEvidenceUrls)", () => {
-  // The bot's collectGroupEvidenceUrls drops anything that doesn't start with
-  // `/objects/` to prevent uncontrolled outbound requests; if a row only has
-  // an off-`/objects/` URL, the bot uploads nothing for it. The lint must
-  // mirror that eligibility rule — otherwise the suppression escape hatch
-  // would silently mute a real "GPS mentioned, nothing will actually be
-  // uploaded" warning.
-  const sub = makeSubmission(gpsConfDescription, "15004552");
-  const evidence: LintEvidence[] = [
-    { evidenceTypeName: "ev_1776176562945", imageUrl: "https://example.com/external/gps.png", notes: null },
-  ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
-  const r = results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence");
-  assert.ok(r, "an external URL is not bot-uploadable, so the keyword warning must still fire");
+// --- structural rule: disposition without terminal -----------------------
+
+test("structural rule: disposition disposed_portal without terminal sopOutcome → fail", () => {
+  const sub = makeSubmission("<p>Conf #15004552 noted.</p>", "15004552");
+  const leg = disputingLeg({ sopOutcome: "hold", requiredEvidenceNodeIds: [] });
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  const r = results.find((r) => r.ruleKey.startsWith("structural_disposition_without_terminal:"));
+  assert.ok(r, "expected structural_disposition_without_terminal fail");
+  assert.equal(r!.severity, "fail");
+  assert.match(r!.message, /15004552/);
 });
 
-test("evidence-keyword opaque-name + zero attachments: warning still fires (no false negative)", () => {
-  // Defensive: a row with NO imageUrl and an opaque type name shouldn't be
-  // counted as an "attached" file — otherwise we'd silently skip the warning
-  // on a submission that genuinely has nothing to send.
-  const sub = makeSubmission(gpsConfDescription, "15004552");
+test("structural rule: disposition disposed_portal WITH portal_dispute outcome passes", () => {
+  const sub = makeSubmission("<p>Conf #15004552 noted.</p>", "15004552");
+  const leg = disputingLeg({ sopOutcome: "portal_dispute", requiredEvidenceNodeIds: [] });
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_disposition_without_terminal:")),
+    undefined,
+  );
+});
+
+test("structural rule: pre-submit dispositions (classifying) do not fire the terminal rule", () => {
+  const sub = makeSubmission("<p>Conf #15004552 noted.</p>", "15004552");
+  const leg = disputingLeg({ disposition: "classifying", sopOutcome: null, requiredEvidenceNodeIds: [] });
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_disposition_without_terminal:")),
+    undefined,
+    "the rule is scoped to legs that have already crossed into a disputing disposition",
+  );
+});
+
+// --- structural rule: disputed leg bare of evidence AND prose ------------
+
+test("structural rule: disputed leg with zero attachments AND no conf mention → fail", () => {
+  const sub = makeSubmission("<p>Generic narrative without any numbers.</p>", "15004552");
+  const leg = disputingLeg({ requiredEvidenceNodeIds: [] });
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  const r = results.find((r) => r.ruleKey.startsWith("structural_disputed_leg_bare:"));
+  assert.ok(r, "expected structural_disputed_leg_bare fail");
+  assert.equal(r!.severity, "fail");
+  assert.match(r!.message, /15004552/);
+});
+
+test("structural rule: disputed leg with attachments suppresses the bare-leg rule", () => {
+  const sub = makeSubmission("<p>Generic narrative without any numbers.</p>", "15004552");
+  const leg = disputingLeg({ requiredEvidenceNodeIds: [] });
   const evidence: LintEvidence[] = [
-    { evidenceTypeName: "ev_1776176562945", imageUrl: null, notes: null },
+    { evidenceTypeName: "ev_1", imageUrl: "/objects/uploads/abc", notes: null, treeNodeId: null, claimId: 101 },
   ];
-  const results = lintDraft(sub, gpsConfClaim, evidence);
-  const r = results.find((r) => r.ruleKey === "unattached_evidence:GPS_or_breadcrumb_evidence");
-  assert.ok(r, "opaque-named row WITHOUT a file must not suppress the warning");
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [leg] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_disputed_leg_bare:")),
+    undefined,
+  );
+});
+
+test("structural rule: disputed leg mentioned by conf number in prose suppresses the bare-leg rule", () => {
+  const sub = makeSubmission(
+    "<p>Conf #15004552 was completed as scheduled — see notes.</p>",
+    "15004552",
+  );
+  const leg = disputingLeg({ requiredEvidenceNodeIds: [] });
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_disputed_leg_bare:")),
+    undefined,
+  );
+});
+
+// --- production-shape regression: invoice 1864796540 / conf 15004552 ----
+//
+// The original false positive came from the keyword family firing a `warn`
+// on the GPS keyword when the SOP runner had attached opaque-named rows.
+// Re-asserting that NEITHER the (now-retired) keyword family NOR the new
+// structural rules turn this shape into a fail or a warn.
+
+test("regression: production shape (invoice 1864796540 / conf 15004552) still passes silently", () => {
+  const sub = makeSubmission(
+    "<p>Conf #15004552 — disputing the Incomplete GPS flag; breadcrumb data attached.</p>",
+    "15004552",
+  );
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/abc", notes: null, treeNodeId: "n1", claimId: 101 },
+    { evidenceTypeName: "ev_1776176572894", imageUrl: "/objects/uploads/def", notes: null, treeNodeId: "n1", claimId: 101 },
+    { evidenceTypeName: "ev_1776176581435", imageUrl: "/objects/uploads/ghi", notes: null, treeNodeId: "n1", claimId: 101 },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [disputingLeg()] });
+  const blocking = results.filter((r) => r.severity === "fail" || r.severity === "warn");
+  assert.deepEqual(blocking, [], "production shape must not produce any fail/warn results");
 });

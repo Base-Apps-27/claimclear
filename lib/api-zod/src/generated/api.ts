@@ -28249,7 +28249,7 @@ export const LintPortalSubmissionParams = zod.object({
 
 export const LintPortalSubmissionResponseItem = zod.object({
   ruleKey: zod.string(),
-  severity: zod.enum(["warn", "fail"]),
+  severity: zod.enum(["info", "warn", "fail"]),
   message: zod.string(),
 });
 export const LintPortalSubmissionResponse = zod.array(

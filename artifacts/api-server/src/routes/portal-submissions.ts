@@ -9,7 +9,7 @@ import { denyClerk } from "../middlewares/denyClerk";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
-import { lintDraft, type LintEvidence, type LintResult } from "../lib/draft-lint";
+import { lintDraft, requiredEvidenceNodeIdsFromTree, type LintEvidence, type LintResult } from "../lib/draft-lint";
 import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
@@ -58,10 +58,14 @@ async function loadGroupLintEvidence(
 ): Promise<LintEvidence[]> {
   const out: LintEvidence[] = [];
 
+  // Group-scoped `claim_evidence` rows — claimId stays null on the lint
+  // shape so they apply to every leg in the structural rules.
   const groupRows = await db.select({
     evidenceTypeName: claimEvidenceTable.evidenceTypeName,
     imageUrl: claimEvidenceTable.imageUrl,
     notes: claimEvidenceTable.notes,
+    treeNodeId: claimEvidenceTable.treeNodeId,
+    claimId: claimEvidenceTable.claimId,
   }).from(claimEvidenceTable).where(eq(claimEvidenceTable.invoiceGroupId, groupId));
   for (const r of groupRows) out.push(r);
 
@@ -70,23 +74,66 @@ async function loadGroupLintEvidence(
       evidenceTypeName: claimEvidenceTable.evidenceTypeName,
       imageUrl: claimEvidenceTable.imageUrl,
       notes: claimEvidenceTable.notes,
+      treeNodeId: claimEvidenceTable.treeNodeId,
+      claimId: claimEvidenceTable.claimId,
     }).from(claimEvidenceTable).where(inArray(claimEvidenceTable.claimId, rideIds));
     for (const r of rideRows) out.push(r);
   }
 
-  const pushLooseFiles = (files: typeof groupEvidenceFiles) => {
+  const pushLooseFiles = (files: typeof groupEvidenceFiles, claimId: number | null) => {
     for (const f of (files || []) as Array<{ url?: string | null; name?: string | null }>) {
       if (!f) continue;
       const url = typeof f.url === "string" ? f.url : null;
       const name = typeof f.name === "string" ? f.name : null;
       if (!url && !name) continue;
-      out.push({ evidenceTypeName: name, imageUrl: url, notes: null });
+      out.push({ evidenceTypeName: name, imageUrl: url, notes: null, treeNodeId: null, claimId });
     }
   };
-  pushLooseFiles(groupEvidenceFiles);
-  for (const ride of rides) pushLooseFiles(ride.evidenceFiles);
+  pushLooseFiles(groupEvidenceFiles, null);
+  for (const ride of rides) pushLooseFiles(ride.evidenceFiles, ride.id);
 
   return out;
+}
+
+/**
+ * Task #707: build the per-leg structural-rule context from the group's
+ * legs. Loads the legs' errorType decision trees in a single batched
+ * lookup and derives `requiredEvidenceNodeIds` per leg from the tree.
+ */
+async function buildLintLegs(
+  rides: (typeof claimsTable.$inferSelect)[],
+): Promise<import("../lib/draft-lint").LintLeg[]> {
+  const errorTypeIds = new Set<number>();
+  for (const r of rides) {
+    if (!r.errorTypeId) continue;
+    const id = parseInt(r.errorTypeId, 10);
+    if (!isNaN(id)) errorTypeIds.add(id);
+  }
+  const requiredByErrorTypeId = new Map<number, string[]>();
+  if (errorTypeIds.size > 0) {
+    const rows = await db
+      .select({ id: errorTypesTable.id, decisionTree: errorTypesTable.decisionTree })
+      .from(errorTypesTable)
+      .where(inArray(errorTypesTable.id, Array.from(errorTypeIds)));
+    for (const row of rows) {
+      requiredByErrorTypeId.set(row.id, requiredEvidenceNodeIdsFromTree(row.decisionTree));
+    }
+  }
+  return rides.map((r) => {
+    const etId = r.errorTypeId ? parseInt(r.errorTypeId, 10) : NaN;
+    const required = !isNaN(etId) ? requiredByErrorTypeId.get(etId) ?? [] : [];
+    return {
+      id: r.id,
+      confNumber: r.confNumber,
+      errorTypeName: r.errorTypeName,
+      errorTypeId: r.errorTypeId,
+      disposition: r.disposition,
+      sopOutcome: r.sopOutcome,
+      sopNodeId: r.sopNodeId,
+      includedInDispute: r.includedInDispute,
+      requiredEvidenceNodeIds: required,
+    };
+  });
 }
 
 async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
@@ -108,7 +155,8 @@ async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSe
   const evidence = claim
     ? await loadGroupLintEvidence(submission.invoiceGroupId, rides.map(r => r.id), groupEvidenceFiles, rides)
     : [];
-  return { claim: claim || null, evidence };
+  const legs = claim ? await buildLintLegs(rides) : [];
+  return { claim: claim || null, evidence, legs };
 }
 
 const router: IRouter = Router();
@@ -1461,10 +1509,10 @@ router.post("/portal-submissions/:id/lint", asyncHandler(async (req, res): Promi
   const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
 
-  const { claim, evidence } = await loadLintInputs(existing);
+  const { claim, evidence, legs } = await loadLintInputs(existing);
   if (!claim) { res.status(404).json({ error: "Claim not found for submission" }); return; }
 
-  const results: LintResult[] = lintDraft(existing, claim, evidence);
+  const results: LintResult[] = lintDraft(existing, claim, evidence, { legs });
   res.json(results);
 }));
 
@@ -1688,7 +1736,8 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     ctx.group.evidenceFiles,
     ctx.rides,
   );
-  const lintResults = lintDraft(prospectiveSubmission, ctx.primaryClaim, lintEvidence);
+  const lintLegs = await buildLintLegs(ctx.rides);
+  const lintResults = lintDraft(prospectiveSubmission, ctx.primaryClaim, lintEvidence, { legs: lintLegs });
   const lintFailures = lintResults.filter(r => r.severity === "fail");
   const lintWarnings = lintResults.filter(r => r.severity === "warn");
   if (lintFailures.length > 0) {
@@ -2061,10 +2110,12 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
       ctx.group.evidenceFiles,
       ctx.rides,
     );
+    const lintLegs = await buildLintLegs(ctx.rides);
     const lintResults = lintDraft(
       { descriptionHtml: draftHtml, confNumber: snap.confNumber, attachmentUrls },
       ctx.primaryClaim,
       lintEvidence,
+      { legs: lintLegs },
     );
     const lintFail = lintResults.find(r => r.severity === "fail");
     if (lintFail) {

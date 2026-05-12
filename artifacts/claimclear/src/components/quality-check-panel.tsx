@@ -29,6 +29,7 @@ export function QualityCheckPanel({ submissionId, refreshKey, onResults }: Quali
   const results = (lint.data ?? []) as LintResult[];
   const failures = results.filter(r => r.severity === "fail");
   const warnings = results.filter(r => r.severity === "warn");
+  const infos = results.filter(r => r.severity === "info");
 
   return (
     <Card className="border-muted">
@@ -55,6 +56,11 @@ export function QualityCheckPanel({ submissionId, refreshKey, onResults }: Quali
                   <AlertTriangle className="h-3.5 w-3.5" /> {warnings.length} warning{warnings.length === 1 ? "" : "s"}
                 </span>
               )}
+              {infos.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <AlertTriangle className="h-3.5 w-3.5" /> {infos.length} advisory
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -66,7 +72,9 @@ export function QualityCheckPanel({ submissionId, refreshKey, onResults }: Quali
                 className={`text-xs flex items-start gap-2 rounded px-2 py-1 ${
                   r.severity === "fail"
                     ? "bg-red-50 text-red-800 border border-red-200"
-                    : "bg-amber-50 text-amber-800 border border-amber-200"
+                    : r.severity === "warn"
+                      ? "bg-amber-50 text-amber-800 border border-amber-200"
+                      : "bg-muted/40 text-muted-foreground border border-muted"
                 }`}
               >
                 {r.severity === "fail" ? (
