@@ -15,8 +15,14 @@ import {
 
 export type GroupOutcomeBuckets = SharedGroupOutcomeBuckets;
 
+// Local widening: in addition to the wire-level `Outcome` enum the
+// rollup may emit `"No Action Needed"` for invoices whose every leg
+// turned out to be a non-issue. That value is a UI-only label (no DB
+// column carries it) — see `group-outcome.ts` in @workspace/leg-state.
+export type DisplayOutcome = Outcome | "No Action Needed";
+
 export interface DerivedGroupOutcome {
-  outcome: Outcome;
+  outcome: DisplayOutcome;
   buckets: GroupOutcomeBuckets;
 }
 
@@ -24,8 +30,5 @@ export function deriveGroupOutcomeFromLegs(
   legs: readonly ClaimResponse[],
 ): DerivedGroupOutcome {
   const result: SharedDerivedGroupOutcome = deriveSharedGroupOutcomeFromLegs(legs);
-  // Outcome enum widens from the shared 5-value union to the full
-  // `Outcome` enum (which also includes "Non-Issue"); the helper never
-  // emits "Non-Issue", so the cast is safe.
-  return { outcome: result.outcome as Outcome, buckets: result.buckets };
+  return { outcome: result.outcome as DisplayOutcome, buckets: result.buckets };
 }

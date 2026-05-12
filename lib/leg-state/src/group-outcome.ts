@@ -7,23 +7,36 @@
 // behind per-leg edits and the operator must always see the verdict that
 // matches the leg rail.
 //
-// Bucketing rules — applied to actionable legs only (sibling-duplicate
-// legs follow their primary; legs with `includedInDispute === false`
-// are excluded by the operator):
+// Bucketing rules — applied to legs with a meaningful per-leg verdict
+// (sibling-duplicate legs follow their primary; legs excluded by the
+// operator with no per-leg verdict are skipped):
 //
 //   1. If the leg has an Approved/Partially-Approved verdict → approved
 //   2. Else if the leg has a Denied verdict                  → denied
 //   3. Else map by closure role:
 //        cannot_dispute → cannotDispute (group as "denied side", $0 recovery)
-//        non_issue      → nonIssue      (group as "withdrawn side")
+//        non_issue      → nonIssue      (per-leg verdict: this leg is fine —
+//                                        NOT a withdrawal of the dispute)
 //        anything else  → pending
+//
+// `non_issue` and `cannot_dispute` legs count toward their bucket even
+// when `includedInDispute === false`: that exclusion was the writer's
+// way of recording "this leg has a per-leg verdict and is no longer
+// actionable", and the SOP outcome IS the verdict.
 //
 // Group rollup (in priority order — first match wins):
 //   - any pending                                    → "Pending"
 //   - approved > 0 AND no denied/cannotDispute       → "Approved"
 //   - approved > 0 AND some denied/cannotDispute     → "Partially Approved"
 //   - denied > 0 OR cannotDispute > 0                → "Denied"
-//   - only nonIssue (or no actionable legs)          → "Withdrawn"
+//   - only nonIssue legs                             → "No Action Needed"
+//                                                      (every leg checked
+//                                                      out fine — the
+//                                                      invoice was already
+//                                                      attested correctly,
+//                                                      this is NOT a
+//                                                      withdrawal)
+//   - no actionable legs at all                      → "Withdrawn"
 //   - empty fallback                                 → "Pending"
 import { outcomeRole, type LegForOutcomeRole } from "./index";
 
@@ -32,6 +45,7 @@ export type DerivedGroupOutcome_Outcome =
   | "Approved"
   | "Denied"
   | "Partially Approved"
+  | "No Action Needed"
   | "Withdrawn";
 
 export interface VerdictLike {
@@ -71,7 +85,17 @@ const DENIED_OUTCOMES: ReadonlySet<string> = new Set(["Denied"]);
 
 function isActionable(leg: LegForGroupOutcome): boolean {
   if (outcomeRole(leg) === "duplicate") return false;
-  if (leg.includedInDispute === false) return false;
+  if (leg.includedInDispute === false) {
+    // Excluded legs still count IF the exclusion carried a per-leg
+    // verdict (non_issue or cannot_dispute via the SOP/triage path).
+    // The verdict is what we want to roll up; the includedInDispute
+    // flag is just the storage signal for "this leg is no longer
+    // actionable on its own". Without this branch, an invoice whose
+    // every leg was per-leg-classified as non_issue collapses to
+    // total === 0 and gets mis-labeled as a withdrawal.
+    const role = outcomeRole(leg);
+    return role === "non_issue" || role === "cannot_dispute";
+  }
   return true;
 }
 
@@ -147,7 +171,17 @@ export function deriveGroupOutcomeFromLegs(
     outcome = "Partially Approved";
   } else if (buckets.denied > 0 || buckets.cannotDispute > 0) {
     outcome = "Denied";
-  } else if (buckets.nonIssue > 0 || buckets.total === 0) {
+  } else if (buckets.nonIssue > 0) {
+    // Every actionable leg checked out as a non-issue. The invoice
+    // didn't need work — it was almost certainly already attested
+    // correctly and just left behind in the import. This is NOT a
+    // withdrawal (a withdrawal means we backed off a dispute we could
+    // have filed); it's "we looked, nothing was wrong".
+    outcome = "No Action Needed";
+  } else if (buckets.total === 0) {
+    // No actionable legs at all (every leg excluded for reasons other
+    // than a per-leg verdict, or the group is empty). This is the
+    // operator-withdrew-the-whole-thing case.
     outcome = "Withdrawn";
   } else {
     outcome = "Pending";

@@ -54,7 +54,13 @@ export const TONE_STYLE: Record<Tone, ToneStyle> = {
 //   amber  = blocked / needs evidence (operator paused or chasing)
 //   green  = positive terminal/active (verdict won, or MAS in flight)
 //   red    = adverse terminal         (verdict lost outright)
-//   muted  = withdrawn / non-issue    (closed without contest)
+//   muted  = closed without active dispute. Two distinct flavors share
+//            this tone: "withdrawn" (the dispute was filed-and-then-
+//            backed-off OR the operator declined to file at all) and
+//            "non-issue" (a per-leg verdict meaning "this leg is fine,
+//            nothing was actually wrong"). They mean different things at
+//            the leg level — non-issue is NOT a withdrawal — but the
+//            visual treatment is the same: neutral / no further action.
 // `purple` (Processed) has no clean disposition counterpart — Processed
 // is a leg-level "worktree complete, parent not packaged" UI state that
 // the disposition column does not encode. Callers needing the purple

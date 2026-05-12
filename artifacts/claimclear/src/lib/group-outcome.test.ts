@@ -32,13 +32,33 @@ const confirmedVerdict = (outcome: string) => ({
   createdAt: "2026-01-01T00:00:00Z",
 });
 
-test("group-outcome: empty / all-excluded → Withdrawn", () => {
+test("group-outcome: empty / all-excluded-without-verdict → Withdrawn", () => {
   assert.equal(deriveGroupOutcomeFromLegs([]).outcome, "Withdrawn");
-  const allExcluded = [
+  const allExcludedWithoutVerdict = [
     leg({ id: 1, includedInDispute: false }),
     leg({ id: 2, includedInDispute: false }),
   ];
-  assert.equal(deriveGroupOutcomeFromLegs(allExcluded).outcome, "Withdrawn");
+  assert.equal(
+    deriveGroupOutcomeFromLegs(allExcludedWithoutVerdict).outcome,
+    "Withdrawn",
+  );
+});
+
+test("group-outcome: all-excluded with non-issue verdict → No Action Needed", () => {
+  // Group 519 in production: every leg per-leg-classified as
+  // non-issue (sop_outcome=non_issue, included_in_dispute=false).
+  // The invoice was already attested correctly — this is NOT a
+  // withdrawal.
+  const allNonIssueExcluded = [
+    leg({ id: 1, includedInDispute: false, sopOutcome: "non_issue" }),
+    leg({ id: 2, includedInDispute: false, sopOutcome: "non_issue" }),
+    leg({ id: 3, includedInDispute: false, sopOutcome: "non_issue" }),
+    leg({ id: 4, includedInDispute: false, sopOutcome: "non_issue" }),
+  ];
+  const result = deriveGroupOutcomeFromLegs(allNonIssueExcluded);
+  assert.equal(result.outcome, "No Action Needed");
+  assert.equal(result.buckets.nonIssue, 4);
+  assert.equal(result.buckets.total, 4);
 });
 
 test("group-outcome: any unresolved leg → Pending", () => {
@@ -84,12 +104,42 @@ test("group-outcome: only denied / cannot_dispute → Denied", () => {
   assert.equal(result.outcome, "Denied");
 });
 
-test("group-outcome: only non_issue rows → Withdrawn", () => {
+test("group-outcome: all-excluded with cannot_dispute verdict → Denied", () => {
+  // Symmetric to the all-non-issue case: every leg per-leg-classified
+  // as cannot_dispute (excluded from the dispute, but with a meaningful
+  // per-leg verdict). The "Denied" rollup matches an all-cannot_dispute
+  // group where the legs were never excluded.
+  const allCannotDisputeExcluded = [
+    leg({ id: 1, includedInDispute: false, sopOutcome: "cannot_dispute" }),
+    leg({ id: 2, includedInDispute: false, sopOutcome: "cannot_dispute" }),
+  ];
+  const result = deriveGroupOutcomeFromLegs(allCannotDisputeExcluded);
+  assert.equal(result.outcome, "Denied");
+  assert.equal(result.buckets.cannotDispute, 2);
+});
+
+test("group-outcome: mixed non_issue + cannot_dispute (both excluded) → Denied", () => {
+  // Any cannot_dispute presence wins over non_issue in the rollup
+  // (the group still has a "we couldn't dispute" bucket so it lands
+  // on the Denied side, not the No Action Needed side).
+  const mixed = [
+    leg({ id: 1, includedInDispute: false, sopOutcome: "non_issue" }),
+    leg({ id: 2, includedInDispute: false, sopOutcome: "cannot_dispute" }),
+  ];
+  const result = deriveGroupOutcomeFromLegs(mixed);
+  assert.equal(result.outcome, "Denied");
+  assert.equal(result.buckets.nonIssue, 1);
+  assert.equal(result.buckets.cannotDispute, 1);
+});
+
+test("group-outcome: only non_issue rows → No Action Needed", () => {
+  // Per-leg classification finished and every leg is non-issue. The
+  // invoice didn't need work; this is NOT a withdrawal.
   const result = deriveGroupOutcomeFromLegs([
     leg({ id: 1, sopOutcome: "non_issue" }),
     leg({ id: 2, sopOutcome: "non_issue" }),
   ]);
-  assert.equal(result.outcome, "Withdrawn");
+  assert.equal(result.outcome, "No Action Needed");
   assert.equal(result.buckets.nonIssue, 2);
 });
 

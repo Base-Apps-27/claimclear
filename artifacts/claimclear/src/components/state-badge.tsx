@@ -148,6 +148,9 @@ function outcomeTone(o: string | null | undefined): Tone {
     case "Withdrawn":
     // vocab-allow-next-line — switching on the API enum value, not a UI label.
     case "Non-Issue":
+    // Derived rollup label for invoices whose every leg checked out
+    // as a non-issue. Same neutral tone as the per-leg verdict.
+    case "No Action Needed":
     case "Pending":
     default:
       return "muted";
