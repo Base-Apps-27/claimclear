@@ -29,7 +29,7 @@ import {
   type DecisionTree, type LegacyTreeNode,
   legacyToTree, generateNodeId,
 } from "@/components/decision-tree";
-import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
+import { validateAppliesPerInvoice, findEmptyEvidenceLabels } from "@/components/decision-tree/types";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
@@ -430,6 +430,35 @@ export default function ErrorTypes() {
           description:
             "One or more steps marked \"same answer for every leg\" still collect evidence or require per-leg context. Open the affected step's settings to clear the issue, then save again.",
           variant: "destructive",
+        });
+        return;
+      }
+      // Task #706 — every evidence requirement must carry a non-empty
+      // label; the SOP runner persists that label as the row's
+      // human-readable name (`claim_evidence.evidence_type_name`).
+      // Allowing an empty label would silently regress new rows back to
+      // the opaque `ev_<digits>` key downstream.
+      const emptyLabels = findEmptyEvidenceLabels(form.decisionTree);
+      if (emptyLabels.length > 0) {
+        toast({
+          title: "Can't save — evidence is missing a name",
+          description:
+            emptyLabels.length === 1
+              ? "One evidence requirement has an empty name. Open the affected step and give it a clear, human-readable name."
+              : `${emptyLabels.length} evidence requirements have empty names. Open each affected step and give them clear, human-readable names.`,
+          variant: "destructive",
+        });
+        // Best-effort focus: scroll the first offending input into view
+        // and focus it so the operator lands on the empty field.
+        requestAnimationFrame(() => {
+          const first = emptyLabels[0];
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-testid="sop-evidence-label-${first.nodeId}-${first.index}"]`,
+          );
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.focus();
+          }
         });
         return;
       }

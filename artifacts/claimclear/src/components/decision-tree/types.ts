@@ -143,6 +143,47 @@ export function generateNodeId(): string {
   return `node_${Date.now()}_${++_counter}`;
 }
 
+// Task #706 — the SOP authoring editor mints evidence requirements
+// with a synthetic key of `ev_<Date.now()>`; legacy production
+// `claim_evidence` rows persisted that opaque key as
+// `evidence_type_name`. New rows persist `req.label` (the human name)
+// instead — but display surfaces still need a graceful placeholder
+// when they encounter the legacy opaque value so users don't see
+// `ev_1776176562945` in the UI.
+export const OPAQUE_EVIDENCE_NAME_RE = /^ev_\d+$/i;
+
+export function displayEvidenceTypeName(
+  name: string | null | undefined,
+  fallback = "Evidence",
+): string {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed || OPAQUE_EVIDENCE_NAME_RE.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+// Task #706 — author-time guard. Every evidence requirement must
+// carry a non-empty label; the runner now persists that label as the
+// row's semantic name, so an empty label would silently regress to
+// `req.key` (an opaque `ev_<digits>` string) downstream.
+export interface EmptyEvidenceLabelViolation {
+  nodeId: string;
+  index: number;
+}
+
+export function findEmptyEvidenceLabels(
+  tree: DecisionTree,
+): EmptyEvidenceLabelViolation[] {
+  const out: EmptyEvidenceLabelViolation[] = [];
+  for (const n of tree.nodes) {
+    const reqs = n.evidenceRequirements || [];
+    for (let i = 0; i < reqs.length; i++) {
+      const label = reqs[i]?.label;
+      if (!label || !label.trim()) out.push({ nodeId: n.id, index: i });
+    }
+  }
+  return out;
+}
+
 export function legacyToTree(legacy: LegacyTreeNode): DecisionTree {
   const nodes: TreeNode[] = [];
 

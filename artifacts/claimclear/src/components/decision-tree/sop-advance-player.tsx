@@ -29,6 +29,7 @@ import {
   OUTCOME_LABELS,
   OUTCOME_COLORS,
   getMaxDepth,
+  displayEvidenceTypeName,
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -483,7 +484,13 @@ export function SopAdvancePlayer(props: Props) {
       // while an image upload is in flight.
       const itemsToPost = pend.items.filter((it) => it.imageUrl);
       const notes = pend.notes.trim();
-      const persisted = persistedForNode(node.id)[req.key] ?? [];
+      // Task #706 — persisted rows are keyed by `evidence_type_name`,
+      // which is now `req.label` for new rows but legacy rows still
+      // carry the opaque `req.key`. Try the human label first, fall
+      // back to the key so legacy rows continue to dedupe correctly.
+      const persistedMap = persistedForNode(node.id);
+      const persistedKey = req.label?.trim() || req.key;
+      const persisted = persistedMap[persistedKey] ?? persistedMap[req.key] ?? [];
       const lastPersistedNotes = persisted.find((p) => p.notes && p.notes.trim().length > 0)?.notes?.trim() ?? "";
 
       // Notes-only row written iff (a) there ARE notes, AND (b) they
@@ -495,13 +502,19 @@ export function SopAdvancePlayer(props: Props) {
       // Image rows: every pending item with an objectPath becomes its
       // own evidence row. We don't bind notes to the image rows — the
       // notes get their own row so the audit trail keeps them legible.
+      // Task #706 — persist the human label as the row's semantic
+      // `evidence_type_name`. Falls back to `req.key` (the opaque
+      // synthetic id) only when a legacy node somehow lacks a label;
+      // the editor now blocks saving a tree in that state, so this
+      // fallback is purely defensive for in-flight legacy trees.
+      const persistedName = req.label?.trim() || req.key;
       for (const it of itemsToPost) {
         const res = await fetch(`${apiBase()}/api/claims/${leg.id}/evidence`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            evidenceTypeName: req.key,
+            evidenceTypeName: persistedName,
             evidenceTypeId: req.evidenceTypeId,
             treeNodeId: node.id,
             imageUrl: it.imageUrl,
@@ -518,7 +531,7 @@ export function SopAdvancePlayer(props: Props) {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            evidenceTypeName: req.key,
+            evidenceTypeName: persistedName,
             evidenceTypeId: req.evidenceTypeId,
             treeNodeId: node.id,
             notes,
@@ -895,13 +908,17 @@ export function SopAdvancePlayer(props: Props) {
   const evidenceReady = useMemo(() => {
     if (!currentNode?.evidenceRequirements?.length) return true;
     const persistedMap = persistedForNode(currentNode.id);
-    return currentNode.evidenceRequirements.every((req) =>
-      isReqSatisfied({
+    return currentNode.evidenceRequirements.every((req) => {
+      // Task #706 — same dual-key lookup as the persistence path: new
+      // rows persist `req.label` as `evidence_type_name`, legacy rows
+      // still carry `req.key`. Match either.
+      const persistedKey = req.label?.trim() || req.key;
+      return isReqSatisfied({
         req,
         pending: getPending(currentNode.id, req.key),
-        persistedItems: persistedMap[req.key] ?? [],
-      }),
-    );
+        persistedItems: persistedMap[persistedKey] ?? persistedMap[req.key] ?? [],
+      });
+    });
   }, [currentNode, pendingByReq, persistedForNode]);
 
   const anyUploading = useMemo(() => {
@@ -1479,7 +1496,11 @@ export function SopAdvancePlayer(props: Props) {
               </div>
               {currentNode.evidenceRequirements.map((req) => {
                 const pending = getPending(currentNode.id, req.key);
-                const persisted = persistedHere[req.key] ?? [];
+                // Task #706 — dual-key lookup matches the persistence
+                // path (label for new rows, opaque key for legacy).
+                const persistedKey = req.label?.trim() || req.key;
+                const persisted =
+                  persistedHere[persistedKey] ?? persistedHere[req.key] ?? [];
                 const showImage = req.acceptsImage !== false;
                 const showText = req.acceptsText === true;
                 const satisfied = isReqSatisfied({ req, pending, persistedItems: persisted });
@@ -1840,7 +1861,7 @@ function PersistedThumbnail({ ev }: { ev: ClaimEvidenceResponse }) {
       target="_blank"
       rel="noopener noreferrer"
       className="border rounded-md p-1.5 bg-muted/20 hover:bg-muted/40 transition-colors"
-      title={ev.evidenceTypeName}
+      title={displayEvidenceTypeName(ev.evidenceTypeName)}
     >
       <img src={src} alt="Evidence" className="rounded border max-h-24 w-auto block" />
     </a>

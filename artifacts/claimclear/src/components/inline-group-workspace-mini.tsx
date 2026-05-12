@@ -25,7 +25,7 @@ import type {
   LintResult,
 } from "@workspace/api-client-react";
 import { LintGateDialog, type LintGateMode } from "@/components/lint-gate-dialog";
-import type { DecisionTree } from "@/components/decision-tree/types";
+import { type DecisionTree, displayEvidenceTypeName, OPAQUE_EVIDENCE_NAME_RE } from "@/components/decision-tree/types";
 import {
   buildLegResolvedIndex,
   deriveLegSubStatus,
@@ -1403,8 +1403,17 @@ function ReadyHero({
         const url = r?.imageUrl;
         if (!url || seen.has(url)) continue;
         seen.add(url);
+        // Task #706 — prefer the file basename when the persisted
+        // evidence_type_name is an opaque legacy `ev_<digits>` key,
+        // since the filename usually carries more signal than a
+        // generic "Evidence" placeholder.
+        const fallback = url.split("/").pop() ?? "file";
+        const stored = (r.evidenceTypeName ?? "").trim();
+        const name = !stored || OPAQUE_EVIDENCE_NAME_RE.test(stored)
+          ? fallback
+          : displayEvidenceTypeName(stored, fallback);
         result.push({
-          name: r.evidenceTypeName ?? url.split("/").pop() ?? "file",
+          name,
           legIndex: i + 1,
           legIncluded: included,
         });

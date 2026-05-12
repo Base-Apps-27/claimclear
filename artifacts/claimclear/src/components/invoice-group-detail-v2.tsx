@@ -63,6 +63,21 @@ import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-
 import { StateBadge } from "@/components/state-badge";
 import { outcomeLabel } from "@workspace/vocab";
 import { RefNumber } from "@/components/ref-number";
+import { OPAQUE_EVIDENCE_NAME_RE } from "@/components/decision-tree/types";
+
+// Task #706 — group/dispute previews list every attachment by name. When
+// the persisted `evidence_type_name` is an opaque legacy `ev_<digits>`
+// key (or empty), prefer the file basename so users see "manifest.png"
+// instead of "ev_1776176562945" or a generic "Evidence" placeholder.
+function displayedEvidenceName(
+  stored: string | null | undefined,
+  url: string | null | undefined,
+): string | null {
+  const trimmed = (stored ?? "").trim();
+  if (trimmed && !OPAQUE_EVIDENCE_NAME_RE.test(trimmed)) return trimmed;
+  if (url) return url.split("/").pop() ?? null;
+  return null;
+}
 import { deriveLegSubStatus, type LegSubStatus } from "@workspace/leg-state";
 import {
   isOfflineReattestNoteValid,
@@ -1084,11 +1099,11 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 };
                 for (const f of (detail.evidenceFiles ?? [])) add(f?.url, f?.name ?? null, null);
                 const groupRows = (detail as { groupEvidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> }).groupEvidence ?? [];
-                for (const r of groupRows) add(r?.imageUrl ?? null, r?.evidenceTypeName ?? null, null);
+                for (const r of groupRows) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), null);
                 allRides.forEach((ride, idx) => {
                   const rideAny = ride as { evidenceFiles?: Array<{ url?: string; filename?: string | null; name?: string | null }> | null; evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> };
                   for (const f of (rideAny.evidenceFiles ?? [])) add(f?.url ?? null, (f as { name?: string | null }).name ?? f?.filename ?? null, idx + 1);
-                  for (const r of (rideAny.evidence ?? [])) add(r?.imageUrl ?? null, r?.evidenceTypeName ?? null, idx + 1);
+                  for (const r of (rideAny.evidence ?? [])) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), idx + 1);
                 });
                 return (
                   <CcCard

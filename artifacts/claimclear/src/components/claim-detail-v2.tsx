@@ -79,7 +79,7 @@ import { RefNumber } from "@/components/ref-number";
 import { DuplicateTerminal } from "@/components/decision-tree/terminals/duplicate-terminal";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { deriveLegSubStatus } from "@workspace/leg-state";
-import type { DecisionTree } from "@/components/decision-tree/types";
+import { type DecisionTree, displayEvidenceTypeName } from "@/components/decision-tree/types";
 import {
   buildTripOverridingErrorTypeIds,
   findSiblingDuplicatePrimaryCandidates,
@@ -1355,8 +1355,8 @@ export function ClaimDetailV2({
                       data-testid={`leg-evidence-${ev.id}`}
                     >
                       <Paperclip className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
-                      <span className="font-medium flex-1 truncate" title={ev.imageUrl ?? ev.evidenceTypeName}>
-                        {ev.imageUrl ? fileNameFromUrl(ev.imageUrl) : ev.evidenceTypeName}
+                      <span className="font-medium flex-1 truncate" title={ev.imageUrl ?? displayEvidenceTypeName(ev.evidenceTypeName)}>
+                        {ev.imageUrl ? fileNameFromUrl(ev.imageUrl) : displayEvidenceTypeName(ev.evidenceTypeName)}
                       </span>
                       {ev.imageUrl ? (
                         typeof sizeBytes === "number" ? (
@@ -1386,7 +1386,7 @@ export function ClaimDetailV2({
                         )
                       ) : null}
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                        {ev.evidenceTypeName}
+                        {displayEvidenceTypeName(ev.evidenceTypeName)}
                       </span>
                       <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
                         {ev.collectedBy ?? "—"} · {relativeTime(ev.collectedAt)}

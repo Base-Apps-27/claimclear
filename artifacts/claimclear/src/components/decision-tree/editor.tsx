@@ -1079,7 +1079,13 @@ function NodeSettingsPopover({
             <p className="text-[10px] text-slate-400 text-center py-2">No evidence required at this step</p>
           )}
 
-          {(node.evidenceRequirements || []).map((req, i) => (
+          {(node.evidenceRequirements || []).map((req, i) => {
+            // Task #706 — block save when label is empty. The label is the
+            // human-readable name persisted as `claim_evidence.evidence_type_name`
+            // for every row collected against this requirement; an empty
+            // label would silently regress to the opaque `ev_<digits>` key.
+            const labelEmpty = !req.label || !req.label.trim();
+            return (
             <div key={req.key} className="border border-slate-200 rounded-md p-2 bg-white space-y-2">
               <div className="flex items-center gap-1.5">
                 <GripVertical className="h-3 w-3 text-slate-300 cursor-grab shrink-0" />
@@ -1087,12 +1093,24 @@ function NodeSettingsPopover({
                   value={req.label}
                   onChange={e => updateEvidenceReq(i, { label: e.target.value })}
                   placeholder="Evidence item..."
-                  className="text-xs h-6 flex-1"
+                  className={`text-xs h-6 flex-1 ${labelEmpty ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                  data-node-id={node.id}
+                  data-evidence-index={i}
+                  data-testid={`sop-evidence-label-${node.id}-${i}`}
+                  aria-invalid={labelEmpty || undefined}
                 />
                 <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-400 hover:text-red-500 shrink-0" onClick={() => removeEvidenceReq(i)}>
                   <X className="h-3 w-3" />
                 </Button>
               </div>
+              {labelEmpty && (
+                <p
+                  className="text-[10px] text-red-600 pl-4"
+                  data-testid={`sop-evidence-label-error-${node.id}-${i}`}
+                >
+                  Give this evidence a name — staff will see it on the claim.
+                </p>
+              )}
               <div className="flex items-center gap-3 text-[10px] pl-4">
                 <div className="flex items-center gap-1">
                   <Switch
@@ -1120,7 +1138,8 @@ function NodeSettingsPopover({
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </PopoverContent>
     </Popover>
