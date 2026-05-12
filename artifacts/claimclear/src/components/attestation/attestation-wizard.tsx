@@ -63,12 +63,25 @@ export function AttestationWizard({
     return bucket.rows.map((r) => r.claim);
   }, [detail, bucket.rows]);
 
+  // A leg belongs in the "cancel first" bucket when EITHER the payor
+  // denied it OR the leg carries an outstanding MAS cancel obligation
+  // (e.g. `sop_outcome = cannot_dispute`, which stamps
+  // `mas_action_required = 'cancel'` regardless of payor outcome).
+  // Mirrors the server's reattest-complete gate at
+  // `routes/invoice-groups.ts` (`mas_action_required='cancel' AND
+  // mas_action_completed_at IS NULL`). Without this, cannot-dispute
+  // legs got bucketed as survivors, the wizard never rendered Step 2,
+  // and "Re-attested in MAS" 409'd with "Not all MAS cancel actions
+  // are complete" — exactly what the operator can't act on because
+  // the cancel step was hidden from her.
+  const needsMasCancel = (l: ClaimResponse): boolean =>
+    l.outcome === "Denied" || l.masActionRequired === "cancel";
   const deniedLegs = useMemo(
-    () => allLegs.filter((l) => l.outcome === "Denied"),
+    () => allLegs.filter(needsMasCancel),
     [allLegs],
   );
   const survivedLegs = useMemo(
-    () => allLegs.filter((l) => l.outcome !== "Denied"),
+    () => allLegs.filter((l) => !needsMasCancel(l)),
     [allLegs],
   );
   const pendingDeniedLegs = useMemo(
