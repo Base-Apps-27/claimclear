@@ -539,7 +539,13 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
             existing /sop-restart + /sop-back-step buttons.
           • includedInDispute === false (no sopOutcome) → classify-
             time exclusion → ResolvedHero (passive; no walk to
-            rewind, matches the per-leg page behavior). */}
+            rewind, matches the per-leg page behavior).
+          • sopOutcome set but no errorTypeId → leg was disposed via
+            a non-SOP path (classify-time non_issue, backfill, etc).
+            There is no decision tree to mount, so SopHero would be
+            stuck on its "Loading playbook…" placeholder forever.
+            Fall through to ResolvedHero — it accurately reflects
+            the terminal and the leg has no walk to rewind. */}
       {/* Gated to Queue Preview only — the operator opted into the
           experimental surface, so we trial leg-end-state stacking
           there before promoting it to the live Queue. */}
@@ -558,7 +564,7 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground px-1">
               Active leg end state
             </div>
-            {activeLeg.sopOutcome != null ? (
+            {activeLeg.sopOutcome != null && activeLeg.errorTypeId ? (
               <SopHero
                 leg={activeLeg}
                 rides={rides}
