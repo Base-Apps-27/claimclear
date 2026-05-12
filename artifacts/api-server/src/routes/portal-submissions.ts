@@ -1458,8 +1458,29 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
   // prompt when the operator types something. An empty readback is a
   // valid "nothing extra to add" signal and is no longer a gate.
 
-  const ctx = await resolveContext({ invoiceGroupId });
-  if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
+  const rawCtx = await resolveContext({ invoiceGroupId });
+  if (!rawCtx) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  // Drop non-contestable legs (sop_outcome ∈ {non_issue, cannot_dispute}
+  // or disposition ∈ {disposed_nonissue, disposed_withdraw}) BEFORE the
+  // snapshot is built. Pre-fix, `buildSnapshot` joined every ride's
+  // conf number into `snap.confNumber`, which the lint then required
+  // to appear verbatim in the description — but the AI write-up
+  // correctly only mentions the disputed legs, so a group with even
+  // one non-issue leg would always fail the lint with a misleading
+  // "Confirmation number X is not mentioned in the description"
+  // error. `preparePortalDraftContent` (used by the preview path)
+  // already filters this way; we mirror that here so the submit-time
+  // snapshot matches the preview-time snapshot.
+  const eligibleRides = rawCtx.rides.filter(r => !isNonContestable(r));
+  if (eligibleRides.length === 0) {
+    res.status(400).json({
+      error: "Nothing to submit — every leg on this group is non-contestable. Reopen a leg to restore a disputable claim.",
+      code: "no_eligible_legs",
+    });
+    return;
+  }
+  const ctx: GroupContext = { group: rawCtx.group, rides: eligibleRides, primaryClaim: eligibleRides[0] };
 
   const actorResult = resolveSubmissionActor(req, req.body);
   if ("error" in actorResult) {
@@ -1889,12 +1910,23 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
   const settings = await getPortalSettings();
 
   for (const gid of requestedIds) {
-    const ctx = await resolveContext({ invoiceGroupId: gid });
-    if (!ctx) {
+    const rawCtx = await resolveContext({ invoiceGroupId: gid });
+    if (!rawCtx) {
       skipped.push({ id: gid, refNumber: null, reason: "not_found" });
       continue;
     }
-    const refNumber = ctx.group.invoiceNumber;
+    const refNumber = rawCtx.group.invoiceNumber;
+
+    // Mirror the single-group POST: drop non-contestable legs before
+    // buildSnapshot so the lint doesn't demand a non-issue leg's conf
+    // appear in the description. See the comment block in the single-
+    // group POST for the full rationale.
+    const eligibleRides = rawCtx.rides.filter(r => !isNonContestable(r));
+    if (eligibleRides.length === 0) {
+      skipped.push({ id: gid, refNumber, reason: "no_eligible_legs" });
+      continue;
+    }
+    const ctx: GroupContext = { group: rawCtx.group, rides: eligibleRides, primaryClaim: eligibleRides[0] };
 
     const phase = getGroupMacroPhase(ctx.group);
     if (phase !== "pre-submit") {
