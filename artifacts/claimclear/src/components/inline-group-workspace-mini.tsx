@@ -277,6 +277,9 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const [gauntletFooterState, setGauntletFooterState] = useState<GauntletFooterState | null>(null);
   const [gauntletDirty, setGauntletDirty] = useState(false);
   const onFooterStateChange = useCallback((s: GauntletFooterState) => setGauntletFooterState(s), []);
+  // Gate experimental UX (e.g. the active-leg end-state stack below
+  // the group hero) to /queue-preview so the live /queue stays stable.
+  const queuePreview = useIsQueuePreview();
 
   useEffect(() => {
     setForceReview(false);
@@ -537,7 +540,11 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
           • includedInDispute === false (no sopOutcome) → classify-
             time exclusion → ResolvedHero (passive; no walk to
             rewind, matches the per-leg page behavior). */}
-      {activeLeg &&
+      {/* Gated to Queue Preview only — the operator opted into the
+          experimental surface, so we trial leg-end-state stacking
+          there before promoting it to the live Queue. */}
+      {queuePreview &&
+        activeLeg &&
         (hero === "reattest" ||
           hero === "closeout" ||
           hero === "generate") &&
