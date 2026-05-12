@@ -272,11 +272,12 @@ test("Dashboard ↔ Queue agreement: hero count = sum of urgent across the on-cl
     { effectiveDaysLeft: 2, isUrgent: false },
   ];
   const dashboardCount = dashboardExpiring.filter(g => g.isUrgent).length;
-  // Same urgent rows distributed across the queue's on-clock lanes:
-  const actionable = [{ isUrgent: true, effectiveDaysLeft: -4 }];
-  const portalQueued = [{ isUrgent: true, effectiveDaysLeft: 0 }];
+  // Same urgent rows distributed across the queue's lanes (clock /
+  // week / hold — the Portal Queued lane was retired):
+  const clockLane = [{ isUrgent: true, effectiveDaysLeft: -4 }];
+  const weekLane = [{ isUrgent: true, effectiveDaysLeft: 0 }];
   const onHold = [{ isUrgent: true, effectiveDaysLeft: 0 }];
-  const heroCount = computeAggregateUrgentCount(actionable, portalQueued, onHold);
+  const heroCount = computeAggregateUrgentCount(clockLane, weekLane, onHold);
   assert.equal(heroCount, dashboardCount, "hero count must match Dashboard for the same data");
   assert.equal(heroCount, 3);
 });
@@ -293,16 +294,16 @@ test("computeAggregateUrgentCount handles empty lanes and missing isUrgent flags
 });
 
 test("?expiring=urgent narrows every on-clock lane to urgent rows only", () => {
-  const actionable = [
+  const clockLane = [
     { id: 1, isUrgent: true, effectiveDaysLeft: 0 },
     { id: 2, isUrgent: false, effectiveDaysLeft: 5 },
   ];
-  const portalQueued = [
+  const weekLane = [
     { id: 3, isUrgent: false, effectiveDaysLeft: 1 },
     { id: 4, isUrgent: true, effectiveDaysLeft: 0 },
   ];
   const onHold = [{ id: 5, isUrgent: false, effectiveDaysLeft: 14 }];
-  const lanes = [actionable, portalQueued, onHold].map(l =>
+  const lanes = [clockLane, weekLane, onHold].map(l =>
     filterByExpiringParam(l, "urgent"),
   );
   assert.deepEqual(lanes[0]!.map(r => r.id), [1]);
@@ -313,16 +314,16 @@ test("?expiring=urgent narrows every on-clock lane to urgent rows only", () => {
 });
 
 test("?expiring=soon narrows every on-clock lane to non-urgent 1..3 day rows", () => {
-  const actionable = [
+  const clockLane = [
     { id: 1, isUrgent: true, effectiveDaysLeft: 0 },
     { id: 2, isUrgent: false, effectiveDaysLeft: 1 },
     { id: 3, isUrgent: false, effectiveDaysLeft: 4 },
   ];
-  const portalQueued = [
+  const weekLane = [
     { id: 4, isUrgent: false, effectiveDaysLeft: 3 },
     { id: 5, isUrgent: false, effectiveDaysLeft: 14 },
   ];
-  const lanes = [actionable, portalQueued].map(l => filterByExpiringParam(l, "soon"));
+  const lanes = [clockLane, weekLane].map(l => filterByExpiringParam(l, "soon"));
   assert.deepEqual(lanes[0]!.map(r => r.id), [2]);
   assert.deepEqual(lanes[1]!.map(r => r.id), [4]);
 });
@@ -363,23 +364,24 @@ test("every on-clock row with a known deadline gets a tier — including past a 
 });
 
 test("emptyStateCopy reflects the active filter on every lane", () => {
-  // Default (no filter) — generic copy.
+  // Default (no filter) — generic copy. The Queue only renders two
+  // lanes (actionable + on-hold); the legacy `portal-queued` lane was
+  // retired when submitted groups moved to Portal Submissions.
   assert.equal(emptyStateCopy("actionable", null), "No invoice groups need action right now.");
-  assert.equal(emptyStateCopy("portal-queued", null), "No invoice groups queued for portal submission.");
   assert.equal(emptyStateCopy("on-hold", null), "No invoice groups on hold.");
 
   // Urgent filter — copy must mention "file-today" so the operator
   // doesn't think the lane is genuinely empty.
-  for (const lane of ["actionable", "portal-queued", "on-hold"] as const) {
+  for (const lane of ["actionable", "on-hold"] as const) {
     assert.match(emptyStateCopy(lane, "urgent"), /file-today/);
   }
   // Soon filter — copy must mention "due-within-3-days".
-  for (const lane of ["actionable", "portal-queued", "on-hold"] as const) {
+  for (const lane of ["actionable", "on-hold"] as const) {
     assert.match(emptyStateCopy(lane, "soon"), /due-within-3-days/);
   }
   // Task #452 — tomorrow and today-tomorrow get their own copy so the
   // operator immediately understands which subset is being filtered.
-  for (const lane of ["actionable", "portal-queued", "on-hold"] as const) {
+  for (const lane of ["actionable", "on-hold"] as const) {
     assert.match(emptyStateCopy(lane, "tomorrow"), /file-tomorrow/);
     assert.match(emptyStateCopy(lane, "today-tomorrow"), /file-today-or-tomorrow/);
   }
@@ -512,13 +514,11 @@ test("filterByExpiringParam narrows to stuck rows only under 'stuck' mode (Task 
   );
 });
 
-test("emptyStateCopy reflects stuck filter on portal-queued lane (Task #352)", () => {
-  assert.match(
-    emptyStateCopy("portal-queued", "stuck"),
-    /stuck-after-submission/,
-    "portal-queued + stuck filter must surface a 'stuck-after-submission' message",
-  );
-  // Other lanes fall back gracefully.
+test("emptyStateCopy reflects stuck filter on every Queue lane (Task #352)", () => {
+  // The Queue's portal-queued lane is gone, so the only way an
+  // operator lands on `?expiring=stuck` here is via a stale link.
+  // Both remaining lanes surface a "stuck-after-submission" message
+  // that points the operator at the right surface (Portal Submissions).
   assert.match(
     emptyStateCopy("actionable", "stuck"),
     /stuck-after-submission/,

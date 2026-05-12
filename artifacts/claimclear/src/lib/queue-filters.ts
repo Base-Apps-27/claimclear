@@ -192,13 +192,11 @@ export function buildChips(
       onClear: () => apply({ expiring: null }),
     }));
   }
-  if (exp === "stuck") {
-    chips.push(withCount({
-      id: "expiring-stuck",
-      label: "Stuck after submission",
-      onClear: () => apply({ expiring: null }),
-    }));
-  }
+  // No `expiring=stuck` chip: the Queue's filter surface no longer
+  // exposes the stuck mode (submitted groups aren't fetched into the
+  // lane stack). The mode itself stays in the URL vocabulary because
+  // the backend and the Dashboard's "Stuck after submission" surface
+  // still use it.
   if (filters.outlook) {
     chips.push(withCount({
       id: `outlook-${filters.outlook}`,

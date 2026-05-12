@@ -162,6 +162,9 @@ test("legacy URL rewrite: per-tab `qActionable` folds into `qSearch`", () => {
 });
 
 test("legacy URL rewrite: stale `?tab=` is stripped on mount", () => {
+  // We deliberately keep recognising legacy `?tab=portal-queued`
+  // bookmarks so they don't 404 — the rewrite strips the now-meaningless
+  // tab token and lets the page render with the default lane stack.
   const params = new URLSearchParams("tab=portal-queued");
   const out = legacyUrlRewrites((k) => params.get(k));
   assert.equal(out?.tab, null);
@@ -209,11 +212,14 @@ test("laneForRow: status=On Hold → hold lane regardless of urgency", () => {
   );
 });
 
-test("laneForRow: today/tomorrow → clock lane (Portal Queued and New both apply)", () => {
+test("laneForRow: today/tomorrow → clock lane regardless of status (any non-On-Hold row)", () => {
   assert.equal(laneForRow(row({ effectiveDaysLeft: 0 })), "clock");
   assert.equal(laneForRow(row({ effectiveDaysLeft: 1 })), "clock");
+  // Status doesn't influence the clock-vs-week split — only `On Hold`
+  // diverts to the hold lane. Any other status (New, Needs Evidence,
+  // Generating Email, etc.) lands on the clock when due today/tomorrow.
   assert.equal(
-    laneForRow(row({ status: "Portal Queued", effectiveDaysLeft: 0 })),
+    laneForRow(row({ status: "Needs Evidence", effectiveDaysLeft: 0 })),
     "clock",
   );
 });
@@ -368,18 +374,12 @@ const PARITY_MATRIX: MatrixRow[] = [
     clear: { expiring: null },
     clearExpectKey: "expiring",
   },
-  {
-    name: "expiring=stuck",
-    urlKey: "expiring",
-    urlValue: "stuck",
-    set: { expiring: "stuck" },
-    setExpectKey: "expiring",
-    setExpectValue: "stuck",
-    parsedExpectKey: "expiring",
-    parsedExpect: "stuck",
-    clear: { expiring: null },
-    clearExpectKey: "expiring",
-  },
+  // `expiring=stuck` is no longer surfaced by the Queue's filter
+  // popover (submitted groups aren't fetched into the lane stack), so
+  // it's intentionally absent from the parity matrix. The mode itself
+  // is still a valid URL token — `parseExpiringParam` accepts it for
+  // the Dashboard's "Stuck after submission" surface, which is
+  // covered by `queue-urgency.test.ts`.
   {
     name: "outlook=ready_to_review",
     urlKey: "outlook",

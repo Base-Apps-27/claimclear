@@ -6,7 +6,7 @@
 // NOTE: A drift-guard (scripts/check-tour-version.mjs) refuses to build
 // if the steps below change without this version being bumped, so users
 // can never silently miss new tour content.
-export const CURRENT_TOUR_VERSION = "2026-05-05.v17";
+export const CURRENT_TOUR_VERSION = "2026-05-12.v18";
 
 export type ProcessStepValue =
   | 1 | 2 | 3 | 4 | 5
@@ -213,9 +213,9 @@ export const TOUR_STEPS: TourStepDef[] = [
   {
     id: 13, kind: "coach", page: "queue", processStep: "all",
     target: '[data-tour="queue-engagement-strip"]', placement: "bottom",
-    title: "⚠️ Two tabs are hidden right now",
+    title: "⚠️ Some lanes are hidden right now",
     body:
-      "By default the Queue only shows Actionable. Two more tabs — 'Portal Queued' (already sent, waiting for MAS to confirm) and 'On Hold' (parked or blocked) — are hidden because they don't need your hands today. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden tabs come back. The same trap shows up on the Browse pages later.",
+      "By default the Queue only shows groups that need engagement, and the 'On hold' lane (parked or blocked) is hidden because nothing in it needs your hands today. Already-submitted groups don't appear here at all — they live on the Portal Submissions page. If a group seems to disappear, switch 'Needs engagement' to 'All' and the hidden lane comes back. The same trap shows up on the Browse pages later.",
     nextLabel: "Next: Portal Submissions",
   },
 

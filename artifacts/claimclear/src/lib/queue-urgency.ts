@@ -342,38 +342,42 @@ export function computeAggregateUrgentCount(
  * Empty-state copy for an on-clock tab. Centralised so the message
  * accurately reflects the active filter (e.g. "no file-today groups")
  * instead of falsely claiming the lane is empty.
+ *
+ * The `portal-queued` lane was removed from the Queue's lane stack
+ * (submitted groups now live on the Response Tracker / Portal
+ * Submissions surfaces), so the lane union here is narrowed to the
+ * two lanes the Queue actually renders. The `stuck` filter mode is
+ * still part of the URL vocabulary (used by the Dashboard's "Stuck
+ * after submission" hero card), but the Queue's UI no longer exposes
+ * it, so we no longer need a tailored copy variant for it here.
  */
 export function emptyStateCopy(
-  lane: "actionable" | "portal-queued" | "on-hold",
+  lane: "actionable" | "on-hold",
   filter: ExpiringFilter,
 ): string {
   if (filter === "urgent") {
     if (lane === "actionable") return "No file-today groups in Action Required.";
-    if (lane === "portal-queued") return "No file-today groups in Portal Queued.";
     return "No file-today groups on hold.";
   }
   if (filter === "soon") {
     if (lane === "actionable") return "No due-within-3-days groups in Action Required.";
-    if (lane === "portal-queued") return "No due-within-3-days groups in Portal Queued.";
     return "No due-within-3-days groups on hold.";
   }
   if (filter === "tomorrow") {
     if (lane === "actionable") return "No file-tomorrow groups in Action Required.";
-    if (lane === "portal-queued") return "No file-tomorrow groups in Portal Queued.";
     return "No file-tomorrow groups on hold.";
   }
   if (filter === "today-tomorrow") {
     if (lane === "actionable") return "No file-today-or-tomorrow groups in Action Required.";
-    if (lane === "portal-queued") return "No file-today-or-tomorrow groups in Portal Queued.";
     return "No file-today-or-tomorrow groups on hold.";
   }
-  // Task #352 — "stuck" only ever appears in the portal-queued lane;
-  // other lanes will show the normal unfiltered empty-state instead.
   if (filter === "stuck") {
-    if (lane === "portal-queued") return "No stuck-after-submission groups in Portal Queued.";
-    return "No stuck-after-submission groups in this lane.";
+    // Reachable only via a stale link pinning `?expiring=stuck`. The
+    // Queue can never match a stuck row (submitted groups aren't in
+    // the lane stack), so the copy points the operator at the right
+    // surface instead of falsely claiming the lane is empty.
+    return "No stuck-after-submission groups here — see Portal Submissions.";
   }
   if (lane === "actionable") return "No invoice groups need action right now.";
-  if (lane === "portal-queued") return "No invoice groups queued for portal submission.";
   return "No invoice groups on hold.";
 }

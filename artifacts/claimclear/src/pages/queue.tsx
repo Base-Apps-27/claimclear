@@ -104,10 +104,11 @@ const LANE_LABEL: Record<LaneId, string> = {
 };
 // Portal-Queued groups were removed from the lane stack (operator
 // asked to hide already-submitted groups from the Queue entirely —
-// they live in the Response Tracker now). Both the clock and week
-// lanes are pure "actionable" buckets, so they share the empty-state
-// copy.
-const LANE_EMPTY_KEY: Record<LaneId, "actionable" | "portal-queued" | "on-hold"> = {
+// they live in the Response Tracker / Portal Submissions surfaces
+// now). Both the clock and week lanes are pure "actionable" buckets,
+// so they share the empty-state copy. The lane key union no longer
+// carries `portal-queued` — `emptyStateCopy` was narrowed to match.
+const LANE_EMPTY_KEY: Record<LaneId, "actionable" | "on-hold"> = {
   clock: "actionable",
   week: "actionable",
   hold: "on-hold",
@@ -435,14 +436,10 @@ function FiltersPopover({
     if (key === "today") return f === "urgent" || f === "today-tomorrow";
     return f === "tomorrow" || f === "today-tomorrow";
   };
-  const toggleExpiring = (key: "today" | "tomorrow" | "soon" | "stuck") => {
+  const toggleExpiring = (key: "today" | "tomorrow" | "soon") => {
     const cur = filters.expiring;
     if (key === "soon") {
       onChange({ expiring: cur === "soon" ? null : "soon" });
-      return;
-    }
-    if (key === "stuck") {
-      onChange({ expiring: cur === "stuck" ? null : "stuck" });
       return;
     }
     const haveToday = expiringHas("today");
@@ -467,22 +464,25 @@ function FiltersPopover({
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Expiring
         </div>
+        {/*
+          "Stuck after submission" was removed from the Queue's filter
+          surface: submitted groups are no longer fetched into the lane
+          stack, so the chip could never match a row. The `stuck` mode
+          itself is still a real backend filter and is surfaced by the
+          Dashboard's "Stuck after submission" hero card (which links
+          to /portal-submissions where the rows actually live).
+        */}
         {[
           { id: "today" as const, label: "Today", testid: "queue-filter-expiring-today" },
           { id: "tomorrow" as const, label: "Tomorrow", testid: "queue-filter-expiring-tomorrow" },
           { id: "soon" as const, label: "Due in 2–3 days", testid: "queue-filter-expiring-soon" },
-          {
-            id: "stuck" as const,
-            label: "Stuck after submission",
-            testid: "queue-filter-expiring-stuck",
-          },
         ].map((row) => {
           const active =
             row.id === "today"
               ? expiringHas("today")
               : row.id === "tomorrow"
                 ? expiringHas("tomorrow")
-                : filters.expiring === row.id;
+                : filters.expiring === "soon";
           return (
             <label
               key={row.id}
@@ -790,16 +790,17 @@ export default function Queue() {
   // facets (errorTypeId, draftReviewed, outlook) are applied through
   // existing `ListInvoiceGroups` params where possible; everything else
   // narrows client-side.
-  const expiringForLanes: "urgent" | "soon" | "stuck" | undefined =
-    filters.expiring === "urgent" ||
-    filters.expiring === "soon" ||
-    filters.expiring === "stuck"
+  // `stuck` is intentionally NOT forwarded as a lane query param: the
+  // Queue doesn't fetch submitted groups, so passing it would only
+  // narrow the actionable lanes to the empty set. The `stuck` mode
+  // lives on the Dashboard / Portal Submissions surfaces instead.
+  const expiringForLanes: "urgent" | "soon" | undefined =
+    filters.expiring === "urgent" || filters.expiring === "soon"
       ? filters.expiring
       : undefined;
   const includeExpiredForLanes =
     filters.showPastDeadline ||
     filters.expiring === "urgent" ||
-    filters.expiring === "stuck" ||
     filters.expiring === "today-tomorrow"
       ? true
       : undefined;
@@ -1031,9 +1032,8 @@ export default function Queue() {
           (r.effectiveDaysLeft ?? Number.POSITIVE_INFINITY) <= 3,
       ).length;
     }
-    if (exp === "stuck") {
-      out["expiring-stuck"] = dedupedAll.filter((r) => !!r.submittedStuck).length;
-    }
+    // No `expiring=stuck` count branch: the chip is no longer
+    // exposed in the Queue (see the filter popover comment).
     if (filters.outlook) {
       out[`outlook-${filters.outlook}`] = dedupedAll.length;
     }
