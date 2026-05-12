@@ -4322,6 +4322,82 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
         }
       }
 
+      // Survivor-leg cleanup (2026-05-12 incident, group #422 et al.).
+      //
+      // `transitionGroupStatusAndOutcome` cascades legacy status from
+      // group → child only for legs with `errorTypeId IS NOT NULL`
+      // (the "disputed children" predicate). That filter intentionally
+      // skips non-issue / no-error survivor legs, but it also leaves
+      // them stranded: when the group closes, a survivor that came in
+      // as `status=MAS Eligible, attestation_state=queued` (queued
+      // upstream by the MAS-Eligible cascade) keeps both fields. The
+      // attestation-pending queue endpoint admits any leg with
+      // `status='MAS Eligible' AND attestation_state IN
+      // ('pending','queued')`, so the survivor sticks in the queue
+      // forever, the wizard renders the "Re-attested in MAS" button
+      // for it, and every click 409s because the group is already
+      // closed (prod scan 2026-05-12 found 9 such legs across 8
+      // groups).
+      //
+      // Heal forward: any leg under this group still in
+      // (status=MAS Eligible) AND attestationState in (pending,queued)
+      // at this point is a survivor whose group just closed. Flip
+      // status → Resolved, attestation_state → completed, and stamp
+      // attested_{at,by} so the leg drops out of the queue and the
+      // disposition cache lands in `attested`.
+      const stranded = await tx
+        .select()
+        .from(claimsTable)
+        .where(and(
+          eq(claimsTable.invoiceGroupId, id),
+          eq(claimsTable.status, "MAS Eligible"),
+          inArray(claimsTable.attestationState, ["pending", "queued"]),
+        ));
+      for (const leg of stranded) {
+        await tx.update(claimsTable).set({
+          status: "Resolved",
+          attestationState: "completed",
+          attestedAt: now,
+          attestedBy: actor.userEmail,
+        }).where(eq(claimsTable.id, leg.id));
+
+        await tx.insert(auditLogsTable).values({
+          claimId: leg.id,
+          invoiceGroupId: id,
+          action: "claim_status_changed",
+          details: `Status changed from ${leg.status} to Resolved (cascaded from invoice group)`,
+          metadata: {
+            from: leg.status,
+            to: "Resolved",
+            previousOutcome: leg.outcome,
+            newOutcome: leg.outcome,
+            source: `group_cascade:survivor_reattest_complete`,
+            cascadedFromGroupId: id,
+          },
+          userEmail: actor.userEmail,
+          userName: actor.userName,
+        });
+
+        await tx.insert(auditLogsTable).values({
+          claimId: leg.id,
+          invoiceGroupId: id,
+          action: "attestation_completed",
+          details:
+            `Attestation auto-completed for survivor leg ` +
+            `(${leg.attestationState} → completed) on group reattest completion.`,
+          metadata: {
+            from: leg.attestationState,
+            to: "completed",
+            trigger: "group_reattest_completed_survivor",
+            invoiceGroupId: id,
+          },
+          userEmail: actor.userEmail,
+          userName: actor.userName,
+        });
+
+        await refreshClaimDenormalizedCache(leg.id, tx);
+      }
+
       return u;
     });
   } catch (err) {
