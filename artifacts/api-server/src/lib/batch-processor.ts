@@ -8,6 +8,7 @@ import { transitionGroupStatus } from "./group-transitions";
 import { invoiceGroupsTable } from "@workspace/db";
 import { scheduleRetryOrFail } from "./submission-retry";
 import { createWorkerGate } from "./worker-gate";
+import { portalBrowserGate } from "./portal-browser-gate";
 import { primaryClaimIdForGroup } from "./group-claims";
 
 function resolveGps(value: string, issueType: string): string {
@@ -176,7 +177,10 @@ export interface WorkerRunSummary {
   lastError: string | null;
 }
 
-const workerGate = createWorkerGate<void>();
+// Shared singleton — imported here AND from `lib/portal-response-sync.ts`
+// so the read bot (Task #725) and the submit bot take turns on the same
+// Chromium process and never collide on `bot-session/state.json`.
+const workerGate = portalBrowserGate;
 let lastWorkerRun: WorkerRunSummary | null = null;
 const recentWorkerRuns: WorkerRunSummary[] = [];
 const MAX_RECENT_RUNS = 30;

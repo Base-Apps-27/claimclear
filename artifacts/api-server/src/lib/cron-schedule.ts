@@ -55,6 +55,18 @@ export const RESPONSE_TRACKER: CronJobSchedule = {
   tz: "America/New_York",
 };
 
+// Task #725: portal-side response scraper. Fires every 45 minutes during
+// business hours so silent tickets (where MAS replies on the portal but
+// never emails) flow through the same Ready-to-Review queue as email
+// responses. The schedule is staggered off the :00/:30 RESPONSE_TRACKER
+// fires so the two scheduled sweeps don't compete for the (admittedly
+// independent) portal-browser-gate vs. Outlook-token resources.
+export const PORTAL_RESPONSE_SYNC: CronJobSchedule = {
+  name: "portal_response_sync",
+  cron: "15,45 8-18 * * 1-5",
+  tz: "America/New_York",
+};
+
 export const OUTLOOK_HEARTBEAT: CronJobSchedule = {
   name: "outlook_heartbeat",
   cron: "*/15 * * * *",
@@ -93,6 +105,7 @@ export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   DAILY_BRIEF,
   DAILY_BRIEF_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
+  PORTAL_RESPONSE_SYNC,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,

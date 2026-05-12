@@ -18,6 +18,7 @@ import {
   DAILY_BRIEF,
   DAILY_BRIEF_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
+  PORTAL_RESPONSE_SYNC,
   OUTLOOK_HEARTBEAT,
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,
@@ -334,6 +335,34 @@ cron.schedule(RESPONSE_TRACKER.cron, async () => {
     };
   });
 }, { timezone: RESPONSE_TRACKER.tz });
+
+// Task #725: portal-side response scraper. Walks every 'submitted'
+// portal_submission whose group is still Awaiting Response, opens its
+// MAS Freshdesk ticket via the shared portal-browser-gate, and POSTs
+// any new conversation entries through the same /responses/record-portal
+// route operators see. Rate-limited internally with a per-ticket jitter.
+cron.schedule(PORTAL_RESPONSE_SYNC.cron, async () => {
+  await recordCronRun(PORTAL_RESPONSE_SYNC.name, async () => {
+    const { findDuePortalSyncSubmissions, syncDuePortalSubmissions } = await import("./lib/portal-response-sync");
+    const due = await findDuePortalSyncSubmissions({ limit: 25 });
+    if (due.length === 0) {
+      return { message: "Portal response sync: no due submissions" };
+    }
+    logger.info({ count: due.length }, "Portal response sync: starting sweep");
+    const result = await syncDuePortalSubmissions(due);
+    return {
+      status: result.errored > 0 ? ("degraded" as const) : ("ok" as const),
+      message: `Scraped ${result.scraped}/${result.considered} (${result.newResponses} new, ${result.errored} errors)`,
+      metadata: {
+        considered: result.considered,
+        scraped: result.scraped,
+        skipped: result.skipped,
+        errored: result.errored,
+        newResponses: result.newResponses,
+      },
+    };
+  });
+}, { timezone: PORTAL_RESPONSE_SYNC.tz });
 
 cron.schedule(OUTLOOK_HEARTBEAT.cron, async () => {
   await recordCronRun(OUTLOOK_HEARTBEAT.name, async () => {

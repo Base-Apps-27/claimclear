@@ -370,8 +370,13 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
  * - `senderEmail` / `senderName`: portal user that posted the response.
  * - `metadata`: free-form JSON for any additional bot-side context.
  */
-router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<void> => {
-  const { submissionId, responseType, content, rawContent, bodyFormat, subject, senderEmail, senderName } = req.body;
+// Mounted on its OWN sub-router (`recordPortalRouter`) so the bot-token
+// gate from `requireAuthOrBot` can sit in front of it without exposing
+// the rest of the response-tracker surface to bot tokens. The portal
+// reader cron (Task #725) calls this endpoint with x-bot-token.
+export const recordPortalRouter: IRouter = Router();
+recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res): Promise<void> => {
+  const { submissionId, responseType, content, rawContent, bodyFormat, subject, senderEmail, senderName, externalMessageId } = req.body;
 
   if (!submissionId || !responseType) {
     res.status(400).json({ error: "submissionId and responseType are required" });
@@ -396,6 +401,7 @@ router.post("/responses/record-portal", asyncHandler(async (req, res): Promise<v
     subject: typeof subject === "string" ? subject : undefined,
     senderEmail: typeof senderEmail === "string" ? senderEmail : undefined,
     senderName: typeof senderName === "string" ? senderName : undefined,
+    externalMessageId: typeof externalMessageId === "string" ? externalMessageId : undefined,
     metadata: req.body.metadata || null,
   });
 

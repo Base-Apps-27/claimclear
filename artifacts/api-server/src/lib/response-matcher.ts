@@ -589,6 +589,10 @@ export async function processPortalResponse(data: {
   senderEmail?: string;
   /** Display name of the portal user that posted the response, if available. */
   senderName?: string;
+  /** Stable per-message id from the source system (Freshdesk note id, etc.).
+   *  Persisted to `portal_responses.external_message_id` so the portal-side
+   *  reader (Task #725) can dedup on submissionId + externalMessageId. */
+  externalMessageId?: string | null;
   metadata?: Record<string, unknown> | null;
 }): Promise<number> {
   // Post-cutover all portal submissions are group-scoped. Reject any caller
@@ -613,6 +617,7 @@ export async function processPortalResponse(data: {
     senderEmail: data.senderEmail ?? null,
     senderName: data.senderName ?? null,
     portalTicketId: data.portalTicketId,
+    externalMessageId: data.externalMessageId ?? null,
     matchedVia: `portal_ticket_id:${data.portalTicketId}`,
     matchConfidence: "high",
     autoLinked: true,

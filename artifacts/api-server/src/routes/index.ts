@@ -22,7 +22,7 @@ import evidenceTypesRouter from "./evidence-types";
 import claimEvidenceRouter from "./claim-evidence";
 import appSettingsRouter from "./app-settings";
 import batchJobsRouter from "./batch-jobs";
-import responseTrackerRouter, { checkEmailRouter } from "./response-tracker";
+import responseTrackerRouter, { checkEmailRouter, recordPortalRouter } from "./response-tracker";
 import invoiceGroupsRouter from "./invoice-groups";
 import withdrawalsRouter from "./withdrawals";
 import adminRouter from "./admin";
@@ -40,6 +40,10 @@ router.use(authRouter);
 // cron-driven HTTP calls (which go through localhost with a bot token) work.
 router.use("/daily-brief", requireAuthOrBot, dailyBriefRouter);
 router.use(requireAuthOrBot, checkEmailRouter);
+// Portal-side response ingestion (Task #725). Bot-token authed so the
+// portal_response_sync cron and the one-shot backfill CLI can POST
+// scraped tickets through the same code path operators see.
+router.use(requireAuthOrBot, recordPortalRouter);
 
 router.use(requireAuth);
 

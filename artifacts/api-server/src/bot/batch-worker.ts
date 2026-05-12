@@ -8,8 +8,8 @@ import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { logger } from "../lib/logger";
 
-const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://tpissues.medanswering.com";
-const SESSION_DIR = path.resolve("bot-session");
+export const PORTAL_URL = process.env.MAS_PORTAL_URL || "https://tpissues.medanswering.com";
+export const SESSION_DIR = path.resolve("bot-session");
 
 let browsersInstalled = false;
 
@@ -47,7 +47,7 @@ function findPlaywrightShellBin(): string | null {
   return null;
 }
 
-async function ensureBrowsersInstalled(): Promise<void> {
+export async function ensureBrowsersInstalled(): Promise<void> {
   if (browsersInstalled) return;
   try {
     const execPath = chromium.executablePath();
