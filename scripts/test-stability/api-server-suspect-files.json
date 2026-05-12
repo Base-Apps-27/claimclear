@@ -1,0 +1,12 @@
+[
+  "src/__tests__/submit-flow-gates.test.ts",
+  "src/__tests__/endpoint-action-contract.test.ts",
+  "src/__tests__/daily-brief-route-outcome.test.ts",
+  "src/__tests__/audit-prompt-leg-counters.test.ts",
+  "src/__tests__/per-leg-state.test.ts",
+  "src/__tests__/sop-rewind.test.ts",
+  "src/__tests__/portal-submissions-completed-elsewhere.test.ts",
+  "src/__tests__/invoice-group-create.test.ts",
+  "src/__tests__/group-attestation-history.test.ts",
+  "src/__tests__/closure-data-foundation.test.ts"
+]

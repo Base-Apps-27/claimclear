@@ -4,6 +4,9 @@
 dist
 tmp
 out-tsc
+
+# test-stability harness logs
+artifacts/test-stability/
 *.tsbuildinfo
 .expo
 .expo-shared

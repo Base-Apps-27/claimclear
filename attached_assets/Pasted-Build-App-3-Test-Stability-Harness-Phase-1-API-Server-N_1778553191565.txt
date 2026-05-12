@@ -1,0 +1,289 @@
+Build App #3 Test Stability Harness Phase 1: API Server Node Test Shuffle/Repeat Diagnostics.
+
+Do not fix product code yet unless the harness itself exposes a small, obvious test-isolation issue.
+Do not refactor the app.
+Do not change application behavior.
+Do not add CI yet.
+Do not start with Playwright.
+Do not start with the whole monorepo.
+
+Target first:
+@workspace/api-server
+
+Reason:
+The discovery report shows the API server suite has the highest instability risk:
+- shared Postgres pool from @workspace/db
+- tests connect to shared DATABASE_URL
+- no transaction-per-test isolation
+- no rollback
+- no dedicated TEST_DATABASE_URL
+- many tests call pool.end() at file teardown
+- process.env.BOT_SERVICE_TOKEN is mutated and not restored
+- daily-brief-route-outcome reads BOT_SERVICE_TOKEN at module load
+- module-level override hooks exist
+- node:test runs files in parallel by default
+- no global setup/teardown
+
+Goal:
+Create a diagnostic stress harness that intentionally exposes order-dependent, parallelism-dependent, DB-state, env-leak, pool-lifecycle, and singleton-leak failures.
+
+Deliverables:
+
+1. Create stress harness script
+
+Create:
+scripts/test-stability/stress-api-server.mjs
+
+It must support env vars:
+- STABILITY_RUNS default 10
+- STABILITY_FAIL_FAST default false
+- STABILITY_LOG_DIR default artifacts/test-stability/api-server
+- STABILITY_PATTERN optional
+- STABILITY_MODE default shuffle
+- STABILITY_CONCURRENCY optional
+- STABILITY_ISOLATION_RERUNS default 3
+- STABILITY_ENV_VARIANT optional
+- STABILITY_JSON_REPORT default true
+
+Supported modes:
+- shuffle
+- repeat
+- serial
+- default-parallel
+- suspect-files
+- single-file
+
+Commands:
+Base command:
+pnpm --filter @workspace/api-server exec env TZ=America/New_York node --import tsx --test src/__tests__/*.test.ts
+
+Shuffle mode:
+same command plus --test-shuffle
+
+Serial mode:
+same command plus --test-concurrency=1
+
+Default-parallel mode:
+same command without --test-concurrency
+
+If STABILITY_PATTERN is set:
+pass only matching files or test-name pattern as appropriate.
+
+2. Capture per-run artifacts
+
+For every run:
+- write full stdout/stderr to:
+  artifacts/test-stability/api-server/run-<timestamp>-<n>.log
+- write or update:
+  artifacts/test-stability/api-server/summary.json
+
+summary.json must include:
+- run number
+- mode
+- command
+- startedAt
+- endedAt
+- durationMs
+- exitCode
+- seed if emitted by node --test-shuffle
+- failedFiles
+- failedTestNames
+- firstErrorExcerpt
+- timeout/open-handle warnings if present
+- likelyRootCauseTags
+- envSnapshotRedacted
+- dbSnapshotPre
+- dbSnapshotPost if possible
+
+3. Parse likely root causes
+
+Detect and tag these patterns:
+- pool_after_end
+  text: "Cannot use a pool after calling end" or equivalent
+- env_leak
+  text involving BOT_SERVICE_TOKEN / token mismatch / unauthorized expected/actual
+- db_unique_collision
+  text involving duplicate key / unique constraint
+- db_missing_seed
+  text involving missing row / not found / expected seeded data
+- server_handle_leak
+  text involving process did not exit / open handles / EADDRINUSE
+- singleton_leak
+  text involving Anthropic / Chromium / BatchWorker / override hooks
+- timeout
+- unknown
+
+4. Isolation reruns
+
+When a run fails:
+- parse failed file paths
+- rerun each failed file in isolation STABILITY_ISOLATION_RERUNS times
+- save logs under:
+  artifacts/test-stability/api-server/isolation/
+- record:
+  - reproducesInIsolation
+  - likelyOrderDependent = full-suite failed and isolation passed
+  - isolationPassCount
+  - isolationFailCount
+  - isolationLogPaths
+
+5. Suspect file list
+
+Create:
+scripts/test-stability/api-server-suspect-files.json
+
+Seed with:
+
+[
+  "src/__tests__/submit-flow-gates.test.ts",
+  "src/__tests__/endpoint-action-contract.test.ts",
+  "src/__tests__/daily-brief-route-outcome.test.ts",
+  "src/__tests__/audit-prompt-leg-counters.test.ts",
+  "src/__tests__/per-leg-state.test.ts",
+  "src/__tests__/sop-rewind.test.ts",
+  "src/__tests__/portal-submissions-completed-elsewhere.test.ts",
+  "src/__tests__/invoice-group-create.test.ts",
+  "src/__tests__/group-attestation-history.test.ts",
+  "src/__tests__/closure-data-foundation.test.ts"
+]
+
+In suspect-files mode:
+- run only these files first
+- use shuffle and serial modes as configured
+- capture the same artifacts
+
+6. DB snapshot instrumentation
+
+If safe, collect lightweight DB row counts before and after each run.
+
+Tables:
+- claims
+- invoice_groups
+- portal_submissions
+- portal_batch_runs
+- audit_logs
+- users
+- attestations
+
+Do not print raw row data.
+Do not print PII.
+If DATABASE_URL is missing, skip DB snapshot and record reason.
+
+Add env:
+STABILITY_DB_SNAPSHOT=true|false default true
+
+7. Env snapshot instrumentation
+
+Record redacted env snapshot:
+- NODE_ENV
+- TZ
+- DATABASE_URL redacted to protocol/host/db name only
+- TEST_DATABASE_URL redacted if present
+- BOT_SERVICE_TOKEN presence/length only
+- SESSION_SECRET presence only
+- FIELD_ENCRYPTION_KEY presence only
+- CI
+- NODE_OPTIONS
+
+Never log raw secrets.
+
+8. Report renderer
+
+Create:
+scripts/test-stability/render-api-server-report.mjs
+
+It reads summary.json and writes:
+artifacts/test-stability/api-server/report.md
+
+Report must include:
+- total runs
+- pass/fail count
+- failed files
+- failed tests
+- likely root cause tags
+- isolation rerun results
+- likely order-dependent failures
+- DB row count deltas
+- env variants used
+- slowest runs
+- exact log paths
+- recommended next diagnostic target
+
+9. Package scripts
+
+Add root package scripts or appropriate package scripts:
+
+- test:stability:api
+- test:stability:api:shuffle
+- test:stability:api:serial
+- test:stability:api:suspects
+- test:stability:api:report
+
+Do not alter existing test scripts yet.
+
+10. Documentation
+
+Create:
+docs/test-stability-api-server.md
+
+Document:
+- purpose
+- why api-server is first target
+- how to run suspect stress
+- how to run full shuffle stress
+- how to run serial stress
+- how to interpret likelyOrderDependent
+- how to interpret DB deltas
+- how to interpret pool_after_end
+- how to interpret env_leak
+- quarantine policy:
+  do not quarantine without identified file, root cause, owner, and re-enable criteria
+
+11. Initial diagnostic runs
+
+Run these:
+
+A. Suspect shuffle:
+STABILITY_RUNS=5 STABILITY_FAIL_FAST=false pnpm run test:stability:api:suspects
+
+B. Full shuffle smoke:
+STABILITY_RUNS=3 STABILITY_FAIL_FAST=false pnpm run test:stability:api:shuffle
+
+C. Serial stress:
+STABILITY_RUNS=3 STABILITY_FAIL_FAST=false pnpm run test:stability:api:serial
+
+If any fail:
+- do not immediately fix unless root cause is small and obvious
+- preserve logs
+- generate report.md
+- summarize failure identity
+- summarize isolation reruns
+- summarize likely root cause
+
+If all pass:
+- generate report.md
+- report that no flake reproduced under initial stress
+
+12. Rules
+
+Do not make broad fixes yet.
+Do not introduce a global test DB reset yet.
+Do not remove pool.end() yet.
+Do not restore env vars yet.
+This phase is diagnostic.
+
+Only fix:
+- bugs in the harness
+- or one extremely obvious self-contained issue blocking the harness
+
+Final response must include:
+- files changed
+- commands run
+- pass/fail counts
+- report path
+- failed files/tests if any
+- likely root causes
+- isolation rerun outcomes
+- DB row count deltas
+- whether failures reproduced in isolation
+- recommended next phase
