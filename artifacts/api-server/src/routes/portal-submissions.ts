@@ -9,7 +9,7 @@ import { denyClerk } from "../middlewares/denyClerk";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
-import { lintDraft, type LintResult } from "../lib/draft-lint";
+import { lintDraft, type LintEvidence, type LintResult } from "../lib/draft-lint";
 import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
@@ -38,17 +38,76 @@ function sanitizeHtml(html: string): string {
 // to batch submissions rather than have the bot fire one row at a time
 // the instant it's queued.
 
+/**
+ * Collect every evidence row the bot would actually upload for this group, so
+ * the lint sees the same surface as `collectGroupEvidenceUrls` — namely:
+ *   (1) `claim_evidence` rows scoped to the group (`invoice_group_id=X`)
+ *   (2) `claim_evidence` rows scoped to any ride in the group (`claim_id IN ...`)
+ *   (3) loose `evidence_files` JSON entries on the group AND each ride
+ *
+ * Pre-fix this only queried (1), which produced false-positive
+ * "no matching evidence is attached" warnings whenever the SOP runner
+ * persisted evidence with `claim_id` set and `invoice_group_id=NULL`
+ * (which is the common case in production).
+ */
+async function loadGroupLintEvidence(
+  groupId: number,
+  rideIds: number[],
+  groupEvidenceFiles: typeof invoiceGroupsTable.$inferSelect.evidenceFiles,
+  rides: (typeof claimsTable.$inferSelect)[],
+): Promise<LintEvidence[]> {
+  const out: LintEvidence[] = [];
+
+  const groupRows = await db.select({
+    evidenceTypeName: claimEvidenceTable.evidenceTypeName,
+    imageUrl: claimEvidenceTable.imageUrl,
+    notes: claimEvidenceTable.notes,
+  }).from(claimEvidenceTable).where(eq(claimEvidenceTable.invoiceGroupId, groupId));
+  for (const r of groupRows) out.push(r);
+
+  if (rideIds.length > 0) {
+    const rideRows = await db.select({
+      evidenceTypeName: claimEvidenceTable.evidenceTypeName,
+      imageUrl: claimEvidenceTable.imageUrl,
+      notes: claimEvidenceTable.notes,
+    }).from(claimEvidenceTable).where(inArray(claimEvidenceTable.claimId, rideIds));
+    for (const r of rideRows) out.push(r);
+  }
+
+  const pushLooseFiles = (files: typeof groupEvidenceFiles) => {
+    for (const f of (files || []) as Array<{ url?: string | null; name?: string | null }>) {
+      if (!f) continue;
+      const url = typeof f.url === "string" ? f.url : null;
+      const name = typeof f.name === "string" ? f.name : null;
+      if (!url && !name) continue;
+      out.push({ evidenceTypeName: name, imageUrl: url, notes: null });
+    }
+  };
+  pushLooseFiles(groupEvidenceFiles);
+  for (const ride of rides) pushLooseFiles(ride.evidenceFiles);
+
+  return out;
+}
+
 async function loadLintInputs(submission: typeof portalSubmissionsTable.$inferSelect) {
   // Lint runs against the group's primary leg — pick the lowest-id ride in
   // the group as the representative claim so the lint signal stays stable
   // across re-runs. Submissions are always group-scoped after the cutover.
-  const [claim] = await db.select().from(claimsTable)
+  const rides = await db.select().from(claimsTable)
     .where(eq(claimsTable.invoiceGroupId, submission.invoiceGroupId))
-    .orderBy(claimsTable.id)
-    .limit(1);
-  const evidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
-    .from(claimEvidenceTable)
-    .where(eq(claimEvidenceTable.invoiceGroupId, submission.invoiceGroupId));
+    .orderBy(claimsTable.id);
+  const claim = rides[0];
+  let groupEvidenceFiles: typeof invoiceGroupsTable.$inferSelect.evidenceFiles = null;
+  if (claim) {
+    const [grp] = await db.select({ evidenceFiles: invoiceGroupsTable.evidenceFiles })
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, submission.invoiceGroupId))
+      .limit(1);
+    groupEvidenceFiles = grp?.evidenceFiles ?? null;
+  }
+  const evidence = claim
+    ? await loadGroupLintEvidence(submission.invoiceGroupId, rides.map(r => r.id), groupEvidenceFiles, rides)
+    : [];
   return { claim: claim || null, evidence };
 }
 
@@ -1623,9 +1682,12 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     confNumber: snap.confNumber,
     attachmentUrls,
   };
-  const lintEvidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
-    .from(claimEvidenceTable)
-    .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+  const lintEvidence = await loadGroupLintEvidence(
+    ctx.group.id,
+    ctx.rides.map(r => r.id),
+    ctx.group.evidenceFiles,
+    ctx.rides,
+  );
   const lintResults = lintDraft(prospectiveSubmission, ctx.primaryClaim, lintEvidence);
   const lintFailures = lintResults.filter(r => r.severity === "fail");
   const lintWarnings = lintResults.filter(r => r.severity === "warn");
@@ -1993,9 +2055,12 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
     // a hard fail or any warning triggers a per-row skip with a stable
     // reason string so the bulk batch keeps marching and the operator
     // can drill into the offending groups one-by-one in the gauntlet.
-    const lintEvidence = await db.select({ evidenceTypeName: claimEvidenceTable.evidenceTypeName })
-      .from(claimEvidenceTable)
-      .where(eq(claimEvidenceTable.invoiceGroupId, ctx.group.id));
+    const lintEvidence = await loadGroupLintEvidence(
+      ctx.group.id,
+      ctx.rides.map(r => r.id),
+      ctx.group.evidenceFiles,
+      ctx.rides,
+    );
     const lintResults = lintDraft(
       { descriptionHtml: draftHtml, confNumber: snap.confNumber, attachmentUrls },
       ctx.primaryClaim,

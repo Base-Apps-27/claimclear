@@ -19,6 +19,58 @@ export interface LintClaim {
 
 export interface LintEvidence {
   evidenceTypeName?: string | null;
+  /** Storage URL or file path; the basename is used as a fallback signal when
+   *  `evidenceTypeName` is opaque (see OPAQUE_EVIDENCE_NAME_RE). */
+  imageUrl?: string | null;
+  /** Optional human-typed note attached to the evidence row. */
+  notes?: string | null;
+}
+
+/**
+ * The decision-tree editor mints evidence requirements with a synthetic key of
+ * `ev_<Date.now()>` and an empty default label; the SOP runner persists that
+ * key as `claim_evidence.evidence_type_name`. As a result, the vast majority
+ * of production evidence rows carry an opaque `ev_<digits>` "type name" that
+ * carries no semantic signal. We treat such names as no-signal and fall back
+ * to the file basename / notes for keyword matching, and — when even those
+ * are silent — trust the operator's act of attaching evidence rather than
+ * flagging the dispute (matches what the bot actually uploads).
+ */
+const OPAQUE_EVIDENCE_NAME_RE = /^ev_\d+$/i;
+
+function evidenceBasename(url: string | null | undefined): string {
+  if (!url) return "";
+  const trimmed = url.split(/[?#]/)[0] ?? "";
+  const last = trimmed.split("/").pop() ?? "";
+  return last.trim();
+}
+
+function evidenceMatchTexts(e: LintEvidence): string[] {
+  const out: string[] = [];
+  const name = (e.evidenceTypeName || "").trim();
+  if (name && !OPAQUE_EVIDENCE_NAME_RE.test(name)) out.push(name);
+  // Filename matching is gated on the same `/objects/` rule used for the
+  // suppression check, so a non-uploadable URL can't satisfy the keyword.
+  if (evidenceHasAttachment(e)) {
+    const base = evidenceBasename(e.imageUrl);
+    if (base && !OPAQUE_EVIDENCE_NAME_RE.test(base.replace(/\.[^.]+$/, ""))) out.push(base);
+  }
+  const notes = (e.notes || "").trim();
+  if (notes) out.push(notes);
+  return out;
+}
+
+/**
+ * An evidence row counts as "attached" only if its imageUrl is one the bot
+ * will actually upload. The bot's `collectGroupEvidenceUrls` drops anything
+ * that doesn't start with `/objects/` (uncontrolled outbound URL guard), so
+ * the lint must use the SAME eligibility rule — otherwise a row with an
+ * external/garbage URL would silently suppress the keyword warning even
+ * though the bot ends up sending zero attachments. Filename matching uses
+ * the same gate so off-`/objects/` URLs can't satisfy the keyword either.
+ */
+function evidenceHasAttachment(e: LintEvidence): boolean {
+  return typeof e.imageUrl === "string" && e.imageUrl.startsWith("/objects/");
 }
 
 const HTML_BLOCK_RE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi;
@@ -183,18 +235,30 @@ export function lintDraft(
     }
   }
 
-  const evidenceNames = (evidence || []).map((e) => (e.evidenceTypeName || "").trim()).filter(Boolean);
+  // We match keywords against the evidence's type name AND its file basename
+  // AND its notes (any of the three is enough). This is necessary because in
+  // production the SOP runner persists synthetic `ev_<timestamp>` type names
+  // (see OPAQUE_EVIDENCE_NAME_RE above) — without the wider match the lint
+  // would warn on every dispute that mentions a tracked keyword.
+  //
+  // Final escape hatch: if at least one evidence row is attached for this
+  // group/leg but none of the rows produce a textual match, we suppress the
+  // warning. The bot is going to upload those files regardless, and the
+  // lint's value-add at that point is mostly noise. The underlying
+  // `empty_description` / "no attachments at all" guards still catch the
+  // genuine "wrote about GPS but attached nothing" case below.
+  const evidenceList = evidence || [];
+  const anyAttachmentPresent = evidenceList.some(evidenceHasAttachment);
   for (const rule of EVIDENCE_KEYWORDS) {
-    if (rule.keyword.test(text)) {
-      const has = evidenceNames.some((n) => rule.matches(n));
-      if (!has) {
-        results.push({
-          ruleKey: `unattached_evidence:${rule.label.replace(/\s+/g, "_")}`,
-          severity: "warn",
-          message: `Description references ${rule.label}, but no matching evidence is attached to the claim.`,
-        });
-      }
-    }
+    if (!rule.keyword.test(text)) continue;
+    const matched = evidenceList.some((e) => evidenceMatchTexts(e).some((t) => rule.matches(t)));
+    if (matched) continue;
+    if (anyAttachmentPresent) continue;
+    results.push({
+      ruleKey: `unattached_evidence:${rule.label.replace(/\s+/g, "_")}`,
+      severity: "warn",
+      message: `Description references ${rule.label}, but no matching evidence is attached to the claim.`,
+    });
   }
 
   return results;
