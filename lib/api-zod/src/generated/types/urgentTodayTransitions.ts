@@ -11,11 +11,11 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { UrgentTodayClearedRow } from "./urgentTodayClearedRow";
-import type { UrgentTodayClearedSummary } from "./urgentTodayClearedSummary";
-import type { UrgentTodayCurrentRow } from "./urgentTodayCurrentRow";
-import type { UrgentTodaySnapshotPoint } from "./urgentTodaySnapshotPoint";
-import type { UrgentTodayTransitionsByStatus } from "./urgentTodayTransitionsByStatus";
+import type { UrgentTodayClearedRow } from './urgentTodayClearedRow';
+import type { UrgentTodayClearedSummary } from './urgentTodayClearedSummary';
+import type { UrgentTodayCurrentRow } from './urgentTodayCurrentRow';
+import type { UrgentTodaySnapshotPoint } from './urgentTodaySnapshotPoint';
+import type { UrgentTodayTransitionsByStatus } from './urgentTodayTransitionsByStatus';
 
 /**
  * Backing data for the "File today" hero. `today` is the

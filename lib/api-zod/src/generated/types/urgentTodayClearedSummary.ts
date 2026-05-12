@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { UrgentTodayClearedSummaryByToStatus } from "./urgentTodayClearedSummaryByToStatus";
+import type { UrgentTodayClearedSummaryByToStatus } from './urgentTodayClearedSummaryByToStatus';
 
 export interface UrgentTodayClearedSummary {
   total: number;

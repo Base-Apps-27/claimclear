@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { TimeInPhaseBucketPhase } from "./timeInPhaseBucketPhase";
+import type { TimeInPhaseBucketPhase } from './timeInPhaseBucketPhase';
 
 export interface TimeInPhaseBucket {
   phase: TimeInPhaseBucketPhase;

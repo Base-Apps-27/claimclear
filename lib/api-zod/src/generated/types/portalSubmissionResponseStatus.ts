@@ -12,15 +12,15 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type PortalSubmissionResponseStatus =
-  (typeof PortalSubmissionResponseStatus)[keyof typeof PortalSubmissionResponseStatus];
+export type PortalSubmissionResponseStatus = typeof PortalSubmissionResponseStatus[keyof typeof PortalSubmissionResponseStatus];
+
 
 export const PortalSubmissionResponseStatus = {
-  draft: "draft",
-  pending: "pending",
-  in_progress: "in_progress",
-  submitted: "submitted",
-  failed: "failed",
-  cancelled: "cancelled",
-  dry_run: "dry_run",
+  draft: 'draft',
+  pending: 'pending',
+  in_progress: 'in_progress',
+  submitted: 'submitted',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  dry_run: 'dry_run',
 } as const;

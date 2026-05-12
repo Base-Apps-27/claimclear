@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListResponsesProcessed =
-  (typeof ListResponsesProcessed)[keyof typeof ListResponsesProcessed];
+export type ListResponsesProcessed = typeof ListResponsesProcessed[keyof typeof ListResponsesProcessed];
+
 
 export const ListResponsesProcessed = {
-  true: "true",
-  false: "false",
+  true: 'true',
+  false: 'false',
 } as const;

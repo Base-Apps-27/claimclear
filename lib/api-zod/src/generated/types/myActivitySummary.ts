@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { MyActivitySummaryDailyCountsItem } from "./myActivitySummaryDailyCountsItem";
+import type { MyActivitySummaryDailyCountsItem } from './myActivitySummaryDailyCountsItem';
 
 /**
  * Personal activity summary for the avatar hover card (Task #522).
@@ -22,7 +22,7 @@ export interface MyActivitySummary {
   /** IANA timezone the counts are bucketed in. */
   timezone: string;
   /** YYYY-MM-DD calendar key for "today" in the resolved timezone.
-   */
+ */
   dayKey: string;
   /**
    * Qualifying actions logged so far today.

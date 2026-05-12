@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SystemHealthRollupComponent } from "./systemHealthRollupComponent";
-import type { SystemHealthRollupResponseOverall } from "./systemHealthRollupResponseOverall";
-import type { WorkerRunSummary } from "./workerRunSummary";
+import type { SystemHealthRollupComponent } from './systemHealthRollupComponent';
+import type { SystemHealthRollupResponseOverall } from './systemHealthRollupResponseOverall';
+import type { WorkerRunSummary } from './workerRunSummary';
 
 export interface SystemHealthRollupResponse {
   overall: SystemHealthRollupResponseOverall;

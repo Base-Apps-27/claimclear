@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { InvoiceGroupResponse } from "./invoiceGroupResponse";
+import type { InvoiceGroupResponse } from './invoiceGroupResponse';
 
 export type MarkInvoiceGroupMasEligible200 = InvoiceGroupResponse & {
   /** Number of legs whose attestation_state is now "pending" after the cascade. */

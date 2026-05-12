@@ -11,31 +11,31 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ListInvoiceGroupsDir } from "./listInvoiceGroupsDir";
-import type { ListInvoiceGroupsErrorDetails } from "./listInvoiceGroupsErrorDetails";
-import type { ListInvoiceGroupsExcludeReason } from "./listInvoiceGroupsExcludeReason";
-import type { ListInvoiceGroupsExpiring } from "./listInvoiceGroupsExpiring";
-import type { ListInvoiceGroupsInboxHiddenBucket } from "./listInvoiceGroupsInboxHiddenBucket";
-import type { ListInvoiceGroupsMacroPhase } from "./listInvoiceGroupsMacroPhase";
-import type { ListInvoiceGroupsMissingServiceDateReason } from "./listInvoiceGroupsMissingServiceDateReason";
-import type { ListInvoiceGroupsOutlook } from "./listInvoiceGroupsOutlook";
-import type { ListInvoiceGroupsSort } from "./listInvoiceGroupsSort";
+import type { ListInvoiceGroupsDir } from './listInvoiceGroupsDir';
+import type { ListInvoiceGroupsErrorDetails } from './listInvoiceGroupsErrorDetails';
+import type { ListInvoiceGroupsExcludeReason } from './listInvoiceGroupsExcludeReason';
+import type { ListInvoiceGroupsExpiring } from './listInvoiceGroupsExpiring';
+import type { ListInvoiceGroupsInboxHiddenBucket } from './listInvoiceGroupsInboxHiddenBucket';
+import type { ListInvoiceGroupsMacroPhase } from './listInvoiceGroupsMacroPhase';
+import type { ListInvoiceGroupsMissingServiceDateReason } from './listInvoiceGroupsMissingServiceDateReason';
+import type { ListInvoiceGroupsOutlook } from './listInvoiceGroupsOutlook';
+import type { ListInvoiceGroupsSort } from './listInvoiceGroupsSort';
 
 export type ListInvoiceGroupsParams = {
-  /**
-   * Comma-separated list of statuses to filter by
-   */
-  status?: string;
-  /**
-   * Comma-separated list of outcomes to filter by
-   */
-  outcome?: string;
-  search?: string;
-  /**
-   * Filter by presence of an error description on the group
-   */
-  errorDetails?: ListInvoiceGroupsErrorDetails;
-  /**
+/**
+ * Comma-separated list of statuses to filter by
+ */
+status?: string;
+/**
+ * Comma-separated list of outcomes to filter by
+ */
+outcome?: string;
+search?: string;
+/**
+ * Filter by presence of an error description on the group
+ */
+errorDetails?: ListInvoiceGroupsErrorDetails;
+/**
  * Restrict to groups tagged with the given import batch id
 (`import_<timestamp>`). Drives the post-upload triage bridge
 screen, which lists only the groups produced by the just-
@@ -43,16 +43,16 @@ completed import so the operator can route them without
 sifting through historical groups.
 
  */
-  importBatch?: string;
-  /**
-   * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
-   */
-  errorTypeId?: string;
-  /**
-   * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
-   */
-  errorTypeAssigned?: boolean;
-  /**
+importBatch?: string;
+/**
+ * Comma-separated list of error type IDs, use __unassigned__ for groups with no error type
+ */
+errorTypeId?: string;
+/**
+ * When `true`, restrict to groups whose `errorTypeId` is set (post-classification). Used by the Verdict Pending workspace so the server total reflects the visible row set.
+ */
+errorTypeAssigned?: boolean;
+/**
  * Restrict the result set to exactly one of the
 "hidden from the Responses Awaiting Review inbox" buckets.
 The predicate is shared with
@@ -68,28 +68,28 @@ and this list can never disagree by construction.
   (and not currently suppressed by `awaitingPayorAgain`).
 
  */
-  inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
-  /**
-   * Filter groups created on or after this date (ISO 8601)
-   */
-  createdFrom?: string;
-  /**
-   * Filter groups created on or before this date (ISO 8601)
-   */
-  createdTo?: string;
-  /**
-   * Filter groups with total amount >= this value
-   */
-  amountMin?: string;
-  /**
-   * Filter groups with total amount <= this value
-   */
-  amountMax?: string;
-  /**
-   * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
-   */
-  expiring?: ListInvoiceGroupsExpiring;
-  /**
+inboxHiddenBucket?: ListInvoiceGroupsInboxHiddenBucket;
+/**
+ * Filter groups created on or after this date (ISO 8601)
+ */
+createdFrom?: string;
+/**
+ * Filter groups created on or before this date (ISO 8601)
+ */
+createdTo?: string;
+/**
+ * Filter groups with total amount >= this value
+ */
+amountMin?: string;
+/**
+ * Filter groups with total amount <= this value
+ */
+amountMax?: string;
+/**
+ * Restrict to actionable groups whose filing deadline is within the named window. "soon" matches the dashboard Expiring Soon section (within 10 days, weekend-shifted). "urgent" is the narrower red-badge band (within 3 days).
+ */
+expiring?: ListInvoiceGroupsExpiring;
+/**
  * When `true`, include groups with `status="Expired"` in the
 response. Off by default everywhere — the nightly 6 AM ET
 sweep retires past-deadline pre-submit rows so they recede
@@ -97,15 +97,15 @@ from every workload list. Implicitly enabled if the caller
 already filtered to a status set that contains `Expired`.
 
  */
-  includeExpired?: boolean;
-  /**
+includeExpired?: boolean;
+/**
  * Filter groups by server-derived macro phase. `mas-action-required`
 returns groups that owe per-leg MAS cancellations, group-level
 re-attestation, or both. Drives the new MAS Action surfaces.
 
  */
-  macroPhase?: ListInvoiceGroupsMacroPhase;
-  /**
+macroPhase?: ListInvoiceGroupsMacroPhase;
+/**
  * Restrict to groups whose `service_date` is null — i.e. the
 Service Date column would render an empty state. Pairs with
 `missingServiceDateReason` to drill into a specific reason.
@@ -113,8 +113,8 @@ See Task #353 (`<ServiceDateCell />` and the
 `serviceDateReason` enum on every list row).
 
  */
-  missingServiceDate?: boolean;
-  /**
+missingServiceDate?: boolean;
+/**
  * Comma-separated list of derived per-leg sub-status values
 (excluded, duplicate, needs_classification, investigating,
 blocked, ready, dropped, frozen). Restricts the result set to
@@ -127,8 +127,8 @@ per-leg detail behind the group-level chip and have nothing
 actionable to scope to.
 
  */
-  legSubStatus?: string;
-  /**
+legSubStatus?: string;
+/**
  * Restricts the result set to groups containing at least one leg
 that was excluded with the named reason. Currently the only
 value is `handled_offline` (Task #689 — exclude path that
@@ -140,8 +140,8 @@ operator who lands on a single handled-offline leg can pivot
 to the full population.
 
  */
-  excludeReason?: ListInvoiceGroupsExcludeReason;
-  /**
+excludeReason?: ListInvoiceGroupsExcludeReason;
+/**
  * Pre-submit-only sub-filter. When `true`, restricts the result
 set to groups whose dispute draft has been marked reviewed
 (`draft_reviewed_at IS NOT NULL`) — i.e. one click away from
@@ -152,8 +152,8 @@ surfaced only on the Pre-submit (Action Required) tab; the
 API stays permissive so deep links / scripts still work.
 
  */
-  draftReviewed?: boolean;
-  /**
+draftReviewed?: boolean;
+/**
  * Server-side equivalent of `deriveInvoiceDisputeOutlook`. Restricts
 the result set to groups matching the named outlook bucket:
   * `ready_to_review` — has_disputable outlook AND every disputed
@@ -169,8 +169,8 @@ the result set to groups matching the named outlook bucket:
     can be bulk-closed as Withdrawn.
 
  */
-  outlook?: ListInvoiceGroupsOutlook;
-  /**
+outlook?: ListInvoiceGroupsOutlook;
+/**
  * When `true`, restricts the result set to groups whose legs are
 all in a resolved/packageable state (every non-held, non-duplicate
 leg has a terminal disposition, at least one contested leg, status
@@ -180,8 +180,8 @@ Mirrors `computeGroupReadiness` from `group-packaging.ts` so
 the filter stays in lockstep with the Gauntlet's gate.
 
  */
-  readyToGenerate?: boolean;
-  /**
+readyToGenerate?: boolean;
+/**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:
   * `no_claims` — no children attached at all
@@ -192,18 +192,18 @@ the named empty-state branch:
 Implies `missingServiceDate=true` (no need to send both).
 
  */
-  missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
-  /**
-   * Column to sort by
-   */
-  sort?: ListInvoiceGroupsSort;
-  /**
-   * Sort direction
-   */
-  dir?: ListInvoiceGroupsDir;
-  limit?: number;
-  offset?: number;
-  /**
+missingServiceDateReason?: ListInvoiceGroupsMissingServiceDateReason;
+/**
+ * Column to sort by
+ */
+sort?: ListInvoiceGroupsSort;
+/**
+ * Sort direction
+ */
+dir?: ListInvoiceGroupsDir;
+limit?: number;
+offset?: number;
+/**
  * Comma-separated additional payloads to embed in the response.
 Currently supported values: `needs_classification` — embeds the
 Classification Inbox payload (groups containing legs in
@@ -212,5 +212,5 @@ so the queue page can fetch the list and the inbox in a single
 round trip. Unknown values are silently ignored.
 
  */
-  include?: string;
+include?: string;
 };

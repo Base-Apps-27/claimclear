@@ -11,12 +11,12 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { EvidenceFileRef } from "./evidenceFileRef";
-import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
-import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
-import type { PortalSubmissionResponseGroupMacroPhase } from "./portalSubmissionResponseGroupMacroPhase";
-import type { PortalSubmissionResponseLegsItem } from "./portalSubmissionResponseLegsItem";
-import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
+import type { EvidenceFileRef } from './evidenceFileRef';
+import type { PortalSubmissionResponseCompletedElsewhere } from './portalSubmissionResponseCompletedElsewhere';
+import type { PortalSubmissionResponseDescriptionHistoryItem } from './portalSubmissionResponseDescriptionHistoryItem';
+import type { PortalSubmissionResponseGroupMacroPhase } from './portalSubmissionResponseGroupMacroPhase';
+import type { PortalSubmissionResponseLegsItem } from './portalSubmissionResponseLegsItem';
+import type { PortalSubmissionResponseStatus } from './portalSubmissionResponseStatus';
 
 export interface PortalSubmissionResponse {
   id: number;

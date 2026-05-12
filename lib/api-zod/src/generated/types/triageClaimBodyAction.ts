@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type TriageClaimBodyAction =
-  (typeof TriageClaimBodyAction)[keyof typeof TriageClaimBodyAction];
+export type TriageClaimBodyAction = typeof TriageClaimBodyAction[keyof typeof TriageClaimBodyAction];
+
 
 export const TriageClaimBodyAction = {
-  non_issue: "non_issue",
-  issue_found: "issue_found",
+  non_issue: 'non_issue',
+  issue_found: 'issue_found',
 } as const;

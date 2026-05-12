@@ -11,13 +11,13 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ListResponsesProcessed } from "./listResponsesProcessed";
-import type { ListResponsesSource } from "./listResponsesSource";
+import type { ListResponsesProcessed } from './listResponsesProcessed';
+import type { ListResponsesSource } from './listResponsesSource';
 
 export type ListResponsesParams = {
-  claimId?: number;
-  source?: ListResponsesSource;
-  processed?: ListResponsesProcessed;
-  limit?: number;
-  offset?: number;
+claimId?: number;
+source?: ListResponsesSource;
+processed?: ListResponsesProcessed;
+limit?: number;
+offset?: number;
 };

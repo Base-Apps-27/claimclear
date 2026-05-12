@@ -12,9 +12,9 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type SopRewindDraftConflictResponseCode =
-  (typeof SopRewindDraftConflictResponseCode)[keyof typeof SopRewindDraftConflictResponseCode];
+export type SopRewindDraftConflictResponseCode = typeof SopRewindDraftConflictResponseCode[keyof typeof SopRewindDraftConflictResponseCode];
+
 
 export const SopRewindDraftConflictResponseCode = {
-  draft_discard_required: "draft_discard_required",
+  draft_discard_required: 'draft_discard_required',
 } as const;

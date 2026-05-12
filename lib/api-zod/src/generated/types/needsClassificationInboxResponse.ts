@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { NeedsClassificationInboxGroup } from "./needsClassificationInboxGroup";
-import type { NeedsClassificationInboxResponseByStatus } from "./needsClassificationInboxResponseByStatus";
+import type { NeedsClassificationInboxGroup } from './needsClassificationInboxGroup';
+import type { NeedsClassificationInboxResponseByStatus } from './needsClassificationInboxResponseByStatus';
 
 export interface NeedsClassificationInboxResponse {
   /** Total needs_classification leg count across all surfaced groups. */

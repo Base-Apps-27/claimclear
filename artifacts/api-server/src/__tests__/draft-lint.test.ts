@@ -16,72 +16,137 @@ function makeSubmission(descriptionHtml: string, confNumber: string | null = nul
   return { descriptionHtml, confNumber, attachmentUrls: null };
 }
 
-test("single confirmation number present passes the conf-number check", () => {
-  const sub = makeSubmission("<p>Conf #14879280 — please review.</p>", "14879280");
-  const results = lintDraft(sub, baseClaim, []);
-  assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined);
+// --- Task #708: per-leg confirmation-number coverage --------------------
+//
+// When the caller threads leg context, the legacy `missing_conf_number`
+// rule is replaced by `missing_conf_number_for_leg:<legId>`, which
+// requires each contestable leg's conf to appear in its own paragraph.
+// Tests that pass NO leg context exercise the legacy fallback and keep
+// using the original rule key.
+
+const confLeg = (id: number, confNumber: string, overrides: Partial<LintLeg> = {}): LintLeg => ({
+  id,
+  confNumber,
+  errorTypeId: "7",
+  errorTypeName: "Incomplete GPS",
+  disposition: "disposed_portal",
+  sopOutcome: "portal_dispute",
+  includedInDispute: true,
+  requiredEvidenceNodeIds: [],
+  ...overrides,
 });
 
-test("single confirmation number missing produces a fail listing that number", () => {
+test("per-leg back-compat: single leg whose conf appears in its own paragraph passes", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — please review.</p>", "14879280");
+  const results = lintDraft(sub, baseClaim, [], { legs: [confLeg(1, "14879280")] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("missing_conf_number_for_leg:")),
+    undefined,
+  );
+  assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined,
+    "legacy rule must not double-fire when the per-leg form is active");
+});
+
+test("per-leg: single leg whose conf is absent fails with a key/message naming the leg", () => {
   const sub = makeSubmission("<p>No reference here.</p>", "14879280");
-  const results = lintDraft(sub, baseClaim, []);
-  const r = results.find((r) => r.ruleKey === "missing_conf_number");
-  assert.ok(r, "expected missing_conf_number result");
+  const results = lintDraft(sub, baseClaim, [], { legs: [confLeg(1, "14879280")] });
+  const r = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:1");
+  assert.ok(r, "expected missing_conf_number_for_leg:1 result");
   assert.equal(r!.severity, "fail");
   assert.match(r!.message, /14879280/);
 });
 
-test("multiple confirmation numbers all present (comma + 'and' phrasing) passes", () => {
+test("per-leg: multi-leg with each conf in its own paragraph passes", () => {
   const sub = makeSubmission(
-    "<p>Conf #14879280 and Conf #14879277 are addressed below.</p>",
-    "14879280, 14879277",
+    "<p>Conf #14879280 — disputing.</p><p>Conf #14879277 — disputing.</p><p>Conf #14879299 — disputing.</p>",
+    "14879280; 14879277; 14879299",
   );
-  const results = lintDraft(sub, baseClaim, []);
-  assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined);
+  const results = lintDraft(sub, baseClaim, [], {
+    legs: [
+      confLeg(1, "14879280"),
+      confLeg(2, "14879277"),
+      confLeg(3, "14879299"),
+    ],
+  });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("missing_conf_number_for_leg:")),
+    undefined,
+    "every leg has a uniquely-attributing paragraph; nothing should fire",
+  );
 });
 
-test("multiple confirmation numbers separated by newline + 'Conf #' prefix passes", () => {
+test("per-leg: multi-leg with two confs in the same paragraph and one missing fails for the missing leg", () => {
+  // Legs 1 and 2 are squashed together in one paragraph; leg 3 is absent
+  // entirely. The missing leg must be reported by its dedicated key.
   const sub = makeSubmission(
-    "<p>Conf #14879280</p><p>Conf #14879277</p><p>Conf #14879299</p>",
-    "14879280; 14879277 and 14879299",
+    "<p>Conf #14879280 and Conf #14879277 — both addressed.</p>",
+    "14879280; 14879277; 14879299",
   );
-  const results = lintDraft(sub, baseClaim, []);
-  assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined);
+  const results = lintDraft(sub, baseClaim, [], {
+    legs: [
+      confLeg(1, "14879280"),
+      confLeg(2, "14879277"),
+      confLeg(3, "14879299"),
+    ],
+  });
+  const missing = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:3");
+  assert.ok(missing, "expected missing_conf_number_for_leg:3 for the absent leg");
+  assert.equal(missing!.severity, "fail");
+  assert.match(missing!.message, /14879299/);
+  assert.doesNotMatch(missing!.message, /not mentioned[^.]*14879280/);
 });
 
-test("multiple confirmation numbers with one missing lists only the missing one", () => {
+test("per-leg: two confs sharing a single paragraph each fail as ambiguous attribution", () => {
   const sub = makeSubmission(
-    "<p>Conf #14879280 — only one of them is here.</p>",
-    "14879280, 14879277",
+    "<p>Conf #14879280 and Conf #14879277 are both addressed below.</p>",
+    "14879280; 14879277",
   );
-  const results = lintDraft(sub, baseClaim, []);
-  const r = results.find((r) => r.ruleKey === "missing_conf_number");
-  assert.ok(r, "expected missing_conf_number result");
-  assert.equal(r!.severity, "fail");
-  assert.match(r!.message, /14879277/);
-  assert.doesNotMatch(r!.message, /14879280/);
+  const results = lintDraft(sub, baseClaim, [], {
+    legs: [confLeg(1, "14879280"), confLeg(2, "14879277")],
+  });
+  const a = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:1");
+  const b = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:2");
+  assert.ok(a, "expected ambiguous-attribution fail for leg 1");
+  assert.ok(b, "expected ambiguous-attribution fail for leg 2");
+  assert.match(a!.message, /14879280/);
+  assert.match(b!.message, /14879277/);
 });
 
-test("multiple confirmation numbers with several missing lists all of them", () => {
-  const sub = makeSubmission(
-    "<p>Only 14879280 appears in this write-up.</p>",
-    "14879280, 14879277, 14879299",
-  );
-  const results = lintDraft(sub, baseClaim, []);
-  const r = results.find((r) => r.ruleKey === "missing_conf_number");
-  assert.ok(r, "expected missing_conf_number result");
-  assert.match(r!.message, /14879277/);
-  assert.match(r!.message, /14879299/);
-  assert.doesNotMatch(r!.message, /\b14879280\b/);
+test("per-leg: substring-of-longer-digit-run guard — leg fails when only a superstring appears", () => {
+  const sub = makeSubmission("<p>Reference 148792801234 is unrelated.</p>", "14879280");
+  const results = lintDraft(sub, baseClaim, [], { legs: [confLeg(1, "14879280")] });
+  const r = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:1");
+  assert.ok(r, "expected per-leg fail when only a longer digit run is present");
+  assert.match(r!.message, /14879280/);
 });
 
-test("no configured confirmation number falls back to text scan and passes when one is present", () => {
+test("per-leg: legs with includedInDispute=false are exempt from the conf-coverage check", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — disputing.</p>", "14879280; 14879277");
+  const results = lintDraft(sub, baseClaim, [], {
+    legs: [
+      confLeg(1, "14879280"),
+      confLeg(2, "14879277", { includedInDispute: false }),
+    ],
+  });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("missing_conf_number_for_leg:")),
+    undefined,
+    "the excluded leg must not fire the per-leg rule",
+  );
+});
+
+// --- Legacy fallback (no leg context) -----------------------------------
+//
+// Older callers and the keyword-only tests pass no leg context; for them
+// the legacy `missing_conf_number` rule still runs unchanged.
+
+test("legacy fallback: no configured confirmation number falls back to text scan and passes when one is present", () => {
   const sub = makeSubmission("<p>Reference number 14879280 included.</p>", null);
   const results = lintDraft(sub, baseClaim, []);
   assert.equal(results.find((r) => r.ruleKey === "missing_conf_number"), undefined);
 });
 
-test("no configured confirmation number and none in description fails with the fallback message", () => {
+test("legacy fallback: no configured confirmation number and none in description fails with the fallback message", () => {
   const sub = makeSubmission("<p>Just some narrative text.</p>", null);
   const results = lintDraft(sub, baseClaim, []);
   const r = results.find((r) => r.ruleKey === "missing_conf_number");
@@ -90,15 +155,7 @@ test("no configured confirmation number and none in description fails with the f
   assert.match(r!.message, /No confirmation number/i);
 });
 
-test("confirmation number is not matched as a substring of a longer digit run", () => {
-  const sub = makeSubmission("<p>Reference 148792801234 is unrelated.</p>", "14879280");
-  const results = lintDraft(sub, baseClaim, []);
-  const r = results.find((r) => r.ruleKey === "missing_conf_number");
-  assert.ok(r, "expected missing_conf_number result when only a longer number is present");
-  assert.match(r!.message, /14879280/);
-});
-
-test("claim-level conf number is used when submission conf number is empty", () => {
+test("legacy fallback: claim-level conf number is used when submission conf number is empty", () => {
   const sub = makeSubmission("<p>Conf #14879280 noted.</p>", null);
   const claim: LintClaim = { confNumber: "14879280", claimAmount: null };
   const results = lintDraft(sub, claim, []);

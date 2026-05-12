@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsExpiring =
-  (typeof ListInvoiceGroupsExpiring)[keyof typeof ListInvoiceGroupsExpiring];
+export type ListInvoiceGroupsExpiring = typeof ListInvoiceGroupsExpiring[keyof typeof ListInvoiceGroupsExpiring];
+
 
 export const ListInvoiceGroupsExpiring = {
-  soon: "soon",
-  urgent: "urgent",
-  stuck: "stuck",
+  soon: 'soon',
+  urgent: 'urgent',
+  stuck: 'stuck',
 } as const;

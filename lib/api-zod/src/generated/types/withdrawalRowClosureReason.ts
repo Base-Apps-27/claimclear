@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type WithdrawalRowClosureReason =
-  (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
+export type WithdrawalRowClosureReason = typeof WithdrawalRowClosureReason[keyof typeof WithdrawalRowClosureReason];
+
 
 export const WithdrawalRowClosureReason = {
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
-  denied_by_payor: "denied_by_payor",
+  cannot_dispute: 'cannot_dispute',
+  non_issue: 'non_issue',
+  denied_by_payor: 'denied_by_payor',
 } as const;

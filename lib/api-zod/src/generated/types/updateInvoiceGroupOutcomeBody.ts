@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
-import type { ClosurePersonRef } from "./closurePersonRef";
-import type { ClosureReason } from "./closureReason";
+import type { ClosureAccountabilityTag } from './closureAccountabilityTag';
+import type { ClosurePersonRef } from './closurePersonRef';
+import type { ClosureReason } from './closureReason';
 
 /**
  * Body for `PATCH /invoice-groups/{id}/outcome`. Same closure detail

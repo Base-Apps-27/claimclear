@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SaveMappingsResponseSavedItem } from "./saveMappingsResponseSavedItem";
+import type { SaveMappingsResponseSavedItem } from './saveMappingsResponseSavedItem';
 
 export interface SaveMappingsResponse {
   saved: SaveMappingsResponseSavedItem[];

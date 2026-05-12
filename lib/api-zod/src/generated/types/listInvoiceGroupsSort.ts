@@ -12,15 +12,15 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsSort =
-  (typeof ListInvoiceGroupsSort)[keyof typeof ListInvoiceGroupsSort];
+export type ListInvoiceGroupsSort = typeof ListInvoiceGroupsSort[keyof typeof ListInvoiceGroupsSort];
+
 
 export const ListInvoiceGroupsSort = {
-  invoiceNumber: "invoiceNumber",
-  rideCount: "rideCount",
-  clientNumber: "clientNumber",
-  errorTypeName: "errorTypeName",
-  totalAmount: "totalAmount",
-  status: "status",
-  createdAt: "createdAt",
+  invoiceNumber: 'invoiceNumber',
+  rideCount: 'rideCount',
+  clientNumber: 'clientNumber',
+  errorTypeName: 'errorTypeName',
+  totalAmount: 'totalAmount',
+  status: 'status',
+  createdAt: 'createdAt',
 } as const;

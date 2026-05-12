@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { UploadResponseMetadata } from "./uploadResponseMetadata";
+import type { UploadResponseMetadata } from './uploadResponseMetadata';
 
 export interface UploadResponse {
   objectPath: string;

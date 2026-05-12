@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ResponseStatsBySource } from "./responseStatsBySource";
-import type { ResponseStatsByType } from "./responseStatsByType";
+import type { ResponseStatsBySource } from './responseStatsBySource';
+import type { ResponseStatsByType } from './responseStatsByType';
 
 export interface ResponseStats {
   total: number;

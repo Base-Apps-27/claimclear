@@ -15,12 +15,11 @@ understanding readback / preview generation) instead.
 /**
  * AI's self-reported confidence in its classification, if classifierSource is "ai".
  */
-export type PortalResponseItemClassifierConfidence =
-  | (typeof PortalResponseItemClassifierConfidence)[keyof typeof PortalResponseItemClassifierConfidence]
-  | null;
+export type PortalResponseItemClassifierConfidence = typeof PortalResponseItemClassifierConfidence[keyof typeof PortalResponseItemClassifierConfidence] | null;
+
 
 export const PortalResponseItemClassifierConfidence = {
-  high: "high",
-  medium: "medium",
-  low: "low",
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
 } as const;

@@ -11,28 +11,28 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ListWithdrawalsDir } from "./listWithdrawalsDir";
-import type { ListWithdrawalsHideAddressed } from "./listWithdrawalsHideAddressed";
-import type { ListWithdrawalsSort } from "./listWithdrawalsSort";
+import type { ListWithdrawalsDir } from './listWithdrawalsDir';
+import type { ListWithdrawalsHideAddressed } from './listWithdrawalsHideAddressed';
+import type { ListWithdrawalsSort } from './listWithdrawalsSort';
 
 export type ListWithdrawalsParams = {
-  search?: string;
-  /**
-   * Comma-separated list of closure reasons to include
-   */
-  reason?: string;
-  /**
-   * When true (default), hide rows already marked as addressed
-   */
-  hideAddressed?: ListWithdrawalsHideAddressed;
-  closedFrom?: string;
-  closedTo?: string;
-  /**
-   * Comma-separated user ids — only return rows whose closer matches one of these users
-   */
-  closedBy?: string;
-  sort?: ListWithdrawalsSort;
-  dir?: ListWithdrawalsDir;
-  limit?: number;
-  offset?: number;
+search?: string;
+/**
+ * Comma-separated list of closure reasons to include
+ */
+reason?: string;
+/**
+ * When true (default), hide rows already marked as addressed
+ */
+hideAddressed?: ListWithdrawalsHideAddressed;
+closedFrom?: string;
+closedTo?: string;
+/**
+ * Comma-separated user ids — only return rows whose closer matches one of these users
+ */
+closedBy?: string;
+sort?: ListWithdrawalsSort;
+dir?: ListWithdrawalsDir;
+limit?: number;
+offset?: number;
 };

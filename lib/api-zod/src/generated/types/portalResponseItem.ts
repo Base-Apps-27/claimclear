@@ -11,12 +11,12 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { PortalResponseItemBodyFormat } from "./portalResponseItemBodyFormat";
-import type { PortalResponseItemClassifierConfidence } from "./portalResponseItemClassifierConfidence";
-import type { PortalResponseItemClassifierSource } from "./portalResponseItemClassifierSource";
-import type { PortalResponseItemMetadata } from "./portalResponseItemMetadata";
-import type { PortalResponseItemResponseType } from "./portalResponseItemResponseType";
-import type { PortalResponseItemSource } from "./portalResponseItemSource";
+import type { PortalResponseItemBodyFormat } from './portalResponseItemBodyFormat';
+import type { PortalResponseItemClassifierConfidence } from './portalResponseItemClassifierConfidence';
+import type { PortalResponseItemClassifierSource } from './portalResponseItemClassifierSource';
+import type { PortalResponseItemMetadata } from './portalResponseItemMetadata';
+import type { PortalResponseItemResponseType } from './portalResponseItemResponseType';
+import type { PortalResponseItemSource } from './portalResponseItemSource';
 
 export interface PortalResponseItem {
   id: number;

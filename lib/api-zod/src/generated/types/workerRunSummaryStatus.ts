@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type WorkerRunSummaryStatus =
-  (typeof WorkerRunSummaryStatus)[keyof typeof WorkerRunSummaryStatus];
+export type WorkerRunSummaryStatus = typeof WorkerRunSummaryStatus[keyof typeof WorkerRunSummaryStatus];
+
 
 export const WorkerRunSummaryStatus = {
-  running: "running",
-  completed: "completed",
-  failed: "failed",
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
 } as const;

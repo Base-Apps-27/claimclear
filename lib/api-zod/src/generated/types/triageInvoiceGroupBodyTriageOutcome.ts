@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type TriageInvoiceGroupBodyTriageOutcome =
-  (typeof TriageInvoiceGroupBodyTriageOutcome)[keyof typeof TriageInvoiceGroupBodyTriageOutcome];
+export type TriageInvoiceGroupBodyTriageOutcome = typeof TriageInvoiceGroupBodyTriageOutcome[keyof typeof TriageInvoiceGroupBodyTriageOutcome];
+
 
 export const TriageInvoiceGroupBodyTriageOutcome = {
-  non_issue: "non_issue",
-  issue_found: "issue_found",
+  non_issue: 'non_issue',
+  issue_found: 'issue_found',
 } as const;

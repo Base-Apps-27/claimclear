@@ -13,5 +13,5 @@ understanding readback / preview generation) instead.
  */
 
 export type ListPortalSubmissionsParams = {
-  status?: string;
+status?: string;
 };

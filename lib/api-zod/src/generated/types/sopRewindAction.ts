@@ -20,11 +20,11 @@ recorded answer plus walk-tied evidence and returns the leg to
 the tree root.
 
  */
-export type SopRewindAction =
-  (typeof SopRewindAction)[keyof typeof SopRewindAction];
+export type SopRewindAction = typeof SopRewindAction[keyof typeof SopRewindAction];
+
 
 export const SopRewindAction = {
-  "back-step": "back-step",
-  jump: "jump",
-  restart: "restart",
+  'back-step': 'back-step',
+  jump: 'jump',
+  restart: 'restart',
 } as const;

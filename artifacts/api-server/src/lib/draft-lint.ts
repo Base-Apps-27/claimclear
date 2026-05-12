@@ -149,6 +149,31 @@ export function htmlToText(html: string | null | undefined): string {
   return decoded.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Task #708 paragraph-aware tokenizer. Splits an HTML draft into the
+ * paragraph-sized blocks operators actually wrote — block-level tags
+ * (`<p>`, `<div>`, `<li>`, `<br>`, headings, table cells, etc.) become
+ * paragraph boundaries; inline tags are stripped without breaking the
+ * paragraph. Blank lines (a string of `<br>`s, or two consecutive
+ * newlines in a `<pre>`-shaped draft) are also boundaries. The order
+ * of the returned array matches the order of the source so a future
+ * diagnostic can quote the offending paragraph by index.
+ */
+const HTML_BLOCK_BOUNDARY_RE = /<\s*\/?\s*(p|div|br|li|ul|ol|h[1-6]|blockquote|tr|td|th|table|hr|section|article|header|footer|pre|figure)\b[^>]*>/gi;
+
+export function htmlToParagraphs(html: string | null | undefined): string[] {
+  if (!html) return [];
+  const withBreaks = html
+    .replace(HTML_BLOCK_RE, " ")
+    .replace(HTML_BLOCK_BOUNDARY_RE, "\n");
+  const stripped = withBreaks.replace(HTML_TAG_RE, " ");
+  const decoded = stripped.replace(/&[a-z#0-9]+;/gi, (m) => HTML_ENTITIES[m.toLowerCase()] ?? m);
+  return decoded
+    .split(/\n+/)
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter((s) => s.length > 0);
+}
+
 const CONF_RE = /\b\d{6,}\b/;
 const DOLLAR_RE = /\$\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
@@ -266,6 +291,60 @@ function ruleRequiresEvidenceNode(
   return out;
 }
 
+/**
+ * Task #708 per-leg confirmation-number coverage. The legacy
+ * `missing_conf_number` rule asserted only that *some* configured conf
+ * number appears anywhere in the description; on a multi-leg dispute
+ * that lets through narratives that mention three of four legs and
+ * silently omit the fourth. This rule fires once per contestable leg
+ * (one finding per leg keyed `missing_conf_number_for_leg:<legId>`)
+ * when:
+ *   (a) the leg's conf number is absent from every paragraph, OR
+ *   (b) the leg's conf number appears only in paragraphs that ALSO
+ *       name another contestable leg's conf — i.e. there is no
+ *       paragraph that uniquely attributes prose to this leg.
+ * The substring guard (`(?<!\d)NUM(?!\d)`) is reused via
+ * descriptionContainsNumber so 14879280 doesn't satisfy 1487928.
+ */
+function ruleMissingConfNumberPerLeg(
+  legs: LintLeg[],
+  paragraphs: string[],
+): LintResult[] {
+  const out: LintResult[] = [];
+  const contestable = legs.filter(
+    (l) => l.includedInDispute !== false && (l.confNumber || "").trim().length > 0,
+  );
+  for (const leg of contestable) {
+    const conf = leg.confNumber.trim();
+    const otherConfs = contestable
+      .filter((other) => other.id !== leg.id)
+      .map((other) => other.confNumber.trim())
+      .filter((c) => c.length > 0 && c !== conf);
+    const containing = paragraphs.filter((p) => descriptionContainsNumber(p, conf));
+    const errorTypeLabel = leg.errorTypeName?.trim();
+    const legLabel = errorTypeLabel ? `leg ${conf} (${errorTypeLabel})` : `leg ${conf}`;
+    if (containing.length === 0) {
+      out.push({
+        ruleKey: `missing_conf_number_for_leg:${leg.id}`,
+        severity: "fail",
+        message: `Confirmation number ${conf} for ${legLabel} is not mentioned in the description.`,
+      });
+      continue;
+    }
+    const hasOwnParagraph = containing.some(
+      (p) => !otherConfs.some((other) => descriptionContainsNumber(p, other)),
+    );
+    if (!hasOwnParagraph) {
+      out.push({
+        ruleKey: `missing_conf_number_for_leg:${leg.id}`,
+        severity: "fail",
+        message: `Confirmation number ${conf} for ${legLabel} only appears in paragraphs that also name another leg's confirmation number — give it its own paragraph so the portal can attribute the prose.`,
+      });
+    }
+  }
+  return out;
+}
+
 function ruleDispositionWithoutTerminal(legs: LintLeg[]): LintResult[] {
   const out: LintResult[] = [];
   for (const leg of legs) {
@@ -328,34 +407,47 @@ export function lintDraft(
     return results;
   }
 
+  // Task #708: when the caller threads leg context through, per-leg
+  // coverage (`missing_conf_number_for_leg:<id>`) replaces the legacy
+  // `missing_conf_number` rule entirely — both checks would otherwise
+  // double-fire on the same missing leg. The legacy rule remains as a
+  // back-compat fallback for callers that pass no leg context.
+  const legsForConfCheck = (context.legs ?? []).filter(
+    (l) => l.includedInDispute !== false && (l.confNumber || "").trim().length > 0,
+  );
+  const paragraphs = htmlToParagraphs(submission.descriptionHtml);
+  const usePerLegConfCheck = legsForConfCheck.length > 0;
+
   const conf = (submission.confNumber || claim.confNumber || "").trim();
-  if (conf) {
-    const expected = splitConfNumbers(conf);
-    if (expected.length === 0) {
-      if (!text.includes(conf)) {
-        results.push({
-          ruleKey: "missing_conf_number",
-          severity: "fail",
-          message: `Confirmation number ${conf} is not mentioned in the description.`,
-        });
+  if (!usePerLegConfCheck) {
+    if (conf) {
+      const expected = splitConfNumbers(conf);
+      if (expected.length === 0) {
+        if (!text.includes(conf)) {
+          results.push({
+            ruleKey: "missing_conf_number",
+            severity: "fail",
+            message: `Confirmation number ${conf} is not mentioned in the description.`,
+          });
+        }
+      } else {
+        const missing = expected.filter((n) => !descriptionContainsNumber(text, n));
+        if (missing.length > 0) {
+          const label = missing.length === 1 ? "Confirmation number" : "Confirmation numbers";
+          results.push({
+            ruleKey: "missing_conf_number",
+            severity: "fail",
+            message: `${label} ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not mentioned in the description.`,
+          });
+        }
       }
-    } else {
-      const missing = expected.filter((n) => !descriptionContainsNumber(text, n));
-      if (missing.length > 0) {
-        const label = missing.length === 1 ? "Confirmation number" : "Confirmation numbers";
-        results.push({
-          ruleKey: "missing_conf_number",
-          severity: "fail",
-          message: `${label} ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not mentioned in the description.`,
-        });
-      }
+    } else if (!CONF_RE.test(text)) {
+      results.push({
+        ruleKey: "missing_conf_number",
+        severity: "fail",
+        message: "No confirmation number is referenced in the description.",
+      });
     }
-  } else if (!CONF_RE.test(text)) {
-    results.push({
-      ruleKey: "missing_conf_number",
-      severity: "fail",
-      message: "No confirmation number is referenced in the description.",
-    });
   }
 
   const claimAmountRaw = claim.claimAmount;
@@ -388,6 +480,7 @@ export function lintDraft(
   const evidenceList = evidence || [];
   const legs = context.legs ?? [];
   if (legs.length > 0) {
+    results.push(...ruleMissingConfNumberPerLeg(legs, paragraphs));
     results.push(...ruleRequiresEvidenceNode(legs, evidenceList));
     results.push(...ruleDispositionWithoutTerminal(legs));
     results.push(...ruleDisputedLegBareOfEvidenceAndProse(legs, evidenceList, text));

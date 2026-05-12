@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsOutlook =
-  (typeof ListInvoiceGroupsOutlook)[keyof typeof ListInvoiceGroupsOutlook];
+export type ListInvoiceGroupsOutlook = typeof ListInvoiceGroupsOutlook[keyof typeof ListInvoiceGroupsOutlook];
+
 
 export const ListInvoiceGroupsOutlook = {
-  ready_to_review: "ready_to_review",
-  reattest_only: "reattest_only",
-  nothing_to_do: "nothing_to_do",
+  ready_to_review: 'ready_to_review',
+  reattest_only: 'reattest_only',
+  nothing_to_do: 'nothing_to_do',
 } as const;

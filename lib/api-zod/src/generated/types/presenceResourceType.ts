@@ -15,10 +15,10 @@ understanding readback / preview generation) instead.
 /**
  * The kind of resource a viewer is currently looking at.
  */
-export type PresenceResourceType =
-  (typeof PresenceResourceType)[keyof typeof PresenceResourceType];
+export type PresenceResourceType = typeof PresenceResourceType[keyof typeof PresenceResourceType];
+
 
 export const PresenceResourceType = {
-  claim: "claim",
-  invoice_group: "invoice_group",
+  claim: 'claim',
+  invoice_group: 'invoice_group',
 } as const;

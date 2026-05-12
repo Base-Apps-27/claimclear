@@ -15,4 +15,4 @@ understanding readback / preview generation) instead.
 /**
  * Per-source-status breakdown of the retired rows.
  */
-export type RunExpiredSweep200ByStatus = { [key: string]: number };
+export type RunExpiredSweep200ByStatus = {[key: string]: number};

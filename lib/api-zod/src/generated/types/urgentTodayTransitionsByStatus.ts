@@ -12,4 +12,4 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type UrgentTodayTransitionsByStatus = { [key: string]: number };
+export type UrgentTodayTransitionsByStatus = {[key: string]: number};

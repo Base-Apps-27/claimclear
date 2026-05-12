@@ -12,14 +12,14 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type RecordPortalResponseBodyResponseType =
-  (typeof RecordPortalResponseBodyResponseType)[keyof typeof RecordPortalResponseBodyResponseType];
+export type RecordPortalResponseBodyResponseType = typeof RecordPortalResponseBodyResponseType[keyof typeof RecordPortalResponseBodyResponseType];
+
 
 export const RecordPortalResponseBodyResponseType = {
-  approval: "approval",
-  denial: "denial",
-  partial_approval: "partial_approval",
-  info_request: "info_request",
-  acknowledgment: "acknowledgment",
-  other: "other",
+  approval: 'approval',
+  denial: 'denial',
+  partial_approval: 'partial_approval',
+  info_request: 'info_request',
+  acknowledgment: 'acknowledgment',
+  other: 'other',
 } as const;

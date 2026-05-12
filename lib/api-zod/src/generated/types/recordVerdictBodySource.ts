@@ -26,11 +26,11 @@ Drafts also bypass `note`/`confidence`/`reasoning`/
 concepts only.
 
  */
-export type RecordVerdictBodySource =
-  (typeof RecordVerdictBodySource)[keyof typeof RecordVerdictBodySource];
+export type RecordVerdictBodySource = typeof RecordVerdictBodySource[keyof typeof RecordVerdictBodySource];
+
 
 export const RecordVerdictBodySource = {
-  ai_suggested: "ai_suggested",
-  operator_confirmed: "operator_confirmed",
-  operator_draft: "operator_draft",
+  ai_suggested: 'ai_suggested',
+  operator_confirmed: 'operator_confirmed',
+  operator_draft: 'operator_draft',
 } as const;

@@ -18,10 +18,10 @@ the UI should render it through a sanitizer; `text` (the default) renders
 with whitespace preserved.
 
  */
-export type PortalResponseItemBodyFormat =
-  (typeof PortalResponseItemBodyFormat)[keyof typeof PortalResponseItemBodyFormat];
+export type PortalResponseItemBodyFormat = typeof PortalResponseItemBodyFormat[keyof typeof PortalResponseItemBodyFormat];
+
 
 export const PortalResponseItemBodyFormat = {
-  html: "html",
-  text: "text",
+  html: 'html',
+  text: 'text',
 } as const;

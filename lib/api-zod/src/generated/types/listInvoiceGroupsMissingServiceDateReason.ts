@@ -12,12 +12,12 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsMissingServiceDateReason =
-  (typeof ListInvoiceGroupsMissingServiceDateReason)[keyof typeof ListInvoiceGroupsMissingServiceDateReason];
+export type ListInvoiceGroupsMissingServiceDateReason = typeof ListInvoiceGroupsMissingServiceDateReason[keyof typeof ListInvoiceGroupsMissingServiceDateReason];
+
 
 export const ListInvoiceGroupsMissingServiceDateReason = {
-  no_claims: "no_claims",
-  no_dated_claims: "no_dated_claims",
-  parse_failed: "parse_failed",
-  all_dated_legs_excluded: "all_dated_legs_excluded",
+  no_claims: 'no_claims',
+  no_dated_claims: 'no_dated_claims',
+  parse_failed: 'parse_failed',
+  all_dated_legs_excluded: 'all_dated_legs_excluded',
 } as const;
