@@ -3387,6 +3387,20 @@ export type DashboardSummaryAmounts = {
   lostExposureTotal?: string;
   /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
   reclaimedApproved?: string;
+  /** Task #720. Length in days of the canonical trailing window the Dashboard top strip uses (currently 7). Declared on the wire so the client can render the tile sub-label (`last 7d` / `vs prior 7d`) without hard-coding the window length and so the value reconciles with `/dashboard/insights?days=N` and the daily brief. */
+  windowDays?: number;
+  /** Task #720. Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time. */
+  openInvoices?: number;
+  /** Task #720. Σ invoice_groups.totalAmount over groups created in the trailing `windowDays` (default 7). Mirrors the Insights `totalClaimedAmount` definition for the same window so the Dashboard recovery-rate denominator matches Insights exactly. */
+  disputedAmount?: string;
+  /** Task #720. Σ invoice_groups.approvedAmount over groups created in the trailing `windowDays`. Mirrors the Insights `totalRecoveredAmount` definition for the same window so the Dashboard 'Recovered $' tile reconciles with the Insights money scorecard. */
+  recoveredAmount?: string;
+  /** Task #720. Same as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`). Drives the Dashboard 'Net change vs prior 7d' tile. */
+  priorRecoveredAmount?: string;
+  /** Task #720. recoveredAmount / disputedAmount × 100, rounded to the nearest integer percent. `null` when `disputedAmount` is zero — the rate is undefined for an empty window, not zero. */
+  recoveryRate?: number | null;
+  /** Task #720. recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. */
+  netChangeRecovered?: string;
 };
 
 export type DashboardSummaryPortalStats = {

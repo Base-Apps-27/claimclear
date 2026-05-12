@@ -422,6 +422,74 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const expiredGroups = parseInt(bucketRow?.expiredGroups || "0", 10);
   const deniedLostGroups = parseInt(bucketRow?.deniedLostGroups || "0", 10);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Task #720 — Canonical 7-day money block. The Dashboard top strip
+  // post-#720 reads these fields directly so its five tiles match the
+  // /dashboard/insights?days=7 numbers (and the daily brief KPI tiles
+  // for the same window) by construction. Definitions intentionally
+  // mirror /dashboard/insights:
+  //
+  //   disputedAmount   = Σ invoice_groups.totalAmount where the group
+  //                      was created in [now − 7d, now] (invoice grain).
+  //   recoveredAmount  = Σ invoice_groups.approvedAmount over the same
+  //                      window. Includes Partially Approved / Approved
+  //                      that have settled via the row-level approved
+  //                      column; matches Insights' totalRecoveredAmount.
+  //   priorRecoveredAmount
+  //                    = same as recoveredAmount but on the equal-length
+  //                      window immediately before the current one
+  //                      (`[now − 14d, now − 7d)`).
+  //   recoveryRate     = recoveredAmount / disputedAmount * 100, or
+  //                      null when disputedAmount is zero (no work
+  //                      arrived in the window — rate is undefined,
+  //                      not 0).
+  //   netChangeRecovered = recoveredAmount − priorRecoveredAmount.
+  //   windowDays       = 7 (declared on the wire so the Dashboard can
+  //                      render the tile sub-label without hard-coding
+  //                      the window length).
+  //
+  // The "Open invoices" count uses the snapshot atRiskGroups bucket
+  // above — same predicate Insights uses for atRiskGroupCount, so the
+  // Dashboard "Open invoices" tile and the Insights "At risk (now)"
+  // group count can never disagree.
+  // ────────────────────────────────────────────────────────────────────
+  const CANONICAL_WINDOW_DAYS = 7;
+  const recentStart = new Date();
+  recentStart.setUTCHours(0, 0, 0, 0);
+  recentStart.setUTCDate(recentStart.getUTCDate() - (CANONICAL_WINDOW_DAYS - 1));
+  const priorWindowStart = new Date(recentStart);
+  priorWindowStart.setUTCDate(priorWindowStart.getUTCDate() - CANONICAL_WINDOW_DAYS);
+  const [recentMoneyRow] = await db
+    .select({
+      disputed: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)), 0)`,
+      recovered: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+    })
+    .from(invoiceGroupsTable)
+    .where(and(
+      HIDE_TOUR_SAMPLE_GROUP,
+      gte(invoiceGroupsTable.createdAt, recentStart),
+    ));
+  const [priorRecoveredRow] = await db
+    .select({
+      recovered: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.approvedAmount}, 0)), 0)`,
+    })
+    .from(invoiceGroupsTable)
+    .where(and(
+      HIDE_TOUR_SAMPLE_GROUP,
+      gte(invoiceGroupsTable.createdAt, priorWindowStart),
+      sql`${invoiceGroupsTable.createdAt} < ${recentStart}`,
+    ));
+  const disputedAmount = parseFloat(recentMoneyRow?.disputed || "0");
+  const recoveredAmount = parseFloat(recentMoneyRow?.recovered || "0");
+  const priorRecoveredAmount = parseFloat(priorRecoveredRow?.recovered || "0");
+  const recoveryRate = disputedAmount > 0
+    ? Math.round((recoveredAmount / disputedAmount) * 100)
+    : null;
+  const netChangeRecovered = recoveredAmount - priorRecoveredAmount;
+  // "Open invoices" count for the Dashboard — same predicate as the
+  // at-risk bucket above so the count and the at-risk dollars line up.
+  const openInvoices = atRiskGroups;
+
   // Wave D-PR3: collapsed onto the `invoice_groups.is_open` GENERATED
   // column (migration 0036). Lockstep with `OPEN_STATUSES` in
   // `lib/leg-state/src/openness.ts`; conformance audit pins it.
@@ -618,6 +686,17 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
       lostDeniedGroups: deniedLostGroups,
       lostExposureTotal: lostExposureTotal.toFixed(2),
       reclaimedApproved: reclaimedApproved.toFixed(2),
+      // ── Task #720 canonical 7d block. See block comment above for
+      // definitions; mirrors /dashboard/insights for the same window so
+      // the Dashboard top strip, Insights money scorecard, and the
+      // daily brief KPI tiles render identical numbers.
+      windowDays: CANONICAL_WINDOW_DAYS,
+      openInvoices,
+      disputedAmount: disputedAmount.toFixed(2),
+      recoveredAmount: recoveredAmount.toFixed(2),
+      priorRecoveredAmount: priorRecoveredAmount.toFixed(2),
+      recoveryRate,
+      netChangeRecovered: netChangeRecovered.toFixed(2),
   }, req.user);
 
   res.json({

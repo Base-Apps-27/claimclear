@@ -88,6 +88,15 @@ const DASHBOARD_AMOUNT_FIELDS = [
   "lostDeniedExposure",
   "lostExposureTotal",
   "reclaimedApproved",
+  // Task #720 canonical 7d block. `recoveryRate` is a unitless integer,
+  // not money — clerks already see no money fields, so without the rate
+  // they have no denominator and the rate becomes a useless leak. Null
+  // it for clerks alongside the dollar fields.
+  "disputedAmount",
+  "recoveredAmount",
+  "priorRecoveredAmount",
+  "netChangeRecovered",
+  "recoveryRate",
 ] as const;
 
 export function scrubDashboardAmounts<T extends Record<string, unknown>>(

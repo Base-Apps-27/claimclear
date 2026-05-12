@@ -41,11 +41,54 @@ import { formatRelative as formatRelativeTime, absoluteTooltip } from "@/lib/tim
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { RefNumber } from "@/components/ref-number";
-import {
-  getUrgentGroupCountFromSummary,
-  selectUrgentRows,
-} from "@/lib/urgent-count";
+// Task #720 — Numbers shown on the Dashboard top strip and personalized
+// readout now read directly from server-stamped scalars on
+// `/dashboard/summary` (urgentCount, submittedStuckCount, the canonical
+// money block). The `urgent-count` helpers stay imported only for the
+// row-level filter `selectUrgentRows`, used to pick the visible rows for
+// the File-today list — never for the count number on this page. See
+// `lib/urgent-count.ts` for the regression history that motivated the
+// shared helper.
+import { selectUrgentRows } from "@/lib/urgent-count";
 import { matchesExpiringFilter } from "@/lib/queue-urgency";
+
+// ─────────────────────────────────────────────────────────────────────
+// Task #720 — Canonical Dashboard money vocabulary. Every dollar/count
+// tile in the top strip below reads a single field from
+// `/dashboard/summary.amounts` and declares its unit in the sub-label
+// so the operator never has to guess whether a number is invoices,
+// dollars, a percentage, or a delta. The definitions intentionally
+// match the two other surfaces that report the same numbers, so all
+// three reconcile by construction:
+//
+//   • Insights money scorecard — see the vocab block at the top of
+//     `artifacts/claimclear/src/pages/insights.tsx` and the windowed
+//     query in `artifacts/api-server/src/routes/dashboard.ts`
+//     (`/dashboard/insights`).
+//   • Daily brief KPI tiles — see
+//     `artifacts/api-server/src/routes/daily-brief.ts`.
+//
+//   Open invoices   = `amounts.openInvoices` (count, snapshot now). Same
+//                     predicate as Insights `atRiskGroupCount`.
+//   At risk $       = `amounts.atRiskClaim` (raw open-claim dollars,
+//                     snapshot now, NO ×1.7 prepay multiplier on this
+//                     page — the Dashboard speaks in claim dollars,
+//                     matching Insights).
+//   Recovered $     = `amounts.recoveredAmount` (Σ approvedAmount of
+//                     groups created in trailing `windowDays`). Matches
+//                     Insights `totalRecoveredAmount`.
+//   Recovery rate   = `amounts.recoveryRate` (server-computed
+//                     recovered/disputed × 100; null when no disputed
+//                     work in window).
+//   Net change      = `amounts.netChangeRecovered` (recovered minus the
+//                     prior window's recovered). Signed dollars.
+//
+// Old terms intentionally retired from this page: "Invoices pending"
+// (replaced by Open invoices, which uses the at-risk predicate),
+// "Reclaimed" (replaced by Recovered $), the ×1.7 driver-prepay
+// projection (no longer multiplied into the headline At-risk $; see
+// Task #720 spec for the rationale).
+// ─────────────────────────────────────────────────────────────────────
 
 // Recent activity rows use a 3-color signal: good / bad / neutral.
 function dotColorForTone(tone: DashboardActivityEvent["tone"]): string {
@@ -479,14 +522,14 @@ export default function Dashboard() {
 
   // Strict "must file by EOD today" — drives the personalized readout
   // sentence at the top of the page where "to file" literally means
-  // "before midnight". Past-due rows are folded in via `selectUrgentRows`
-  // so the count never disagrees with the Queue. Both the count and the
-  // visible items go through `lib/urgent-count`, the only sanctioned
-  // path for client-side urgent counting (see that module's header for
-  // the regression history). Filtering by `effectiveDaysLeft === 0`
-  // would silently drop past-due rows and re-introduce the
-  // Dashboard-says-0-but-Queue-says-71 bug.
-  const fileTodayCount = getUrgentGroupCountFromSummary(summary);
+  // "before midnight". The COUNT is the server-stamped scalar
+  // (`summary.urgentCount`) per Task #720 — every dashboard number now
+  // reads a single canonical server field and the client no longer
+  // re-derives counts via `getUrgentGroupCountFromSummary`. The visible
+  // ITEMS still go through `selectUrgentRows`, the sanctioned row-level
+  // filter, so past-due rows are folded in without re-introducing the
+  // Dashboard-says-0-but-Queue-says-71 bug (see `lib/urgent-count.ts`).
+  const fileTodayCount = summary.urgentCount ?? 0;
   const fileTodayOnlyItems = selectUrgentRows(summary.expiringGroups);
 
   // Hero superset — urgent (today + past-due) AND tomorrow. Sorted so
@@ -612,74 +655,124 @@ export default function Dashboard() {
       {/* SYSTEM HEALTH BANNER — only renders when degraded/failed */}
       <WorkerHealthBanner />
 
-      {/* UNIVERSAL KPIs — At risk / Already lost / Reclaimed money model.
-          Each invoice group lands in EXACTLY ONE bucket (server-side
-          mutex SUM CASE), so the three dollar figures here always
-          reconcile against the portfolio without double-counting.
-          Withdrawn / Non-Issue groups are intentionally excluded
-          from every bucket — they're not money in flight. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" data-tour="dashboard-kpis">
+      {/* UNIVERSAL KPIs — Task #720 canonical 5-tile strip. Every tile
+          reads a single field from `/dashboard/summary.amounts` and
+          declares its unit in the sub-label. The numbers reconcile
+          one-for-one with `/dashboard/insights?days=N` (where N =
+          `amounts.windowDays`) and with the daily brief KPI block:
+          there are no client-side multipliers and no silent
+          invoice/leg switches on this surface. See the canonical
+          vocabulary block at the top of this file. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3" data-tour="dashboard-kpis">
         <KpiTile
-          label="Invoices pending"
-          value={<TickerInt value={(pipeline.needsEvidence ?? 0) + (pipeline.awaitingResponse ?? 0)} />}
-          sub={`${pipeline.needsEvidence ?? 0} need evidence · ${pipeline.awaitingResponse ?? 0} awaiting response`}
-          tooltip="Open invoice groups still in flight: those needing evidence and those waiting on a payor response."
-          testid="kpi-invoices-pending"
+          label="Open invoices"
+          value={<TickerInt value={amounts.openInvoices ?? amounts.atRiskGroups ?? 0} />}
+          sub="invoices · snapshot now"
+          tooltip="Invoice groups currently in the at-risk bucket — same predicate Insights uses for its 'At risk (now)' group count."
+          testid="kpi-open-invoices"
         />
         <HideForClerk>
           <KpiTile
-            label="At risk"
-            value={<TickerCurrency value={amounts.atRiskExposure ?? amounts.totalExposure} format={formatCurrency} />}
-            sub={
-              <>
-                {formatCurrency(amounts.atRiskClaim ?? amounts.totalClaimed)} invoice amount + ~70% driver prepay
-                {typeof amounts.atRiskGroups === "number" && (
-                  <> · {amounts.atRiskGroups} group{amounts.atRiskGroups === 1 ? "" : "s"}</>
-                )}
-              </>
-            }
+            label="At risk $"
+            value={<TickerCurrency value={amounts.atRiskClaim ?? amounts.totalClaimed} format={formatCurrency} />}
+            sub="open invoices · snapshot now"
             tone="danger"
-            tooltip="Open dollars still in flight (claim + 70% driver prepay). Includes everything not yet locked in: in-workflow rows AND final-state rows whose re-attestation hasn't settled. Excludes withdrawn and non-issue rows."
+            tooltip="Raw open-claim dollars still in flight. Includes in-workflow rows and final-state rows whose re-attestation hasn't settled. Shown raw on this page (no ×1.7 prepay multiplier) so it matches Insights' 'At risk (now)' figure exactly. Driver prepay exposure is reported separately on the Insights / risk pages."
             testid="kpi-at-risk"
           />
         </HideForClerk>
         <HideForClerk>
           <KpiTile
-            label="Already lost"
-            value={<TickerCurrency value={amounts.lostExposureTotal ?? amounts.totalLost} format={formatCurrency} />}
+            label="Recovered $"
+            value={<TickerCurrency value={amounts.recoveredAmount ?? "0"} format={formatCurrency} />}
             sub={
-              <>
-                {formatCurrency(amounts.lostExpiredExposure ?? "0")} expired
-                {typeof amounts.lostExpiredGroups === "number" && (
-                  <> ({amounts.lostExpiredGroups})</>
-                )}
-                {" · "}
-                {formatCurrency(amounts.lostDeniedExposure ?? "0")} denied
-                {typeof amounts.lostDeniedGroups === "number" && (
-                  <> ({amounts.lostDeniedGroups})</>
-                )}
-              </>
+              <span className="inline-flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                last {amounts.windowDays ?? 7}d
+              </span>
             }
-            tooltip="Money we won't see, claim + 70% prepay. Expired = filing deadline missed (literal Expired status OR On Hold past the 30-day Friday-shifted deadline). Denied = denied portion of Denied / Partially Approved rows, but only after re-attestation is settled — until then those dollars stay in At risk."
-            testid="kpi-already-lost"
+            tone="good"
+            tooltip="Σ approvedAmount over invoice groups created in the trailing window. Mirrors the Insights 'Recovered' definition for the same window so the two surfaces never disagree."
+            testid="kpi-recovered"
           />
         </HideForClerk>
         <HideForClerk>
           <KpiTile
-            label="Reclaimed"
-            value={<TickerCurrency value={amounts.reclaimedApproved ?? amounts.totalApproved} format={formatCurrency} />}
-            sub={
-              <span className="inline-flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                attested · prepay washes through
-              </span>
+            label="Recovery rate"
+            value={
+              amounts.recoveryRate === null || amounts.recoveryRate === undefined
+                ? <span className="text-muted-foreground">—</span>
+                : <><TickerInt value={amounts.recoveryRate} />%</>
             }
-            tone="good"
-            tooltip="Approved dollars on rides that have reached their true end — outcome is Approved or Partially Approved AND no leg is still in pending/queued re-attestation. Until re-attestation settles, the dollars stay in At risk because the verdict can still flip. Denials contribute $0. Shown raw — the 70% driver prepay is reimbursed via the payor remit on attested rows, so it's not added back as exposure here."
-            testid="kpi-reclaimed"
+            sub={`% · last ${amounts.windowDays ?? 7}d`}
+            tooltip="Recovered $ ÷ Disputed $ over the trailing window, server-rounded to the nearest percent. Shown as '—' when no disputed work arrived in the window (rate is undefined, not zero)."
+            testid="kpi-recovery-rate"
+          />
+        </HideForClerk>
+        <HideForClerk>
+          <KpiTile
+            label="Net change"
+            value={
+              <TickerCurrency
+                value={amounts.netChangeRecovered ?? "0"}
+                format={(n) => {
+                  const num = typeof n === "number" ? n : parseFloat(String(n ?? "0"));
+                  if (!Number.isFinite(num)) return formatCurrency(n);
+                  const sign = num > 0 ? "+" : num < 0 ? "−" : "";
+                  return `${sign}${formatCurrency(Math.abs(num))}`;
+                }}
+              />
+            }
+            sub={`$ · vs prior ${amounts.windowDays ?? 7}d`}
+            tone={
+              parseFloat(amounts.netChangeRecovered ?? "0") > 0
+                ? "good"
+                : parseFloat(amounts.netChangeRecovered ?? "0") < 0
+                  ? "danger"
+                  : "neutral"
+            }
+            tooltip="Recovered $ this window minus Recovered $ in the equal-length window immediately before it. Positive means we recovered more this period than last."
+            testid="kpi-net-change"
           />
         </HideForClerk>
       </div>
+
+      {/* Outcome breakdown — replaces the old single "Already lost" tile.
+          Splits closed-out invoices into the canonical Insights buckets
+          (Denied / Withdrawn / Expired) so operators see WHY money is
+          gone rather than a single conflated dollar figure. Counts come
+          straight from `summary.stats.{denied,withdrawn,expired}`. */}
+      <HideForClerk>
+        <div
+          className="rounded-md border border-border bg-card px-4 py-3"
+          data-testid="kpi-outcome-breakdown"
+        >
+          <div className="text-[11px] uppercase tracking-wide font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+            Closed-out outcomes
+            <InfoTooltip content="Lifetime counts of invoice groups that ended in each canonical bucket Insights uses. Denied = payor said no. Withdrawn = we pulled the dispute. Expired = filing deadline slipped." />
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div data-testid="outcome-denied">
+              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--destructive))" }}>
+                <TickerInt value={stats.denied ?? 0} />
+              </div>
+              <div className="text-xs text-muted-foreground">Denied · invoices</div>
+            </div>
+            <div data-testid="outcome-withdrawn">
+              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-amber-fg))" }}>
+                <TickerInt value={stats.withdrawn ?? 0} />
+              </div>
+              <div className="text-xs text-muted-foreground">Withdrawn · invoices</div>
+            </div>
+            <div data-testid="outcome-expired">
+              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
+                <TickerInt value={stats.expired ?? 0} />
+              </div>
+              <div className="text-xs text-muted-foreground">Expired · invoices</div>
+            </div>
+          </div>
+        </div>
+      </HideForClerk>
 
       {/* TODAY'S WORK — three hero columns: file today / stuck / respond */}
       <div data-tour="dashboard-today">

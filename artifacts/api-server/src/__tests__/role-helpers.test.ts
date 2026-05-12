@@ -101,6 +101,14 @@ test("scrubDashboardAmounts nulls every known dashboard money key for clerks", (
     lostDeniedExposure: "3",
     lostExposureTotal: "5",
     reclaimedApproved: "1",
+    // Task #720 canonical 7d block — also covered by the scrubber so
+    // clerks see no money or money-derived ratios on the Dashboard top
+    // strip.
+    disputedAmount: "200",
+    recoveredAmount: "50",
+    priorRecoveredAmount: "40",
+    netChangeRecovered: "10",
+    recoveryRate: 25,
     // A non-money sibling we expect to survive — proves the helper is
     // an allowlist over a known set, not a blanket "null everything".
     countOpen: 7,
@@ -113,6 +121,8 @@ test("scrubDashboardAmounts nulls every known dashboard money key for clerks", (
     "lostExpiredClaim", "lostExpiredExposure",
     "lostDeniedClaim", "lostDeniedExposure",
     "lostExposureTotal", "reclaimedApproved",
+    "disputedAmount", "recoveredAmount", "priorRecoveredAmount",
+    "netChangeRecovered", "recoveryRate",
   ]) {
     assert.equal(clerkView[key], null, `dashboard ${key} should be nulled for clerks`);
   }
