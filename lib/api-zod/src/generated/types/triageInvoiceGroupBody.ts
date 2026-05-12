@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { TriageInvoiceGroupBodyTriageOutcome } from './triageInvoiceGroupBodyTriageOutcome';
+import type { TriageInvoiceGroupBodyTriageOutcome } from "./triageInvoiceGroupBodyTriageOutcome";
 
 export type TriageInvoiceGroupBody = {
   triageOutcome: TriageInvoiceGroupBodyTriageOutcome;

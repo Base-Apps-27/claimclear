@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { RunExpiredSweep200ByStatus } from './runExpiredSweep200ByStatus';
+import type { RunExpiredSweep200ByStatus } from "./runExpiredSweep200ByStatus";
 
 export type RunExpiredSweep200 = {
   /** Number of groups transitioned to Expired (or that would be, if dryRun). */

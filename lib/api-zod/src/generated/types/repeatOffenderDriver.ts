@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { RepeatOffenderDriverTrend } from './repeatOffenderDriverTrend';
+import type { RepeatOffenderDriverTrend } from "./repeatOffenderDriverTrend";
 
 export interface RepeatOffenderDriver {
   carNumber: string;

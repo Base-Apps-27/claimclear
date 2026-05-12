@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsDir = typeof ListInvoiceGroupsDir[keyof typeof ListInvoiceGroupsDir];
-
+export type ListInvoiceGroupsDir =
+  (typeof ListInvoiceGroupsDir)[keyof typeof ListInvoiceGroupsDir];
 
 export const ListInvoiceGroupsDir = {
-  asc: 'asc',
-  desc: 'desc',
+  asc: "asc",
+  desc: "desc",
 } as const;

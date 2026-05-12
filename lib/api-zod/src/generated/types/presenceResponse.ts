@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { BotPresenceEntry } from './botPresenceEntry';
-import type { PresenceViewer } from './presenceViewer';
+import type { BotPresenceEntry } from "./botPresenceEntry";
+import type { PresenceViewer } from "./presenceViewer";
 
 export interface PresenceResponse {
   viewers: PresenceViewer[];

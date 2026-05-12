@@ -12,15 +12,15 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type TimeInPhaseBucketPhase = typeof TimeInPhaseBucketPhase[keyof typeof TimeInPhaseBucketPhase];
-
+export type TimeInPhaseBucketPhase =
+  (typeof TimeInPhaseBucketPhase)[keyof typeof TimeInPhaseBucketPhase];
 
 export const TimeInPhaseBucketPhase = {
-  'pre-submit': 'pre-submit',
-  'in-flight': 'in-flight',
-  'response-pending': 'response-pending',
-  'mas-action-required': 'mas-action-required',
-  'awaiting-payout': 'awaiting-payout',
-  closed: 'closed',
-  'on-hold': 'on-hold',
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
 } as const;

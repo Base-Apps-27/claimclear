@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SopRewindDraftConflictResponseCode } from './sopRewindDraftConflictResponseCode';
-import type { SopRewindImpactResponse } from './sopRewindImpactResponse';
+import type { SopRewindDraftConflictResponseCode } from "./sopRewindDraftConflictResponseCode";
+import type { SopRewindImpactResponse } from "./sopRewindImpactResponse";
 
 /**
  * Returned with status 409 when a rewind action targets a leg

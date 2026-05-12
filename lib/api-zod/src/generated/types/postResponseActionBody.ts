@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { PostResponseActionBodyAction } from './postResponseActionBodyAction';
+import type { PostResponseActionBodyAction } from "./postResponseActionBodyAction";
 
 export interface PostResponseActionBody {
   action: PostResponseActionBodyAction;

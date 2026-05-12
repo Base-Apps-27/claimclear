@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsInboxHiddenBucket = typeof ListInvoiceGroupsInboxHiddenBucket[keyof typeof ListInvoiceGroupsInboxHiddenBucket];
-
+export type ListInvoiceGroupsInboxHiddenBucket =
+  (typeof ListInvoiceGroupsInboxHiddenBucket)[keyof typeof ListInvoiceGroupsInboxHiddenBucket];
 
 export const ListInvoiceGroupsInboxHiddenBucket = {
-  unclassified: 'unclassified',
-  awaitingPayorAgain: 'awaitingPayorAgain',
-  acknowledgmentOnly: 'acknowledgmentOnly',
+  unclassified: "unclassified",
+  awaitingPayorAgain: "awaitingPayorAgain",
+  acknowledgmentOnly: "acknowledgmentOnly",
 } as const;

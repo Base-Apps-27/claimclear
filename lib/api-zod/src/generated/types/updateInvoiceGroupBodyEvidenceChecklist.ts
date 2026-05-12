@@ -12,4 +12,6 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type UpdateInvoiceGroupBodyEvidenceChecklist = {[key: string]: boolean};
+export type UpdateInvoiceGroupBodyEvidenceChecklist = {
+  [key: string]: boolean;
+};

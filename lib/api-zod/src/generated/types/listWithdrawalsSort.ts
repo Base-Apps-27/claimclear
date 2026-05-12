@@ -12,14 +12,14 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListWithdrawalsSort = typeof ListWithdrawalsSort[keyof typeof ListWithdrawalsSort];
-
+export type ListWithdrawalsSort =
+  (typeof ListWithdrawalsSort)[keyof typeof ListWithdrawalsSort];
 
 export const ListWithdrawalsSort = {
-  closedAt: 'closedAt',
-  reason: 'reason',
-  kind: 'kind',
-  identifier: 'identifier',
-  amount: 'amount',
-  addressed: 'addressed',
+  closedAt: "closedAt",
+  reason: "reason",
+  kind: "kind",
+  identifier: "identifier",
+  amount: "amount",
+  addressed: "addressed",
 } as const;

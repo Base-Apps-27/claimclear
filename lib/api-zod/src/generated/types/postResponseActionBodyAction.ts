@@ -12,12 +12,12 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type PostResponseActionBodyAction = typeof PostResponseActionBodyAction[keyof typeof PostResponseActionBodyAction];
-
+export type PostResponseActionBodyAction =
+  (typeof PostResponseActionBodyAction)[keyof typeof PostResponseActionBodyAction];
 
 export const PostResponseActionBodyAction = {
-  resolve_reattest: 'resolve_reattest',
-  resolve_new_invoice: 'resolve_new_invoice',
-  mark_denied_by_payor: 'mark_denied_by_payor',
-  re_dispute: 're_dispute',
+  resolve_reattest: "resolve_reattest",
+  resolve_new_invoice: "resolve_new_invoice",
+  mark_denied_by_payor: "mark_denied_by_payor",
+  re_dispute: "re_dispute",
 } as const;

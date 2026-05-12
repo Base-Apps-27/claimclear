@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type SystemHealthRollupResponseOverall = typeof SystemHealthRollupResponseOverall[keyof typeof SystemHealthRollupResponseOverall];
-
+export type SystemHealthRollupResponseOverall =
+  (typeof SystemHealthRollupResponseOverall)[keyof typeof SystemHealthRollupResponseOverall];
 
 export const SystemHealthRollupResponseOverall = {
-  ok: 'ok',
-  degraded: 'degraded',
-  failed: 'failed',
+  ok: "ok",
+  degraded: "degraded",
+  failed: "failed",
 } as const;

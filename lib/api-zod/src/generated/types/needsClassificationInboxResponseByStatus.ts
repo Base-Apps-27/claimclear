@@ -20,4 +20,6 @@ are pre-sorted server-side by descending count then status name
 ascending, so the client can iterate in object order.
 
  */
-export type NeedsClassificationInboxResponseByStatus = {[key: string]: number};
+export type NeedsClassificationInboxResponseByStatus = {
+  [key: string]: number;
+};

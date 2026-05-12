@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListResponsesSource = typeof ListResponsesSource[keyof typeof ListResponsesSource];
-
+export type ListResponsesSource =
+  (typeof ListResponsesSource)[keyof typeof ListResponsesSource];
 
 export const ListResponsesSource = {
-  email: 'email',
-  portal: 'portal',
-  manual: 'manual',
+  email: "email",
+  portal: "portal",
+  manual: "manual",
 } as const;

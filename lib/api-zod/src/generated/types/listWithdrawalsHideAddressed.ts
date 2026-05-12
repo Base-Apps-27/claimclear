@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListWithdrawalsHideAddressed = typeof ListWithdrawalsHideAddressed[keyof typeof ListWithdrawalsHideAddressed];
-
+export type ListWithdrawalsHideAddressed =
+  (typeof ListWithdrawalsHideAddressed)[keyof typeof ListWithdrawalsHideAddressed];
 
 export const ListWithdrawalsHideAddressed = {
-  true: 'true',
-  false: 'false',
+  true: "true",
+  false: "false",
 } as const;

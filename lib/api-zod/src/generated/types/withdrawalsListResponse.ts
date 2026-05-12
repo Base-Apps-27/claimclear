@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { WithdrawalCloser } from './withdrawalCloser';
-import type { WithdrawalRow } from './withdrawalRow';
-import type { WithdrawalsListResponseCounts } from './withdrawalsListResponseCounts';
+import type { WithdrawalCloser } from "./withdrawalCloser";
+import type { WithdrawalRow } from "./withdrawalRow";
+import type { WithdrawalsListResponseCounts } from "./withdrawalsListResponseCounts";
 
 export interface WithdrawalsListResponse {
   rows: WithdrawalRow[];

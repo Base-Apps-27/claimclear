@@ -12,4 +12,6 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type UpdateErrorTypeBodyDisputeReasonsLibrary = { [key: string]: unknown };
+export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
+  [key: string]: unknown;
+};

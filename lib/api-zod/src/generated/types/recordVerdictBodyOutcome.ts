@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type RecordVerdictBodyOutcome = typeof RecordVerdictBodyOutcome[keyof typeof RecordVerdictBodyOutcome];
-
+export type RecordVerdictBodyOutcome =
+  (typeof RecordVerdictBodyOutcome)[keyof typeof RecordVerdictBodyOutcome];
 
 export const RecordVerdictBodyOutcome = {
-  Approved: 'Approved',
-  Denied: 'Denied',
-  Partial: 'Partial',
+  Approved: "Approved",
+  Denied: "Denied",
+  Partial: "Partial",
 } as const;

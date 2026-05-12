@@ -12,9 +12,9 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsExcludeReason = typeof ListInvoiceGroupsExcludeReason[keyof typeof ListInvoiceGroupsExcludeReason];
-
+export type ListInvoiceGroupsExcludeReason =
+  (typeof ListInvoiceGroupsExcludeReason)[keyof typeof ListInvoiceGroupsExcludeReason];
 
 export const ListInvoiceGroupsExcludeReason = {
-  handled_offline: 'handled_offline',
+  handled_offline: "handled_offline",
 } as const;

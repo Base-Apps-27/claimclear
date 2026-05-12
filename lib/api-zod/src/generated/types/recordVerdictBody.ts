@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { RecordVerdictBodyOutcome } from './recordVerdictBodyOutcome';
-import type { RecordVerdictBodySource } from './recordVerdictBodySource';
+import type { RecordVerdictBodyOutcome } from "./recordVerdictBodyOutcome";
+import type { RecordVerdictBodySource } from "./recordVerdictBodySource";
 
 export interface RecordVerdictBody {
   /** `operator_draft` (Task #343) records a non-terminal selection

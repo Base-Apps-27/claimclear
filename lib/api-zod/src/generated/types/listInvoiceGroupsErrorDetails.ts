@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type ListInvoiceGroupsErrorDetails = typeof ListInvoiceGroupsErrorDetails[keyof typeof ListInvoiceGroupsErrorDetails];
-
+export type ListInvoiceGroupsErrorDetails =
+  (typeof ListInvoiceGroupsErrorDetails)[keyof typeof ListInvoiceGroupsErrorDetails];
 
 export const ListInvoiceGroupsErrorDetails = {
-  empty: 'empty',
-  present: 'present',
+  empty: "empty",
+  present: "present",
 } as const;

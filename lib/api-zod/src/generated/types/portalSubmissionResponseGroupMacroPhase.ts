@@ -23,15 +23,16 @@ could not be loaded (should not happen for non-orphaned rows).
 
  * @nullable
  */
-export type PortalSubmissionResponseGroupMacroPhase = typeof PortalSubmissionResponseGroupMacroPhase[keyof typeof PortalSubmissionResponseGroupMacroPhase] | null;
-
+export type PortalSubmissionResponseGroupMacroPhase =
+  | (typeof PortalSubmissionResponseGroupMacroPhase)[keyof typeof PortalSubmissionResponseGroupMacroPhase]
+  | null;
 
 export const PortalSubmissionResponseGroupMacroPhase = {
-  'pre-submit': 'pre-submit',
-  'in-flight': 'in-flight',
-  'response-pending': 'response-pending',
-  'mas-action-required': 'mas-action-required',
-  'awaiting-payout': 'awaiting-payout',
-  closed: 'closed',
-  'on-hold': 'on-hold',
+  "pre-submit": "pre-submit",
+  "in-flight": "in-flight",
+  "response-pending": "response-pending",
+  "mas-action-required": "mas-action-required",
+  "awaiting-payout": "awaiting-payout",
+  closed: "closed",
+  "on-hold": "on-hold",
 } as const;

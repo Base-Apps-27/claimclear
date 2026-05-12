@@ -20,15 +20,15 @@ by `payor-denial-reason.parity.ts` on the server. Distinct from
 `closureReason`; this is NOT a closure decision.
 
  */
-export type PayorDenialReasonCode = typeof PayorDenialReasonCode[keyof typeof PayorDenialReasonCode];
-
+export type PayorDenialReasonCode =
+  (typeof PayorDenialReasonCode)[keyof typeof PayorDenialReasonCode];
 
 export const PayorDenialReasonCode = {
-  payor_rejected_gps: 'payor_rejected_gps',
-  payor_rejected_signature: 'payor_rejected_signature',
-  payor_reclassified_error: 'payor_reclassified_error',
-  payor_cited_benefit_rule: 'payor_cited_benefit_rule',
-  payor_cited_timely_filing: 'payor_cited_timely_filing',
-  payor_no_clear_reason: 'payor_no_clear_reason',
-  payor_other: 'payor_other',
+  payor_rejected_gps: "payor_rejected_gps",
+  payor_rejected_signature: "payor_rejected_signature",
+  payor_reclassified_error: "payor_reclassified_error",
+  payor_cited_benefit_rule: "payor_cited_benefit_rule",
+  payor_cited_timely_filing: "payor_cited_timely_filing",
+  payor_no_clear_reason: "payor_no_clear_reason",
+  payor_other: "payor_other",
 } as const;

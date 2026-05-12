@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SOPAnalysisResultDecisionTree } from './sOPAnalysisResultDecisionTree';
-import type { SOPAnalysisResultDisputeReasonsLibrary } from './sOPAnalysisResultDisputeReasonsLibrary';
-import type { SOPAnalysisResultEvidenceRequirements } from './sOPAnalysisResultEvidenceRequirements';
+import type { SOPAnalysisResultDecisionTree } from "./sOPAnalysisResultDecisionTree";
+import type { SOPAnalysisResultDisputeReasonsLibrary } from "./sOPAnalysisResultDisputeReasonsLibrary";
+import type { SOPAnalysisResultEvidenceRequirements } from "./sOPAnalysisResultEvidenceRequirements";
 
 export interface SOPAnalysisResult {
   name: string;

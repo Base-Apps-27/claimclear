@@ -19,10 +19,10 @@ emphasis, and lists survive. Defaults to `text` for backwards
 compatibility with bots that have not been updated.
 
  */
-export type RecordPortalResponseBodyBodyFormat = typeof RecordPortalResponseBodyBodyFormat[keyof typeof RecordPortalResponseBodyBodyFormat];
-
+export type RecordPortalResponseBodyBodyFormat =
+  (typeof RecordPortalResponseBodyBodyFormat)[keyof typeof RecordPortalResponseBodyBodyFormat];
 
 export const RecordPortalResponseBodyBodyFormat = {
-  html: 'html',
-  text: 'text',
+  html: "html",
+  text: "text",
 } as const;

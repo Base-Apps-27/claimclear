@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { MappingResult } from './mappingResult';
+import type { MappingResult } from "./mappingResult";
 
 export interface LookupMappingsResponse {
   mappings: MappingResult[];

@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { RecordPortalResponseBodyBodyFormat } from './recordPortalResponseBodyBodyFormat';
-import type { RecordPortalResponseBodyMetadata } from './recordPortalResponseBodyMetadata';
-import type { RecordPortalResponseBodyResponseType } from './recordPortalResponseBodyResponseType';
+import type { RecordPortalResponseBodyBodyFormat } from "./recordPortalResponseBodyBodyFormat";
+import type { RecordPortalResponseBodyMetadata } from "./recordPortalResponseBodyMetadata";
+import type { RecordPortalResponseBodyResponseType } from "./recordPortalResponseBodyResponseType";
 
 export type RecordPortalResponseBody = {
   submissionId: number;

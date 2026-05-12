@@ -12,11 +12,11 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type RepeatOffenderMemberTrend = typeof RepeatOffenderMemberTrend[keyof typeof RepeatOffenderMemberTrend];
-
+export type RepeatOffenderMemberTrend =
+  (typeof RepeatOffenderMemberTrend)[keyof typeof RepeatOffenderMemberTrend];
 
 export const RepeatOffenderMemberTrend = {
-  up: 'up',
-  down: 'down',
-  flat: 'flat',
+  up: "up",
+  down: "down",
+  flat: "flat",
 } as const;

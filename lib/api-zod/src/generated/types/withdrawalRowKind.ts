@@ -12,10 +12,10 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 
-export type WithdrawalRowKind = typeof WithdrawalRowKind[keyof typeof WithdrawalRowKind];
-
+export type WithdrawalRowKind =
+  (typeof WithdrawalRowKind)[keyof typeof WithdrawalRowKind];
 
 export const WithdrawalRowKind = {
-  claim: 'claim',
-  invoice_group: 'invoice_group',
+  claim: "claim",
+  invoice_group: "invoice_group",
 } as const;

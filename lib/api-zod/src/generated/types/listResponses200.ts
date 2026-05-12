@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { PortalResponseItem } from './portalResponseItem';
+import type { PortalResponseItem } from "./portalResponseItem";
 
 export type ListResponses200 = {
   responses?: PortalResponseItem[];

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { PayorDenialReasonCode } from './payorDenialReasonCode';
+import type { PayorDenialReasonCode } from "./payorDenialReasonCode";
 
 /**
  * Body for `POST /invoice-groups/{id}/payor-denial-reason`. `note` is

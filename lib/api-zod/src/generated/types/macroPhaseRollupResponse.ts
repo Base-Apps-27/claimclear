@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { MacroPhaseRollupResponseCounts } from './macroPhaseRollupResponseCounts';
+import type { MacroPhaseRollupResponseCounts } from "./macroPhaseRollupResponseCounts";
 
 export interface MacroPhaseRollupResponse {
   counts: MacroPhaseRollupResponseCounts;

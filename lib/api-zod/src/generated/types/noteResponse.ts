@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { NoteResponseType } from './noteResponseType';
+import type { NoteResponseType } from "./noteResponseType";
 
 export interface NoteResponse {
   id: number;

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SopRewindAction } from './sopRewindAction';
+import type { SopRewindAction } from "./sopRewindAction";
 
 /**
  * Read-only impact preview returned by

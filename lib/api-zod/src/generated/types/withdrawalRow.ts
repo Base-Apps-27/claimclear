@@ -11,8 +11,8 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { WithdrawalRowClosureReason } from './withdrawalRowClosureReason';
-import type { WithdrawalRowKind } from './withdrawalRowKind';
+import type { WithdrawalRowClosureReason } from "./withdrawalRowClosureReason";
+import type { WithdrawalRowKind } from "./withdrawalRowKind";
 
 /**
  * A unified row representing a closed claim or invoice group.

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { TriageClaimBodyAction } from './triageClaimBodyAction';
+import type { TriageClaimBodyAction } from "./triageClaimBodyAction";
 
 export interface TriageClaimBody {
   action: TriageClaimBodyAction;

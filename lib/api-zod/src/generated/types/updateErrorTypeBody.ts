@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { UpdateErrorTypeBodyDecisionTree } from './updateErrorTypeBodyDecisionTree';
-import type { UpdateErrorTypeBodyDisputeReasonsLibrary } from './updateErrorTypeBodyDisputeReasonsLibrary';
-import type { UpdateErrorTypeBodyEvidenceRequirements } from './updateErrorTypeBodyEvidenceRequirements';
+import type { UpdateErrorTypeBodyDecisionTree } from "./updateErrorTypeBodyDecisionTree";
+import type { UpdateErrorTypeBodyDisputeReasonsLibrary } from "./updateErrorTypeBodyDisputeReasonsLibrary";
+import type { UpdateErrorTypeBodyEvidenceRequirements } from "./updateErrorTypeBodyEvidenceRequirements";
 
 export interface UpdateErrorTypeBody {
   name?: string;

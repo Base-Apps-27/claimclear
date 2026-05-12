@@ -11,9 +11,9 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { WorkerFailedSubmissionEvent } from './workerFailedSubmissionEvent';
-import type { WorkerRunSummary } from './workerRunSummary';
-import type { WorkerSubmissionEvent } from './workerSubmissionEvent';
+import type { WorkerFailedSubmissionEvent } from "./workerFailedSubmissionEvent";
+import type { WorkerRunSummary } from "./workerRunSummary";
+import type { WorkerSubmissionEvent } from "./workerSubmissionEvent";
 
 export interface WorkerActivityResponse {
   isRunning: boolean;

@@ -11,7 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { SaveMappingItem } from './saveMappingItem';
+import type { SaveMappingItem } from "./saveMappingItem";
 
 export interface SaveMappingsBody {
   mappings: SaveMappingItem[];
