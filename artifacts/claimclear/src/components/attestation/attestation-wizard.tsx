@@ -219,12 +219,33 @@ export function AttestationWizard({
     } catch (e) {
       const status = (e as { response?: { status?: number } } | null)?.response
         ?.status;
+      // On any 409 the server's authoritative state disagrees with the
+      // wizard's cached view — refetch the group/bucket so a stale
+      // button can't keep firing rejected mutations. Common cause:
+      // a teammate already resolved the group from another tab, or
+      // the cancel-completion column hasn't propagated to the cached
+      // detail yet. Without this refresh the operator can click the
+      // same button repeatedly and rack up 409s with no recovery
+      // (see prod incident 2026-05-12, group #422 / invoices that
+      // were already resolved by another operator).
+      if (status === 409) {
+        await invalidateAfterMutation();
+      }
       if (status === 409 && pendingDeniedLegs.length > 0) {
         const refs = pendingDeniedLegs.map((b) => b.confNumber).join(", ");
         toast({
           variant: "destructive",
           title: "Re-attestation skipped some legs",
           description: `${pendingDeniedLegs.length} leg${pendingDeniedLegs.length === 1 ? "" : "s"} on ${invoiceNumber || `#${bucket.invoiceGroupId}`} still need a MAS cancel before they can graduate: ${refs}.`,
+        });
+      } else if (status === 409) {
+        // Server already considers this group ineligible — most often
+        // because someone else just finished it. The refetch above
+        // will refresh the wizard; keep the toast actionable.
+        toast({
+          variant: "destructive",
+          title: "Re-attestation no longer available",
+          description: `${invoiceNumber || `#${bucket.invoiceGroupId}`} isn't eligible for re-attestation right now — refreshing the latest state.`,
         });
       } else {
         const msg =
