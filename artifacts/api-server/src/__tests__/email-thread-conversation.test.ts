@@ -785,7 +785,14 @@ test("PATCH /responses/:id/process with approval keeps the claim in Needs Review
     assert.equal(res.json.processed, true);
 
     const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 (current-contract-map §2.4): the response-matcher's
+    // post-tag landing status is `MATCHER_CLASSIFIED_TARGET_STATUS =
+    // "Ready to Review"` (lib/response-matcher.ts:23), which derives
+    // to `phase=response_received` so the verdict endpoint's
+    // `macroPhase=response-pending` gate accepts the operator's next
+    // click. The contract is "stays in the response-pending lane after
+    // tagging" — vocabulary updated, intent unchanged.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
 
     const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
@@ -829,7 +836,9 @@ test("PATCH /responses/:id/process with denial does NOT auto-deny — claim stay
     assert.equal(res.status, 200);
 
     const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 / MATCHER_CLASSIFIED_TARGET_STATUS — see approval test
+    // above for full citation. Tag landing = response-pending lane.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
 
     const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
@@ -865,14 +874,16 @@ test("PATCH /responses/:id/process with partial_approval does NOT auto-resolve a
     assert.equal(res.status, 200);
 
     const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 / MATCHER_CLASSIFIED_TARGET_STATUS — see approval test
+    // above for full citation. Tag landing = response-pending lane.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
   } finally {
     await cleanupClaim(claim.id);
   }
 });
 
-test("PATCH /responses/:id/process with 'other' still pushes the claim into Needs Review (only acknowledgments are silent)", async () => {
+test("PATCH /responses/:id/process with 'other' still pushes the claim into Ready to Review (only acknowledgments are silent)", async () => {
   const claim = await createSeedClaim({ status: "Awaiting Response", outcome: "Pending" });
   try {
     const [resp] = await db.insert(portalResponsesTable).values({
@@ -896,7 +907,9 @@ test("PATCH /responses/:id/process with 'other' still pushes the claim into Need
     assert.equal(res.status, 200);
 
     const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 / MATCHER_CLASSIFIED_TARGET_STATUS — see approval test
+    // above for full citation. Tag landing = response-pending lane.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
 
     const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
@@ -967,7 +980,10 @@ test("PATCH /responses/:id/process resets a non-pending claim outcome back to Pe
     assert.equal(res.status, 200);
 
     const [after] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 / MATCHER_CLASSIFIED_TARGET_STATUS — see approval test
+    // above for full citation. Tag landing = response-pending lane;
+    // outcome resets to Pending so the verdict endpoint can re-grade.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
   } finally {
     await cleanupClaim(claim.id);
@@ -1007,11 +1023,19 @@ test("PATCH /responses/:id/process rejects an unknown responseType with 400", as
   }
 });
 
-test("PATCH /responses/:id/process with approval on an invoice group keeps it in Needs Review with outcome Pending", async () => {
+test("PATCH /responses/:id/process with approval on an invoice group lands it in Ready to Review with outcome Pending", async () => {
+  // Seed a response-pending baseline (status=Ready to Review,
+  // phase=response_received) — the matcher resets non-Pending outcomes
+  // back to Pending and writes MATCHER_CLASSIFIED_TARGET_STATUS, but
+  // the underlying transition map only allows the rewrite from a
+  // response-pending row (lib/response-matcher.ts:439-445). The legacy
+  // Resolved/Approved seed predated #547 and silently relied on the
+  // old "Needs Review" landing being a no-op.
   const [group] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber: `INV-TAG-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-    status: "Resolved",
-    outcome: "Approved",
+    status: "Ready to Review",
+    outcome: "Pending",
+    phase: "response_received",
   }).returning();
 
   try {
@@ -1036,7 +1060,12 @@ test("PATCH /responses/:id/process with approval on an invoice group keeps it in
     assert.equal(res.status, 200);
 
     const [after] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
-    assert.equal(after.status, "Needs Review");
+    // Task #547 / MATCHER_CLASSIFIED_TARGET_STATUS (current-contract-map
+    // §2.4): matcher writes "Ready to Review" + outcome=Pending so the
+    // verdict endpoint's macroPhase=response-pending gate accepts the
+    // operator's next click. See lib/response-matcher.ts:23, 439-445,
+    // 645-650.
+    assert.equal(after.status, "Ready to Review");
     assert.equal(after.outcome, "Pending");
 
     const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.invoiceGroupId, group.id));

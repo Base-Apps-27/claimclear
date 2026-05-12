@@ -41,7 +41,8 @@ import {
 } from "@workspace/db";
 
 import { runAttestationGateRestoreBackfill } from "../scripts/oneshot-attestation-gate-restore-backfill";
-import { phaseForStatus } from "./fixtures/state";
+import { phaseForStatus, dispositionForPhase } from "./fixtures/state";
+import type { ClaimDisposition } from "@workspace/vocab";
 
 after(async () => {
   await pool.end().catch(() => undefined);
@@ -78,8 +79,27 @@ async function seedLeg(opts: {
   outcome?: "Approved" | "Partially Approved" | "Pending" | "Denied";
   attestedAt?: Date | null;
   attestationQueuedAt?: Date | null;
+  disposition?: ClaimDisposition;
 }): Promise<typeof claimsTable.$inferSelect> {
   const confNumber = `T561-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  // Schema-fixture-drift fix (current-contract-map §1.4 lines 60-61
+  // + §3.2 line 235 + §3.3 line 252): the
+  // `validate_disposition_against_phase` insert/update trigger,
+  // installed by `lib/db/migrations/0034_invoice_phase_and_disposition.sql`,
+  // rejects any child claim whose `disposition` is not in
+  // `VALID_DISPOSITIONS_BY_PHASE[parent.phase]`. seedGroup above
+  // lands `phase=response_received` (`phaseForStatus("Needs Review")`),
+  // whose valid set excludes the schema's default `unclassified`.
+  // Default the leg to the canonical disposition for the parent's
+  // phase (`response_received → awaiting_review`) so the trigger
+  // accepts the insert; standalone legs (no parent) bypass the
+  // trigger and get `unclassified`. Caller can override via
+  // `opts.disposition` when the test explicitly needs a different
+  // verdict-bearing disposition (e.g. verdict_approved).
+  const disposition: ClaimDisposition = opts.disposition
+    ?? (opts.invoiceGroupId != null
+      ? dispositionForPhase(phaseForStatus("Needs Review"))
+      : "unclassified");
   const [row] = await db.insert(claimsTable).values({
     confNumber,
     status: "Needs Review",
@@ -91,6 +111,7 @@ async function seedLeg(opts: {
     attestationState: opts.attestationState ?? "pending",
     attestedAt: opts.attestedAt ?? null,
     attestationQueuedAt: opts.attestationQueuedAt ?? null,
+    disposition,
   }).returning();
   return row;
 }

@@ -1,0 +1,101 @@
+Proceed with Test Validity Phase 2: Outdated-Test Sweep and Fixture Alignment.
+
+Goal:
+Clear the known invalid test noise identified in Phase 1 without masking real product regressions or changing product behavior incorrectly.
+
+Do not build a stress harness in this phase.
+Do not quarantine tests.
+Do not change product code unless the audit clearly proves the product is wrong.
+Do not alter unknown_requires_human_decision cases except to document them.
+
+Inputs:
+- docs/test-validity/current-contract-map.md
+- docs/test-validity-audit-phase1.md
+
+Target findings:
+- outdated_test: 20 tests
+- schema_fixture_drift: 1 test
+- unknown_requires_human_decision: 4 tests
+- order_dependency: shared-batch-view file-level issue
+
+Scope:
+
+1. Outdated-test sweep
+
+Update only tests classified as outdated_test.
+
+Affected areas:
+- email-thread-conversation:
+  Expected status should align with current contract: "Ready to Review" instead of old "Needs Review", if confirmed by current-contract-map.
+- payor-denial-reason-endpoints:
+  Update expectations from old status gate to current macroPhase=response-pending contract.
+- list-count-past-deadline-parity and must-file-today-parity:
+  Update urgent-list fixture expectations to match current urgency rules.
+- transition-helper-newstatus-contract:
+  Update REGISTRY expectations to current newStatus callsites if current-contract-map proves the new callsites are intentional.
+
+Rules:
+- Every updated expectation must cite the current contract map in comments or test naming where appropriate.
+- Do not weaken assertions.
+- Do not delete assertions just to make tests pass.
+- Keep tests behavior-focused, not implementation-string-focused.
+
+2. Schema fixture drift
+
+Fix:
+- attestation-gate-restore-backfill fixture seeds disposition='unclassified' rejected by trigger when parent phase=response_received.
+
+Requirement:
+- Update fixture setup to use valid current schema/trigger contract.
+- Do not disable trigger behavior.
+- Do not bypass schema validation.
+- Add a comment explaining the valid fixture shape.
+
+3. Unknown cases
+
+Do not change behavior or assertions for:
+- closure-data-foundation cascade outcome Pending vs Withdrawn
+- attestation queue 409 / queued counts/list empty issues
+- any other unknown_requires_human_decision cases from the audit
+
+Instead:
+- Add owner-needed notes in the audit or a follow-up decision log.
+- Create docs/test-validity/phase2-owner-decisions-needed.md.
+- Include:
+  - test file
+  - failing assertion
+  - expected
+  - actual
+  - why human product decision is required
+  - recommended owner question
+
+4. Order dependency
+
+For shared-batch-view:
+- Do not apply a blind fix unless root cause is clear.
+- Add it to a follow-up list for stress harness / order-dependency phase.
+- If root cause is obvious and localized, document it before changing anything.
+
+5. Validation
+
+Run:
+- targeted affected tests
+- full package test command
+- typecheck/build if available
+
+Report:
+- files changed
+- tests updated
+- test count passing/failing
+- which outdated tests were cleared
+- which unknowns remain
+- whether any product code changed
+- exact reason for any product-code change
+- next recommended phase
+
+Acceptance criteria:
+- All outdated_test cases are either fixed or explicitly reclassified with evidence.
+- Schema fixture drift is fixed without bypassing schema/trigger behavior.
+- Unknown cases remain visible and documented.
+- No quarantine added.
+- No product behavior changed to satisfy stale tests.

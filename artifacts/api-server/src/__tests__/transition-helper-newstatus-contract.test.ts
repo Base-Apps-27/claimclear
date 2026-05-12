@@ -233,6 +233,19 @@ const REGISTRY: RegistryEntry[] = [
     closureReason: "reattested",
     reattestCompletedAt: new Date("2026-05-08T12:00:00Z"),
   },
+  {
+    // routes/invoice-groups.ts:4953 — bulk_close_nothing_to_do path
+    // added after the original REGISTRY snapshot. Closes groups whose
+    // legs are all `cannot_dispute` survivors (no actionable leg
+    // remains) with outcome=Withdrawn + closureReason=cannot_dispute.
+    file: "routes/invoice-groups.ts",
+    line: 4953,
+    status: "Resolved",
+    intent: "closed",
+    why: "Bulk-close `nothing-to-do` — every leg is cannot_dispute, group closes with outcome=Withdrawn (closureReason=cannot_dispute).",
+    outcome: "Withdrawn",
+    closureReason: "cannot_dispute",
+  },
 
   // --- routes/claims.ts -----------------------------------------------
   {
@@ -291,6 +304,19 @@ const REGISTRY: RegistryEntry[] = [
     status: "Needs Evidence",
     intent: "pre-submit",
     why: "Post-response action `re_dispute` — leg returns to evidence-gathering pre-submit lane for a re-submission.",
+  },
+  {
+    // routes/claims.ts:1626 — per-leg auto-advance after the first
+    // error-type-classification pass on a per-claim transition (added
+    // after the original REGISTRY snapshot). Sibling of the per-leg
+    // 740 site, but driven through the per-claim outer loop in the
+    // `/api/error-types/:id/auto-advance-claims` path rather than the
+    // group-cascade branch.
+    file: "routes/claims.ts",
+    line: 1626,
+    status: "Needs Evidence",
+    intent: "pre-submit",
+    why: "Per-leg auto-advance after error type classified (outer per-claim loop) — leg lands in the evidence-gathering pre-submit lane.",
   },
   {
     file: "routes/claims.ts",

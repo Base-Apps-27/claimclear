@@ -104,9 +104,34 @@ async function seedGroup(opts: {
   withResponse?: { receivedAt?: Date; responseType?: string };
 } = {}): Promise<Seed> {
   const tag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  // Hotfix #635 — gate move at routes/invoice-groups.ts:2267-2272
+  // (payor-denial-reason) and :2339-2343 (awaiting-payor-again).
+  // Both routes now call `getGroupMacroPhase(...)` and 409 unless the
+  // result is `"response-pending"`; the legacy status-string check
+  // is gone. Background context lives in current-contract-map §1.4
+  // (group phase / `invoice_phase` enum is the canonical state) and
+  // §1.7 (payor-denial route, "covered by payor-denial-reason-
+  // endpoints.test.ts"). The schema default for `phase` is
+  // `triage` (`lib/db/src/schema/invoice-groups.ts`), so a direct
+  // insert that sets only `status: "Needs Review"` lands phase=triage
+  // and the route 409s with "macroPhase=response-pending" BEFORE it
+  // ever reaches the inbound-response precondition this test cares
+  // about. Mirror what the response-matcher would write by stamping
+  // the phase the status derives to (`fixtures/state.ts` STATUS_TO_PHASE;
+  // "Needs Review" → response_received, "Awaiting Response" → submitted)
+  // so the macro-phase gate sees the same cell production would.
+  type SeedStatus = "Needs Review" | "Awaiting Response" | "Ready to Review" | "New" | "Resolved";
+  const status: SeedStatus = (opts.status ?? "Needs Review") as SeedStatus;
+  const phase = (() => {
+    if (status === "Needs Review") return "response_received" as const;
+    if (status === "Awaiting Response") return "submitted" as const;
+    if (status === "Ready to Review") return "response_received" as const;
+    return undefined;
+  })();
   const [group] = await db.insert(invoiceGroupsTable).values({
     invoiceNumber: `T321-${tag}`,
-    status: (opts.status ?? "Needs Review") as "Needs Review",
+    status,
+    ...(phase ? { phase } : {}),
   }).returning({ id: invoiceGroupsTable.id });
 
   const responseIds: number[] = [];
@@ -237,7 +262,7 @@ test("POST /payor-denial-reason: invalid code rejected (400)", async () => {
   }
 });
 
-test("POST /payor-denial-reason: 409 when status is not Needs Review", async () => {
+test("POST /payor-denial-reason: 409 when group is not in response-pending macro-phase", async () => {
   const seed = await seedGroup({ status: "Awaiting Response", withResponse: {} });
   try {
     const r = await request<any>(
@@ -246,14 +271,25 @@ test("POST /payor-denial-reason: 409 when status is not Needs Review", async () 
       { reason: "payor_rejected_gps" },
     );
     assert.equal(r.status, 409);
-    assert.match(r.json.expectedState, /Needs Review/);
+    // Hotfix #635 (routes/invoice-groups.ts:2267-2272; cf. current-
+    // contract-map §1.4 group phase + §1.7 payor-denial route): the
+    // gate moved off the legacy status string to
+    // `macroPhase=response-pending`, so the envelope now reads
+    // `expectedState: "macroPhase=response-pending"` instead of the
+    // pre-#635 "...status is Needs Review" string. The CONTRACT under
+    // test is unchanged: in-flight rows can't record a payor denial
+    // reason — vocabulary updated.
+    assert.match(r.json.expectedState, /response-pending/);
   } finally {
     await cleanup(seed);
   }
 });
 
 test("POST /payor-denial-reason: 409 when no inbound responses on file", async () => {
-  // Needs Review, but no portal_responses linked → must still be rejected.
+  // Needs Review (phase=response_received via seedGroup above) — passes
+  // the #635 macroPhase=response-pending gate, falls through to the
+  // no-response check at routes/invoice-groups.ts:2276-2284 which
+  // returns `expectedState: "at least one inbound portal_responses..."`.
   const seed = await seedGroup({ status: "Needs Review" });
   try {
     const r = await request<any>(
@@ -349,12 +385,16 @@ test("POST /awaiting-payor-again: list re-includes the row when a NEWER response
   }
 });
 
-test("POST /awaiting-payor-again: 409 when status is not Needs Review", async () => {
+test("POST /awaiting-payor-again: 409 when group is not in response-pending macro-phase", async () => {
   const seed = await seedGroup({ status: "Awaiting Response", withResponse: {} });
   try {
     const r = await request<any>("POST", `/api/invoice-groups/${seed.groupId}/awaiting-payor-again`);
     assert.equal(r.status, 409);
-    assert.match(r.json.expectedState, /Needs Review/);
+    // Hotfix #635 (routes/invoice-groups.ts:2339-2343; cf. current-
+    // contract-map §1.4 group phase): same gate move as payor-denial-
+    // reason above. Envelope now reports the macro-phase, not the
+    // legacy status string.
+    assert.match(r.json.expectedState, /response-pending/);
   } finally {
     await cleanup(seed);
   }

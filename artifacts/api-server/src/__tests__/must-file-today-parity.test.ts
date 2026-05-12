@@ -30,7 +30,7 @@ import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import { inArray } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 
 import dashboardRouter from "../routes/dashboard";
 import invoiceGroupsRouter from "../routes/invoice-groups";
@@ -117,16 +117,31 @@ function ymdDaysAgo(days: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-// Strict-today urgency: pick a service date whose 30-day deadline (after
-// the weekend → Friday shift) lands exactly on today. Returns null on
-// Sat/Sun because the shift always pulls weekend deadlines back to
-// Friday — no service date can produce a "today" deadline on those
-// days. Tests gate on this and skip the urgent-fixture assertions.
-function ymdServiceDateUrgentToday(): string | null {
+// Strict-today urgency: pick a service date for which BOTH the JS
+// `isUrgentDeadline` helper AND the SQL `(deadline - CURRENT_DATE) = 0`
+// predicate agree the row should be urgent. Necessary because the JS
+// helper anchors to America/New_York while the DB session's CURRENT_DATE
+// is read in the pool's timezone (typically UTC) — during the few-hour
+// late-evening-ET → early-morning-UTC window the two calendars
+// disagree and a JS-only "today − 28d" pick can land on a SQL row the
+// `?expiring=urgent` server-side filter does not see as urgent (the
+// dashboard summary + computeUrgentSnapshot likewise consult the DB).
+//
+// Returns null on Sat/Sun (weekend → Friday shift collapses today's
+// pool). Mirrors the proven pattern in `operator-attention-parity.test.ts`.
+async function pickUrgentTodayServiceDate(): Promise<string | null> {
   const now = new Date();
-  for (let n = 28; n <= 34; n++) {
+  for (let n = 27; n <= 36; n++) {
     const candidate = ymdDaysAgo(n);
-    if (isUrgentDeadline(candidate, now)) return candidate;
+    if (!isUrgentDeadline(candidate, now)) continue;
+    const r = await db.execute(sql`select (
+      case extract(dow from (${candidate}::date + interval '30 days'))
+        when 6 then ((${candidate}::date + interval '30 days')::date - interval '1 day')::date
+        when 0 then ((${candidate}::date + interval '30 days')::date - interval '2 days')::date
+        else (${candidate}::date + interval '30 days')::date
+      end) - current_date as diff`);
+    const diff = (r.rows?.[0] as { diff?: number } | undefined)?.diff;
+    if (diff === 0) return candidate;
   }
   return null;
 }
@@ -189,7 +204,7 @@ test("dashboard, invoice-groups list, and urgent-snapshot agree on the urgent gr
   // the contract under test is "all surfaces agree on the urgent
   // set", and "agree on the empty set" is trivially true and tells us
   // nothing about the read-path parity we're actually checking.
-  const urgentTodaySD = ymdServiceDateUrgentToday();
+  const urgentTodaySD = await pickUrgentTodayServiceDate();
   if (urgentTodaySD == null) {
     t.skip("strict-today urgency cannot fire on Sat/Sun (deadlines shift back to Fri)");
     return;

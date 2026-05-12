@@ -33,6 +33,7 @@ import { inArray } from "drizzle-orm";
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
 import { isUrgentDeadline } from "../lib/dates";
+import { sql } from "drizzle-orm";
 import {
   db,
   pool,
@@ -123,16 +124,33 @@ function ymdDaysAgo(days: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-// Strict-today urgency: pick a service date whose 30-day deadline (after
-// the weekend → Friday shift) lands exactly on today. Returns null on
-// Sat/Sun because the shift always pulls weekend deadlines back to
-// Friday — no service date can produce a "today" deadline on those
-// days. Mirrors the helper in must-file-today-parity.test.ts.
-function ymdServiceDateUrgentToday(): string | null {
+// Strict-today urgency: pick a service date for which BOTH the JS
+// `isUrgentDeadline` helper AND the SQL `(deadline - CURRENT_DATE) = 0`
+// predicate agree the row should be urgent. Necessary because the JS
+// helper anchors to America/New_York while the DB session's CURRENT_DATE
+// is read in the pool's timezone (typically UTC) — during the few-hour
+// late-evening-ET → early-morning-UTC window the two calendars
+// disagree and a JS-only "today − 28d" pick fails on the SQL side
+// (`?expiring=urgent` is server-side: SQL is the source of truth).
+//
+// Returns null on Sat/Sun (weekend → Friday shift collapses today's
+// pool) so the caller skips the urgent-fixture branch. This mirrors
+// the proven pattern in `operator-attention-parity.test.ts`; the
+// previous JS-only picker silently produced fixtures the SQL filter
+// didn't see as urgent on any UTC↔ET-disagreement day.
+async function pickUrgentTodayServiceDate(): Promise<string | null> {
   const now = new Date();
-  for (let n = 28; n <= 34; n++) {
+  for (let n = 27; n <= 36; n++) {
     const candidate = ymdDaysAgo(n);
-    if (isUrgentDeadline(candidate, now)) return candidate;
+    if (!isUrgentDeadline(candidate, now)) continue;
+    const r = await db.execute(sql`select (
+      case extract(dow from (${candidate}::date + interval '30 days'))
+        when 6 then ((${candidate}::date + interval '30 days')::date - interval '1 day')::date
+        when 0 then ((${candidate}::date + interval '30 days')::date - interval '2 days')::date
+        else (${candidate}::date + interval '30 days')::date
+      end) - current_date as diff`);
+    const diff = (r.rows?.[0] as { diff?: number } | undefined)?.diff;
+    if (diff === 0) return candidate;
   }
   return null;
 }
@@ -237,7 +255,7 @@ test("invoice-groups: total matches visible rows after past-deadline filter move
   // pulls weekend deadlines back to Friday), so we add the today-
   // urgent fixture only on weekdays and assert its membership only
   // when seeded.
-  const urgentTodaySD = ymdServiceDateUrgentToday();
+  const urgentTodaySD = await pickUrgentTodayServiceDate();
   const urgentToday = urgentTodaySD == null
     ? null
     : await seedGroup({ status: "New", serviceDate: urgentTodaySD, label: "urgent-today" });
@@ -321,7 +339,7 @@ test("claims: total matches visible rows after past-deadline filter move", async
   // closure shift always pulls weekend deadlines back to Friday), so
   // the today fixture is added only on weekdays and asserted only
   // when seeded.
-  const urgentTodaySD = ymdServiceDateUrgentToday();
+  const urgentTodaySD = await pickUrgentTodayServiceDate();
   const urgentToday = urgentTodaySD == null
     ? null
     : await seedClaim({ status: "New", date: urgentTodaySD, label: "urgent-today" });
