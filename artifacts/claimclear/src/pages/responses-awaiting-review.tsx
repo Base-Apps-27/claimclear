@@ -18,6 +18,8 @@ import {
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
   getGetInvoiceGroupEmailThreadQueryKey,
+  useListErrorTypes,
+  useBulkAssignInvoiceGroupErrorType,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -391,6 +393,8 @@ function VerdictPendingTabContent() {
         </div>
       </div>
 
+      <UnclassifiedResponsesSection />
+
       <HiddenItemsStrip />
 
 
@@ -434,6 +438,158 @@ function VerdictPendingTabContent() {
 }
 
 /**
+ * Inline workflow for the "unclassified responses" hidden bucket.
+ *
+ * Background: groups in the response-pending macro phase that don't yet
+ * have an error type assigned are hidden from the main awaiting-review
+ * list (the verdict UI keys off error type). Historically they were
+ * surfaced only as a passive chip on `HiddenItemsStrip` linking out to
+ * the Invoice Groups list — operators frequently missed it, leaving
+ * real payor responses sitting silent.
+ *
+ * This section pulls those groups inline and gives each row a one-click
+ * error-type picker that POSTs `bulk-assign-error-type` for that single
+ * group. After a successful assignment the group flows into the main
+ * list below on the next refetch, so no navigation is required.
+ *
+ * The list and the picker share the same `inboxHiddenBucket=unclassified`
+ * predicate as the count endpoint, so the section count, the chip count,
+ * and the rows we render can never disagree.
+ */
+function UnclassifiedResponsesSection() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const listParams = {
+    inboxHiddenBucket: "unclassified",
+    limit: 100,
+  } as const;
+  const { data: listData, isLoading: groupsLoading } = useListInvoiceGroups(
+    listParams,
+    { query: { queryKey: getListInvoiceGroupsQueryKey(listParams) } },
+  );
+  const { data: errorTypesData, isLoading: typesLoading } = useListErrorTypes();
+  const bulkAssign = useBulkAssignInvoiceGroupErrorType();
+  const [pendingId, setPendingId] = useState<number | null>(null);
+
+  const groups = listData?.groups ?? [];
+  const errorTypes = errorTypesData ?? [];
+
+  if (groupsLoading) {
+    return (
+      <Skeleton
+        className="h-24 w-full"
+        data-testid="unclassified-responses-section-loading"
+      />
+    );
+  }
+  if (groups.length === 0) {
+    return null;
+  }
+
+  const handleAssign = async (groupId: number, errorTypeId: string) => {
+    if (!errorTypeId) return;
+    const et = errorTypes.find((t) => String(t.id) === errorTypeId);
+    if (!et) return;
+    setPendingId(groupId);
+    try {
+      await bulkAssign.mutateAsync({
+        data: {
+          groupIds: [groupId],
+          errorTypeId: String(et.id),
+          errorTypeName: et.name,
+        },
+      });
+      successToast({
+        title: "Error type assigned",
+        description: `${et.name} applied — group will appear in the list below.`,
+        duration: 2500,
+      });
+      // Re-fetch the unclassified list (this section), the awaiting-review
+      // list (so the newly classified group appears below), and the
+      // hidden-counts (so the strip total stays accurate).
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey(listParams) }),
+        queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey({ macroPhase: "response-pending", limit: 500, includeExpired: true, errorTypeAssigned: true }) }),
+        queryClient.invalidateQueries({ queryKey: getGetResponsesAwaitingReviewHiddenCountsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetResponsesAwaitingReviewCountQueryKey() }),
+      ]);
+    } catch (err) {
+      toast({
+        title: "Couldn't assign error type",
+        description: err instanceof Error ? err.message : "Try again or refresh.",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  return (
+    <Card
+      className="border-amber-300 bg-amber-50/40"
+      data-testid="unclassified-responses-section"
+    >
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-900">
+          <AlertTriangle className="h-4 w-4" />
+          {groups.length} payor response{groups.length === 1 ? "" : "s"} waiting on an error type
+        </CardTitle>
+        <p className="text-xs text-amber-900/80">
+          The payor replied on these but no error type has been picked yet,
+          so they can't show up in the queue below. Pick a type to send each
+          one into review.
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        {groups.map((g) => (
+          <div
+            key={g.id}
+            className="flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-background px-3 py-2"
+            data-testid={`unclassified-row-${g.id}`}
+          >
+            <Link
+              href={`/invoice-groups/${g.id}`}
+              className="font-medium text-sm hover:underline"
+            >
+              <RefNumber value={g.invoiceNumber} />
+            </Link>
+            <StateBadge variant="status" value={g.status} />
+            <span className="text-xs text-muted-foreground">
+              Updated {formatDateTime(g.updatedAt as unknown as string)}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Error type:</span>
+              <Select
+                disabled={typesLoading || (pendingId === g.id) || bulkAssign.isPending}
+                onValueChange={(value) => handleAssign(g.id, value)}
+              >
+                <SelectTrigger
+                  className="h-8 w-[260px] text-xs bg-background"
+                  data-testid={`unclassified-error-type-select-${g.id}`}
+                  aria-label={`Assign error type to ${g.invoiceNumber}`}
+                >
+                  <SelectValue placeholder="Select error type…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {errorTypes.map((et) => (
+                    <SelectItem key={et.id} value={String(et.id)}>
+                      {et.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {pendingId === g.id && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-700" />
+              )}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
  * Task #546 — "what's hidden from this view" summary strip.
  *
  * The Responses Awaiting Review inbox silently filters out groups that
@@ -457,8 +613,12 @@ function HiddenItemsStrip() {
     return <Skeleton className="h-9 w-full max-w-xl" data-testid="hidden-items-strip-loading" />;
   }
 
-  const { unclassified, awaitingPayorAgain, acknowledgmentOnly } = data;
-  const totalHidden = unclassified + awaitingPayorAgain + acknowledgmentOnly;
+  const { awaitingPayorAgain, acknowledgmentOnly } = data;
+  // `unclassified` is intentionally excluded — it has its own actionable
+  // section above (UnclassifiedResponsesSection), so this strip should
+  // collapse to "Nothing hidden" when the only hidden items are
+  // unclassified ones.
+  const totalHidden = awaitingPayorAgain + acknowledgmentOnly;
 
   if (totalHidden === 0) {
     return (
@@ -482,20 +642,11 @@ function HiddenItemsStrip() {
     toneClass: string;
   }> = [];
 
-  if (unclassified > 0) {
-    chips.push({
-      key: "unclassified",
-      count: unclassified,
-      label: `${unclassified} unclassified — needs an error type`,
-      tooltip:
-        "These groups have a payor response but no Error Type yet, so the inbox can't show them. Click through to the classification view to assign one.",
-      // `inboxHiddenBucket=unclassified` runs the exact same SQL on the
-      // list endpoint that the count endpoint uses, so the chip count
-      // and the destination list can never disagree.
-      href: "/invoice-groups?inboxHiddenBucket=unclassified",
-      toneClass: "bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900",
-    });
-  }
+  // Note: the "unclassified" bucket is now rendered as its own
+  // actionable section above this strip (UnclassifiedResponsesSection)
+  // so operators can assign an error type inline without leaving the
+  // page. We deliberately don't push it as a chip here to avoid a
+  // double-render of the same count.
   if (awaitingPayorAgain > 0) {
     chips.push({
       key: "awaitingPayorAgain",
