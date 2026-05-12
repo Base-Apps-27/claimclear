@@ -517,6 +517,58 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
         )}
       </div>
 
+      {/* Per-leg end-state stack. Once every leg is walked, the hero
+          slot above is owned by the GROUP rollup
+          ("generate" / "reattest" / "closeout") and the per-leg
+          terminal screen — the one that carries Change my answer /
+          Restart walk / Reclassify — is hidden. That left operators
+          unable to undo a single wrong leg verdict from the queue
+          mini workspace; the only restart paths were the bulk
+          "Reopen N legs" on the close-out card or jumping out to
+          /claims/:id. We surface the active leg's terminal here,
+          stacked directly under the group hero, so both end states
+          are visible at the same time and the leg-scoped restart
+          verbs are one click away. Gated to terminal legs only:
+          • sopOutcome != null   → SOP terminal (cannot_dispute,
+            non_issue, dispute, portal_dispute, internal, hold) →
+            SopAdvancePlayer routes to ClosedTerminalRewindCard /
+            LegTerminalRewindFooter, both of which expose the
+            existing /sop-restart + /sop-back-step buttons.
+          • includedInDispute === false (no sopOutcome) → classify-
+            time exclusion → ResolvedHero (passive; no walk to
+            rewind, matches the per-leg page behavior). */}
+      {activeLeg &&
+        (hero === "reattest" ||
+          hero === "closeout" ||
+          hero === "generate") &&
+        (activeLeg.sopOutcome != null ||
+          activeLeg.includedInDispute === false) && (
+          <div
+            className="space-y-2"
+            data-testid="mini-active-leg-terminal-stack"
+            data-leg-id={activeLeg.id}
+          >
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground px-1">
+              Active leg end state
+            </div>
+            {activeLeg.sopOutcome != null ? (
+              <SopHero
+                leg={activeLeg}
+                rides={rides}
+                detail={detail}
+                groupId={groupId}
+                groupMacroPhase={detail.macroPhase ?? null}
+                walkStartedFor={walkStartedFor}
+                onStartWalk={() => setWalkStartedFor(activeLeg.id)}
+                onOpenClassify={() => setClassifyOpen(true)}
+                onOpenMarkDuplicate={() => setMarkDuplicateOpen(true)}
+              />
+            ) : (
+              <ResolvedHero leg={activeLeg} />
+            )}
+          </div>
+        )}
+
       {activeLeg && hero !== "submitted" && hero !== "withdrawn" && (
         <WalkTranscriptSection leg={activeLeg} />
       )}
