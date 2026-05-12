@@ -45,7 +45,9 @@ export const OPERATOR_DONE_PHASES = [
   "closed",
 ] as const;
 
-export const OPERATOR_DONE_OUTCOMES = ["Non-Issue", "Withdrawn"] as const;
+// "No Action Needed" (Task #714) is the system-asserted Non-Issue
+// variant and is operator-done by definition.
+export const OPERATOR_DONE_OUTCOMES = ["Non-Issue", "Withdrawn", "No Action Needed"] as const;
 
 const OPERATOR_DONE_PHASE_SET = new Set<string>(OPERATOR_DONE_PHASES);
 const OPERATOR_DONE_OUTCOME_SET = new Set<string>(OPERATOR_DONE_OUTCOMES);
@@ -68,7 +70,7 @@ export function operatorDoneSql(): SQL {
     ${invoiceGroupsTable.phase}::text IN (
       'submitted', 'response_received', 'awaiting_reattestation', 'closed'
     )
-    OR ${invoiceGroupsTable.outcome}::text IN ('Non-Issue', 'Withdrawn')
+    OR ${invoiceGroupsTable.outcome}::text IN ('Non-Issue', 'Withdrawn', 'No Action Needed')
   )`;
 }
 

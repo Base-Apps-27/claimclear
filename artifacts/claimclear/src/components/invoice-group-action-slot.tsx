@@ -346,10 +346,19 @@ function NothingToDoCloseOut({
   const { open: openClosure, dialog } = useClosureLauncher();
   const droppedCount = dropped.length;
 
+  // Task #714 — `"No Action Needed"` is the system-asserted Non-Issue
+  // variant. A group at (Resolved, No Action Needed) is closed by the
+  // auto-cascade and the operator has nothing left to do here.
+  // Each comparison is against an API enum value, not a UI label,
+  // hence the per-line vocab-allow markers.
   const alreadyClosed =
     !!group.outcome &&
-    // vocab-allow-next-line — comparing against the API enum value, not a label.
-    (group.outcome === "Withdrawn" || group.outcome === "Non-Issue");
+    // vocab-allow-next-line — API enum value, not a label.
+    (group.outcome === "Withdrawn" ||
+      // vocab-allow-next-line — API enum value, not a label.
+      group.outcome === "Non-Issue" ||
+      // vocab-allow-next-line — API enum value, not a label.
+      group.outcome === "No Action Needed");
 
   // Task #689 — Reopen path. Until now this card was an unconditional
   // dead-end: the only forward CTA was "Mark as closed" and there was

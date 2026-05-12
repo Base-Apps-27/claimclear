@@ -1,0 +1,40 @@
+-- Rollback for 0042_no_action_needed_outcome.sql.
+--
+-- Postgres does NOT support removing a value from an enum type without
+-- recreating the entire type (and rewriting every dependent column /
+-- index / view). For a value that has likely been WRITTEN into prod
+-- rows by the auto-close cascade between the forward migration and any
+-- rollback attempt, that recreation would also need an out-of-band
+-- backfill rewriting every `outcome='No Action Needed'` row to a
+-- replacement value — typically `'Withdrawn'` with
+-- closure_reason='non_issue', the pre-Task-714 storage shape.
+--
+-- Forward-only by design. If a rollback is genuinely required, the
+-- operator must:
+--   1. Stop all writers that can produce `'No Action Needed'`
+--      (revert the application code first).
+--   2. Backfill the column:
+--        UPDATE invoice_groups
+--          SET outcome = 'Withdrawn', closure_reason = 'non_issue'
+--          WHERE outcome = 'No Action Needed';
+--        UPDATE claims
+--          SET outcome = 'Withdrawn', closure_reason = 'non_issue'
+--          WHERE outcome = 'No Action Needed';
+--   3. Recreate the enum without the value:
+--        ALTER TYPE claim_outcome RENAME TO claim_outcome_old;
+--        CREATE TYPE claim_outcome AS ENUM (
+--          'Pending','Approved','Denied','Partially Approved',
+--          'Non-Issue','Withdrawn'
+--        );
+--        ALTER TABLE invoice_groups
+--          ALTER COLUMN outcome TYPE claim_outcome
+--          USING outcome::text::claim_outcome;
+--        ALTER TABLE claims
+--          ALTER COLUMN outcome TYPE claim_outcome
+--          USING outcome::text::claim_outcome;
+--        DROP TYPE claim_outcome_old;
+--
+-- This file is intentionally a no-op so accidental down-runs do NOT
+-- silently corrupt prod by trying to drop a still-referenced enum value.
+
+SELECT 1;

@@ -5553,7 +5553,7 @@ components:
           description: "DEPRECATED (Wave C, hierarchical state-machine refactor). Read `disposition` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E."
         outcome:
           type: string
-          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn", "No Action Needed"]
           deprecated: true
           description: "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C/D; dropped in Wave E."
         disposition:
@@ -5825,7 +5825,7 @@ components:
           description: "DEPRECATED (Wave C). Read `phase` instead. Still populated by writers during Wave C/D for backwards compatibility; dropped in Wave E."
         outcome:
           type: string
-          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"]
+          enum: ["Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn", "No Action Needed"]
           deprecated: true
           description: "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C/D; dropped in Wave E."
         phase:

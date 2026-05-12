@@ -21,6 +21,7 @@ import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
+import { autoCloseGroupIfAllNonIssue } from "../lib/auto-close-non-issue";
 import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
@@ -2075,6 +2076,14 @@ router.post("/claims/:id/sop-advance", asyncHandler(async (req, res): Promise<vo
   }
   await refreshClaimDenormalizedCache(id);
   if (leg.invoiceGroupId != null) await refreshGroupDerivedFields(leg.invoiceGroupId);
+  // Task #714 — auto-close cascade. When this terminal SOP-advance
+  // landed the leg at sop_outcome='non_issue', check whether it was
+  // the LAST disputed leg holding the group open and, if so, land the
+  // group at (Resolved, No Action Needed). Helper is idempotent and
+  // a no-op when any sibling is still non-non_issue.
+  if (isTerminal && nextSopOutcome === "non_issue" && leg.invoiceGroupId != null) {
+    await autoCloseGroupIfAllNonIssue(leg.invoiceGroupId);
+  }
   emitClaimEvent(id, isTerminal ? "sop_terminal" : "sop_advanced", req);
 
   res.json(updated);
@@ -2587,6 +2596,12 @@ router.post("/claims/:id/conclude-leg", asyncHandler(async (req, res): Promise<v
   if (masUpdated) updated = masUpdated;
   await refreshClaimDenormalizedCache(id);
   await refreshGroupDerivedFields(leg.invoiceGroupId);
+  // Task #714 — auto-close cascade. Conclude-leg with reason=non_issue
+  // is the manual short-circuit equivalent of an SOP-walk landing on
+  // 'non_issue'. Same all-non_issue rollup applies.
+  if (reason === "non_issue") {
+    await autoCloseGroupIfAllNonIssue(leg.invoiceGroupId);
+  }
   emitClaimEvent(id, "concluded", req);
 
   res.json(updated);
@@ -2874,6 +2889,10 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
     // changes its `date` value), but routing through the canonical
     // helper keeps every leg-state write path on the same code path.
     await recomputeGroupServiceDate(leg.invoiceGroupId);
+    // Task #714 auto-close cascade is invoked inside excludeLegCore
+    // itself, so every caller (manual route + auto-after-classify
+    // cascade in group-transitions.ts) gets the same behavior. Nothing
+    // to do here.
   }
   emitClaimEvent(id, "excluded", req);
 

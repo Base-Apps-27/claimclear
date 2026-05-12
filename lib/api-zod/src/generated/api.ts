@@ -259,6 +259,7 @@ export const ListInvoiceGroupsResponse = zod.object({
           "Partially Approved",
           "Non-Issue",
           "Withdrawn",
+          "No Action Needed",
         ])
         .describe(
           "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -1002,6 +1003,7 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
               "Partially Approved",
               "Non-Issue",
               "Withdrawn",
+              "No Action Needed",
             ])
             .describe(
               "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -1524,6 +1526,7 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
                     "Partially Approved",
                     "Non-Issue",
                     "Withdrawn",
+                    "No Action Needed",
                   ])
                   .describe(
                     "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -1962,6 +1965,7 @@ export const GetInvoiceGroupResponse = zod
         "Partially Approved",
         "Non-Issue",
         "Withdrawn",
+        "No Action Needed",
       ])
       .describe(
         "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -2481,6 +2485,7 @@ export const GetInvoiceGroupResponse = zod
                 "Partially Approved",
                 "Non-Issue",
                 "Withdrawn",
+                "No Action Needed",
               ])
               .describe(
                 "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -3325,6 +3330,7 @@ export const UpdateInvoiceGroupResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -3842,6 +3848,7 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -4421,6 +4428,7 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -4945,6 +4953,7 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
         "Partially Approved",
         "Non-Issue",
         "Withdrawn",
+        "No Action Needed",
       ])
       .describe(
         "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -5474,6 +5483,7 @@ export const TriageInvoiceGroupResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -5990,6 +6000,7 @@ export const HoldInvoiceGroupResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -6502,6 +6513,7 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -7307,6 +7319,7 @@ export const RecordPayorDenialReasonResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -7843,6 +7856,7 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -8465,6 +8479,7 @@ export const GroupSopAdvanceResponse = zod
               "Partially Approved",
               "Non-Issue",
               "Withdrawn",
+              "No Action Needed",
             ])
             .describe(
               "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -8958,6 +8973,7 @@ export const SetGroupContextResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -9477,6 +9493,7 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -10002,6 +10019,7 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -10520,6 +10538,7 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -11035,6 +11054,7 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -11552,6 +11572,7 @@ export const StampPreviewGeneratedResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -12099,6 +12120,7 @@ export const CompleteGroupReattestResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -12651,6 +12673,7 @@ export const BulkQueueGroupReattestResponse = zod
           "Partially Approved",
           "Non-Issue",
           "Withdrawn",
+          "No Action Needed",
         ])
         .describe(
           "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -13665,6 +13688,7 @@ export const ListClaimsResponse = zod.object({
           "Partially Approved",
           "Non-Issue",
           "Withdrawn",
+          "No Action Needed",
         ])
         .describe(
           "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -14124,6 +14148,7 @@ export const GetClaimResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -14562,6 +14587,7 @@ export const UpdateClaimResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -14995,6 +15021,7 @@ export const UpdateClaimStatusResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -15458,6 +15485,7 @@ export const UpdateClaimOutcomeResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -15865,6 +15893,7 @@ export const ListAttestationPendingResponse = zod.object({
           "Partially Approved",
           "Non-Issue",
           "Withdrawn",
+          "No Action Needed",
         ])
         .describe(
           "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -16310,6 +16339,7 @@ export const AttestClaimResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -16713,6 +16743,7 @@ export const QueueAttestationForClaimResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -17116,6 +17147,7 @@ export const ConfirmQueuedAttestationResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -17719,6 +17751,7 @@ export const UpdateClaimEvidenceResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -18134,6 +18167,7 @@ export const PlaceLegOnHoldResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -18532,6 +18566,7 @@ export const RemoveLegHoldResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -18927,6 +18962,7 @@ export const ClearLegHoldResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -19330,6 +19366,7 @@ export const ClassifyLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -19736,6 +19773,7 @@ export const SopAdvanceLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -20219,6 +20257,7 @@ export const SopBackStepLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -20636,6 +20675,7 @@ export const SopJumpLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -21051,6 +21091,7 @@ export const SopRestartLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -21471,6 +21512,7 @@ export const ExcludeLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -21882,6 +21924,7 @@ export const IncludeLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -22302,6 +22345,7 @@ export const MarkLegDuplicateResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -22700,6 +22744,7 @@ export const UnmarkLegDuplicateResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -23099,6 +23144,7 @@ export const ReclassifyLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -23597,6 +23643,7 @@ export const SetLegContextResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -24009,6 +24056,7 @@ export const ConcludeLegResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -24415,6 +24463,7 @@ export const CompleteLegMasActionResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -24817,6 +24866,7 @@ export const TriageClaimResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -25222,6 +25272,7 @@ export const PostResponseActionResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -25663,6 +25714,7 @@ export const GenerateClaimEmailResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -29060,6 +29112,7 @@ export const GetDashboardSummaryResponse = zod.object({
           "Partially Approved",
           "Non-Issue",
           "Withdrawn",
+          "No Action Needed",
         ])
         .describe(
           "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -32061,6 +32114,7 @@ export const UpdateClaimClosureReviewResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `disposition` instead. Still populated by writers during Wave C\/D; dropped in Wave E.",
@@ -32473,6 +32527,7 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
       "Partially Approved",
       "Non-Issue",
       "Withdrawn",
+      "No Action Needed",
     ])
     .describe(
       "DEPRECATED (Wave C). Read `phase` (and child claims' `disposition`) instead. Still populated by writers during Wave C\/D; dropped in Wave E.",

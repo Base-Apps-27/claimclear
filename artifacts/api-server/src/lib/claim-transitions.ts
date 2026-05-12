@@ -91,13 +91,13 @@ const SYSTEM_CONTROLLED_STATUSES = ["Portal Queued", "Generating Email", "Ready 
 // group-transitions.ts where "Non-Issue" is valid for the equivalent
 // pre-submit group statuses.
 const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
-  "New": ["Pending", "Withdrawn", "Non-Issue"],
-  "Needs Review": ["Pending", "Withdrawn", "Non-Issue"],
-  "Needs Evidence": ["Pending", "Withdrawn", "Non-Issue"],
+  "New": ["Pending", "Withdrawn", "Non-Issue", "No Action Needed"],
+  "Needs Review": ["Pending", "Withdrawn", "Non-Issue", "No Action Needed"],
+  "Needs Evidence": ["Pending", "Withdrawn", "Non-Issue", "No Action Needed"],
   // "Processed" is a pre-filing status — same outcome envelope as the
   // other pre-submit statuses. No portal/email outcomes until the
   // dispute has actually been filed.
-  "Processed": ["Pending", "Withdrawn", "Non-Issue"],
+  "Processed": ["Pending", "Withdrawn", "Non-Issue", "No Action Needed"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
@@ -106,7 +106,7 @@ const VALID_OUTCOME_BY_STATUS: Record<string, string[]> = {
   // See group-transitions.ts: Expired keeps outcome=Pending so a
   // revert preserves the original outcome envelope.
   "Expired": ["Pending"],
-  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
+  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn", "No Action Needed"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };
 
@@ -428,7 +428,32 @@ export async function transitionClaimStatusAndOutcome(opts: {
     }
     if (closureReason === undefined) closureReason = "non_issue";
   }
-  if (newOutcome !== "Denied" && newOutcome !== "Withdrawn" && newOutcome !== "Non-Issue") {
+  // Task #714 — system-asserted "No Action Needed" mirrors the manual
+  // Non-Issue branch. Pre-submit only (no Withdrawn-style escape after
+  // submission), closureReason locked to 'non_issue'. Only the
+  // auto-close cascade calls this with `systemOverride: true`; manual
+  // operator paths continue to use "Non-Issue".
+  if (newOutcome === "No Action Needed") {
+    if (closureReason !== undefined && closureReason !== "non_issue") {
+      throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
+    }
+    if (!systemOverride && old.invoiceGroupId) {
+      const submissionCount = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
+        .limit(1);
+      if (submissionCount.length > 0) {
+        throw new Error(`Cannot land "No Action Needed" once this claim has been submitted to the payor.`);
+      }
+    }
+    if (closureReason === undefined) closureReason = "non_issue";
+  }
+  if (
+    newOutcome !== "Denied" &&
+    newOutcome !== "Withdrawn" &&
+    newOutcome !== "Non-Issue" &&
+    newOutcome !== "No Action Needed"
+  ) {
     closureReason = null;
   }
 
@@ -621,6 +646,27 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
     userEmail: actor.userEmail,
     userName: actor.userName,
   });
+
+  // Task #714 — auto-close cascade. Excluding a leg with reason='non_issue'
+  // co-writes sop_outcome='non_issue' (see mirror policy above). When this
+  // is the LAST disputed leg holding a pre-submit group open, the parent
+  // group should auto-land at (Resolved, No Action Needed,
+  // closure_reason='non_issue'). Hooking this in the shared writer (rather
+  // than only in the manual /exclude route) ensures every entry point —
+  // manual exclude, auto-after-classify cascade in group-transitions.ts,
+  // future callers — gets the same cascade. Helper is idempotent: the
+  // already-terminal short-circuit makes a redundant call against an
+  // already-closed group a no-op.
+  if (reason === "non_issue" && leg.invoiceGroupId != null) {
+    // Deferred import: auto-close-non-issue.ts pulls in
+    // group-transitions.ts which in turn imports excludeLegCore from
+    // this file. A static import here would create a runtime ESM
+    // cycle whose initialization order is fragile. Resolving the
+    // module lazily at call time sidesteps the cycle entirely while
+    // keeping the cascade synchronous within the writer's await chain.
+    const { autoCloseGroupIfAllNonIssue } = await import("./auto-close-non-issue");
+    await autoCloseGroupIfAllNonIssue(leg.invoiceGroupId, executor);
+  }
 
   return { claim };
 }

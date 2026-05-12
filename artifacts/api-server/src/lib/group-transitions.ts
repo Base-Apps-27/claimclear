@@ -82,9 +82,14 @@ export const GROUP_EXPIRABLE_STATUSES = [
 export const SYSTEM_CONTROLLED_GROUP_STATUSES = ["Portal Queued", "Generating Email", "Ready to Review"];
 
 export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
-  "New": ["Pending", "Withdrawn"],
-  "Needs Review": ["Pending", "Withdrawn"],
-  "Needs Evidence": ["Pending", "Withdrawn"],
+  // "No Action Needed" is the system-asserted "every disputed leg
+  // resolved to non_issue before submission" verdict (Task #714). It is
+  // valid from every pre-submit status because the auto-close cascade
+  // can fire from any of them, and from Resolved so a no-op re-write
+  // by the cascade against an already-closed group does not 400.
+  "New": ["Pending", "Withdrawn", "No Action Needed"],
+  "Needs Review": ["Pending", "Withdrawn", "No Action Needed"],
+  "Needs Evidence": ["Pending", "Withdrawn", "No Action Needed"],
   "Portal Queued": [],
   "Generating Email": [],
   "Ready to Review": [],
@@ -103,7 +108,7 @@ export const VALID_GROUP_OUTCOME_BY_STATUS: Record<string, string[]> = {
   // back to New/Needs Review preserves the row's original outcome
   // envelope without forcing an outcome flip on the way out.
   "Expired": ["Pending"],
-  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn"],
+  "Resolved": ["Approved", "Partially Approved", "Denied", "Non-Issue", "Withdrawn", "No Action Needed"],
   "Denied": ["Denied", "Approved", "Partially Approved", "Withdrawn"],
 };
 
@@ -624,6 +629,21 @@ export async function transitionGroupOutcome(opts: {
       }
     }
     closureReason = "non_issue";
+  } else if (newOutcome === "No Action Needed") {
+    // Task #714 — system-asserted close. Always pre-submit; the
+    // auto-close cascade calls this with `systemOverride: true`, but
+    // we still gate the submitted check defensively for any future
+    // caller. closureReason locked to 'non_issue'.
+    if (closureReason !== undefined && closureReason !== "non_issue") {
+      throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
+    }
+    if (!systemOverride) {
+      const submitted = await groupHasEverBeenSubmitted(groupId, ex);
+      if (submitted) {
+        throw new Error(`Cannot land "No Action Needed" once this invoice group has been submitted to the payor.`);
+      }
+    }
+    closureReason = "non_issue";
   } else if (closureReason === undefined) {
     closureReason = null;
   }
@@ -801,7 +821,25 @@ export async function transitionGroupStatusAndOutcome(opts: {
     }
     if (closureReason === undefined) closureReason = "non_issue";
   }
-  if (newOutcome !== "Denied" && newOutcome !== "Withdrawn" && newOutcome !== "Non-Issue") {
+  // Task #714 — see transitionGroupOutcome for full rationale.
+  if (newOutcome === "No Action Needed") {
+    if (closureReason !== undefined && closureReason !== "non_issue") {
+      throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
+    }
+    if (!systemOverride) {
+      const submitted = await groupHasEverBeenSubmitted(groupId, ex);
+      if (submitted) {
+        throw new Error(`Cannot land "No Action Needed" once this invoice group has been submitted to the payor.`);
+      }
+    }
+    closureReason = "non_issue";
+  }
+  if (
+    newOutcome !== "Denied" &&
+    newOutcome !== "Withdrawn" &&
+    newOutcome !== "Non-Issue" &&
+    newOutcome !== "No Action Needed"
+  ) {
     // Task #543 — Resolved+Approved with closureReason='reattested'
     // is the legitimate post-MAS-reattest closure path. Anything else
     // on the non-Denied/Withdrawn/Non-Issue branch still gets nulled

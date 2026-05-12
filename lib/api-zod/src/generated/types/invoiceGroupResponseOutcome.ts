@@ -26,4 +26,5 @@ export const InvoiceGroupResponseOutcome = {
   Partially_Approved: "Partially Approved",
   "Non-Issue": "Non-Issue",
   Withdrawn: "Withdrawn",
+  No_Action_Needed: "No Action Needed",
 } as const;

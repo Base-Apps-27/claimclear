@@ -18,6 +18,7 @@ export const OUTCOMES = [
   "Partially Approved",
   "Non-Issue",
   "Withdrawn",
+  "No Action Needed",
 ] as const;
 
 export type Outcome = typeof OUTCOMES[number];
@@ -59,6 +60,19 @@ export const OUTCOME: Record<Outcome, GlossaryEntry> = {
     enumValue: "Withdrawn",
     label: "Withdrawn",
     description: "Dispute was withdrawn before resolution. See the closure reason for context.",
+    domain: "outcome",
+  },
+  // System-asserted "all legs were non-issues, nothing to dispute" verdict.
+  // Distinct from the operator-asserted `"Non-Issue"` (manual close-out
+  // dialog): this value is only ever written by the auto-close cascade
+  // when every disputed leg of a pre-submit group resolves to
+  // `sop_outcome='non_issue'`. Closure reason is always `non_issue`.
+  // See `.local/tasks/task-714.md` and the auto-close helper
+  // `artifacts/api-server/src/lib/auto-close-non-issue.ts`.
+  "No Action Needed": {
+    enumValue: "No Action Needed",
+    label: "No action needed",
+    description: "System-classified: every disputed leg resolved to non-issue before any submission. No operator action required.",
     domain: "outcome",
   },
 };

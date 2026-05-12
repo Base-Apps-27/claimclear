@@ -307,9 +307,10 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   //                     prepay is implicitly washed out by the payor
   //                     remit and shouldn't inflate exposure.
   //
-  // Withdrawn and Non-Issue outcomes are intentionally excluded from
-  // every bucket — they're self-cancellations / triage no-ops, not
-  // money in flight.
+  // Withdrawn, Non-Issue, and No Action Needed outcomes are intentionally
+  // excluded from every bucket — they're self-cancellations / triage
+  // no-ops, not money in flight. (Task #714 added No Action Needed as
+  // the system-asserted Non-Issue variant.)
   //
   // The on-hold-past-deadline predicate mirrors the one in the list
   // routes (`/claims`, `/invoice-groups`) so the dashboard "expired"
@@ -355,36 +356,36 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const [bucketRow] = await db
     .select({
       atRiskClaim: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN 0
         WHEN ${invoiceGroupsTable.outcome} IN ('Approved','Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 0
         ELSE GREATEST(COALESCE(${invoiceGroupsTable.totalAmount}, 0) - COALESCE(${invoiceGroupsTable.approvedAmount}, 0), 0)
       END), 0)`,
       atRiskGroups: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN 0
         WHEN ${invoiceGroupsTable.outcome} IN ('Approved','Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 0
         ELSE 1
       END), 0)`,
       expiredClaim: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN COALESCE(${invoiceGroupsTable.totalAmount}, 0)
         ELSE 0
       END), 0)`,
       expiredGroups: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN 1
         ELSE 0
       END), 0)`,
       deniedLostClaim: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN 0
         WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr}
           THEN GREATEST(COALESCE(${invoiceGroupsTable.totalAmount}, 0) - COALESCE(${invoiceGroupsTable.approvedAmount}, 0), 0)
         ELSE 0
       END), 0)`,
       deniedLostGroups: sql<string>`COALESCE(SUM(CASE
-        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue') THEN 0
+        WHEN ${invoiceGroupsTable.outcome} IN ('Withdrawn','Non-Issue','No Action Needed') THEN 0
         WHEN ${deadlineMissedExpr} THEN 0
         WHEN ${invoiceGroupsTable.outcome} IN ('Denied','Partially Approved') AND NOT ${hasPendingAttestExpr} THEN 1
         ELSE 0
@@ -824,20 +825,30 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
       .groupBy(invoiceGroupsTable.outcome),
   ]);
 
-  // Roll the 6-value `claim_outcome` enum into the 5 display buckets
+  // Roll the 7-value `claim_outcome` enum into the 6 display buckets
   // the Insights "By outcome" card renders. Pending + Non-Issue both
   // collapse into "Mixed" — neither is a clean operator-facing verdict.
-  const GROUP_OUTCOME_BUCKETS = ["Approved", "Partially Approved", "Denied", "Withdrawn", "Mixed"] as const;
+  // "No Action Needed" (Task #714) gets its own bucket — it's a clean
+  // system-asserted terminal verdict and folding it into Mixed or
+  // Withdrawn would mis-credit the operator's day.
+  const GROUP_OUTCOME_BUCKETS = ["Approved", "Partially Approved", "Denied", "Withdrawn", "No Action Needed", "Mixed"] as const;
   const groupOutcomeCounts: Record<typeof GROUP_OUTCOME_BUCKETS[number], number> = {
     "Approved": 0,
     "Partially Approved": 0,
     "Denied": 0,
     "Withdrawn": 0,
+    "No Action Needed": 0,
     "Mixed": 0,
   };
   for (const r of groupOutcomeRows) {
     const key = r.key;
-    if (key === "Approved" || key === "Partially Approved" || key === "Denied" || key === "Withdrawn") {
+    if (
+      key === "Approved" ||
+      key === "Partially Approved" ||
+      key === "Denied" ||
+      key === "Withdrawn" ||
+      key === "No Action Needed"
+    ) {
       groupOutcomeCounts[key] += r.count;
     } else {
       // "Pending" and "Non-Issue" both fall in here.
@@ -1387,7 +1398,11 @@ export function aggregateRepeatOffenders(rows: RepeatOffenderInputRow[]): Map<st
     }
     const isDenied = row.outcome === "Denied";
     const isApproved = row.outcome === "Approved" || row.outcome === "Partially Approved";
-    const isNonIssue = row.outcome === "Non-Issue";
+    // Task #714 — "No Action Needed" is the system-asserted Non-Issue
+    // variant (auto-cascade on all-legs-non_issue groups). Both values
+    // are the "actually wasn't a rejection" escape hatch and must
+    // suppress the row from repeat-offender rollups together.
+    const isNonIssue = row.outcome === "Non-Issue" || row.outcome === "No Action Needed";
     if (isApproved) agg.approvedCount += 1;
     if (isDenied) agg.deniedCount += 1;
     // Repeat-offender stats roll up EVERY claim a driver/member appears on

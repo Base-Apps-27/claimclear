@@ -1,0 +1,21 @@
+-- 0042_no_action_needed_outcome.sql
+-- Task #714 — add `'No Action Needed'` to the `claim_outcome` Postgres
+-- enum. Used by the auto-close cascade that lands an invoice group at
+-- (status='Resolved', outcome='No Action Needed', closure_reason='non_issue')
+-- when every disputed leg resolves to sop_outcome='non_issue' while the
+-- group is still pre-submit.
+--
+-- Distinct from the existing `'Non-Issue'` value (which remains in use
+-- for the manual operator close-out dialog) and the existing
+-- `'Withdrawn'` value (which remains in use for the
+-- closure_reason='cannot_dispute' staff-initiated path). Neither
+-- existing flow changes — only NEW writes from the auto-close cascade
+-- use the new value. See `.local/tasks/task-714.md` for the full spec.
+--
+-- IMPORTANT: `ALTER TYPE … ADD VALUE` cannot run inside a transaction
+-- block when the new value is used in the SAME transaction (Postgres
+-- restriction). The migration is bare — no BEGIN/COMMIT — to mirror
+-- the prior enum-add migration `0002_easy_grim_reaper` shape.
+-- Idempotent via `IF NOT EXISTS`.
+
+ALTER TYPE "claim_outcome" ADD VALUE IF NOT EXISTS 'No Action Needed';

@@ -5,30 +5,25 @@
 // api-server dashboard rollups (Task #563). The frontend keeps this
 // shim so existing imports (`@/lib/group-outcome`) keep working
 // without ripple-edit churn.
-import type { ClaimResponse } from "@workspace/api-client-react";
-import type { Outcome } from "@workspace/vocab";
+//
+// Task #714 — the wire-level `Outcome` type now includes
+// `"No Action Needed"` as a first-class value (it is a real
+// `claim_outcome` Postgres enum member, surfaced through the OpenAPI
+// spec, the vocab glossary, and stored on disk by the auto-close
+// cascade). The Phase 1 `DisplayOutcome` widening shim that lived
+// here is no longer needed.
 import {
   deriveGroupOutcomeFromLegs as deriveSharedGroupOutcomeFromLegs,
   type DerivedGroupOutcome as SharedDerivedGroupOutcome,
   type GroupOutcomeBuckets as SharedGroupOutcomeBuckets,
 } from "@workspace/leg-state";
+import type { ClaimResponse } from "@workspace/api-client-react";
 
 export type GroupOutcomeBuckets = SharedGroupOutcomeBuckets;
-
-// Local widening: in addition to the wire-level `Outcome` enum the
-// rollup may emit `"No Action Needed"` for invoices whose every leg
-// turned out to be a non-issue. That value is a UI-only label (no DB
-// column carries it) — see `group-outcome.ts` in @workspace/leg-state.
-export type DisplayOutcome = Outcome | "No Action Needed";
-
-export interface DerivedGroupOutcome {
-  outcome: DisplayOutcome;
-  buckets: GroupOutcomeBuckets;
-}
+export type DerivedGroupOutcome = SharedDerivedGroupOutcome;
 
 export function deriveGroupOutcomeFromLegs(
   legs: readonly ClaimResponse[],
 ): DerivedGroupOutcome {
-  const result: SharedDerivedGroupOutcome = deriveSharedGroupOutcomeFromLegs(legs);
-  return { outcome: result.outcome as DisplayOutcome, buckets: result.buckets };
+  return deriveSharedGroupOutcomeFromLegs(legs);
 }

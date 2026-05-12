@@ -10,7 +10,7 @@ export const claimStatusEnum = pgEnum("claim_status", [
 ]);
 
 export const claimOutcomeEnum = pgEnum("claim_outcome", [
-  "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn"
+  "Pending", "Approved", "Denied", "Partially Approved", "Non-Issue", "Withdrawn", "No Action Needed"
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────

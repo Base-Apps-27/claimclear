@@ -25,7 +25,9 @@ export const OPERATOR_ON_QUEUE_STATUSES = [
 ] as const;
 export type OperatorOnQueueStatus = (typeof OPERATOR_ON_QUEUE_STATUSES)[number];
 
-export const OPERATOR_DONE_OUTCOMES = ["Non-Issue", "Withdrawn"] as const;
+// "No Action Needed" (Task #714) is the system-asserted variant of
+// Non-Issue and is also operator-done by definition.
+export const OPERATOR_DONE_OUTCOMES = ["Non-Issue", "Withdrawn", "No Action Needed"] as const;
 export type OperatorDoneOutcome = (typeof OPERATOR_DONE_OUTCOMES)[number];
 
 const OPERATOR_ON_QUEUE_STATUS_SET: ReadonlySet<string> = new Set<string>(
