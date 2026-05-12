@@ -49,6 +49,28 @@ export const DAILY_BRIEF_BOUNCE_RECHECK: CronJobSchedule = {
   tz: "America/New_York",
 };
 
+// Weekly executive digest. Mondays 07:00 ET. Reads the canonical
+// 7-day money block from `/dashboard/summary` + the Insights
+// aggregator at `/dashboard/insights?days=7` and ships a CFO/COO
+// scorecard separate from the daily ops brief. Replaces the prior
+// "Monday weekly section append" inside the daily brief — keeping
+// the two on different schedules + payloads stops a Monday daily
+// brief degradation from also taking down the exec digest.
+export const WEEKLY_DIGEST: CronJobSchedule = {
+  name: "weekly_digest",
+  cron: "0 7 * * 1",
+  tz: "America/New_York",
+};
+
+// Mirror of DAILY_BRIEF_BOUNCE_RECHECK for the weekly job. Fires 15m
+// after WEEKLY_DIGEST so bounce-backs can land + be ingested before
+// recheckPreviousRunBounces("weekly_digest") downgrades the prior run.
+export const WEEKLY_DIGEST_BOUNCE_RECHECK: CronJobSchedule = {
+  name: "weekly_digest_bounce_recheck",
+  cron: "15 7 * * 1",
+  tz: "America/New_York",
+};
+
 export const RESPONSE_TRACKER: CronJobSchedule = {
   name: "response_tracker",
   cron: "*/30 8-18 * * 1-5",
@@ -104,6 +126,8 @@ export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
   DAILY_BRIEF_BOUNCE_RECHECK,
+  WEEKLY_DIGEST,
+  WEEKLY_DIGEST_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
   PORTAL_RESPONSE_SYNC,
   OUTLOOK_HEARTBEAT,

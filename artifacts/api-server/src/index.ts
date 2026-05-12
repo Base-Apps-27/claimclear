@@ -17,6 +17,8 @@ import {
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
   DAILY_BRIEF_BOUNCE_RECHECK,
+  WEEKLY_DIGEST,
+  WEEKLY_DIGEST_BOUNCE_RECHECK,
   RESPONSE_TRACKER,
   PORTAL_RESPONSE_SYNC,
   OUTLOOK_HEARTBEAT,
@@ -315,6 +317,57 @@ cron.schedule(DAILY_BRIEF_BOUNCE_RECHECK.cron, async () => {
     };
   });
 }, { timezone: DAILY_BRIEF_BOUNCE_RECHECK.tz });
+
+// Task #721: Weekly executive digest. Mondays 07:00 ET. Separate cron
+// + separate route from the daily ops brief — a Monday daily-brief
+// degradation no longer also takes down the exec digest. The
+// `/api/daily-brief/weekly` route returns the same structured outcome
+// shape as the daily route, so this handler is a near-mirror.
+cron.schedule(WEEKLY_DIGEST.cron, async () => {
+  await recordCronRun(WEEKLY_DIGEST.name, async () => {
+    logger.info("Weekly digest cron: sending executive digest");
+    const res = await fetch(`http://localhost:${port}/api/daily-brief/weekly`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-bot-token": process.env.BOT_SERVICE_TOKEN ?? "" },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        status: "failed" as const,
+        message: `Weekly digest HTTP ${res.status}: ${JSON.stringify(data).slice(0, 300)}`,
+        metadata: { httpStatus: res.status, body: data },
+      };
+    }
+    const outcome: "ok" | "degraded" | "failed" =
+      data?.outcome === "failed" ? "failed"
+      : data?.outcome === "degraded" ? "degraded"
+      : "ok";
+    logger.info({ result: data, outcome }, "Weekly digest sent");
+    return {
+      status: outcome,
+      message: data?.message ?? "Weekly digest sent",
+      metadata: data,
+    };
+  });
+}, { timezone: WEEKLY_DIGEST.tz });
+
+// Mirror of DAILY_BRIEF_BOUNCE_RECHECK for the weekly job. 15m after
+// WEEKLY_DIGEST so bounce-backs land before the recheck fires.
+cron.schedule(WEEKLY_DIGEST_BOUNCE_RECHECK.cron, async () => {
+  await recordCronRun(WEEKLY_DIGEST_BOUNCE_RECHECK.name, async () => {
+    const result = await recheckPreviousRunBounces("weekly_digest");
+    if (!result) {
+      return { message: "No weekly_digest run eligible for recheck" };
+    }
+    return {
+      status: result.downgrade === "degraded" ? "degraded" as const : "ok" as const,
+      message: result.downgrade === "degraded"
+        ? `Downgraded weekly_digest run #${result.runId} after bounce spike`
+        : `Weekly_digest run #${result.runId} still healthy after recheck`,
+      metadata: { downgradedRunId: result.runId, outcome: result.downgrade },
+    };
+  });
+}, { timezone: WEEKLY_DIGEST_BOUNCE_RECHECK.tz });
 
 cron.schedule(RESPONSE_TRACKER.cron, async () => {
   await recordCronRun(RESPONSE_TRACKER.name, async () => {

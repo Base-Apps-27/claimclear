@@ -126,14 +126,21 @@ router.get("/admin/system-health/cron-runs", requireAdmin, asyncHandler(async (_
   res.json({ jobs });
 }));
 
-// Detail panel for the most recent daily_brief cron_run: joins the run
-// to its per-recipient outbound_emails rows (success and failure) and
-// any matching bounces in the recheck window.
-router.get("/admin/system-health/daily-brief", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+// Detail panel for the most recent brief cron_run (daily or weekly):
+// joins the run to its per-recipient outbound_emails rows (success
+// and failure) and any matching bounces in the recheck window.
+//
+// The same query/payload shape is used for both `daily_brief` and
+// `weekly_digest`; the weekly route below is a thin wrapper so the
+// admin UI gets a parallel drill-down for the weekly exec digest.
+async function buildBriefDetail(
+  jobName: "daily_brief" | "weekly_digest",
+  res: import("express").Response,
+): Promise<void> {
   const [lastRun] = await db
     .select()
     .from(cronRunsTable)
-    .where(eq(cronRunsTable.jobName, "daily_brief"))
+    .where(eq(cronRunsTable.jobName, jobName))
     .orderBy(desc(cronRunsTable.startedAt))
     .limit(1);
 
@@ -239,6 +246,14 @@ router.get("/admin/system-health/daily-brief", requireAdmin, asyncHandler(async 
     failureCount,
     recipientCount: recipients.length,
   });
+}
+
+router.get("/admin/system-health/daily-brief", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  await buildBriefDetail("daily_brief", res);
+}));
+
+router.get("/admin/system-health/weekly-digest", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  await buildBriefDetail("weekly_digest", res);
 }));
 
 router.get("/admin/system-health/connectors", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {

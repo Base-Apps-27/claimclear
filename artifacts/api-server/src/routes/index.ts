@@ -45,6 +45,16 @@ router.use(requireAuthOrBot, checkEmailRouter);
 // scraped tickets through the same code path operators see.
 router.use(requireAuthOrBot, recordPortalRouter);
 
+// Task #721: dashboardRouter mounted under requireAuthOrBot (instead of
+// the requireAuth gate below) so the daily/weekly brief routes can
+// fetch /dashboard/summary and /dashboard/insights via loopback HTTP
+// using the bot service token. All dashboard endpoints are read-only
+// GETs; bot calls have `req.user === undefined`, which `canSeeAmounts`
+// treats as "show amounts" — appropriate for the email render path
+// (the brief is admin-grade content). Browser users continue to
+// authenticate via Clerk through the same middleware.
+router.use(requireAuthOrBot, dashboardRouter);
+
 router.use(requireAuth);
 
 router.use(storageRouter);
@@ -61,7 +71,6 @@ router.use(errorDetailMappingsRouter);
 router.use(batchJobsRouter);
 router.use(portalSubmissionsRouter);
 router.use(presenceRouter);
-router.use(dashboardRouter);
 router.use(aiEmailRouter);
 router.use(sopAnalyzerRouter);
 router.use(appSettingsRouter);

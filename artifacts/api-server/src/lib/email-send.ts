@@ -69,7 +69,12 @@ export async function sendEmailWithContext(
 // metadata.briefRunId and roleVariant. Never throws — DB write failures
 // are logged but do not abort the brief loop.
 
-export type DailyBriefRoleVariant = "admin" | "operator";
+// Task #721: weekly_exec joined the role-variant set when the
+// CFO/COO weekly digest moved to its own cron + POST /api/daily-brief/weekly
+// route. The outbound_emails.kind enum stays "daily_brief" — the role-variant
+// in metadata is what the System Health detail panel keys off when it
+// renders per-recipient outcomes for daily vs. weekly sends.
+export type DailyBriefRoleVariant = "admin" | "operator" | "weekly_exec";
 
 export interface DailyBriefAttemptInput {
   recipientEmail: string;
@@ -110,7 +115,7 @@ export async function persistDailyBriefRow(input: {
   recipientEmail: string;
   subject: string;
   html: string;
-  roleVariant: "admin" | "operator";
+  roleVariant: DailyBriefRoleVariant;
   briefRunId: string;
   messageId: string | null;
   conversationId: string | null;
