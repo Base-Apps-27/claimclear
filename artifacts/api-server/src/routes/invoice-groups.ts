@@ -19,6 +19,7 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { asyncHandler } from "../lib/asyncHandler";
+import { logger } from "../lib/logger";
 import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
 import { blockMutationOnTourSampleGroup } from "../lib/tour-sample";
 import {
@@ -4108,6 +4109,29 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
       && phase !== "response-pending"
       && !acceptsReattestOnly
     ) {
+      // Diagnostic log for prod 409 triage (added after 2026-05-12
+      // group #422 incident: a 409 storm here resolved itself in
+      // ~4 min with no observable state change, and the response
+      // body alone wasn't enough to reconstruct the gate inputs).
+      // Pino warn so it shows up alongside the request-completed
+      // line in deployment logs without flooding info-level traffic.
+      logger.warn({
+        groupId: id,
+        actorEmail: req.user?.email ?? null,
+        gate: "phase",
+        macroPhase: phase,
+        rawPhase: group.phase,
+        status: group.status,
+        reattestCompletedAt: group.reattestCompletedAt,
+        isReattestOnlyOutlook,
+        outlookLegs: outlookLegs.map((l) => ({
+          includedInDispute: l.includedInDispute,
+          duplicateOfClaimId: l.duplicateOfClaimId,
+          sopOutcome: l.sopOutcome,
+          disposition: l.disposition,
+          outcome: l.outcome,
+        })),
+      }, "reattest/complete 409: phase gate rejected");
       res.status(409).json({
         error: "Group is not eligible for re-attestation completion",
         expectedState: "macroPhase in (mas-action-required, response-pending) OR outlook=reattest_only",
@@ -4126,6 +4150,17 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
         isNull(claimsTable.masActionCompletedAt),
       ));
     if (incompleteCancels.length > 0) {
+      // Same diagnostic motivation as the phase-gate log above.
+      // Capturing the offending claim ids makes it trivial to spot
+      // a read-after-write blip vs a genuinely incomplete cancel.
+      logger.warn({
+        groupId: id,
+        actorEmail: req.user?.email ?? null,
+        gate: "incompleteCancels",
+        macroPhase: phase,
+        incompleteClaimIds: incompleteCancels.map((c) => c.id),
+        incompleteCount: incompleteCancels.length,
+      }, "reattest/complete 409: incomplete MAS cancels");
       res.status(409).json({
         error: "Not all MAS cancel actions are complete",
         expectedState: "all-cancels-complete",
