@@ -373,6 +373,143 @@ test("structural rule: disputed leg mentioned by conf number in prose suppresses
 // Re-asserting that NEITHER the (now-retired) keyword family NOR the new
 // structural rules turn this shape into a fail or a warn.
 
+// --- Task #709: prose ↔ attachment reconciliation -----------------------
+//
+// Two new rules fire on the four corners of (prose-mentions-attachment) ×
+// (bot-will-upload-something):
+//   prose+attached   → silent
+//   prose+empty      → warn  (`prose_claims_attachment_but_none_uploadable`)
+//   silent+attached  → info  (`unreferenced_attachment`)
+//   silent+empty     → silent
+// Plus an opaque-only guard so the second rule never lists `ev_<digits>`
+// rows that have nothing else to display.
+
+const PROSE_ATTACHMENT_PHRASES = [
+  "see attached",
+  "attached screenshot",
+  "attached photo",
+  "attached photograph",
+  "attached picture",
+  "attached image",
+  "attached document",
+  "attached file",
+  "attached copy",
+  "please find attached",
+  "enclosed is",
+  "enclosed are",
+  "enclosed please find",
+  "enclosed herewith",
+];
+
+test("Task #709 phrase set: every documented phrase triggers the prose-attachment rule when uploads are empty", () => {
+  for (const phrase of PROSE_ATTACHMENT_PHRASES) {
+    const sub = makeSubmission(`<p>Conf #14879280 — ${phrase} the manifest.</p>`, "14879280");
+    const results = lintDraft(sub, baseClaim, []);
+    const r = results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable");
+    assert.ok(r, `phrase "${phrase}" should trigger the rule`);
+    assert.equal(r!.severity, "warn");
+    assert.match(r!.message, new RegExp(phrase.replace(/\s+/g, "\\s+"), "i"));
+  }
+});
+
+test("Task #709 corner: prose+attached → no reconciliation rule fires", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — see attached manifest.pdf.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "Manifest", imageUrl: "/objects/uploads/manifest.pdf", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  assert.equal(results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable"), undefined);
+  assert.equal(results.find((r) => r.ruleKey === "unreferenced_attachment"), undefined);
+});
+
+test("Task #709 corner: prose+empty → warn fires", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — see attached screenshot.</p>", "14879280");
+  const results = lintDraft(sub, baseClaim, []);
+  const r = results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable");
+  assert.ok(r);
+  assert.equal(r!.severity, "warn");
+  assert.match(r!.message, /see attached/i);
+});
+
+test("Task #709: non-/objects/ URLs do not count as uploadable (warn still fires)", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — see attached screenshot.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "Photo", imageUrl: "https://example.com/external.png", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  const r = results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable");
+  assert.ok(r, "off-/objects/ URLs are not uploadable, so the rule must still fire");
+});
+
+test("Task #709 corner: silent+attached → info fires listing each unreferenced file by human label", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — disputing the charge.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "Trip Sheet", imageUrl: "/objects/uploads/trip-sheet.pdf", notes: null, treeNodeId: null, claimId: null },
+    { evidenceTypeName: "Manifest", imageUrl: "/objects/uploads/manifest.pdf", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  const r = results.find((r) => r.ruleKey === "unreferenced_attachment");
+  assert.ok(r, "expected unreferenced_attachment");
+  assert.equal(r!.severity, "info");
+  assert.match(r!.message, /Trip Sheet/);
+  assert.match(r!.message, /Manifest/);
+});
+
+test("Task #709: prose mentioning a file by human label suppresses unreferenced_attachment for that row", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — Trip Sheet attached for review.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "Trip Sheet", imageUrl: "/objects/uploads/abc", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  assert.equal(results.find((r) => r.ruleKey === "unreferenced_attachment"), undefined);
+});
+
+test("Task #709: prose mentioning the basename suppresses unreferenced_attachment", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — see manifest.pdf for details.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/manifest.pdf", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  assert.equal(results.find((r) => r.ruleKey === "unreferenced_attachment"), undefined);
+});
+
+test("Task #709 corner: silent+empty → no reconciliation rule fires", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — disputing the charge.</p>", "14879280");
+  const results = lintDraft(sub, baseClaim, []);
+  assert.equal(results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable"), undefined);
+  assert.equal(results.find((r) => r.ruleKey === "unreferenced_attachment"), undefined);
+});
+
+test("Task #709 opaque-only guard: rows with only an `ev_<digits>` identifier and an opaque basename do not fire unreferenced_attachment", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — disputing the charge.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "ev_1776176562945", imageUrl: "/objects/uploads/ev_1776176562945", notes: null, treeNodeId: null, claimId: null },
+    { evidenceTypeName: "ev_1776176572894", imageUrl: "/objects/uploads/ev_1776176572894.bin", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  assert.equal(
+    results.find((r) => r.ruleKey === "unreferenced_attachment"),
+    undefined,
+    "every uploaded row is opaque-only so nothing should be listed",
+  );
+});
+
+test("Task #709: phrase-bearing prose with an unrelated uploadable file fires only the unreferenced_attachment info, not the warn", () => {
+  const sub = makeSubmission("<p>Conf #14879280 — please find attached the manifest.</p>", "14879280");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "Photo", imageUrl: "/objects/uploads/photo.png", notes: null, treeNodeId: null, claimId: null },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence);
+  assert.equal(
+    results.find((r) => r.ruleKey === "prose_claims_attachment_but_none_uploadable"),
+    undefined,
+    "uploads is non-empty, so the warn must not fire even though the phrase matches",
+  );
+  const info = results.find((r) => r.ruleKey === "unreferenced_attachment");
+  assert.ok(info, "the uploaded photo isn't named in the prose");
+  assert.match(info!.message, /Photo/);
+});
+
 test("regression: production shape (invoice 1864796540 / conf 15004552) still passes silently", () => {
   const sub = makeSubmission(
     "<p>Conf #15004552 — disputing the Incomplete GPS flag; breadcrumb data attached.</p>",

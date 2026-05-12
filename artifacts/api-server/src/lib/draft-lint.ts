@@ -130,6 +130,41 @@ function evidenceHasAttachment(e: LintEvidence): boolean {
   return typeof e.imageUrl === "string" && e.imageUrl.startsWith("/objects/");
 }
 
+/**
+ * Task #709: the bot's effective upload set after the `/objects/` filter.
+ * This is the single source of truth for "what will the portal actually
+ * see attached?" — both reconciliation rules below and the existing
+ * keyword family route through this helper so the lint can never drift
+ * from `collectGroupEvidenceUrls`.
+ */
+function effectiveUploads(evidence: LintEvidence[]): LintEvidence[] {
+  return evidence.filter(evidenceHasAttachment);
+}
+
+/**
+ * Task #709: the conservative phrase set the prose-side reconciliation
+ * rule scans for. We deliberately keep this short and lexical — anything
+ * that promises a reviewer they'll see an attachment. Unit tests pin the
+ * exact set so additions are reviewable in one place.
+ */
+const PROSE_ATTACHMENT_PHRASE_RE = /\b(?:see\s+attached|attached\s+(?:screenshot|photo|photograph|picture|image|document|file|copy)|please\s+find\s+attached|enclosed\s+(?:is|are|please\s+find|herewith))\b/i;
+
+/**
+ * Task #709: the human-readable label we'll quote in the
+ * `unreferenced_attachment` finding. Prefers the operator-typed
+ * `evidence_type_name` (when not the opaque `ev_<digits>` SOP-runner
+ * stamp) and falls back to the file basename when that, too, is not
+ * opaque. Returns null when the only identifier on the row is opaque —
+ * the rule skips those rows so we never list a meaningless `ev_123`.
+ */
+function evidenceDisplayLabel(e: LintEvidence): string | null {
+  const name = (e.evidenceTypeName || "").trim();
+  if (name && !OPAQUE_EVIDENCE_NAME_RE.test(name)) return name;
+  const base = evidenceBasename(e.imageUrl);
+  if (base && !OPAQUE_EVIDENCE_NAME_RE.test(base.replace(/\.[^.]+$/, ""))) return base;
+  return null;
+}
+
 const HTML_BLOCK_RE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const HTML_TAG_RE = /<[^>]+>/g;
 const HTML_ENTITIES: Record<string, string> = {
@@ -486,6 +521,44 @@ export function lintDraft(
     results.push(...ruleDisputedLegBareOfEvidenceAndProse(legs, evidenceList, text));
   }
 
+  // Task #709: bidirectional reconciliation between the prose and the
+  // bot's effective upload set. Both rules route the upload check
+  // through `effectiveUploads` so they cannot drift from
+  // `collectGroupEvidenceUrls`. These run regardless of leg context —
+  // they only inspect text + evidence.
+  const uploads = effectiveUploads(evidenceList);
+  const proseAttachmentMatch = text.match(PROSE_ATTACHMENT_PHRASE_RE);
+  if (proseAttachmentMatch && uploads.length === 0) {
+    results.push({
+      ruleKey: "prose_claims_attachment_but_none_uploadable",
+      severity: "warn",
+      message: `Description says "${proseAttachmentMatch[0]}" but no attachments will be uploaded with this submission.`,
+    });
+  }
+  if (uploads.length > 0) {
+    const loweredText = text.toLowerCase();
+    const unreferenced: string[] = [];
+    for (const e of uploads) {
+      const label = evidenceDisplayLabel(e);
+      if (!label) continue; // opaque-only row — skip per spec
+      const name = (e.evidenceTypeName || "").trim();
+      const base = evidenceBasename(e.imageUrl);
+      const tokens: string[] = [];
+      if (name && !OPAQUE_EVIDENCE_NAME_RE.test(name)) tokens.push(name);
+      if (base && !OPAQUE_EVIDENCE_NAME_RE.test(base.replace(/\.[^.]+$/, ""))) tokens.push(base);
+      const referenced = tokens.some((t) => loweredText.includes(t.toLowerCase()));
+      if (!referenced) unreferenced.push(label);
+    }
+    if (unreferenced.length > 0) {
+      const unique = Array.from(new Set(unreferenced));
+      results.push({
+        ruleKey: "unreferenced_attachment",
+        severity: "info",
+        message: `Description does not reference attached ${unique.length === 1 ? "file" : "files"}: ${unique.join(", ")}.`,
+      });
+    }
+  }
+
   // Demoted keyword family — same matcher as before, severity dropped to
   // `info` so it surfaces in the lint payload without blocking the gate.
   // We match keywords against the evidence's type name AND its file basename
@@ -495,7 +568,7 @@ export function lintDraft(
   // would warn on every dispute that mentions a tracked keyword. The
   // attachment-present escape hatch is preserved so the historical false
   // positive on invoice 1864796540 / conf 15004552 still passes silently.
-  const anyAttachmentPresent = evidenceList.some(evidenceHasAttachment);
+  const anyAttachmentPresent = uploads.length > 0;
   for (const rule of EVIDENCE_KEYWORDS) {
     if (!rule.keyword.test(text)) continue;
     const matched = evidenceList.some((e) => evidenceMatchTexts(e).some((t) => rule.matches(t)));
