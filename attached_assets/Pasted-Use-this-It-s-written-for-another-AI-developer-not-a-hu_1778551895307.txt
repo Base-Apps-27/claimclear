@@ -1,0 +1,498 @@
+Use this. It’s written for another AI developer, not a human team.
+
+Produce a Test Instability Discovery Report for this codebase.
+Do not fix anything.
+Do not refactor anything.
+Do not suggest solutions yet.
+Do not summarize vaguely.
+Collect concrete facts, file paths, commands, and evidence.
+Purpose:
+I need enough information to design a stress-test harness that exposes order-dependent failures, hidden shared state, resource leaks, async cleanup problems, DB contamination, port conflicts, env leaks, and test isolation failures.
+Output in the exact structure below.
+# 0. Executive Snapshot
+Return:
+```json
+{
+  "project_type": "",
+  "language_runtime": "",
+  "package_manager": "",
+  "monorepo": true,
+  "test_frameworks": [],
+  "primary_test_command": "",
+  "single_file_test_command_template": "",
+  "single_test_name_command_template": "",
+  "supports_shuffle": true,
+  "supports_repeat": true,
+  "supports_json_output": true,
+  "runs_parallel_by_default": true,
+  "known_flake_pattern": "",
+  "highest_risk_shared_resources": [],
+  "recommended_stress_axis": []
+}
+
+1. Project/Test Topology
+
+Return a table:
+
+Item	Value	Evidence Path
+language/runtime		
+package manager		
+monorepo/workspaces		
+workspace/package names		
+app entry points		
+test directories		
+test file patterns		
+CI workflow files		
+global setup files		
+global teardown files		
+
+Include exact file paths.
+
+2. Test Commands
+
+Extract from package.json, Makefile, CI files, task runners, or equivalent.
+
+Return:
+
+{
+  "commands": {
+    "test": "",
+    "test_unit": "",
+    "test_integration": "",
+    "test_e2e": "",
+    "test_ci": "",
+    "single_file": "",
+    "single_test_name": "",
+    "shuffle_or_random_order": "",
+    "repeat": "",
+    "json_or_junit_output": "",
+    "typecheck": "",
+    "build": "",
+    "lint": "",
+    "db_setup": "",
+    "db_seed": "",
+    "db_reset": "",
+    "services_start": ""
+  },
+  "missing_commands": []
+}
+
+If no command exists, write null.
+
+3. Test Runner Capabilities
+
+Return:
+
+{
+  "test_runner": "",
+  "parallelism_default": "",
+  "parallelism_config_path": "",
+  "shuffle_supported": true,
+  "shuffle_command": "",
+  "random_seed_supported": true,
+  "seed_capture_method": "",
+  "repeat_supported": true,
+  "repeat_command": "",
+  "json_output_supported": true,
+  "json_output_command": "",
+  "junit_output_supported": true,
+  "junit_output_command": "",
+  "fail_fast_supported": true,
+  "fail_fast_command": "",
+  "single_file_supported": true,
+  "single_test_supported": true,
+  "timeout_defaults": "",
+  "retry_config": "",
+  "watch_mode": "",
+  "open_handle_detection": "",
+  "notes": []
+}
+
+4. CI Behavior
+
+Inspect CI/workflow configuration.
+
+Return table:
+
+Workflow	Trigger	Commands	Services	Parallel/Sharded	Retries	Cache	Artifacts	Evidence Path
+
+Also list CI env vars with secret values redacted.
+
+5. Known Failure Evidence
+
+Search logs, comments, TODOs, CI notes, flaky test markers, skipped tests, retries, quarantine files.
+
+Return:
+
+{
+  "known_failures": [
+    {
+      "test_file": "",
+      "test_name": "",
+      "error_message": "",
+      "stack_trace_excerpt": "",
+      "fails_in_full_suite": true,
+      "passes_in_isolation": true,
+      "ci_only": false,
+      "local_repro": "",
+      "evidence_path": ""
+    }
+  ],
+  "skipped_or_quarantined_tests": [
+    {
+      "file": "",
+      "test_name": "",
+      "reason": "",
+      "owner": "",
+      "reenable_criteria": ""
+    }
+  ],
+  "retry_usage": []
+}
+
+If no evidence found, return empty arrays.
+
+6. Shared Resource Inventory
+
+Search the codebase for shared resources used by tests.
+
+Return table:
+
+Resource Type	Resource Name	Created In	Reset/Cleanup In	Used By Tests	Risk	Evidence
+
+Resource types to check:
+
+* database
+* redis/cache
+* queues
+* background workers
+* cron/schedulers
+* timers/intervals
+* websockets
+* HTTP servers
+* mock API servers
+* browser contexts
+* local/session storage
+* filesystem/temp dirs
+* uploaded files
+* environment variables
+* feature flags
+* singleton services
+* dependency injection containers
+* in-memory maps/sets
+* global mocks/spies
+* test containers
+* external APIs
+* ports
+
+Risk must be one of:
+
+* low
+* medium
+* high
+* critical
+
+7. Database/Persistence Behavior
+
+If no DB exists, say so.
+
+Otherwise return:
+
+{
+  "database_type": "",
+  "test_database_strategy": "",
+  "test_db_url_env": "",
+  "shared_database": true,
+  "transaction_per_test": true,
+  "rollback_after_test": true,
+  "truncate_strategy": "",
+  "seed_strategy": "",
+  "migration_command": "",
+  "seed_command": "",
+  "reset_command": "",
+  "tables_frequently_mutated": [],
+  "tests_that_truncate_or_delete_shared_tables": [
+    {
+      "file": "",
+      "hook": "beforeEach|beforeAll|afterEach|afterAll|test",
+      "tables": [],
+      "evidence": ""
+    }
+  ],
+  "tests_that_depend_on_global_seed_data": [
+    {
+      "file": "",
+      "seed_dependency": "",
+      "evidence": ""
+    }
+  ],
+  "hardcoded_ids_or_names": [
+    {
+      "file": "",
+      "value": "",
+      "risk": "",
+      "evidence": ""
+    }
+  ]
+}
+
+8. Environment Mutation
+
+Search for process.env / env mutations / config overrides.
+
+Return:
+
+{
+  "env_mutations": [
+    {
+      "file": "",
+      "env_var": "",
+      "set_in": "",
+      "restored": true,
+      "restore_location": "",
+      "risk": "",
+      "evidence": ""
+    }
+  ],
+  "global_env_setup": [],
+  "feature_flags_used_in_tests": [],
+  "unrestored_env_risks": []
+}
+
+9. Server / Port / Socket Behavior
+
+Search for listen(), createServer(), WebSocketServer, mock servers, fixed ports.
+
+Return:
+
+{
+  "servers": [
+    {
+      "file": "",
+      "server_type": "http|websocket|mock-api|browser|other",
+      "port_strategy": "fixed|dynamic|unknown",
+      "port_value": "",
+      "await_ready": true,
+      "closed_after_test": true,
+      "cleanup_location": "",
+      "risk": "",
+      "evidence": ""
+    }
+  ],
+  "hardcoded_ports": [],
+  "open_handle_risks": [],
+  "websocket_tests": []
+}
+
+10. Timers / Background Work
+
+Search for setTimeout, setInterval, cron, scheduler, queue worker, polling.
+
+Return:
+
+{
+  "timers_and_workers": [
+    {
+      "file": "",
+      "type": "timeout|interval|cron|queue|worker|polling|scheduler",
+      "created_in": "",
+      "cleared_in": "",
+      "uses_fake_timers": true,
+      "restores_fake_timers": true,
+      "risk": "",
+      "evidence": ""
+    }
+  ],
+  "uncleared_timer_risks": []
+}
+
+11. Global State / Singletons
+
+Search for:
+
+* module-level Map
+* module-level Set
+* global variables
+* cached clients
+* singleton instances
+* static class fields
+* globalThis
+* memoized providers
+* test override hooks
+* __set*ForTests
+* reset*ForTests
+
+Return:
+
+{
+  "global_state": [
+    {
+      "file": "",
+      "state_name": "",
+      "state_type": "Map|Set|array|object|singleton|cache|static|globalThis|other",
+      "mutated_by": [],
+      "reset_method": "",
+      "tests_call_reset": true,
+      "risk": "",
+      "evidence": ""
+    }
+  ],
+  "test_override_hooks": [
+    {
+      "file": "",
+      "hook": "",
+      "reset_hook": "",
+      "used_by_tests": [],
+      "risk": ""
+    }
+  ]
+}
+
+12. Mocking Behavior
+
+Return:
+
+{
+  "mocking_framework": "",
+  "global_mocks": [
+    {
+      "file": "",
+      "mocked_target": "",
+      "restored": true,
+      "restore_location": "",
+      "risk": ""
+    }
+  ],
+  "module_mocks": [],
+  "spies_not_restored_risks": [],
+  "network_mocks": [],
+  "date_timer_mocks": []
+}
+
+13. Filesystem / Artifact Behavior
+
+Search for fs writes, temp dirs, reports, logs, snapshots, uploads.
+
+Return:
+
+{
+  "filesystem_writes": [
+    {
+      "file": "",
+      "path_pattern": "",
+      "unique_per_test": true,
+      "cleaned_before": true,
+      "cleaned_after": true,
+      "risk": "",
+      "evidence": ""
+    }
+  ],
+  "shared_artifact_risks": []
+}
+
+14. Parallelism and Order-Dependence Risks
+
+Identify likely order-dependent hazards.
+
+Return:
+
+{
+  "parallel_unsafe_tests": [
+    {
+      "file": "",
+      "reason": "",
+      "shared_resource": "",
+      "evidence": ""
+    }
+  ],
+  "order_dependency_risks": [
+    {
+      "file": "",
+      "risk_type": "seed_dependency|shared_db_delete|env_leak|singleton_leak|port_conflict|timer_leak|filesystem_collision|mock_leak|other",
+      "description": "",
+      "evidence": ""
+    }
+  ]
+}
+
+15. Existing Cleanup Hooks
+
+Return table:
+
+File	Hook	What It Cleans	What It Does Not Clean	Risk
+
+Include beforeEach, afterEach, beforeAll, afterAll, global setup/teardown.
+
+16. Candidate Stress Harness Design Inputs
+
+Based only on facts collected, return:
+
+{
+  "best_full_suite_command": "",
+  "best_single_file_command_template": "",
+  "best_single_test_command_template": "",
+  "best_shuffle_command": "",
+  "best_json_output_command": "",
+  "stress_axes_to_try": [
+    "shuffle_order",
+    "repeat_full_suite",
+    "serial_vs_parallel",
+    "random_seed",
+    "isolated_failed_file_reruns",
+    "env_variation",
+    "db_seed_reset_variation",
+    "port_randomization"
+  ],
+  "must_capture_per_run": [
+    "stdout",
+    "stderr",
+    "exit_code",
+    "failed_file",
+    "failed_test_name",
+    "random_seed",
+    "duration",
+    "env_snapshot_redacted",
+    "open_handles_if_available"
+  ],
+  "likely_first_failures_to_surface": []
+}
+
+17. Top Risks Ranked
+
+Return top 10 risks.
+
+Format:
+
+Rank	Risk	Evidence	Likely Symptom	Suggested Harness Probe
+
+Do not propose fixes yet. Only suggest how the stress harness should probe it.
+
+18. Missing Information
+
+List anything you could not determine from the repo.
+
+Format:
+
+{
+  "missing": [
+    {
+      "item": "",
+      "why_needed": "",
+      "how_to_collect": ""
+    }
+  ]
+}
+
+19. Final Output Rules
+
+* Use exact file paths.
+* Quote exact commands.
+* Do not include secrets.
+* Do not recommend fixes yet.
+* Do not write a harness yet.
+* Do not modify code.
+* If you are uncertain, say uncertain and why.
+* Prefer structured JSON/tables over prose.
+* Keep commentary minimal.
+* The goal is maximum usefulness for another AI that will design the stress harness later.
+
