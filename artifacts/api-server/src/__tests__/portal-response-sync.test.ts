@@ -106,15 +106,33 @@ test("parsePortalTicketHtml: extracts numeric note ids and bodies from a Freshde
   assert.equal(parsed.messages[1].messageId, "note_222");
 });
 
-test("parsePortalTicketHtml: falls back to a content hash when no structured items match", () => {
+test("parsePortalTicketHtml: returns zero messages when no structured conversation items match (no whole-page fallback)", () => {
+  // Regression guard for the 2026-05 contamination: the old last-resort
+  // fallback used to hash `stripTags(html)` of the entire page when
+  // neither Path A (`fw-comment-item`) nor Path B (`id="note_X"`)
+  // matched. For tickets with no carrier reply, that produced a single
+  // fake "message" whose body was the page chrome (title + theme CSS +
+  // `window.store` JSON), which the LLM then labelled `acknowledgment`,
+  // contaminating 603 rows in `portal_responses`. The contract is now:
+  // no structured matches → zero messages, even if `<body>` has visible
+  // text.
   const html = `<html><body><p>Just visible text — no structured conversation items.</p></body></html>`;
   const parsed = parsePortalTicketHtml(html, "1");
-  assert.equal(parsed.messages.length, 1);
-  assert.equal(parsed.messages[0].idIsHash, true);
-  assert.match(parsed.messages[0].messageId, /^hash:/);
-  // The fallback is stable across reads — same body → same id.
-  const second = parsePortalTicketHtml(html, "1");
-  assert.equal(second.messages[0].messageId, parsed.messages[0].messageId);
+  assert.equal(parsed.messages.length, 0);
+});
+
+test("parsePortalTicketHtml: page-chrome-only HTML (theme CSS, window.store) yields zero messages", () => {
+  // The exact shape of the 2026-05 garbage rows: a Freshdesk ticket
+  // page with header chrome and the inline theme stylesheet but no
+  // `fw-comments-list` / `fw-comment-item` blocks. Must produce zero
+  // messages so the diff layer inserts nothing.
+  const html = `<html><head><title>[#88264] Dispute - Invoice #1855277160 : Medical Answering Services</title></head>
+    <body>
+      <style>/* theme */ .portal--light { --fw-body-bg: #ffffff; --fw-header-bg: #ffffff; }</style>
+      <script>window.cspNonce = "abc=="; window.store = { portal: { id: 1 } };</script>
+    </body></html>`;
+  const parsed = parsePortalTicketHtml(html, "88264");
+  assert.equal(parsed.messages.length, 0);
 });
 
 test("parsePortalTicketHtml: extracts status + comments from the modern Freshdesk customer portal DOM", () => {

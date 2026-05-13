@@ -230,24 +230,20 @@ export function parsePortalTicketHtml(html: string, ticketId: string): PortalRea
     }
   }
 
-  // Last-resort fallback: nothing matched any structured pattern but
-  // the page clearly has body content. Hash the visible text so the
-  // sync still detects "this ticket has SOMETHING new" without
-  // inventing structure that isn't there.
-  if (messages.length === 0) {
-    const visible = stripTags(html);
-    if (visible.length > 0) {
-      messages.push({
-        messageId: hashContent(visible),
-        idIsHash: true,
-        authorName: null,
-        authorEmail: null,
-        postedAt: null,
-        bodyHtml: visible,
-        bodyText: visible,
-      });
-    }
-  }
+  // No last-resort fallback. Earlier versions of this parser used to
+  // hash `stripTags(html)` of the entire page when neither Path A nor
+  // Path B matched, on the theory that "this ticket has SOMETHING new"
+  // was better than silently dropping the read. In practice that path
+  // synthesised one fake "message" per scrape whose body was just the
+  // page chrome — Freshdesk's `<title>`, the inline `/* theme */`
+  // CSS-variables block, and the `window.cspNonce` / `window.store`
+  // bootstrap JSON — all of which `stripTags` reduces to plain text.
+  // That body then fed the LLM classifier (which obediently labelled
+  // it `acknowledgment`) and contaminated `portal_responses` with
+  // 603 garbage rows in 2026-05 alone. A ticket whose conversation
+  // contains zero structured carrier replies must yield zero messages,
+  // even if the page itself has visible text. The diff layer then
+  // correctly inserts nothing.
 
   return {
     ticketId,

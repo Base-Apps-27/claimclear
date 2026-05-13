@@ -352,7 +352,33 @@ export async function syncPortalResponsesForSubmission(
     };
   }
 
-  const fresh = diffPortalMessages(readerCtx.parsed!.messages, existing);
+  // Defence-in-depth guard against page-chrome leakage. The parser fix
+  // in `portal-reader.ts` removed the whole-page `stripTags(html)`
+  // last-resort fallback that was the proximate cause of the 2026-05
+  // contamination, but if any future regression resurrects it — or if
+  // a structured-message body ever contains the inline theme CSS / the
+  // Freshdesk bootstrap globals verbatim — we drop those messages
+  // BEFORE the LLM classifier runs (so a regression doesn't quietly
+  // burn tokens on garbage) and BEFORE they reach the DB / operator
+  // queue. These literal substrings cannot legitimately appear in a
+  // carrier reply on this portal.
+  const freshAll = diffPortalMessages(readerCtx.parsed!.messages, existing);
+  const fresh = freshAll.filter((m) => {
+    const t = m.bodyText;
+    const looksLikePageChrome =
+      t.includes("/* theme */") ||
+      t.includes("window.cspNonce") ||
+      t.includes("window.store =") ||
+      t.includes("--fw-body-bg:");
+    if (looksLikePageChrome) {
+      logger.warn(
+        { submissionId, ticketId, messageId: m.messageId, bodyHead: t.slice(0, 120) },
+        "Portal sync: dropping message body that matches page-chrome guard (parser regression suspected)",
+      );
+      return false;
+    }
+    return true;
+  });
   if (fresh.length === 0 || opts.dryRun) {
     return {
       submissionId,
@@ -441,13 +467,24 @@ export async function syncPortalResponsesForSubmission(
     };
   }));
 
-  const bodies: Array<{ msg: PortalReaderMessage; body: Record<string, unknown> }> = classifiedFresh.map((c) => {
+  // The page-chrome guard runs upstream (right after `diffPortalMessages`)
+  // so any garbage body is dropped before the classifier sees it. By
+  // this point, every entry in `classifiedFresh` is a real message.
+  const bodies: Array<{ msg: PortalReaderMessage; body: Record<string, unknown> }> = classifiedFresh
+    .map((c) => {
     return {
       msg: c.msg,
       body: {
         submissionId,
         responseType: c.responseType,
-        content: c.msg.bodyText.slice(0, 280),
+        // No truncation. The column is `text`, and the operator queue
+        // / classifier audit / re-classification path all need the
+        // full body. The historical 280-char `slice` here was a
+        // prototype leftover and was the proximate cause of the
+        // 2026-05 garbage-row contamination (it sliced page chrome
+        // down to a 280-char "subject-like" prefix that looked
+        // plausibly real to the LLM).
+        content: c.msg.bodyText,
         rawContent: c.msg.bodyText,
         bodyFormat: "text",
         subject: readerCtx.parsed!.subject ?? undefined,
