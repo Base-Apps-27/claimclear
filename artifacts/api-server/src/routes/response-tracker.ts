@@ -376,7 +376,13 @@ checkEmailRouter.post("/responses/check-email", asyncHandler(async (req, res): P
 // reader cron (Task #725) calls this endpoint with x-bot-token.
 export const recordPortalRouter: IRouter = Router();
 recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res): Promise<void> => {
-  const { submissionId, responseType, content, rawContent, bodyFormat, subject, senderEmail, senderName, externalMessageId } = req.body;
+  const {
+    submissionId, responseType, content, rawContent, bodyFormat, subject, senderEmail, senderName, externalMessageId,
+    // AI-classifier fields, forwarded by `inProcessRecordPortalPoster`
+    // and the standalone reader cron so portal_responses gets the same
+    // pill colours / summary / denial-reason pre-fill as the email path.
+    classifierSource, classifierConfidence, aiSummary, extractedAmount, extractedDeadline, requestedAction,
+  } = req.body;
 
   if (!submissionId || !responseType) {
     res.status(400).json({ error: "submissionId and responseType are required" });
@@ -388,6 +394,13 @@ recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res
 
   const [submission] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, submissionId));
   if (!submission) { res.status(404).json({ error: "Submission not found" }); return; }
+
+  const normalizedClassifierSource: "phrase_signature" | "ai" | "abstain" | undefined =
+    classifierSource === "phrase_signature" || classifierSource === "ai" || classifierSource === "abstain"
+      ? classifierSource : undefined;
+  const normalizedClassifierConfidence: "high" | "medium" | "low" | null | undefined =
+    classifierConfidence === "high" || classifierConfidence === "medium" || classifierConfidence === "low"
+      ? classifierConfidence : classifierConfidence === null ? null : undefined;
 
   const responseId = await processPortalResponse({
     claimId: null,
@@ -403,6 +416,12 @@ recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res
     senderName: typeof senderName === "string" ? senderName : undefined,
     externalMessageId: typeof externalMessageId === "string" ? externalMessageId : undefined,
     metadata: req.body.metadata || null,
+    classifierSource: normalizedClassifierSource,
+    classifierConfidence: normalizedClassifierConfidence,
+    aiSummary: typeof aiSummary === "string" ? aiSummary : undefined,
+    extractedAmount: typeof extractedAmount === "string" ? extractedAmount : undefined,
+    extractedDeadline: typeof extractedDeadline === "string" ? extractedDeadline : undefined,
+    requestedAction: typeof requestedAction === "string" ? requestedAction : undefined,
   });
 
   broadcastGroupEvent({

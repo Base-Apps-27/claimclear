@@ -171,7 +171,16 @@ export function parsePortalTicketHtml(html: string, ticketId: string): PortalRea
       "",
     );
     const bodyText = stripTags(bodyHtml).trim();
-    if (!bodyText) continue;
+    // Skip avatar-letter / one-character artifacts. Freshdesk renders
+    // a circular author avatar as `<div class="avatar">A</div>` and on
+    // some skins that bubbles into the comment-container when the real
+    // body is empty (commenter posted only an attachment). Anything
+    // shorter than a real word is noise — pin a minimum length so we
+    // don't materialize a portal_responses row from a single letter.
+    // (Caught by prod row #461: a one-char "A" body that wrongly
+    // flipped invoice 1861920910 into Ready to Review.)
+    const MIN_PORTAL_BODY_CHARS = 3;
+    if (bodyText.length < MIN_PORTAL_BODY_CHARS) continue;
     // Mix the timestamp into the hash so two comments with identical
     // bodies but different posted-at values don't collapse into one
     // (rare, but Freshdesk doesn't guarantee bodies are unique).

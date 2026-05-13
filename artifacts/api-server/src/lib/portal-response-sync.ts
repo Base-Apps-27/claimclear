@@ -20,6 +20,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { portalBrowserGate } from "./portal-browser-gate";
 import { classifyByPhrase } from "./email-phrase-classifier";
+import { tryClassifyInboundEmail, type InboundEmailContext, type ClassifiedEmail } from "./inbound-email-classifier";
 import {
   readPortalTicket,
   hashContent,
@@ -163,12 +164,35 @@ export async function inProcessRecordPortalPoster(
     .from(portalSubmissionsTable)
     .where(eq(portalSubmissionsTable.id, submissionId));
   if (!submission) return { ok: false, status: 404, data: { error: "submission not found" } };
+  // Widen the in-process poster to forward the full ClassifiedDecision
+  // surface (the sync builder now produces approval/denial/etc. via the
+  // LLM, not just acknowledgment/other) plus the AI-classifier fields
+  // processPortalResponse persists for the operator queue. Untyped
+  // `body.responseType` falls back to "other" so legacy callers still
+  // POST cleanly.
+  const VALID_RESPONSE_TYPES = new Set([
+    "approval", "denial", "partial_approval", "info_request", "acknowledgment", "other",
+  ] as const);
+  type RT = "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
+  const responseType: RT = typeof body.responseType === "string" && (VALID_RESPONSE_TYPES as Set<string>).has(body.responseType)
+    ? (body.responseType as RT)
+    : "other";
+  const classifierSourceRaw = body.classifierSource;
+  const classifierSource: "phrase_signature" | "ai" | "abstain" | undefined =
+    classifierSourceRaw === "phrase_signature" || classifierSourceRaw === "ai" || classifierSourceRaw === "abstain"
+      ? classifierSourceRaw
+      : undefined;
+  const classifierConfidenceRaw = body.classifierConfidence;
+  const classifierConfidence: "high" | "medium" | "low" | null | undefined =
+    classifierConfidenceRaw === "high" || classifierConfidenceRaw === "medium" || classifierConfidenceRaw === "low"
+      ? classifierConfidenceRaw
+      : classifierConfidenceRaw === null ? null : undefined;
   const responseId = await processPortalResponse({
     claimId: null,
     invoiceGroupId: submission.invoiceGroupId,
     submissionId: submission.id,
     portalTicketId: submission.portalTicketId || "",
-    responseType: (body.responseType as "acknowledgment" | "other") ?? "other",
+    responseType,
     content: typeof body.content === "string" ? body.content : "",
     rawContent: typeof body.rawContent === "string" ? body.rawContent : undefined,
     bodyFormat: body.bodyFormat === "html" ? "html" : "text",
@@ -177,6 +201,12 @@ export async function inProcessRecordPortalPoster(
     senderName: typeof body.senderName === "string" ? body.senderName : undefined,
     externalMessageId: typeof body.externalMessageId === "string" ? body.externalMessageId : undefined,
     metadata: (body.metadata as Record<string, unknown> | null) ?? null,
+    classifierSource,
+    classifierConfidence,
+    aiSummary: typeof body.aiSummary === "string" ? body.aiSummary : undefined,
+    extractedAmount: typeof body.extractedAmount === "string" ? body.extractedAmount : undefined,
+    extractedDeadline: typeof body.extractedDeadline === "string" ? body.extractedDeadline : undefined,
+    requestedAction: typeof body.requestedAction === "string" ? body.requestedAction : undefined,
   });
   // Mirror the route-layer side effect so the operator queue updates
   // live during a backfill --apply just like it does on a normal POST.
@@ -334,35 +364,117 @@ export async function syncPortalResponsesForSubmission(
     };
   }
 
+  // Load context once per submission for the LLM escalation path. The
+  // sync touches one ticket at a time, so a single SELECT here is
+  // cheaper than re-querying for every fresh message. We pull the same
+  // two fields the email path's `loadInboundContext` exposes (payor +
+  // error type) — service date / claim amount aren't group-scoped on
+  // portal so we leave them null.
+  const [groupRow] = await db
+    .select({
+      payorEmail: invoiceGroupsTable.payorEmail,
+      errorTypeName: invoiceGroupsTable.errorTypeName,
+    })
+    .from(invoiceGroupsTable)
+    .where(eq(invoiceGroupsTable.id, sub.invoiceGroupId));
+  const inboundCtx: InboundEmailContext = {
+    payorName: groupRow?.payorEmail ?? null,
+    errorTypeName: groupRow?.errorTypeName ?? null,
+  };
+
   const poster = __posterImpl ?? defaultPoster;
-  const bodies: Array<{ msg: PortalReaderMessage; body: Record<string, unknown> }> = fresh.map((msg) => {
-    // Run portal text through the same deterministic phrase classifier
-    // email responses use, so MAS auto-acknowledgments ("Ticket Under
-    // Review", etc.) get tagged correctly and downstream auto-mark as
-    // processed instead of sitting in the operator queue. Falls back to
-    // "other" when no phrase signature matches — exact same contract as
-    // the email path before LLM escalation.
+  // Resolve the LLM in parallel for every fresh message. Phrase-matched
+  // bodies short-circuit to acknowledgment without hitting the model;
+  // only abstains pay the round-trip. We await up front (rather than
+  // inside the .map) so the subsequent POSTs can pipeline without each
+  // one triggering its own model call sequentially.
+  const classifiedFresh: Array<{
+    msg: PortalReaderMessage;
+    phraseSignature: string | null;
+    classifierSource: "phrase_signature" | "ai" | "abstain";
+    classifierConfidence: "high" | "medium" | "low" | null;
+    responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
+    ai: ClassifiedEmail | null;
+  }> = await Promise.all(fresh.map(async (msg) => {
+    // 1) Deterministic phrase pre-filter (same module the email path
+    // uses) — catches MAS auto-acks and the duplicate-correction
+    // template for free, no tokens spent.
     const phrase = classifyByPhrase(msg.bodyText);
-    const responseType: "acknowledgment" | "other" = phrase.outcome === "acknowledgment" ? "acknowledgment" : "other";
+    if (phrase.outcome === "acknowledgment") {
+      return {
+        msg,
+        phraseSignature: phrase.selectedSignatureId,
+        classifierSource: "phrase_signature" as const,
+        classifierConfidence: "high" as const,
+        responseType: "acknowledgment" as const,
+        ai: null,
+      };
+    }
+    // 2) LLM backstop. Returns null on failure (rate limit, parse
+    // error, etc.); we treat that as `abstain` so the row lands
+    // unprocessed for manual review and processPortalResponse skips
+    // the group transition. This matches the email path's contract
+    // exactly — a portal message we can't classify never auto-flips
+    // a group into Ready to Review.
+    const ai = await tryClassifyInboundEmail(
+      readerCtx.parsed!.subject ?? "",
+      msg.bodyText,
+      inboundCtx,
+    );
+    if (!ai) {
+      return {
+        msg,
+        phraseSignature: null,
+        classifierSource: "abstain" as const,
+        classifierConfidence: null,
+        responseType: "other" as const,
+        ai: null,
+      };
+    }
     return {
       msg,
+      phraseSignature: null,
+      classifierSource: "ai" as const,
+      classifierConfidence: ai.confidence,
+      responseType: ai.decision,
+      ai,
+    };
+  }));
+
+  const bodies: Array<{ msg: PortalReaderMessage; body: Record<string, unknown> }> = classifiedFresh.map((c) => {
+    return {
+      msg: c.msg,
       body: {
         submissionId,
-        responseType,
-          content: msg.bodyText.slice(0, 280),
-        rawContent: msg.bodyText,
+        responseType: c.responseType,
+        content: c.msg.bodyText.slice(0, 280),
+        rawContent: c.msg.bodyText,
         bodyFormat: "text",
         subject: readerCtx.parsed!.subject ?? undefined,
-        senderEmail: msg.authorEmail ?? undefined,
-        senderName: msg.authorName ?? undefined,
-        externalMessageId: msg.messageId,
+        senderEmail: c.msg.authorEmail ?? undefined,
+        senderName: c.msg.authorName ?? undefined,
+        externalMessageId: c.msg.messageId,
+        // Forward the AI fields so the in-process poster (and the HTTP
+        // route, when called from the standalone reader cron) can
+        // persist them on portal_responses for the operator queue's
+        // pill colours, summary, denial-reason picker pre-fill, etc.
+        classifierSource: c.classifierSource,
+        classifierConfidence: c.classifierConfidence,
+        aiSummary: c.ai?.summary ?? null,
+        extractedAmount: c.ai?.amount ?? null,
+        extractedDeadline: c.ai?.deadline ?? null,
+        requestedAction: c.ai?.requestedAction ?? null,
         metadata: {
-          portalMessageId: msg.messageId,
-          contentHash: hashContent(msg.bodyText),
+          portalMessageId: c.msg.messageId,
+          contentHash: hashContent(c.msg.bodyText),
           portalStatus: readerCtx.parsed!.status,
-          postedAt: msg.postedAt,
+          postedAt: c.msg.postedAt,
           source: "portal_reader",
-          phraseSignature: phrase.selectedSignatureId,
+          phraseSignature: c.phraseSignature,
+          // Stash the model's full structured output so audit / future
+          // re-classification can re-use it without re-asking the LLM.
+          aiNewInvoiceNumber: c.ai?.newInvoiceNumber ?? null,
+          aiSuggestedPayorDenialReason: c.ai?.suggestedPayorDenialReason ?? null,
         },
       },
     };
