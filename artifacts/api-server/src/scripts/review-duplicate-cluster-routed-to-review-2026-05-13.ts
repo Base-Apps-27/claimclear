@@ -306,7 +306,10 @@ async function main() {
 
   // 3) Rescrape every verdict-carrier ticket (and every sibling, so the
   // JSON sidecar shows the full cluster picture). Cached on disk.
-  const cache = noRescrape ? new Map<string, RescrapeRow>() : loadRescrapeCache();
+  // Always load the cache; `--no-rescrape` just suppresses NEW scrapes.
+  // Without this, a no-rescrape final-emit pass would lose all the work
+  // the chunked scrape runs already wrote to disk.
+  const cache = loadRescrapeCache();
   const allTicketIds = new Set<string>();
   for (const subs of subsByGroup.values()) {
     for (const s of subs) if (s.portal_ticket_id) allTicketIds.add(s.portal_ticket_id);

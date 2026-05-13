@@ -101,3 +101,15 @@ id = "CdSgIT3TsYkaNmuBA6cGd"
 uri = "file://exports/silent-groups-2026-05-12.csv"
 type = "table"
 title = "Silent groups (Awaiting Response > 7 days, no payor response logged)"
+
+[[outputs]]
+id = "zwnYzqtBedL0D6ffWmUqH"
+uri = "file://artifacts/api-server/exports/duplicate-cluster-routed-review-2026-05-13.csv"
+type = "table"
+title = "Duplicate-cluster routed-to-review — CSV (213 groups)"
+
+[[outputs]]
+id = "SaeNlTMT0tfCAg4I-U0q9"
+uri = "file://artifacts/api-server/exports/duplicate-cluster-routed-review-2026-05-13.json"
+type = "unspecified"
+title = "Duplicate-cluster routed-to-review — JSON sidecar (full bodies)"
