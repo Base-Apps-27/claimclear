@@ -20,7 +20,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { portalBrowserGate } from "./portal-browser-gate";
 import { classifyByPhrase } from "./email-phrase-classifier";
-import { tryClassifyInboundEmail, type InboundEmailContext, type ClassifiedEmail } from "./inbound-email-classifier";
+import { tryClassifyInboundEmail, type InboundEmailContext, type ClassifierCallResult } from "./inbound-email-classifier";
 import {
   readPortalTicket,
   hashContent,
@@ -394,7 +394,7 @@ export async function syncPortalResponsesForSubmission(
     classifierSource: "phrase_signature" | "ai" | "abstain";
     classifierConfidence: "high" | "medium" | "low" | null;
     responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
-    ai: ClassifiedEmail | null;
+    ai: ClassifierCallResult | null;
   }> = await Promise.all(fresh.map(async (msg) => {
     // 1) Deterministic phrase pre-filter (same module the email path
     // uses) — catches MAS auto-acks and the duplicate-correction
@@ -435,8 +435,8 @@ export async function syncPortalResponsesForSubmission(
       msg,
       phraseSignature: null,
       classifierSource: "ai" as const,
-      classifierConfidence: ai.confidence,
-      responseType: ai.decision,
+      classifierConfidence: ai.result.confidence,
+      responseType: ai.result.decision,
       ai,
     };
   }));
@@ -460,10 +460,10 @@ export async function syncPortalResponsesForSubmission(
         // pill colours, summary, denial-reason picker pre-fill, etc.
         classifierSource: c.classifierSource,
         classifierConfidence: c.classifierConfidence,
-        aiSummary: c.ai?.summary ?? null,
-        extractedAmount: c.ai?.amount ?? null,
-        extractedDeadline: c.ai?.deadline ?? null,
-        requestedAction: c.ai?.requestedAction ?? null,
+        aiSummary: c.ai?.result.summary ?? null,
+        extractedAmount: c.ai?.result.amount ?? null,
+        extractedDeadline: c.ai?.result.deadline ?? null,
+        requestedAction: c.ai?.result.requestedAction ?? null,
         metadata: {
           portalMessageId: c.msg.messageId,
           contentHash: hashContent(c.msg.bodyText),
@@ -471,10 +471,13 @@ export async function syncPortalResponsesForSubmission(
           postedAt: c.msg.postedAt,
           source: "portal_reader",
           phraseSignature: c.phraseSignature,
-          // Stash the model's full structured output so audit / future
-          // re-classification can re-use it without re-asking the LLM.
-          aiNewInvoiceNumber: c.ai?.newInvoiceNumber ?? null,
-          aiSuggestedPayorDenialReason: c.ai?.suggestedPayorDenialReason ?? null,
+          // Stash the model's full structured output + token usage so
+          // audit / re-classification / spend dashboards can read them
+          // back without re-querying the LLM. Mirrors the email path's
+          // `metadata.classifierUsage` shape.
+          aiNewInvoiceNumber: c.ai?.result.newInvoiceNumber ?? null,
+          aiSuggestedPayorDenialReason: c.ai?.result.suggestedPayorDenialReason ?? null,
+          classifierUsage: c.ai?.usage ?? null,
         },
       },
     };

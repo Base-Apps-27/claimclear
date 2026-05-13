@@ -103,14 +103,6 @@ export const SIGNATURES: PhraseSignature[] = [
     payor: "Medical Answering Services",
     exampleId: 112,
   },
-  {
-    id: "mas_correction_30_days",
-    phrase: "Corrections can take up to 30 days before you receive a response",
-    outcome: "acknowledgment",
-    confidence: "high",
-    payor: "Medical Answering Services",
-    exampleId: 70,
-  },
   // Duplicate-correction notification. The earliest cohort of dispute
   // submissions filed one ticket PER LEG instead of per invoice, which
   // produced 1,182+ duplicate Freshdesk tickets across 4-leg invoices.
@@ -122,16 +114,16 @@ export const SIGNATURES: PhraseSignature[] = [
   //    Corrections - Ticket Closed
   //    TPIssues.medanswering.com is not used for trip corrections.
   //    Instead, you must enter a correction through your MAS portal."
-  // The 30-days line is already covered by `mas_correction_30_days`, so
-  // most variants get tagged correctly today — but if MAS ever drops
-  // the 30-days line we lose the ack and the LLM would (mis)classify
-  // the "Corrections - Ticket Closed" tail as an `info_request`,
-  // wrongly flipping the canonical per-invoice group into Ready to
-  // Review. This second signature pins the duplicate-template head so
-  // detection survives that drift. Outcome is `acknowledgment` because
-  // the message is purely a "you already filed this" status ping — the
-  // real response is on the canonical per-invoice ticket; nothing for
-  // the operator to do here.
+  // Two signatures match this body — `mas_correction_30_days` (because
+  // the template embeds the 30-days line) and this one. We list the
+  // duplicate-template signature FIRST so `classifyByPhrase`'s
+  // declaration-order tie-break selects the more-specific one — the
+  // duplicate-cluster resolver keys off `selectedSignatureId`, so
+  // mis-labelling a satellite as "generic 30-days ack" would hide it
+  // from the resolver. Outcome is `acknowledgment` because the message
+  // is purely a "you already filed this" status ping; the real response
+  // is on the canonical per-invoice ticket and there is nothing for the
+  // operator to do here.
   {
     id: "mas_duplicate_correction_already_submitted",
     phrase: "previous correction was submitted",
@@ -139,6 +131,14 @@ export const SIGNATURES: PhraseSignature[] = [
     confidence: "high",
     payor: "Medical Answering Services",
     exampleId: 183,
+  },
+  {
+    id: "mas_correction_30_days",
+    phrase: "Corrections can take up to 30 days before you receive a response",
+    outcome: "acknowledgment",
+    confidence: "high",
+    payor: "Medical Answering Services",
+    exampleId: 70,
   },
   // The standard Freshdesk auto-receipt — "your ticket has been created".
   // Almost all of these are already correctly tagged; pinning a signature
