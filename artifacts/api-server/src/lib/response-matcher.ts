@@ -574,7 +574,7 @@ export async function processPortalResponse(data: {
   invoiceGroupId?: number | null;
   submissionId: number;
   portalTicketId: string;
-  responseType: "approval" | "denial" | "partial_approval" | "info_request" | "acknowledgment" | "other";
+  responseType: ClassifiedDecision;
   content: string;
   /** Full body of the portal message; preserved verbatim for UI display. */
   rawContent?: string;
@@ -594,6 +594,19 @@ export async function processPortalResponse(data: {
    *  reader (Task #725) can dedup on submissionId + externalMessageId. */
   externalMessageId?: string | null;
   metadata?: Record<string, unknown> | null;
+  // ─── AI-classifier passthrough (parity with `processEmailResponse`) ───
+  // The portal sync (`syncPortalResponsesForSubmission`) now runs the
+  // same phrase→LLM classifier email responses use, so portal rows
+  // get pill-coloured correctly on Responses Awaiting Review and the
+  // operator's denial-reason picker pre-fills. These six fields mirror
+  // what the email path persists; all optional so callers that don't
+  // classify (older bots, the integration-test seam) still work.
+  classifierSource?: "phrase_signature" | "ai" | "abstain";
+  classifierConfidence?: "high" | "medium" | "low" | null;
+  aiSummary?: string | null;
+  extractedAmount?: string | null;
+  extractedDeadline?: string | null;
+  requestedAction?: string | null;
 }): Promise<number> {
   // Post-cutover all portal submissions are group-scoped. Reject any caller
   // still passing a claim-only payload so we surface stragglers immediately.
@@ -603,6 +616,13 @@ export async function processPortalResponse(data: {
     );
   }
   const invoiceGroupId = data.invoiceGroupId;
+
+  // Same auto-mark-processed gate the email path uses: phrase-classified
+  // acknowledgments (MAS auto-acks like "Ticket Under Review") clear
+  // themselves so the inbox isn't drowned. Untyped callers default to
+  // "abstain" so behaviour stays the legacy "always processed=false".
+  const classifierSource = data.classifierSource ?? "abstain";
+  const autoMarkProcessed = shouldAutoMarkProcessed(data.responseType, classifierSource);
 
   const [response] = await db.insert(portalResponsesTable).values({
     claimId: null,
@@ -621,48 +641,82 @@ export async function processPortalResponse(data: {
     matchedVia: `portal_ticket_id:${data.portalTicketId}`,
     matchConfidence: "high",
     autoLinked: true,
-    processed: false,
+    processed: autoMarkProcessed,
+    aiSummary: data.aiSummary ?? null,
+    extractedAmount: data.extractedAmount ?? null,
+    extractedDeadline: data.extractedDeadline ?? null,
+    requestedAction: data.requestedAction ?? null,
+    classifierSource,
+    classifierConfidence: data.classifierConfidence ?? null,
     metadata: data.metadata || null,
   }).returning();
 
+  // Match the email path's note voice so the timeline reads the same
+  // regardless of inbound channel. Acknowledgments → "Acknowledged",
+  // abstain → "Unclassified", everything else → typed label + summary.
+  const senderLabel = data.senderName || data.senderEmail || "portal user";
+  const isAcknowledgment = data.responseType === "acknowledgment";
+  const noteContent = (() => {
+    if (isAcknowledgment) {
+      const base = `Acknowledged via portal (ticket ${data.portalTicketId}) by ${senderLabel} (proof of receipt — no action required)`;
+      return data.aiSummary ? `${base}: ${data.aiSummary}` : `${base}.`;
+    }
+    if (classifierSource === "abstain") {
+      return `Unclassified portal response received (ticket ${data.portalTicketId}) from ${senderLabel} — left for manual review (no signature match and AI unavailable).`;
+    }
+    const headline = `${typeLabelFor(data.responseType)} response received via portal (ticket ${data.portalTicketId}) from ${senderLabel}`;
+    return data.aiSummary ? `${headline}: ${data.aiSummary}` : `${headline}.`;
+  })();
   await db.insert(notesTable).values({
     claimId: null,
     invoiceGroupId,
     type: "reply_parsed",
-    content: `Portal response received for ticket ${data.portalTicketId}: ${data.responseType}`,
+    content: noteContent,
     author: "Response Tracker",
   });
 
   await db.insert(auditLogsTable).values({
     invoiceGroupId,
     action: "response_received",
-    details: `${data.responseType} response from portal (ticket: ${data.portalTicketId})`,
+    details: `${data.responseType} response from portal (ticket: ${data.portalTicketId}, source: ${classifierSource})`,
     metadata: {
       responseId: response.id,
       source: "portal",
       responseType: data.responseType,
       portalTicketId: data.portalTicketId,
+      classifierSource,
+      aiSummary: data.aiSummary ?? undefined,
     },
     userEmail: "system",
     userName: "Response Tracker",
   });
 
-  // Task #547: write "Ready to Review" (phase=response_received) so the
-  // verdict endpoint's `response-pending` gate accepts the operator's
-  // Approved/Denied click. "Needs Review" derives to phase=triage.
-  await transitionGroupStatus({
-    groupId: invoiceGroupId,
-    newStatus: MATCHER_CLASSIFIED_TARGET_STATUS,
-    source: "portal_response_matcher",
-    reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
-    actor: { userEmail: "system", userName: "Response Tracker" },
-    systemOverride: true,
-  });
+  // Mirror the email-path transition gate: acknowledgments (silent
+  // receipts) and abstain rows must NOT promote the group to "Ready
+  // to Review" — they sit on the row's processed/Unprocessed flag for
+  // the manual queue. Only typed decisions (approval/denial/etc.) flip
+  // the group into the operator's verdict lane.
+  const skipTransition = isAcknowledgment || classifierSource === "abstain";
+  if (!skipTransition) {
+    // Task #547: write "Ready to Review" (phase=response_received) so the
+    // verdict endpoint's `response-pending` gate accepts the operator's
+    // Approved/Denied click. "Needs Review" derives to phase=triage.
+    await transitionGroupStatus({
+      groupId: invoiceGroupId,
+      newStatus: MATCHER_CLASSIFIED_TARGET_STATUS,
+      source: "portal_response_matcher",
+      reason: `${data.responseType} response received from portal (ticket: ${data.portalTicketId}) — awaiting staff review`,
+      actor: { userEmail: "system", userName: "Response Tracker" },
+      systemOverride: true,
+    });
+  }
 
   logger.info({
     responseId: response.id,
     invoiceGroupId,
     responseType: data.responseType,
+    classifierSource,
+    transitioned: !skipTransition,
     portalTicketId: data.portalTicketId,
   }, "Portal response processed and linked to invoice group");
 
