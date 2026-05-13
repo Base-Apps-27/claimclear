@@ -106,7 +106,7 @@ title = "Silent groups (Awaiting Response > 7 days, no payor response logged)"
 id = "zwnYzqtBedL0D6ffWmUqH"
 uri = "file://artifacts/api-server/exports/duplicate-cluster-routed-review-2026-05-13.csv"
 type = "table"
-title = "Duplicate-cluster routed-to-review — CSV (213 groups)"
+title = "Duplicate-cluster routed-to-review — CSV (213 rows)"
 
 [[outputs]]
 id = "SaeNlTMT0tfCAg4I-U0q9"
