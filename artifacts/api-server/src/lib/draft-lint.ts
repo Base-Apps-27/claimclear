@@ -51,14 +51,27 @@ export interface LintLeg {
   disposition?: string | null;
   /** Pinned values: portal_dispute | dispute | hold | cannot_dispute | non_issue | null. */
   sopOutcome?: string | null;
-  /** Bookmark in the SOP decision tree at the moment the SOP was committed. */
+  /** Bookmark in the SOP decision tree at the moment the SOP was committed.
+   *  Used (along with `sopAnswerNodeIds`) by the portal-submission route to
+   *  compute `requiredEvidenceNodeIds` from the path the operator actually
+   *  walked rather than the entire decision tree. */
   sopNodeId?: string | null;
+  /** Decision-tree node ids the operator answered on the way to the
+   *  terminal — drawn from `claims.sop_answers[].nodeId`. Combined with
+   *  `sopNodeId` this is the leg's walked path. Optional so the existing
+   *  keyword/structural unit tests that synthesize legs by hand keep
+   *  compiling; in those tests the caller pre-computes
+   *  `requiredEvidenceNodeIds` directly. */
+  sopAnswerNodeIds?: string[];
   /** Whether this leg participates in the dispute (`included_in_dispute`).
    *  False legs are excluded from every structural rule below. */
   includedInDispute?: boolean;
   /** Set of decision-tree node ids whose `evidenceRequirements[].required`
-   *  is true on the leg's errorType decisionTree. Empty when the errorType
-   *  has no required-evidence nodes (the rule becomes a no-op). */
+   *  is true AND that the operator actually visited on this leg's walk.
+   *  Empty when the errorType has no required-evidence nodes on the walked
+   *  path, or when the leg has no recorded walk (legacy claims) — in either
+   *  case the rule becomes a no-op for this leg. See
+   *  `requiredEvidenceNodeIdsForWalk` for how the route derives this. */
   requiredEvidenceNodeIds?: string[];
 }
 
@@ -585,25 +598,45 @@ export function lintDraft(
 }
 
 /**
- * Task #707: derive the set of decision-tree node ids whose
- * `evidenceRequirements[].required` is `true`. Returns an empty array when
- * the tree shape doesn't match (legacy / null trees) — the caller treats
- * "no required nodes" as "rule is a no-op for this leg", which matches the
- * historical behaviour for errorTypes whose authors haven't marked any
- * evidence as required.
+ * Task #735: derive the set of decision-tree node ids whose
+ * `evidenceRequirements[].required` is `true` AND that the operator
+ * actually visited on this leg's walk. The walk is the union of every
+ * `nodeId` recorded in `claims.sop_answers` plus the leg's terminal
+ * `sop_node_id` bookmark.
+ *
+ * Replaces the previous tree-wide collection (Task #707) which produced
+ * false-positive lint failures: most error-type trees branch into several
+ * terminals, each with its own required-evidence list, but only one path
+ * is ever walked per leg. The tree-wide check demanded uploads stamped
+ * with sibling-terminal ids the operator never touched.
+ *
+ * Safety choice: when the leg has no recorded walk (legacy claims with
+ * empty `sop_answers` and null `sop_node_id`), the helper returns `[]`
+ * so the rule becomes a no-op for that leg — better to under-enforce on
+ * historical rows than to silently demand evidence stamps for every
+ * required-bearing node in the tree, which is exactly the bug we're
+ * fixing here. New legs always carry at least the terminal id, so this
+ * fallback only matters for pre-Task-#735 data.
  */
-export function requiredEvidenceNodeIdsFromTree(
+export function requiredEvidenceNodeIdsForWalk(
   decisionTree: unknown,
+  visitedNodeIds: ReadonlyArray<string> | null | undefined,
 ): string[] {
   if (!decisionTree || typeof decisionTree !== "object") return [];
   const nodes = (decisionTree as { nodes?: unknown }).nodes;
   if (!Array.isArray(nodes)) return [];
+  if (!visitedNodeIds || visitedNodeIds.length === 0) return [];
+  const visited = new Set(
+    visitedNodeIds.filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  if (visited.size === 0) return [];
   const out: string[] = [];
   for (const n of nodes) {
     if (!n || typeof n !== "object") continue;
     const id = (n as { id?: unknown }).id;
+    if (typeof id !== "string" || !visited.has(id)) continue;
     const reqs = (n as { evidenceRequirements?: unknown }).evidenceRequirements;
-    if (typeof id !== "string" || !Array.isArray(reqs)) continue;
+    if (!Array.isArray(reqs)) continue;
     const hasRequired = reqs.some(
       (r) => r && typeof r === "object" && (r as { required?: unknown }).required === true,
     );

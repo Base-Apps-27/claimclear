@@ -9,7 +9,7 @@ import { denyClerk } from "../middlewares/denyClerk";
 import { logger } from "../lib/logger";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
-import { lintDraft, requiredEvidenceNodeIdsFromTree, type LintEvidence, type LintResult } from "../lib/draft-lint";
+import { lintDraft, requiredEvidenceNodeIdsForWalk, type LintEvidence, type LintResult } from "../lib/draft-lint";
 import { primaryClaimIdForGroup } from "../lib/group-claims";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
@@ -96,9 +96,13 @@ async function loadGroupLintEvidence(
 }
 
 /**
- * Task #707: build the per-leg structural-rule context from the group's
+ * Task #735: build the per-leg structural-rule context from the group's
  * legs. Loads the legs' errorType decision trees in a single batched
- * lookup and derives `requiredEvidenceNodeIds` per leg from the tree.
+ * lookup, then derives `requiredEvidenceNodeIds` from the path the
+ * operator actually walked (visited `sopAnswers[].nodeId` ∪ terminal
+ * `sopNodeId`) rather than the entire tree. Legs with no recorded walk
+ * (legacy claims) get an empty set — see `requiredEvidenceNodeIdsForWalk`
+ * for why this is the deliberately-safe fallback.
  */
 async function buildLintLegs(
   rides: (typeof claimsTable.$inferSelect)[],
@@ -109,19 +113,32 @@ async function buildLintLegs(
     const id = parseInt(r.errorTypeId, 10);
     if (!isNaN(id)) errorTypeIds.add(id);
   }
-  const requiredByErrorTypeId = new Map<number, string[]>();
+  const treeByErrorTypeId = new Map<number, unknown>();
   if (errorTypeIds.size > 0) {
     const rows = await db
       .select({ id: errorTypesTable.id, decisionTree: errorTypesTable.decisionTree })
       .from(errorTypesTable)
       .where(inArray(errorTypesTable.id, Array.from(errorTypeIds)));
     for (const row of rows) {
-      requiredByErrorTypeId.set(row.id, requiredEvidenceNodeIdsFromTree(row.decisionTree));
+      treeByErrorTypeId.set(row.id, row.decisionTree);
     }
   }
   return rides.map((r) => {
     const etId = r.errorTypeId ? parseInt(r.errorTypeId, 10) : NaN;
-    const required = !isNaN(etId) ? requiredByErrorTypeId.get(etId) ?? [] : [];
+    const tree = !isNaN(etId) ? treeByErrorTypeId.get(etId) : undefined;
+    // Walked path = every answered nodeId plus the final bookmark.
+    // `sopAnswers` is jsonb; defensively narrow the shape.
+    const answers = Array.isArray(r.sopAnswers) ? r.sopAnswers : [];
+    const sopAnswerNodeIds: string[] = [];
+    for (const a of answers) {
+      if (a && typeof a === "object") {
+        const nid = (a as { nodeId?: unknown }).nodeId;
+        if (typeof nid === "string" && nid.length > 0) sopAnswerNodeIds.push(nid);
+      }
+    }
+    const visited: string[] = [...sopAnswerNodeIds];
+    if (r.sopNodeId) visited.push(r.sopNodeId);
+    const required = requiredEvidenceNodeIdsForWalk(tree, visited.length > 0 ? visited : null);
     return {
       id: r.id,
       confNumber: r.confNumber,
@@ -130,6 +147,7 @@ async function buildLintLegs(
       disposition: r.disposition,
       sopOutcome: r.sopOutcome,
       sopNodeId: r.sopNodeId,
+      sopAnswerNodeIds,
       includedInDispute: r.includedInDispute,
       requiredEvidenceNodeIds: required,
     };

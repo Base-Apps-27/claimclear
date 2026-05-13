@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 
 import {
   lintDraft,
-  requiredEvidenceNodeIdsFromTree,
+  requiredEvidenceNodeIdsForWalk,
   type LintSubmission,
   type LintClaim,
   type LintEvidence,
@@ -219,10 +219,141 @@ const errorTypeTree = {
   ],
 };
 
-test("requiredEvidenceNodeIdsFromTree returns only nodes whose requirements are required:true", () => {
-  assert.deepEqual(requiredEvidenceNodeIdsFromTree(errorTypeTree), ["n1"]);
-  assert.deepEqual(requiredEvidenceNodeIdsFromTree(null), []);
-  assert.deepEqual(requiredEvidenceNodeIdsFromTree({ nodes: [] }), []);
+test("requiredEvidenceNodeIdsForWalk returns only visited nodes whose requirements are required:true", () => {
+  // Walk visits n1 — n1 has required evidence — should be returned.
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, ["n1"]), ["n1"]);
+  // Walk visits only n2 — n2's evidence is required:false — empty set.
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, ["n2"]), []);
+  // Walk visits both — only n1 carries required evidence.
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, ["n1", "n2"]), ["n1"]);
+  // Defensive shapes — null tree, no nodes, etc.
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(null, ["n1"]), []);
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk({ nodes: [] }, ["n1"]), []);
+  // Legacy: no recorded walk → empty set so the rule is a no-op for the leg.
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, null), []);
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, undefined), []);
+  assert.deepEqual(requiredEvidenceNodeIdsForWalk(errorTypeTree, []), []);
+});
+
+// --- Task #735: walked-path scoping for the structural required-evidence
+// rule. The decision tree below has two terminals (B and C), each with
+// their own required evidence. The operator only ever walks one terminal
+// per leg, so unvisited terminals must not impose upload requirements.
+
+const branchingErrorTypeTree = {
+  rootId: "A",
+  nodes: [
+    // Pure question node — no required evidence.
+    { id: "A", question: "Did the GPS report?", options: [], evidenceRequirements: [] },
+    // Visited terminal — requires a screenshot.
+    {
+      id: "B",
+      question: "Terminal: dispute with screenshot",
+      options: [],
+      evidenceRequirements: [
+        { key: "screenshot", label: "GPS screenshot", required: true },
+      ],
+    },
+    // Sibling terminal the walk never touches — also has required evidence.
+    {
+      id: "C",
+      question: "Terminal: dispute with manifest",
+      options: [],
+      evidenceRequirements: [
+        { key: "manifest", label: "Manifest", required: true },
+      ],
+    },
+  ],
+};
+
+function legWithWalk(visited: string[], required: string[], overrides: Partial<LintLeg> = {}): LintLeg {
+  return {
+    id: 202,
+    confNumber: "15020423",
+    errorTypeId: "9",
+    errorTypeName: "GPS Deviation Status",
+    disposition: "disposed_portal",
+    sopOutcome: "portal_dispute",
+    sopNodeId: visited[visited.length - 1] ?? null,
+    sopAnswerNodeIds: visited.slice(0, -1),
+    includedInDispute: true,
+    requiredEvidenceNodeIds: required,
+    ...overrides,
+  };
+}
+
+test("Task #735: walk visits A then B; B requires evidence and it's attached → no finding", () => {
+  const required = requiredEvidenceNodeIdsForWalk(branchingErrorTypeTree, ["A", "B"]);
+  assert.deepEqual(required, ["B"]);
+  const sub = makeSubmission("<p>Conf #15020423 — disputing.</p>", "15020423");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "GPS screenshot", imageUrl: "/objects/uploads/gps.png", notes: null, treeNodeId: "B", claimId: 202 },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [legWithWalk(["A", "B"], required)] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
+    undefined,
+  );
+});
+
+test("Task #735: walk visits A then B; B requires evidence but it's missing → fail names ONLY B", () => {
+  const required = requiredEvidenceNodeIdsForWalk(branchingErrorTypeTree, ["A", "B"]);
+  const sub = makeSubmission("<p>Conf #15020423 — disputing.</p>", "15020423");
+  const results = lintDraft(sub, baseClaim, [], { legs: [legWithWalk(["A", "B"], required)] });
+  const r = results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:"));
+  assert.ok(r, "expected structural_missing_evidence_node fail");
+  assert.equal(r!.severity, "fail");
+  assert.match(r!.message, /\bB\b/);
+  assert.doesNotMatch(r!.message, /\bC\b/, "sibling-terminal node id must not appear");
+});
+
+test("Task #735: walk only touches a node with no required evidence → no finding", () => {
+  const required = requiredEvidenceNodeIdsForWalk(branchingErrorTypeTree, ["A"]);
+  assert.deepEqual(required, []);
+  const sub = makeSubmission("<p>Conf #15020423 — disputing.</p>", "15020423");
+  const results = lintDraft(sub, baseClaim, [], { legs: [legWithWalk(["A"], required)] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
+    undefined,
+  );
+});
+
+test("Task #735: tree has terminal C with required evidence the walk never touched → no finding for C", () => {
+  // Even with zero attachments, sibling terminal C must not trip the gate
+  // because the operator never visited it.
+  const required = requiredEvidenceNodeIdsForWalk(branchingErrorTypeTree, ["A", "B"]);
+  const sub = makeSubmission("<p>Conf #15020423 — disputing.</p>", "15020423");
+  const evidence: LintEvidence[] = [
+    { evidenceTypeName: "GPS screenshot", imageUrl: "/objects/uploads/gps.png", notes: null, treeNodeId: "B", claimId: 202 },
+  ];
+  const results = lintDraft(sub, baseClaim, evidence, { legs: [legWithWalk(["A", "B"], required)] });
+  const findings = results.filter((r) => r.ruleKey.startsWith("structural_missing_evidence_node:"));
+  assert.deepEqual(findings, [], "sibling terminal C must not produce a finding");
+});
+
+test("Task #735: leg with no recorded walk (legacy) → no finding (intentional no-op)", () => {
+  // No sopAnswers, no sopNodeId — the helper returns []. We document this
+  // as an intentional safety choice in the helper's comment.
+  const required = requiredEvidenceNodeIdsForWalk(branchingErrorTypeTree, null);
+  assert.deepEqual(required, []);
+  const sub = makeSubmission("<p>Conf #15020423 — disputing.</p>", "15020423");
+  const leg: LintLeg = {
+    id: 303,
+    confNumber: "15020423",
+    errorTypeId: "9",
+    errorTypeName: "GPS Deviation Status",
+    disposition: "disposed_portal",
+    sopOutcome: "portal_dispute",
+    sopNodeId: null,
+    sopAnswerNodeIds: [],
+    includedInDispute: true,
+    requiredEvidenceNodeIds: required,
+  };
+  const results = lintDraft(sub, baseClaim, [], { legs: [leg] });
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("structural_missing_evidence_node:")),
+    undefined,
+  );
 });
 
 const disputingLeg = (overrides: Partial<LintLeg> = {}): LintLeg => ({
