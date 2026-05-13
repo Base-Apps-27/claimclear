@@ -14,6 +14,13 @@
 //
 // Negative case: three legs non_issue, one still Pending → group stays
 // pre-submit (status untouched, outcome stays Pending).
+//
+// Orphan-shape case: a group whose every leg is blank (no error_type,
+// never classified) gets all legs flipped to non_issue via per-leg
+// /exclude with reason='non_issue' (the "Mark all as no-issue" Queue
+// path). The cascade must still close the group at (Resolved, No
+// Action Needed, non_issue) — the helper's predicate is broader than
+// "every disputed leg" precisely so it covers blank-classified groups.
 
 import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
@@ -163,6 +170,26 @@ async function seedClaimMidWalk(opts: {
   return row;
 }
 
+async function seedBlankClaim(opts: { groupId: number }) {
+  // Orphan-shape leg: never classified, no error_type, sits at
+  // sub_status='needs_classification' so /exclude accepts it.
+  const confNumber = `T714-BLANK-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const [row] = await db.insert(claimsTable).values({
+    confNumber,
+    status: "Needs Evidence",
+    outcome: "Pending",
+    invoiceGroupId: opts.groupId,
+    errorTypeId: null,
+    errorTypeName: null,
+    sopAnswers: [],
+    sopNodeId: null,
+    claimAmount: "100.00",
+    disposition: "unclassified" as any,
+    includedInDispute: true,
+  }).returning();
+  return row;
+}
+
 async function readGroup(id: number) {
   const [row] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, id));
   return row;
@@ -241,4 +268,63 @@ test("Task #714 — negative: one Pending sibling holds the group open", async (
   assert.notEqual(after.status, "Resolved", "Group should stay open while one leg is still Pending");
   assert.equal(after.outcome, "Pending");
   assert.equal(after.closureReason, null);
+});
+
+test("Task #714 — mixed: blank non-issue passenger + real disputed pending leg keeps group open", async () => {
+  // The broadened predicate must NOT close a group just because one
+  // blank leg got excluded as non_issue. As long as a real disputed
+  // leg is still mid-walk (sopOutcome=null, includedInDispute=true),
+  // the rollup says "not_all_non_issue" and the group stays open.
+  const et = await seedErrorType();
+  const g = await seedGroup();
+  const blank = await seedBlankClaim({ groupId: g.id });
+  // Real disputed leg, never advanced — sopOutcome=null, in dispute.
+  await seedClaimMidWalk({ groupId: g.id, errorTypeId: et.id, errorTypeName: et.name });
+
+  const r = await fetchJson(`/api/claims/${blank.id}/exclude`, {
+    method: "POST",
+    body: { reason: "non_issue", note: null },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+
+  const after = await readGroup(g.id);
+  assert.notEqual(after.status, "Resolved", "Group must stay open while a real disputed leg is still pending");
+  assert.equal(after.outcome, "Pending");
+  assert.equal(after.closureReason, null);
+});
+
+test("Task #714 — orphan shape: blank-classified group auto-closes via /exclude", async () => {
+  // No error type seeded — every leg is a blank passenger row, the
+  // shape produced by Task #260's auto-non-issue-siblings rule and by
+  // operators clicking "Mark all as no-issue" on never-classified
+  // groups. Pre-broadening, the cascade short-circuited with
+  // `no_rollup_legs` (formerly `no_disputed_legs`) here and left the
+  // group stuck pre-submit.
+  const g = await seedGroup();
+  const a = await seedBlankClaim({ groupId: g.id });
+  const b = await seedBlankClaim({ groupId: g.id });
+  const c = await seedBlankClaim({ groupId: g.id });
+
+  // Exclude first two — group stays open.
+  for (const legId of [a.id, b.id]) {
+    const r = await fetchJson(`/api/claims/${legId}/exclude`, {
+      method: "POST",
+      body: { reason: "non_issue", note: null },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const mid = await readGroup(g.id);
+    assert.notEqual(mid.status, "Resolved", "Group prematurely closed before final exclusion");
+  }
+
+  // Last exclusion trips the cascade.
+  const last = await fetchJson(`/api/claims/${c.id}/exclude`, {
+    method: "POST",
+    body: { reason: "non_issue", note: null },
+  });
+  assert.equal(last.status, 200, JSON.stringify(last.json));
+
+  const after = await readGroup(g.id);
+  assert.equal(after.status, "Resolved");
+  assert.equal(after.outcome, "No Action Needed");
+  assert.equal(after.closureReason, "non_issue");
 });

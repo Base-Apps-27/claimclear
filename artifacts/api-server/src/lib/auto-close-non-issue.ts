@@ -9,15 +9,27 @@
 // — never `Withdrawn`, never `Non-Issue`. See the task spec for the
 // full rationale.
 //
-// "Disputed leg" = `included_in_dispute = true AND error_type_id NOT NULL`.
-// A leg without an error_type isn't part of any dispute (clean
-// passenger row), and an excluded leg has been pulled out of the
-// dispute by the operator already; neither blocks the auto-close.
+// Rollup leg = a non-duplicate leg that either (a) is included in the
+// dispute, or (b) carries `sop_outcome='non_issue'` (the canonical
+// "operator already declared this one a no-issue" marker, regardless
+// of whether the leg ever earned an error_type or got excluded out
+// of the dispute). Duplicates never count — they were collapsed onto
+// a representative leg and carry no independent verdict.
+//
+// The "or `sop_outcome='non_issue'` regardless of error_type" clause
+// covers the orphan shape produced by Task #260's auto-non-issue-
+// siblings rule and by operator-driven "Mark all as no-issue" on
+// blank-classified groups: every leg lands at sop_outcome='non_issue'
+// before ANY leg earns an error_type, so a stricter `error_type_id
+// NOT NULL` predicate would short-circuit and leave the group stuck
+// pre-submit. The 2026-05 backfill swept up the legacy cohort; this
+// broadened predicate keeps the runtime cascade in sync so future
+// orphan groups close on the spot.
 //
 // Idempotency: short-circuits when the group is already in a terminal
 // status (Resolved / Denied / Expired) so a writer that fires the
 // helper repeatedly does not 400 the caller. Also short-circuits when
-// the disputed-leg set is empty (no legs to roll up).
+// the rollup-leg set is empty (no legs to roll up).
 //
 // Pre-submit gate: skips when `groupHasEverBeenSubmitted` is true.
 // `transitionGroupStatusAndOutcome` would also reject the close in
@@ -25,7 +37,7 @@
 // pre-checking lets us avoid the noisy try/catch on a path that fires
 // once per leg conclusion.
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable } from "@workspace/db";
 import { type DbExecutor } from "./claim-transitions";
@@ -50,7 +62,7 @@ export interface AutoCloseAllNonIssueResult {
     | "group_not_found"
     | "already_terminal"
     | "post_submit"
-    | "no_disputed_legs"
+    | "no_rollup_legs"
     | "not_all_non_issue";
 }
 
@@ -93,12 +105,10 @@ export async function autoCloseGroupIfAllNonIssue(
     return { closed: false, skippedReason: "post_submit" };
   }
 
-  // Disputed legs only — the rollup must ignore clean passenger rows
-  // (no error_type) and rows the operator already excluded. The
-  // exclusion path itself sets `sop_outcome='non_issue'` when the
-  // exclusion reason is non_issue (see excludeLegCore mirror policy),
-  // so excluding-then-non-issue legs naturally count as non_issue.
-  const disputedLegs = await ex
+  // Pull every non-duplicate leg of the group. Duplicates were
+  // collapsed onto a representative leg and carry no independent
+  // verdict, so they never block the rollup.
+  const allLegs = await ex
     .select({
       id: claimsTable.id,
       sopOutcome: claimsTable.sopOutcome,
@@ -108,21 +118,28 @@ export async function autoCloseGroupIfAllNonIssue(
     .where(
       and(
         eq(claimsTable.invoiceGroupId, groupId),
-        isNotNull(claimsTable.errorTypeId),
+        isNull(claimsTable.duplicateOfClaimId),
       ),
     );
 
-  // Filter to legs that still count toward the dispute rollup. Excluded
-  // legs whose exclusion carried a non_issue verdict count (their
-  // sopOutcome is already 'non_issue'); excluded legs whose exclusion
-  // carried no verdict are not blockers (they were pulled out of the
-  // dispute entirely).
-  const rollupLegs = disputedLegs.filter(
+  // A leg counts toward the rollup if it's still part of the dispute,
+  // OR if it already carries the canonical no-issue marker
+  // (`sop_outcome='non_issue'`). The second clause is what catches the
+  // orphan shape: legs that never earned an error_type but were
+  // excluded as non_issue (Task #260 sibling rule, "Mark all as
+  // no-issue" on blank groups, etc.) — `excludeLegCore` writes
+  // `sop_outcome='non_issue'` on those, so they show up here even
+  // though `error_type_id` is NULL and `included_in_dispute` is false.
+  // Legs the operator excluded for any OTHER reason (cannot_dispute,
+  // duplicate_handled, …) carry no `sop_outcome='non_issue'` and
+  // `included_in_dispute=false`, so they correctly drop out as
+  // non-blockers (already pulled out of the dispute).
+  const rollupLegs = allLegs.filter(
     (l) => l.includedInDispute !== false || l.sopOutcome === "non_issue",
   );
 
   if (rollupLegs.length === 0) {
-    return { closed: false, skippedReason: "no_disputed_legs" };
+    return { closed: false, skippedReason: "no_rollup_legs" };
   }
 
   const allNonIssue = rollupLegs.every((l) => l.sopOutcome === "non_issue");
@@ -135,7 +152,7 @@ export async function autoCloseGroupIfAllNonIssue(
     newStatus: "Resolved",
     newOutcome: "No Action Needed",
     source: "auto_close_all_non_issue",
-    reason: "All disputed legs resolved to non_issue before submission",
+    reason: "All non-duplicate legs resolved to non_issue before submission",
     actor: SYSTEM_ACTOR,
     closureReason: "non_issue",
     systemOverride: true,
