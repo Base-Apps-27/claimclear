@@ -177,6 +177,16 @@ export default function Insights() {
   const priorRecovered = parseFloat(insights?.priorPeriodRecoveredAmount ?? "0") || 0;
   const atRiskAmount = parseFloat(insights?.atRiskAmount ?? "0") || 0;
   const atRiskGroupCount = insights?.atRiskGroupCount ?? 0;
+  // Driver-prepay exposure tile (Task #729). Task #720 stripped the
+  // ×1.7 multiplier off the Dashboard so its at-risk tile matches
+  // Insights/daily-brief one-for-one. Operators still need to see the
+  // full cash-on-the-line figure, so we surface it here as one
+  // explicit tile with a tooltip naming the 70% vendor prepay rate.
+  // Sourced from /dashboard/summary.amounts so the math is the single
+  // source of truth in risk-config.ts.
+  const atRiskExposureAmount = parseFloat(summary?.amounts?.atRiskExposure ?? "0") || 0;
+  const vendorPrepayRate = summary?.amounts?.vendorPrepayRate ?? 0.7;
+  const vendorPrepayPct = Math.round(vendorPrepayRate * 100);
   const recoveryRate = totalDisputed > 0 ? Math.round((totalRecovered / totalDisputed) * 100) : null;
   const netChange = totalRecovered - priorRecovered;
   const netChangePct = priorRecovered > 0 ? Math.round((netChange / priorRecovered) * 100) : null;
@@ -412,7 +422,7 @@ export default function Insights() {
         title={<span className="flex items-center gap-2">Money scorecard <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
         icon={<TrendingUp className="w-4 h-4" />}
       >
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="money-scorecard">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="money-scorecard">
           <MetricTile
             label="Disputed (window)"
             value={clerk ? "—" : formatCurrency(String(totalDisputed))}
@@ -431,6 +441,23 @@ export default function Insights() {
             sub={`${atRiskGroupCount} open invoice${atRiskGroupCount === 1 ? "" : "s"}`}
             tone="red"
           />
+          {!clerk && (
+            <div data-testid="tile-driver-prepay-exposure">
+              <MetricTile
+                label="Driver prepay exposure"
+                value={formatCurrency(String(atRiskExposureAmount))}
+                sub={
+                  <span className="inline-flex items-center gap-1">
+                    <span>Claim + driver prepay on the line</span>
+                    <InfoTooltip
+                      content={`Driver prepay exposure = at-risk claim $ × (1 + ${vendorPrepayPct}%). Assumes the practice has fronted ${vendorPrepayPct}% of each claim to the vendor up front, which is also at risk if the dispute fails. Kept off the Dashboard tile so its at-risk figure matches Insights and the daily brief one-for-one.`}
+                    />
+                  </span>
+                }
+                tone="red"
+              />
+            </div>
+          )}
           <MetricTile
             label="Recovery rate"
             value={clerk ? "—" : recoveryRate === null ? "—" : `${recoveryRate}%`}
