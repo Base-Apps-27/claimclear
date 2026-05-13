@@ -63,6 +63,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const UPGRADE_BACKFILL_ID = "duplicate_cluster_response_upgrade_2026_05_13";
 const JSONL_PATH = path.resolve(__dirname, "../../exports/verify-against-portal-2026-05-13.jsonl");
+const SCRAPE_PATH = path.resolve(__dirname, "../../exports/verify-scrape-2026-05-13.jsonl");
 const MD_PATH = path.resolve(__dirname, "../../exports/verify-against-portal-2026-05-13.md");
 
 const PORTAL_USERNAME = (process.env.MAS_PORTAL_USERNAME ?? "").toLowerCase().trim();
@@ -223,42 +224,67 @@ function classifyMessages(scraped: PortalReaderResult): ScrapeRecord {
   };
 }
 
-async function scrapeAll(ticketIds: string[]): Promise<Map<string, ScrapeRecord>> {
+function loadScrapeCache(): Map<string, ScrapeRecord> {
   const out = new Map<string, ScrapeRecord>();
-  const total = ticketIds.length;
-  console.log(`[scrape] ${total} distinct ticket(s) to read; acquiring portalBrowserGate…`);
+  if (!fs.existsSync(SCRAPE_PATH)) return out;
+  const lines = fs.readFileSync(SCRAPE_PATH, "utf8").split("\n").filter(Boolean);
+  for (const line of lines) {
+    try {
+      const obj = JSON.parse(line) as ScrapeRecord;
+      if (obj && typeof obj.ticketId === "string") out.set(obj.ticketId, obj);
+    } catch { /* skip corrupt line */ }
+  }
+  return out;
+}
+
+async function scrapeAll(ticketIds: string[], chunkLimit: number | undefined): Promise<Map<string, ScrapeRecord>> {
+  fs.mkdirSync(path.dirname(SCRAPE_PATH), { recursive: true });
+  const cache = loadScrapeCache();
+  const todo = ticketIds.filter((id) => !cache.has(id));
+  const slice = chunkLimit !== undefined ? todo.slice(0, chunkLimit) : todo;
+  console.log(`[scrape] cached=${cache.size}/${ticketIds.length}; this run will scrape ${slice.length} (chunkLimit=${chunkLimit ?? "ALL"})`);
+  if (slice.length === 0) {
+    console.log(`[scrape] nothing to do — all ${ticketIds.length} tickets already cached.`);
+    return cache;
+  }
+  const total = slice.length;
+  const append = fs.createWriteStream(SCRAPE_PATH, { flags: "a" });
+  console.log(`[scrape] acquiring portalBrowserGate…`);
   const outcome = await portalBrowserGate.run(async () => {
     for (let i = 0; i < total; i += 1) {
-      const ticketId = ticketIds[i];
+      const ticketId = slice[i];
       if (i > 0) await sleep(jitter());
+      let rec: ScrapeRecord;
       try {
         const scraped = await readPortalTicket(ticketId);
-        out.set(ticketId, classifyMessages(scraped));
-        if ((i + 1) % 10 === 0 || i === total - 1) {
+        rec = classifyMessages(scraped);
+        if ((i + 1) % 5 === 0 || i === total - 1) {
           console.log(`[scrape] ${i + 1}/${total} done (last ticket ${ticketId} → status="${scraped.status}", msgs=${scraped.messages.length})`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.warn({ ticketId, err: msg }, "verify-against-portal: scrape failed");
-        out.set(ticketId, {
+        rec = {
           ticketId,
           status: null, subject: null,
           messageCount: 0, ourMessageCount: 0, carrierMessageCount: 0,
           latestCarrierBody: null, latestCarrierAuthor: null,
           latestCarrierEmail: null, latestCarrierPostedAt: null,
           scrapeError: msg,
-        });
+        };
         console.log(`[scrape] ${i + 1}/${total} FAILED ${ticketId}: ${msg.slice(0, 100)}`);
       }
+      cache.set(ticketId, rec);
+      append.write(JSON.stringify(rec) + "\n");
     }
   });
   if (outcome.kind === "skipped") {
+    append.end();
     throw new Error(`portalBrowserGate was busy (${outcome.reason}) — refusing to run; retry when the cron is idle`);
   }
-  // The gate's `run()` returns synchronously with a Promise<T> on
-  // outcome.result; we MUST await it or buildDiff runs against an empty map.
   await outcome.result;
-  return out;
+  await new Promise<void>((res) => append.end(res));
+  return cache;
 }
 
 interface DiffRecord {
@@ -399,9 +425,9 @@ async function buildDiff(rows: DbRow[], scraped: Map<string, ScrapeRecord>, skip
         if (!r) {
           reclassification.abstain = true;
         } else {
-          reclassification.chip = r.result.responseType;
+          reclassification.chip = r.result.decision;
           reclassification.confidence = r.result.confidence ?? null;
-          reclassification.matchesDbChip = r.result.responseType === row.prResponseType;
+          reclassification.matchesDbChip = r.result.decision === row.prResponseType;
         }
         if (llmIdx % 25 === 0) console.log(`[reclassify] ${llmIdx} done`);
       } catch (err) {
@@ -575,8 +601,11 @@ function writeMarkdown(diffs: DiffRecord[], elapsedSec: number, skipLlm: boolean
 
 async function main() {
   const limit = getNumFlag("limit");
+  const chunk = getNumFlag("chunk");
   const skipLlm = getFlag("skip-llm");
   const onlyMismatch = getFlag("only-mismatch");
+  const diffOnly = getFlag("diff-only");
+  const scrapeOnly = getFlag("scrape-only");
 
   console.log(`[verify] loading cohort (limit=${limit ?? "ALL"})…`);
   const rows = await loadCohort(limit);
@@ -585,16 +614,33 @@ async function main() {
   const distinctTickets = Array.from(
     new Set(rows.flatMap((r) => r.submissions.map((s) => s.portalTicketId))),
   );
-  console.log(`[verify] ${distinctTickets.length} distinct portal tickets to scrape`);
-  if (!PORTAL_USERNAME) {
+  console.log(`[verify] ${distinctTickets.length} distinct portal tickets to scrape (cache: ${SCRAPE_PATH})`);
+  if (!PORTAL_USERNAME && !diffOnly) {
     console.error(`[verify] WARN: MAS_PORTAL_USERNAME not set — cannot distinguish our messages from carrier messages. Aborting.`);
     process.exit(2);
   }
 
   const t0 = Date.now();
-  const scraped = await scrapeAll(distinctTickets);
-  console.log(`[verify] scrape complete in ${((Date.now() - t0) / 1000).toFixed(1)}s; building diff…`);
+  let scraped: Map<string, ScrapeRecord>;
+  if (diffOnly) {
+    scraped = loadScrapeCache();
+    const missing = distinctTickets.filter((id) => !scraped.has(id)).length;
+    console.log(`[verify] diff-only mode: ${scraped.size} cached, ${missing} missing`);
+  } else {
+    scraped = await scrapeAll(distinctTickets, chunk);
+  }
+  console.log(`[verify] scrape phase complete in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
+  const cachedAll = distinctTickets.every((id) => scraped.has(id));
+  if (scrapeOnly || (!cachedAll && !diffOnly)) {
+    const left = distinctTickets.filter((id) => !scraped.has(id)).length;
+    console.log(`\n[verify] Stopping after scrape phase. ${scraped.size}/${distinctTickets.length} tickets cached; ${left} remaining.`);
+    if (left > 0) console.log(`[verify] Run again with the same flags (or --chunk N) to continue; rerun with --diff-only when 0 remaining.`);
+    await pool.end();
+    return;
+  }
+
+  console.log(`[verify] building diff…`);
   const diffs = await buildDiff(rows, scraped, skipLlm);
   writeJsonl(diffs);
   const elapsed = (Date.now() - t0) / 1000;
