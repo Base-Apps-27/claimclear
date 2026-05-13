@@ -17,17 +17,36 @@
 //   them up so the queue, counters, and day-complete celebration
 //   stay consistent with the new rule.
 //
-// Predicate (must stay in lockstep with autoCloseGroupIfAllNonIssue)
-// -----------------------------------------------------------------
+// Predicate (broader than autoCloseGroupIfAllNonIssue — see note)
+// ----------------------------------------------------------------
 //   1. Group is pre-submit: not in (Resolved/Denied/Expired) AND has
 //      no `portal_submissions` row.
-//   2. "Disputed legs" = `error_type_id IS NOT NULL`.
-//   3. "Rollup legs" = disputed legs where
-//      `included_in_dispute IS NOT FALSE OR sop_outcome='non_issue'`.
-//      (An excluded-with-non_issue leg counts; an excluded-with-no-
-//      verdict leg has been pulled out of the dispute entirely.)
-//   4. At least one rollup leg exists.
-//   5. EVERY rollup leg has `sop_outcome='non_issue'`.
+//   2. At least one non-duplicate leg (`duplicate_of_claim_id IS NULL`).
+//   3. EVERY non-duplicate leg has `sop_outcome = 'non_issue'`.
+//
+// Why broader than the runtime helper
+// -----------------------------------
+//   The runtime cascade `autoCloseGroupIfAllNonIssue` only counts
+//   "disputed legs" (`error_type_id IS NOT NULL`) and short-circuits
+//   with `no_disputed_legs` when none exist. That misses an entire
+//   class of legacy groups produced by the Task #260 auto-non-issue-
+//   siblings backfill: when EVERY leg in the group was a blank
+//   sibling, the rule excluded them all and stamped each one
+//   `sop_outcome='non_issue'` BEFORE any leg got classified with an
+//   error type. Those groups have zero "disputed legs" by the
+//   helper's definition, so the helper never closes them — they
+//   stay stuck at (Needs Evidence, Pending) forever despite every
+//   leg having a terminal non_issue verdict.
+//
+//   This backfill catches both cases:
+//     - Helper-eligible (all disputed legs non_issue).
+//     - Orphan groups (all legs excluded-as-non_issue, no error type).
+//   Either way the business rule is the same: nothing to dispute,
+//   close at (Resolved, No Action Needed, non_issue).
+//
+//   We deliberately exclude duplicate legs (`duplicate_of_claim_id
+//   IS NOT NULL`) from the rollup — duplicates are passengers of
+//   another claim, not independent disputes.
 //
 // Action
 // ------
@@ -76,7 +95,7 @@ import {
   auditLogsTable,
   portalSubmissionsTable,
 } from "@workspace/db";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   transitionGroupStatusAndOutcome,
   type GroupTransitionActor,
@@ -128,6 +147,7 @@ function parseFlags(argv: string[]): CliFlags {
 interface CandidateLeg {
   legId: number;
   sopOutcome: string | null;
+  errorTypeId: number | null;
   includedInDispute: boolean | null;
 }
 
@@ -135,7 +155,13 @@ interface Candidate {
   groupId: number;
   status: string;
   outcome: string;
+  invoiceNumber: string | null;
   rollupLegs: CandidateLeg[];
+  /** True iff every rollup leg has `error_type_id IS NULL` (the
+   *  orphan shape produced by the auto-non-issue-siblings backfill).
+   *  False iff at least one rollup leg has an error type
+   *  (the helper-eligible shape). */
+  isOrphanShape: boolean;
 }
 
 async function findCandidates(flags: CliFlags): Promise<Candidate[]> {
@@ -145,6 +171,7 @@ async function findCandidates(flags: CliFlags): Promise<Candidate[]> {
       id: invoiceGroupsTable.id,
       status: invoiceGroupsTable.status,
       outcome: invoiceGroupsTable.outcome,
+      invoiceNumber: invoiceGroupsTable.invoiceNumber,
     })
     .from(invoiceGroupsTable)
     .where(
@@ -160,36 +187,38 @@ async function findCandidates(flags: CliFlags): Promise<Candidate[]> {
 
   const candidates: Candidate[] = [];
   for (const g of groupRows) {
-    const disputedLegs = await db
+    // Pull every NON-DUPLICATE leg in the group. Duplicates are
+    // passengers of another claim and shouldn't drive the rollup.
+    const legs = await db
       .select({
         legId: claimsTable.id,
         sopOutcome: claimsTable.sopOutcome,
+        errorTypeId: claimsTable.errorTypeId,
         includedInDispute: claimsTable.includedInDispute,
       })
       .from(claimsTable)
       .where(
         and(
           eq(claimsTable.invoiceGroupId, g.id),
-          isNotNull(claimsTable.errorTypeId),
+          sql`${claimsTable.duplicateOfClaimId} IS NULL`,
         ),
       );
 
-    // Same filter as autoCloseGroupIfAllNonIssue: keep legs that still
-    // count toward the dispute rollup. `includedInDispute !== false`
-    // catches both true and null (legacy null-as-included).
-    const rollupLegs = disputedLegs.filter(
-      (l) => l.includedInDispute !== false || l.sopOutcome === "non_issue",
-    );
-    if (rollupLegs.length === 0) continue;
+    if (legs.length === 0) continue;
 
-    const allNonIssue = rollupLegs.every((l) => l.sopOutcome === "non_issue");
+    // Predicate: EVERY non-duplicate leg sits at sop_outcome='non_issue'.
+    const allNonIssue = legs.every((l) => l.sopOutcome === "non_issue");
     if (!allNonIssue) continue;
+
+    const isOrphanShape = legs.every((l) => l.errorTypeId === null);
 
     candidates.push({
       groupId: g.id,
       status: g.status,
       outcome: g.outcome,
-      rollupLegs: rollupLegs as CandidateLeg[],
+      invoiceNumber: g.invoiceNumber as string | null,
+      rollupLegs: legs as CandidateLeg[],
+      isOrphanShape,
     });
   }
 
@@ -232,6 +261,12 @@ async function processCandidate(c: Candidate): Promise<void> {
         priorOutcome: c.outcome,
         rollupLegCount: c.rollupLegs.length,
         rollupLegIds: c.rollupLegs.map((l) => l.legId),
+        // `orphan` = every leg had error_type_id IS NULL (legacy
+        // auto-non-issue-siblings shape; the runtime cascade can't
+        // reach these). `helper_eligible` = at least one leg had
+        // an error type (the runtime cascade would have caught it
+        // had it been touched after Task #714 shipped).
+        shape: c.isOrphanShape ? "orphan" : "helper_eligible",
       },
       userEmail: SYSTEM_ACTOR.userEmail,
       userName: SYSTEM_ACTOR.userName,
@@ -270,12 +305,18 @@ async function main(): Promise<void> {
     console.log(`  ${status.padEnd(20)} ${count}`);
   }
 
+  const orphanCount = candidates.filter((c) => c.isOrphanShape).length;
+  const helperEligibleCount = candidates.length - orphanCount;
+  console.log(`By shape:`);
+  console.log(`  orphan (no error_type on any leg)          ${orphanCount}`);
+  console.log(`  helper_eligible (at least one error_type)  ${helperEligibleCount}`);
+
   console.log("");
   console.log("First 25 candidates:");
-  console.log("  group_id   status               outcome     rollup_legs");
+  console.log("  group_id   invoice_number   status               outcome     legs  shape");
   for (const c of candidates.slice(0, 25)) {
     console.log(
-      `  ${String(c.groupId).padEnd(10)} ${c.status.padEnd(20)} ${c.outcome.padEnd(11)} ${c.rollupLegs.length}`,
+      `  ${String(c.groupId).padEnd(10)} ${(c.invoiceNumber ?? "—").padEnd(16)} ${c.status.padEnd(20)} ${c.outcome.padEnd(11)} ${String(c.rollupLegs.length).padEnd(5)} ${c.isOrphanShape ? "orphan" : "helper"}`,
     );
   }
   console.log("");
