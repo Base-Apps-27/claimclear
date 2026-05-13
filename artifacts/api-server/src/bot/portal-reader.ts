@@ -97,6 +97,14 @@ function pickFirst(html: string, patterns: RegExp[]): string | null {
  */
 export function parsePortalTicketHtml(html: string, ticketId: string): PortalReaderResult {
   const status = pickFirst(html, [
+    // Modern Freshdesk customer portal renders the badge with class
+    // `fw-status-badge fw-status-badge__<state>` and the human label as
+    // the inner text (e.g. "Closed", "Open", "Pending", "Resolved",
+    // "Awaiting your Reply"). Match this first since it's what the
+    // live tpissues.medanswering.com pages currently emit.
+    /<span[^>]*class="[^"]*fw-status-badge[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+    // Legacy patterns kept for backward-compat with older Freshdesk
+    // skins and the unit-test fixtures.
     /<span[^>]*class="[^"]*ticket[-_]?status[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
     /<div[^>]*class="[^"]*status[-_]?label[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<span[^>]*data-status[^>]*>([\s\S]*?)<\/span>/i,
@@ -109,31 +117,68 @@ export function parsePortalTicketHtml(html: string, ticketId: string): PortalRea
     /<title>([\s\S]*?)<\/title>/i,
   ]);
 
-  // Each conversation item: <div ... id="note_12345" ...>...</div>
-  // Freshdesk variants also use class="conversation" or "thread-item".
   const messages: PortalReaderMessage[] = [];
-  const itemRe = /<(?:div|li|article)\b([^>]*\bid="(?:note|conv|thread)[_-]?(\d+)"[^>]*)>([\s\S]*?)<\/(?:div|li|article)>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = itemRe.exec(html)) !== null) {
-    const numericId = match[2];
-    const block = match[3];
+
+  // Path A — modern Freshdesk customer portal (`fw-comment-item` blocks).
+  // These carry NO numeric DOM id, so we mint a stable id from a hash
+  // of the message body + timestamp (deduped via `diffPortalMessages`
+  // downstream). Author is in `<span class="semi-bold">…</span>`,
+  // timestamp in `<span class="timeago" data-timeago="YYYY-MM-DD HH:MM:SS ±HHMM">`.
+  //
+  // Block bounding: scope the search to inside `fw-comments-list` and
+  // bound each block by either the next `fw-comment-item` start OR the
+  // `fw-comment-editor` reply form (whichever comes first). Without
+  // this, the LAST comment slurps trailing page chrome/scripts and the
+  // body hash drifts run-to-run.
+  const listMatch = html.match(
+    /<div[^>]*class="[^"]*fw-comments-list[^"]*"[^>]*>([\s\S]*?)<div[^>]+id="fw-add-note-form"/i,
+  );
+  const commentsRegion = listMatch ? listMatch[1] : html;
+  const fwStarts = Array.from(
+    commentsRegion.matchAll(/<div[^>]*class="[^"]*fw-comment-item[^"]*"[^>]*>/gi),
+  )
+    .map((m) => m.index ?? -1)
+    .filter((i) => i >= 0);
+  // Editor boundary inside the comments region — anything at/after this
+  // offset is the reply form, never a real message.
+  const editorMatch = commentsRegion.match(/<div[^>]*class="[^"]*fw-comment-editor[^"]*"[^>]*>/i);
+  const editorStart = editorMatch && editorMatch.index !== undefined ? editorMatch.index : commentsRegion.length;
+  for (let i = 0; i < fwStarts.length; i += 1) {
+    const start = fwStarts[i];
+    if (start >= editorStart) continue; // reply-form item itself
+    const nextItemStart = i + 1 < fwStarts.length ? fwStarts[i + 1] : commentsRegion.length;
+    const end = Math.min(nextItemStart, editorStart);
+    const block = commentsRegion.slice(start, end);
+
     const authorName = pickFirst(block, [
-      /<(?:span|a|div)[^>]*class="[^"]*(?:author|user|name)[^"]*"[^>]*>([\s\S]*?)</i,
+      /<span[^>]*class="[^"]*semi-bold[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
     ]);
     const authorEmail = pickFirst(block, [/mailto:([^"'>\s]+)/i]);
     const postedAt = pickFirst(block, [
+      /data-timeago="([^"]+)"/i,
+      /data-livestamp="([^"]+)"/i,
       /<time[^>]*datetime="([^"]+)"/i,
-      /data-timestamp="([^"]+)"/i,
     ]);
+    // Body lives in the inner `comment-container` (or `comment-scroll`).
+    // Drop ONLY the `<p class="author-info">…</p>` header inside that
+    // container — a targeted strip avoids the over-broad "said N days
+    // ago" regex that could chew real message content.
     const bodyMatch = block.match(
-      /<(?:div|section)[^>]*class="[^"]*(?:body|content|message)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section)>/i,
+      /<div[^>]*class="[^"]*comment-(?:container|scroll)[^"]*"[^>]*>([\s\S]*)/i,
     );
-    const bodyHtml = bodyMatch ? bodyMatch[1] : block;
-    const bodyText = stripTags(bodyHtml);
+    const bodyHtml = (bodyMatch ? bodyMatch[1] : block).replace(
+      /<p[^>]*class="[^"]*author-info[^"]*"[^>]*>[\s\S]*?<\/p>/i,
+      "",
+    );
+    const bodyText = stripTags(bodyHtml).trim();
     if (!bodyText) continue;
+    // Mix the timestamp into the hash so two comments with identical
+    // bodies but different posted-at values don't collapse into one
+    // (rare, but Freshdesk doesn't guarantee bodies are unique).
+    const hashInput = postedAt ? `${postedAt}\n${bodyText}` : bodyText;
     messages.push({
-      messageId: `note_${numericId}`,
-      idIsHash: false,
+      messageId: hashContent(hashInput),
+      idIsHash: true,
       authorName: authorName ? stripTags(authorName) : null,
       authorEmail,
       postedAt,
@@ -142,10 +187,44 @@ export function parsePortalTicketHtml(html: string, ticketId: string): PortalRea
     });
   }
 
-  // Last-resort fallback: nothing matched the structured pattern but the
-  // page clearly has body content. Hash the visible text so the sync still
-  // detects "this ticket has SOMETHING new" without inventing structure
-  // that isn't there.
+  // Path B — legacy / generic "id=note_X" structure. Kept so older
+  // Freshdesk skins (and the existing unit-test fixtures) still parse.
+  if (messages.length === 0) {
+    const itemRe = /<(?:div|li|article)\b([^>]*\bid="(?:note|conv|thread)[_-]?(\d+)"[^>]*)>([\s\S]*?)<\/(?:div|li|article)>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = itemRe.exec(html)) !== null) {
+      const numericId = match[2];
+      const block = match[3];
+      const authorName = pickFirst(block, [
+        /<(?:span|a|div)[^>]*class="[^"]*(?:author|user|name)[^"]*"[^>]*>([\s\S]*?)</i,
+      ]);
+      const authorEmail = pickFirst(block, [/mailto:([^"'>\s]+)/i]);
+      const postedAt = pickFirst(block, [
+        /<time[^>]*datetime="([^"]+)"/i,
+        /data-timestamp="([^"]+)"/i,
+      ]);
+      const bodyMatch = block.match(
+        /<(?:div|section)[^>]*class="[^"]*(?:body|content|message)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section)>/i,
+      );
+      const bodyHtml = bodyMatch ? bodyMatch[1] : block;
+      const bodyText = stripTags(bodyHtml);
+      if (!bodyText) continue;
+      messages.push({
+        messageId: `note_${numericId}`,
+        idIsHash: false,
+        authorName: authorName ? stripTags(authorName) : null,
+        authorEmail,
+        postedAt,
+        bodyHtml,
+        bodyText,
+      });
+    }
+  }
+
+  // Last-resort fallback: nothing matched any structured pattern but
+  // the page clearly has body content. Hash the visible text so the
+  // sync still detects "this ticket has SOMETHING new" without
+  // inventing structure that isn't there.
   if (messages.length === 0) {
     const visible = stripTags(html);
     if (visible.length > 0) {

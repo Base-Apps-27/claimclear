@@ -1,0 +1,4 @@
+# Live portal HTML dumps may contain PII / auth tokens — never commit.
+exports/portal-ticket-*.html
+exports/*.html
+

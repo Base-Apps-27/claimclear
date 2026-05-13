@@ -117,6 +117,69 @@ test("parsePortalTicketHtml: falls back to a content hash when no structured ite
   assert.equal(second.messages[0].messageId, parsed.messages[0].messageId);
 });
 
+test("parsePortalTicketHtml: extracts status + comments from the modern Freshdesk customer portal DOM", () => {
+  // Snapshot of the DOM shapes captured live from
+  // tpissues.medanswering.com on 2026-05-13 (Task #725 follow-up).
+  // The status badge is `fw-status-badge fw-status-badge__<state>`
+  // and conversation items are `<div class="fw-comment-item ...">`
+  // with NO numeric id — author/timestamp come out of `semi-bold`
+  // and `data-timeago` respectively. Body is whatever remains in
+  // the `comment-container` after the author-info paragraph.
+  const html = `
+    <html><body>
+      <title> [#84645] Dispute - Invoice #1861627690 - GPS : MAS </title>
+      <span class="me-4 fw-status-badge fw-status-badge__closed">Closed</span>
+      <div class="fw-comments-list mt-16">
+        <div class="fw-comment-item mb-16 mx-0 d-flex">
+          <div class="fw-avatar"><div class="fw-avatar-text">T</div></div>
+          <div class="bg-grey p-12 br-6 w-100 comment-container ">
+            <p class="author-info">
+              <span class="semi-bold">Transportation Provider</span>
+              <span>said <span class="timeago" data-timeago="2026-04-28 15:39:55 -0400">14 days ago</span></span>
+            </p>
+            <div class="pt-12 comment-scroll">
+              <h3>GPS Exemption Request Approved</h3>
+              <div>Review confirmed GPS compliance for invoice 1861627690.</div>
+            </div>
+          </div>
+        </div>
+        <div class="fw-comment-item mb-16 mx-0 d-flex">
+          <div class="fw-avatar"><div class="fw-avatar-text">T</div></div>
+          <div class="bg-grey p-12 br-6 w-100 comment-container ">
+            <p class="author-info">
+              <span class="semi-bold">Transportation Provider</span>
+              <span>said <span class="timeago" data-timeago="2026-04-28 07:01:34 -0400">15 days ago</span></span>
+            </p>
+            <div class="pt-12 comment-scroll">
+              <div>Hi Accounting Agape, please review the GPS exemption.</div>
+            </div>
+          </div>
+        </div>
+        <div class="fw-comment-item mb-16 mx-0 d-flex">
+          <div class="px-0 fw-reply-avatar closed-ticket d-none"></div>
+          <div class="fw-comment-editor">reply form, no body</div>
+        </div>
+      </div>
+    </body></html>
+  `;
+  const parsed = parsePortalTicketHtml(html, "84645");
+  assert.equal(parsed.status, "Closed");
+  assert.equal(parsed.messages.length, 2, "must skip the trailing reply-form block");
+  // No numeric DOM id on Freshdesk's portal, so the parser falls back
+  // to a content hash — but it MUST be stable across reads.
+  assert.equal(parsed.messages[0].idIsHash, true);
+  assert.match(parsed.messages[0].messageId, /^hash:/);
+  assert.equal(parsed.messages[0].authorName, "Transportation Provider");
+  assert.equal(parsed.messages[0].postedAt, "2026-04-28 15:39:55 -0400");
+  assert.match(parsed.messages[0].bodyText, /GPS Exemption Request Approved/);
+  assert.match(parsed.messages[0].bodyText, /confirmed GPS compliance/);
+  // Stability: re-parse the same HTML and ids match exactly so dedup
+  // works downstream.
+  const second = parsePortalTicketHtml(html, "84645");
+  assert.equal(second.messages[0].messageId, parsed.messages[0].messageId);
+  assert.equal(second.messages[1].messageId, parsed.messages[1].messageId);
+});
+
 test("parsePortalTicketHtml: end-to-end dedup — first scrape returns 2 new, re-scrape returns 0 new", () => {
   const html = `
     <div id="note_1" class="conversation"><div class="body">A</div></div>

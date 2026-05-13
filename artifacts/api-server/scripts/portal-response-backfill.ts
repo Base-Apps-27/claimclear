@@ -46,9 +46,18 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const jitterMs = () => PACE_MIN_MS + Math.floor(Math.random() * (PACE_MAX_MS - PACE_MIN_MS));
 
 function parseSilentGroupIds(): number[] {
-  const csvPath = path.resolve("exports/silent-groups-2026-05-12.csv");
-  if (!fs.existsSync(csvPath)) {
-    console.warn(`[backfill] Priority CSV not found at ${csvPath} — running without priority list`);
+  // The CSV lives at the workspace root (`exports/`), but `tsx` resolves
+  // the script with CWD set to wherever pnpm invoked it from — usually
+  // `artifacts/api-server`. Try the local path first, then walk up to
+  // a workspace-root sibling so the priority list survives both invocation
+  // styles.
+  const candidates = [
+    path.resolve("exports/silent-groups-2026-05-12.csv"),
+    path.resolve("../../exports/silent-groups-2026-05-12.csv"),
+  ];
+  const csvPath = candidates.find((p) => fs.existsSync(p));
+  if (!csvPath) {
+    console.warn(`[backfill] Priority CSV not found at any of: ${candidates.join(", ")} — running without priority list`);
     return [];
   }
   const lines = fs.readFileSync(csvPath, "utf8").split(/\r?\n/).filter(Boolean);
