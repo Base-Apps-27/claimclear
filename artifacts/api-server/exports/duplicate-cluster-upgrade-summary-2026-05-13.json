@@ -1,0 +1,18 @@
+{
+  "mode": "apply",
+  "backfillId": "duplicate_cluster_response_upgrade_2026_05_13",
+  "distribution": {
+    "acknowledgment": 1,
+    "approval": 177,
+    "info_request": 3,
+    "denial": 32
+  },
+  "confidence": {
+    "high": 212,
+    "medium": 1
+  },
+  "totalCached": 213,
+  "appliedThisRun": 213,
+  "alreadyUpgradedSkipped": 0,
+  "missingCacheSkipped": 0
+}
