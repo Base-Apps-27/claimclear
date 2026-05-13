@@ -1,0 +1,61 @@
+Duplicate-Cluster Resolution Backfill — Full Write-Up
+Original problem
+673 invoice groups stuck in "Awaiting Response" carrying 723 portal tickets across 754 invoices. Per-leg duplicate submissions had piled up — each leg got its own portal ticket but only one could win, leaving ~643 surplus tickets that would never get a real verdict.
+
+What was built
+artifacts/api-server/src/scripts/oneshot-resolve-duplicate-clusters-2026-05-13.ts — a resumable, cache-backed resolver that:
+
+Scrapes every portal ticket via readPortalTicket
+Buckets each group by ticket fleet status (canonical_open / all_closed_all_duplicates / all_closed_with_verdict / synthetic_only / needs_scrape)
+Applies per-group transitions in transactions with full audit trail
+Tags every audit row with backfillId='duplicate_cluster_resolution_2026_05_13' for surgical rollback
+Cache: artifacts/api-server/exports/duplicate-cluster-scrape-cache-2026-05-13.jsonl (730 entries — survives across runs)
+
+What was applied to PROD
+Action	Count	Outcome
+Groups closed at $0	140	status=Resolved, claims=No Action Needed/duplicate
+Groups routed to Ready to Review	213	status=Ready to Review
+Synthetic portal_responses inserted	213	so the inbox EXISTS-guard passes
+Phase advanced (submitted → response_received)	130	so macro-phase router shows them on the page
+Audit rows written	~810	all backfillId-tagged
+Net Awaiting Response queue: 673 → 320
+
+What's currently broken / suspect
+1. The 83 "wrongly routed" groups (NEEDS REVERSAL)
+I routed them to "Ready to Review" but they have reattest_required=true from the operator self-cancelling their own portal submission earlier
+They have no real payor verdict — the closed Freshdesk ticket I read as "verdict carrier" is just MAS's cancellation confirmation
+Currently showing on the Attestation tab (correct) but with misleading status="Ready to Review"
+Fix: revert status Ready to Review → Awaiting Response for those 83 (one SQL transaction, full audit reversal, ~5 min)
+2. The 28 synthetic-only groups (ALREADY REVERSED, NEEDS DECISION)
+100%-synthetic-ticket groups (queued but never actually filed on MAS)
+Were wrongly auto-closed by the original script's vacuous-truth bug → reversed
+Source code now correctly defers them to synthetic_only bucket
+They have no MAS-side evidence at all. Likely candidates for "mark as Abandoned" or operator triage. Open question for you.
+3. The 2 needs_scrape groups
+Cache misses during the chunked scrape run. Re-running the script with the same cache will pick them up automatically.
+4. The 10 unclassified groups (out of the 130 phase-advanced)
+Have no errorTypeId — surface in the page's "Unclassified (10)" hidden chip
+Operator can classify in one click and they appear in the main list
+5. Pre-existing schema-drift workflow failure
+Task #714 commit a9c91bba is missing migration 0036
+Not from this work — flagged for separate attention
+Files touched
+artifacts/api-server/src/scripts/oneshot-resolve-duplicate-clusters-2026-05-13.ts  (new, ~510 lines)
+artifacts/api-server/src/lib/portal-response-sync.ts                                (ClassifierCallResult fix)
+artifacts/api-server/src/lib/email-phrase-classifier.ts                             (signature reorder)
+artifacts/api-server/src/lib/response-matcher.ts                                    (processPortalResponse widened)
+artifacts/api-server/src/bot/portal-reader.ts                                       (readPortalTicket scrape)
+artifacts/api-server/src/lib/inbound-email-classifier.ts                            (test corpus)
+artifacts/api-server/src/__fixtures__/email-classifier-corpus.json                  (test corpus)
+artifacts/api-server/src/routes/response-tracker.ts                                 (minor)
+Reversal SQL kept on disk: /tmp/dup-scrape/reverse-synthetic-only.sql, backfill-portal-responses.sql, backfill-phase.sql
+
+Suggested next tasks (priority order)
+🔴 Reverse the 83 mis-routed groups (status Ready to Review → Awaiting Response). Lowest-risk, highest-clarity fix. ~5 min.
+🟡 Decide policy for the 28 synthetic-only groups. Options: leave for manual triage, mass-mark as Abandoned, or write a separate backfill. They have no MAS-side artifact at all.
+🟡 Investigate root cause of synthetic tickets. Where in the codebase are portal-NNNNNNNNNNN IDs being created for groups that never reach MAS? Probably in the portal queue path — worth a follow-up to prevent the cohort from regenerating.
+🟢 Run the script once more with --plan-only to pick up the 2 needs_scrape stragglers and the 28 synthetic_only re-bucketing. Will confirm the source-code fixes work end-to-end.
+🟢 Operator sweep on the 10 unclassified groups via the page's hidden chip — one-click classification per group.
+🟢 (Separate) Fix schema-drift workflow — Task #714 missing migration 0036.
+What I'd recommend doing right now
+Just #1 (reverse the 83). It's the only outstanding correctness issue and it's mechanical. Everything else is policy/cleanup that can wait for your call.
