@@ -37,6 +37,7 @@ import {
 } from "@/components/actions-rail";
 import * as XLSX from "xlsx";
 import { formatDate } from "@/lib/time";
+import { isPiiHeader } from "@workspace/vocab";
 
 type UploadStage = "idle" | "reading" | "parsing" | "ready" | "classifying" | "confirming" | "importing" | "complete" | "error";
 
@@ -227,6 +228,29 @@ function parseExcel(data: ArrayBuffer): { records: string[][]; sheets: SheetInfo
   return { records: allRecords, sheets };
 }
 
+// Strip member-identifying PII columns at parse time so their values
+// never enter React state, the resume-later localStorage cache, or the
+// `/api/import` payload. Returns the stripped records along with the
+// original header names that were removed (used for the wizard notice).
+// The shared `isPiiHeader` predicate (case/punctuation-insensitive) is
+// also enforced server-side as a belt-and-suspenders guard. Task #741.
+function stripPiiColumns(records: string[][]): { records: string[][]; strippedHeaders: string[] } {
+  if (records.length === 0) return { records, strippedHeaders: [] };
+  const headerRow = records[0];
+  const removeIndexes: number[] = [];
+  const strippedHeaders: string[] = [];
+  headerRow.forEach((h, idx) => {
+    if (isPiiHeader(h)) {
+      removeIndexes.push(idx);
+      strippedHeaders.push(h.trim());
+    }
+  });
+  if (removeIndexes.length === 0) return { records, strippedHeaders: [] };
+  const removeSet = new Set(removeIndexes);
+  const cleaned = records.map(row => row.filter((_, idx) => !removeSet.has(idx)));
+  return { records: cleaned, strippedHeaders };
+}
+
 function mapRowsToData(records: string[][]): { rows: ParsedRow[]; warnings: ParseWarning[]; skippedEmpty: number } {
   if (records.length < 2) return { rows: [], warnings: [], skippedEmpty: 0 };
 
@@ -319,6 +343,7 @@ export default function Import() {
   const [mappingSaveError, setMappingSaveError] = useState("");
   const [reviewGroup, setReviewGroup] = useState<ClassifyGroup | null>(null);
   const [resume, setResume] = useState<ResumeState | null>(null);
+  const [strippedPiiHeaders, setStrippedPiiHeaders] = useState<string[]>([]);
 
   const errorTypes: ErrorTypeResponse[] = errorTypesData ?? [];
 
@@ -362,6 +387,7 @@ export default function Import() {
     setErrorMessage("");
     setWarnings([]);
     setSheetInfos([]);
+    setStrippedPiiHeaders([]);
 
     try {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
@@ -384,6 +410,13 @@ export default function Import() {
         setStage("parsing");
         records = parseCsv(text);
       }
+
+      // Strip member-identifying PII columns immediately after parse so
+      // their values never enter React state, the resume-later cache,
+      // or the API payload. Task #741.
+      const piiResult = stripPiiColumns(records);
+      records = piiResult.records;
+      setStrippedPiiHeaders(piiResult.strippedHeaders);
 
       if (records.length > MAX_ROWS + 1) {
         setStage("error");
@@ -607,6 +640,7 @@ export default function Import() {
     setClassifyGroups([]);
     setSheetInfos([]);
     setMappingSaveError("");
+    setStrippedPiiHeaders([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -777,6 +811,32 @@ export default function Import() {
       )}
 
       <StageStepper stages={STEPS} currentKey={stepKey} variant="claim" />
+
+      {strippedPiiHeaders.length > 0 && stage !== "idle" && stage !== "complete" && (
+        <div
+          className="rounded-md border px-4 py-3 flex items-start gap-3"
+          style={{
+            background: TONE_STYLE.blue.bg,
+            borderColor: TONE_STYLE.blue.border,
+            color: TONE_STYLE.blue.fg,
+          }}
+          data-testid="banner-pii-stripped"
+        >
+          <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm">
+            <strong>
+              Removed {strippedPiiHeaders.length} column{strippedPiiHeaders.length === 1 ? "" : "s"} containing personal info before upload:
+            </strong>{" "}
+            {strippedPiiHeaders.map((h, i) => (
+              <span key={i}>
+                {i > 0 ? ", " : ""}
+                <span className="font-mono">"{h}"</span>
+              </span>
+            ))}
+            . That data was discarded in your browser and never sent to ClaimClear.
+          </div>
+        </div>
+      )}
 
       {summaryBanner && (
         <div

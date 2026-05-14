@@ -19,6 +19,7 @@ export * from "./verdict-outcome";
 export * from "./invoice-phase";
 export * from "./claim-disposition";
 export * from "./forbidden-literals";
+export * from "./pii-headers";
 
 import type { GlossaryEntry, VocabDomain } from "./domains";
 import { CLAIM_STATUS } from "./claim-status";

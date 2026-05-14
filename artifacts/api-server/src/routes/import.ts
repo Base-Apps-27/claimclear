@@ -3,6 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, auditLogsTable } from "@workspace/db";
 import { deriveDispositionFromLegacy, type LegacyClaimShape } from "@workspace/invoice-state";
+import { isPiiHeader } from "@workspace/vocab";
 import { asyncHandler } from "../lib/asyncHandler";
 import { parseInvoiceNumber } from "../lib/parseInvoiceNumber";
 import { normalizeServiceDate } from "../lib/dates";
@@ -67,6 +68,23 @@ router.post("/import", asyncHandler(async (req, res): Promise<void> => {
   if (!Array.isArray(rows) || rows.length === 0) {
     res.status(400).json({ error: "rows array is required" });
     return;
+  }
+
+  // Belt-and-suspenders PII guard. The browser strips Member-Name-style
+  // columns at parse time so they never leave the user's machine, but
+  // an older client or a direct API caller could still ship those keys
+  // in. Drop them in-place BEFORE any validation, normalization, or
+  // audit-log write — the rejected-row sample stored in
+  // `audit_logs.metadata` reads from these same row objects, so the
+  // strip must happen first to keep stripped values out of the audit
+  // trail. Shared `isPiiHeader` predicate keeps the rule in lockstep
+  // with the browser. Task #741.
+  for (const row of rows) {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      for (const key of Object.keys(row)) {
+        if (isPiiHeader(key)) delete (row as Record<string, unknown>)[key];
+      }
+    }
   }
 
   const batchId = `import_${Date.now()}`;
