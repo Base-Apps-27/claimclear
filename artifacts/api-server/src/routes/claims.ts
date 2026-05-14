@@ -2763,9 +2763,20 @@ Restate the note as described in the system prompt.`;
   res.json({ readback });
 }));
 
-// POST /claims/:id/exclude — mark a needs_classification leg as "not a
-// dispute candidate". The leg disappears from the dispute work queues but
-// stays visible on the invoice as a clean line.
+// POST /claims/:id/exclude — mark a leg as "not a dispute candidate".
+// The leg disappears from the dispute work queues but stays visible on
+// the invoice as a clean line.
+//
+// Source-state guard accepts two sub-statuses:
+//   • `needs_classification` — the original case; nothing to clear.
+//   • `investigating` — the leg has already been classified (errorTypeId
+//     is set, SOP walk may be partial). Operators legitimately want to
+//     pull such a leg back out of the dispute when they realise mid-walk
+//     that it's a clean ride or out of scope. We mirror /reclassify's
+//     guards (block in mas-action-required/awaiting-payout/closed group
+//     phases and after a submission has gone out the door) and clear the
+//     classification fields in the same transaction so the post-exclude
+//     row is indistinguishable from "blank-then-excluded".
 router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -2790,17 +2801,61 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+  let [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
   if (!leg) { res.status(404).json({ error: "Claim not found" }); return; }
 
   const subStatus = deriveLegSubStatus(leg);
-  if (subStatus !== "needs_classification") {
+  const allowedSourceStates: LegSubStatus[] = ["needs_classification", "investigating"];
+  if (!allowedSourceStates.includes(subStatus)) {
     res.status(409).json({
       error: "Cannot exclude from this leg state",
-      expectedState: "needs_classification",
+      expectedState: allowedSourceStates.join("|"),
       actualState: subStatus,
     });
     return;
+  }
+
+  // Investigating-source guards: mirror /reclassify so we never strip a
+  // classification out from under a leg whose group is past pre-submit
+  // or whose dispute is already on the wire.
+  if (subStatus === "investigating" && leg.invoiceGroupId != null) {
+    const [parentGroup] = await db
+      .select({
+        status: invoiceGroupsTable.status,
+        reattestRequired: invoiceGroupsTable.reattestRequired,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+      })
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId))
+      .limit(1);
+    if (parentGroup) {
+      const phase = getGroupMacroPhase(parentGroup);
+      const blockedPhases = new Set(["mas-action-required", "awaiting-payout", "closed"]);
+      if (blockedPhases.has(phase)) {
+        res.status(409).json({
+          error: "Cannot exclude a classified leg after the group reaches MAS/payout/closed; use the admin-correction flow",
+          expectedState: "group_phase ∈ {pre-submit, in-flight, response-pending, on-hold}",
+          actualState: phase,
+        });
+        return;
+      }
+    }
+    const submittedCount = await db
+      .select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.invoiceGroupId, leg.invoiceGroupId),
+        inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
+      ))
+      .limit(1);
+    if (submittedCount.length > 0) {
+      res.status(409).json({
+        error: "Cannot exclude a classified leg whose invoice group has been submitted to the payor",
+        expectedState: "no_submission",
+        actualState: "submission_exists",
+      });
+      return;
+    }
   }
 
   // Use the shared excludeLegCore helper so manual + auto exclusions
@@ -2816,6 +2871,39 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
   // that's correct, the group is now fully resolved without a dispute).
   // Mirrors the cascade in `/claims/:id/classify`.
   const updated = await db.transaction(async (tx) => {
+    // 2026-05-14 — investigating-source path: clear classification + SOP
+    // + hold + MAS-action fields so the post-exclude row is identical to
+    // a leg that was blank-then-excluded. Mirrors the field set in
+    // /reclassify so the two paths can't drift. We refresh `leg` from
+    // the cleared row so excludeLegCore's mirror branch (which reads
+    // `leg.sopOutcome` to decide whether to co-write `sop_outcome =
+    // 'non_issue'`) sees the cleared state and writes consistently.
+    if (subStatus === "investigating") {
+      await tx
+        .update(claimsTable)
+        .set({
+          errorTypeId: null,
+          errorTypeName: null,
+          sopNodeId: null,
+          sopAnswers: [],
+          sopOutcome: null,
+          dropReason: null,
+          dropNote: null,
+          droppedAt: null,
+          readyAt: null,
+          holdReason: null,
+          holdPlacedAt: null,
+          holdPendingFrom: null,
+          masActionRequired: null,
+          masActionCompletedAt: null,
+          masActionCompletedBy: null,
+          masActionNote: null,
+        })
+        .where(eq(claimsTable.id, id));
+      const [refreshed] = await tx.select().from(claimsTable).where(eq(claimsTable.id, id));
+      if (refreshed) leg = refreshed;
+    }
+
     const { claim } = await excludeLegCore({
       claimId: id,
       reason,
@@ -2825,6 +2913,7 @@ router.post("/claims/:id/exclude", asyncHandler(async (req, res): Promise<void> 
       leg,
       trustCallerStateGuard: true,
       ex: tx,
+      previousSubStatus: subStatus,
       // Task #689 — distinct audit action for the "Remove — handled
       // offline" exit so the activity timeline reads "Removed —
       // handled offline" instead of the generic leg-excluded line.

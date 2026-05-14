@@ -583,6 +583,14 @@ export interface ExcludeLegParams {
   // unchanged; the handled-offline path overrides this so the
   // human-readable detail line matches the new audit action.
   auditDetailsPrefix?: string;
+  // 2026-05-14 — when the manual /exclude route accepts a source
+  // sub-status other than `needs_classification` (e.g. `investigating`,
+  // after the route clears the leg's classification fields in the same
+  // transaction), the audit row must record the *real* prior state so
+  // the activity timeline / future undo paths can reason about where
+  // the leg came from. Defaults to "needs_classification" to preserve
+  // every existing call site's metadata exactly.
+  previousSubStatus?: string;
 }
 
 export interface ExcludeLegResult {
@@ -590,7 +598,7 @@ export interface ExcludeLegResult {
 }
 
 export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeLegResult> {
-  const { claimId, reason, note, source, actor, leg, ex, backfillId, auditAction, auditDetailsPrefix } = params;
+  const { claimId, reason, note, source, actor, leg, ex, backfillId, auditAction, auditDetailsPrefix, previousSubStatus } = params;
   const executor = ex ?? db;
 
   // Wave D-PR2b: route through `setClaimDisposition` so the canonical
@@ -631,7 +639,7 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
     reason,
     note,
     source,
-    previousSubStatus: "needs_classification",
+    previousSubStatus: previousSubStatus ?? "needs_classification",
   };
   if (setNonIssueSopOutcome) metadata.sopOutcomeCoWritten = "non_issue";
   if (backfillId !== undefined) metadata.backfillId = backfillId;

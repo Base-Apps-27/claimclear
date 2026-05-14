@@ -1206,7 +1206,14 @@ test("POST /claims/:id/exclude from needs_classification writes includedInDisput
   }
 });
 
-test("POST /claims/:id/exclude against a leg with sub-status `investigating` returns 409", async () => {
+test("POST /claims/:id/exclude from `investigating` clears classification fields and excludes the leg", async () => {
+  // 2026-05-14 — operators legitimately want to pull a classified-but-
+  // unwalked (or partially walked) leg out of the dispute when they
+  // realise mid-walk that it's a clean ride. The exclude route now
+  // accepts `investigating` as a source state, mirrors /reclassify's
+  // field-clearing set inside the same transaction, then runs the
+  // shared excludeLegCore writer. The audit row's `previousSubStatus`
+  // metadata records the real prior state.
   const errType = await createSeedErrorType();
   const claim = await createSeedClaim({
     errorTypeId: String(errType.id),
@@ -1217,12 +1224,47 @@ test("POST /claims/:id/exclude against a leg with sub-status `investigating` ret
       method: "POST",
       body: { reason: "clean_leg" },
     });
-    assert.equal(res.status, 409);
-    assert.equal(res.json.expectedState, "needs_classification");
-    assert.equal(res.json.actualState, "investigating");
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+    assert.equal(res.json.errorTypeId, null, "errorTypeId must be cleared");
+    assert.equal(res.json.errorTypeName, null, "errorTypeName must be cleared");
+    assert.equal(res.json.sopOutcome, null, "sopOutcome must be cleared");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    const excluded = audits.find((a) => a.action === "leg_excluded");
+    assert.ok(excluded, "expected leg_excluded audit row");
+    type Meta = { previousSubStatus?: string } | null;
+    const meta = excluded!.metadata as Meta;
+    assert.equal(meta?.previousSubStatus, "investigating",
+      "audit metadata must record the real prior sub-status, not the default `needs_classification`");
+
+    const events = await db.select().from(stateEventsTable).where(eq(stateEventsTable.claimId, claim.id));
+    assert.ok(events.find((e) => e.eventKey === "leg.excluded"), "expected leg.excluded state_events row");
   } finally {
     await cleanupClaim(claim.id);
     await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/exclude against a leg with sub-status `excluded` still returns 409", async () => {
+  // The expanded source-state allow-list is {needs_classification,
+  // investigating}. Already-excluded legs (and every other state) must
+  // still be rejected so the route can't double-exclude or pull a leg
+  // out of a terminal classified state.
+  const claim = await createSeedClaim({
+    errorTypeId: null,
+    includedInDispute: false,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "clean_leg" },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "needs_classification|investigating");
+    assert.equal(res.json.actualState, "excluded");
+  } finally {
+    await cleanupClaim(claim.id);
   }
 });
 
@@ -1959,10 +2001,16 @@ test("POST /claims/:id/exclude with reason=handled_offline excludes the leg and 
   }
 });
 
-test("POST /claims/:id/exclude with reason=handled_offline rejects from non-needs_classification leg state (409)", async () => {
-  // A classified leg derives to `investigating`, not `needs_classification`,
-  // so the reused source-state guard rejects the exit just like the
-  // legacy reasons would.
+test("POST /claims/:id/exclude with reason=handled_offline succeeds from `investigating` and clears classification", async () => {
+  // 2026-05-14 — the source-state guard was widened from
+  // `needs_classification` only to {needs_classification, investigating}
+  // so operators can pull a classified-but-unwalked leg out of the
+  // dispute (e.g. they realised mid-walk that the leg was already
+  // handled offline). This test pins that handled_offline reuses the
+  // same widened guard and that the classification fields are cleared
+  // as part of the exclusion. The "still 409 from beyond investigating"
+  // safety net is covered by a separate `sub-status excluded` test
+  // earlier in the file.
   const errType = await createSeedErrorType();
   const claim = await createSeedClaim({
     errorTypeId: String(errType.id),
@@ -1973,8 +2021,14 @@ test("POST /claims/:id/exclude with reason=handled_offline rejects from non-need
       method: "POST",
       body: { reason: "handled_offline", note: "Already attested offline last week." },
     });
-    assert.equal(res.status, 409, `expected 409, got ${res.status} (${JSON.stringify(res.json)})`);
-    assert.equal(res.json.expectedState, "needs_classification");
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal(res.json.includedInDispute, false);
+    assert.equal(res.json.errorTypeId, null, "errorTypeId must be cleared");
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.claimId, claim.id));
+    assert.ok(
+      audits.find((a) => a.action === "claim_removed_handled_offline"),
+      "expected claim_removed_handled_offline audit row (handled_offline keeps its distinct action)",
+    );
   } finally {
     await cleanupClaim(claim.id);
     await cleanupErrorType(errType.id);
