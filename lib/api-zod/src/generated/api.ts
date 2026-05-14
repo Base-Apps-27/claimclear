@@ -9640,12 +9640,12 @@ export const ConfirmUnderstandingReadbackBody = zod.object({
   readback: zod
     .string()
     .describe(
-      "The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`.",
+      'The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`. May be an empty string only when `specialCircumstances` is also empty (the explicit \"clear notes\" path).',
     ),
   specialCircumstances: zod
     .string()
     .describe(
-      'The operator\'s \"Understanding notes\" text — the narrative-changing context the readback was generated for. Required (the gate is non-empty-only; an empty note bypasses the check entirely and does not call this endpoint).',
+      'The operator\'s \"Understanding notes\" text — the narrative-changing context the readback was generated for. Empty string is the explicit \"clear notes\" path (no AI check required); a non-empty value triggers the drift gate.',
     ),
 });
 

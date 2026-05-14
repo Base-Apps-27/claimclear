@@ -31,6 +31,7 @@ import { WrapTooltip } from "@/components/info-tooltip";
 import { BatchStatusPill } from "@/components/batch-status-pill";
 import { StateLegend } from "@/components/state-legend";
 import { HeaderSearch } from "@/components/header-search";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { getDisplayTimezone, getDisplayTimezoneShort } from "@/lib/time";
 import { macroPhaseLabel } from "@/lib/lifecycle-phase";
 import { useAdminTour } from "@/tour/admin-tour";
@@ -505,6 +506,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <DisplayTimezoneChip />
               <SessionPaceBadge />
               {tourAvailable && <HelpPopover />}
+              <ThemeToggle />
               <BatchStatusPill />
             </div>
           </header>
