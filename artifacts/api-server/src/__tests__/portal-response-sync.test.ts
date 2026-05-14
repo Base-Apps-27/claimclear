@@ -135,6 +135,27 @@ test("parsePortalTicketHtml: page-chrome-only HTML (theme CSS, window.store) yie
   assert.equal(parsed.messages.length, 0);
 });
 
+test("parsePortalTicketHtml: Freshdesk 404 page yields zero messages and null subject", () => {
+  // The exact shape of prod rows 711–735 on 2026-05-13: the portal
+  // returned a 404 page (ticket id deleted/wrong/expired session) and
+  // the parser was happily extracting the 404 body as if it were a
+  // ticket reply. Belt-and-braces fingerprint check inside
+  // `parsePortalTicketHtml` must drop these even when raw HTML is
+  // handed to the parser without going through `readPortalTicket`'s
+  // HTTP-status guard.
+  const html = `<html><head><title>Page not found</title></head>
+    <body>
+      <h1>The page you were looking for doesn't exist (404)</h1>
+      <p>The page you were looking for doesn't exist.</p>
+      <p>You may have mistyped the address or the page may have moved.</p>
+      <a href="/">back to home</a>
+    </body></html>`;
+  const parsed = parsePortalTicketHtml(html, "99999");
+  assert.equal(parsed.messages.length, 0);
+  assert.equal(parsed.subject, null);
+  assert.equal(parsed.status, null);
+});
+
 test("parsePortalTicketHtml: extracts status + comments from the modern Freshdesk customer portal DOM", () => {
   // Snapshot of the DOM shapes captured live from
   // tpissues.medanswering.com on 2026-05-13 (Task #725 follow-up).

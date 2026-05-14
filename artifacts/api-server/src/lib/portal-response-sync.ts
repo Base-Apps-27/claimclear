@@ -369,7 +369,14 @@ export async function syncPortalResponsesForSubmission(
       t.includes("/* theme */") ||
       t.includes("window.cspNonce") ||
       t.includes("window.store =") ||
-      t.includes("--fw-body-bg:");
+      t.includes("--fw-body-bg:") ||
+      // Freshdesk 404 page body — caught by prod rows 711–735 on
+      // 2026-05-13. The portal-reader's HTTP-status guard plus the
+      // parser-level fingerprint should already drop these, but
+      // keep this third layer in case a future caller hands raw
+      // HTML straight to the parser without using the reader.
+      t.includes("The page you were looking for doesn't exist") ||
+      t.includes("The page you were looking for doesn’t exist");
     if (looksLikePageChrome) {
       logger.warn(
         { submissionId, ticketId, messageId: m.messageId, bodyHead: t.slice(0, 120) },

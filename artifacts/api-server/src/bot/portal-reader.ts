@@ -96,6 +96,19 @@ function pickFirst(html: string, patterns: RegExp[]): string | null {
  * same ticket, so a stable-but-imperfect id is better than throwing.
  */
 export function parsePortalTicketHtml(html: string, ticketId: string): PortalReaderResult {
+  // Belt-and-braces 404 detection. The portal-reader's HTTP-status
+  // check (in `readPortalTicket`) is the authoritative signal, but
+  // unit tests, future callers, and any code path that hands raw
+  // HTML to this function bypass that check. Detect the Freshdesk
+  // 404 body so we never extract a "Page not found" subject or its
+  // body text and misclassify it as a ticket reply.
+  if (
+    /The page you were looking for doesn'?t exist \(404\)/i.test(html) ||
+    /<title>[^<]*Page not found[^<]*<\/title>/i.test(html)
+  ) {
+    return { ticketId, status: null, subject: null, messages: [] };
+  }
+
   const status = pickFirst(html, [
     // Modern Freshdesk customer portal renders the badge with class
     // `fw-status-badge fw-status-badge__<state>` and the human label as
@@ -319,8 +332,26 @@ export async function readPortalTicket(
     const timeout = opts.navigationTimeoutMs ?? 45_000;
 
     logger.info({ ticketId, ticketUrl }, "Portal reader: navigating to ticket");
-    await page.goto(ticketUrl, { waitUntil: "domcontentloaded", timeout });
+    const navResponse = await page.goto(ticketUrl, { waitUntil: "domcontentloaded", timeout });
     await page.waitForTimeout(1500);
+
+    // 404 short-circuit. Playwright's `page.goto` returns the
+    // top-level navigation Response; if the portal doesn't recognise
+    // the ticket id (deleted, wrong tenant, malformed) it serves a
+    // 404 page whose body looks like "The page you were looking for
+    // doesn't exist". Without this guard, `parsePortalTicketHtml`
+    // would happily render the 404 page subject ("Page not found")
+    // and downstream code would treat it as a real ticket. Bail out
+    // here so the caller sees `messages: []` and `status: null`
+    // (caught by prod rows 711–735 on 2026-05-13).
+    const httpStatus = navResponse?.status() ?? null;
+    if (httpStatus !== null && httpStatus >= 400) {
+      logger.warn(
+        { ticketId, ticketUrl, httpStatus },
+        "Portal reader: ticket page returned HTTP error; returning empty result",
+      );
+      return { ticketId, status: null, subject: null, messages: [] };
+    }
 
     // If the storage state is stale we land on a login form. Re-login,
     // re-save state, then re-navigate. Mirrors the recovery path in the
