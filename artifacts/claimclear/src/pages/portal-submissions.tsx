@@ -1099,7 +1099,7 @@ function SubmissionRow({
   const showCheckbox = !hideSelection && (sub.status === "pending" || sub.status === "draft");
   const canSandbox = ["draft", "pending", "failed", "dry_run"].includes(sub.status) && !isQueued;
   const canRetry = sub.status === "failed";
-  const canCancel = (sub.status === "draft" || sub.status === "pending") && !isQueued;
+  const canCancel = (sub.status === "draft" || sub.status === "pending" || sub.status === "dry_run" || sub.status === "failed") && !isQueued;
 
   const [discardArm, setDiscardArm] = useState<DiscardArmState | null>(null);
   useEffect(() => {

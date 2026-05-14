@@ -1460,7 +1460,7 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   const [existing] = await db.select().from(portalSubmissionsTable).where(eq(portalSubmissionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Submission not found" }); return; }
 
-  const editableStatuses = ["draft", "pending", "failed"];
+  const editableStatuses = ["draft", "pending", "failed", "dry_run"];
   if (!editableStatuses.includes(existing.status)) {
     res.status(400).json({ error: "Cannot regenerate text for submissions in this status" });
     return;
@@ -1995,11 +1995,18 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
     status: "cancelled",
   }).where(eq(portalSubmissionsTable.id, id)).returning();
 
-  if (existing.status === "pending") {
+  // Auto-revert the parent group to "Needs Evidence" when cancelling a row
+  // that was holding the group in a queued/sandboxed state — pending (queued
+  // for the bot) or dry_run (sandbox-verified, awaiting promotion to live).
+  // Both states block the operator from editing evidence on the group, so
+  // when the last such submission goes away we drop the group back to a
+  // pre-queue state so they can fix evidence and re-queue.
+  const revertEligibleStatuses = ["pending", "dry_run"];
+  if (revertEligibleStatuses.includes(existing.status)) {
     const otherActive = await db.select().from(portalSubmissionsTable).where(
       and(
         eq(portalSubmissionsTable.invoiceGroupId, existing.invoiceGroupId),
-        inArray(portalSubmissionsTable.status, ["pending", "in_progress"]),
+        inArray(portalSubmissionsTable.status, ["pending", "in_progress", "dry_run"]),
       ),
     );
     if (otherActive.length === 0) {
@@ -2009,10 +2016,20 @@ router.post("/portal-submissions/:id/cancel", asyncHandler(async (req, res): Pro
           ctx,
           newStatus: "Needs Evidence",
           source: "portal_submission_cancel",
-          reason: `Portal submission #${id} cancelled, no other active submissions — reverting status`,
+          reason: `Portal submission #${id} cancelled from "${existing.status}", no other active submissions — reverting status`,
           actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
         });
       }
+    } else {
+      await db.insert(auditLogsTable).values({
+        claimId: await primaryClaimIdForGroup(existing.invoiceGroupId),
+        invoiceGroupId: existing.invoiceGroupId,
+        action: "portal_submission_cancelled",
+        details: `Portal submission #${id} cancelled from "${existing.status}" status (other active submissions remain — group status unchanged)`,
+        metadata: { submissionId: id, previousStatus: existing.status, source: "portal_submission_cancel" },
+        userEmail: req.user?.email ?? null,
+        userName: req.user?.displayName ?? null,
+      });
     }
   } else {
     await db.insert(auditLogsTable).values({
