@@ -27,6 +27,8 @@ import {
 import { AttestationWizard } from "./attestation-wizard";
 import { PerLegRow, type MergedRow } from "./per-leg-row";
 import { pickInvoiceNumber } from "./utils";
+import { usePresence } from "@/hooks/use-presence";
+import { HumanPresenceBanner } from "@/components/presence-banners";
 
 export interface GroupBucket {
   key: string;
@@ -55,6 +57,7 @@ export function GroupReviewPane({
   onAdvance?: () => void;
 }) {
   const groupId = bucket.invoiceGroupId;
+  const { viewers } = usePresence("invoice_group", groupId ?? undefined);
   const detailQuery = useGetInvoiceGroup(groupId ?? 0, {
     query: {
       queryKey: getGetInvoiceGroupQueryKey(groupId ?? 0),
@@ -132,6 +135,7 @@ export function GroupReviewPane({
     <div data-testid={`group-review-pane-${bucket.key}`}>
       <Section padded={false}>
         <div className="p-5 space-y-5">
+          <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
           <header className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">

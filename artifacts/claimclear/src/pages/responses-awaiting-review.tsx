@@ -67,6 +67,8 @@ import {
 } from "@/components/communication/group-thread-adapter";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
+import { usePresence } from "@/hooks/use-presence";
+import { HumanPresenceBanner } from "@/components/presence-banners";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import {
   CheckCircle,
@@ -953,6 +955,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   // payor's response gets re-tagged or as siblings move through verdict
   // actions in another tab.
   useInvoiceGroupEvents(group.id);
+  const { viewers } = usePresence("invoice_group", group.id);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1037,6 +1040,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
         data-testid={`detail-pane-${group.id}`}
         data-tour="responses-airead"
       >
+        <HumanPresenceBanner viewers={viewers} resourceLabel="group" />
         {/*
           Step 2 pill — sits flush above the email thread so the 1-2-3
           reading order is obvious to a new operator at a glance. On
