@@ -445,6 +445,33 @@ function buildSnapshot(ctx: GroupContext): SubmissionSnapshot {
  * read the per-leg-context column or the duplicate-of-claim pointer column
  * directly here (the helper is the single source of truth for both).
  */
+/**
+ * Single source of truth for "what counts as the operator's custom context
+ * note" when generating an AI dispute write-up. Returns trimmed text or "".
+ *
+ * Two fields can carry it:
+ *   - `specialCircumstances` — the legacy field name used by the
+ *     back-compat /portal-submissions/generate-preview route, scripts
+ *     and tests.
+ *   - `understandingReadback` — what the gauntlet UI's "Understanding
+ *     notes" textarea persists to invoice_groups, and what the live
+ *     /invoice-groups/:id/preview-generated route forwards.
+ *
+ * `specialCircumstances` wins when both are non-empty (legacy callers
+ * are explicit). Otherwise we fall back to the readback so the
+ * gauntlet's "Included as additional context in the AI write-up"
+ * promise actually holds. Pure & dependency-free so it's
+ * unit-testable without touching the DB or LLM.
+ */
+export function resolveCustomContextNote(opts: {
+  specialCircumstances?: string | null;
+  understandingReadback?: string | null;
+}): string {
+  const trimmedSpecial = (opts.specialCircumstances || "").trim();
+  if (trimmedSpecial.length > 0) return trimmedSpecial;
+  return (opts.understandingReadback || "").trim();
+}
+
 export function buildPortalDescriptionPrompt(opts: {
   ctx: GroupContext;
   errorType: typeof errorTypesTable.$inferSelect | null;
@@ -1132,17 +1159,10 @@ async function preparePortalDraftContent(
   opts: GeneratePortalDraftOpts,
 ): Promise<PreparedDraftContent> {
   const trimmedReadback = (opts.understandingReadback || "").trim();
-  // The gauntlet's "Understanding notes" textarea persists the operator's
-  // custom context onto invoice_groups.understandingReadback, and the
-  // preview-generated route forwards it as `understandingReadback` (not
-  // `specialCircumstances`). Fall back to it here so that note actually
-  // reaches the prompt's CRITICAL CONTEXT block — without this fallback
-  // the textarea's promise ("Included as additional context in the AI
-  // write-up") was silently broken on the live Generate-preview path.
-  // Legacy callers (the back-compat /portal-submissions/generate-preview
-  // route, tests, scripts) that pass `specialCircumstances` still take
-  // precedence when both are supplied.
-  const trimmedSpecial = ((opts.specialCircumstances || "").trim()) || trimmedReadback;
+  const trimmedSpecial = resolveCustomContextNote({
+    specialCircumstances: opts.specialCircumstances,
+    understandingReadback: opts.understandingReadback,
+  });
 
   const rawCtx = await resolveContext({ invoiceGroupId: opts.invoiceGroupId });
   if (!rawCtx) throw new GroupNotFoundError();
@@ -1587,11 +1607,15 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const trimmedSpecial = (specialCircumstances || "").trim();
   const trimmedReadback = (understandingReadback || "").trim();
-  // Understanding readback is now OPTIONAL — only persisted/used in the
-  // prompt when the operator types something. An empty readback is a
-  // valid "nothing extra to add" signal and is no longer a gate.
+  // Same fallback as `preparePortalDraftContent` (see
+  // `resolveCustomContextNote`): when the caller does not supply legacy
+  // `specialCircumstances`, treat the operator's `understandingReadback`
+  // as the custom context note so the generate-from-disputeReason
+  // branch below threads it into the AI prompt's CRITICAL CONTEXT block.
+  // Understanding readback is otherwise OPTIONAL — an empty readback is
+  // a valid "nothing extra to add" signal and is no longer a gate.
+  const trimmedSpecial = resolveCustomContextNote({ specialCircumstances, understandingReadback });
 
   const rawCtx = await resolveContext({ invoiceGroupId });
   if (!rawCtx) { res.status(404).json({ error: "Invoice group not found" }); return; }
