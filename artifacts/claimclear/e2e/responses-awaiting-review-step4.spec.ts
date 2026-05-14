@@ -14,8 +14,11 @@ import { test, expect, type Page, type Route, type Request } from "@playwright/t
  *   2. Each of the three Step 4 paths actually commits the drafts:
  *
  *        a. **Re-attest now** (all-approved mix) — the modal hits
- *           `promote-verdict-drafts` BEFORE `reattest/complete` and
- *           `awaiting-payor-again`, and the group leaves the queue.
+ *           `promote-verdict-drafts` BEFORE `reattest/complete`, and
+ *           the group leaves the queue. (Task #543 made
+ *           `reattest/complete` close the group as Resolved/Approved
+ *           directly, so the legacy follow-up `awaiting-payor-again`
+ *           call was removed from the modal in 2026-05-14.)
  *
  *        b. **Queue for attestation** (all-approved mix) — the modal
  *           hits `promote-verdict-drafts` BEFORE the per-leg
@@ -64,10 +67,10 @@ const OPERATOR_USER: UserShape = {
  *   - the next `GET /api/invoice-groups/:id` reflects that draft on
  *     the leg's `latestDraft` slot (so the picker re-seeds its lit
  *     pill on reload),
- *   - any Step 4 commit (`reattest+awaiting-payor-again`,
- *     `attest/queue` fan-out, or `outcome` PATCH) flips `committed`
- *     so the next `GET /api/invoice-groups?macroPhase=response-pending`
- *     returns an empty list and the page swaps in its empty state.
+ *   - any Step 4 commit (`reattest/complete`, `attest/queue` fan-out,
+ *     or `outcome` PATCH) flips `committed` so the next
+ *     `GET /api/invoice-groups?macroPhase=response-pending` returns an
+ *     empty list and the page swaps in its empty state.
  */
 interface DraftRow {
   id: number;
@@ -368,9 +371,20 @@ async function installApiStubs(page: Page, state: MockState): Promise<void> {
         state.reattestBody = request.postData();
       }
       state.callOrder.push("reattest_complete");
+      // Task #543 — `reattest/complete` is the commit point that
+      // closes the group (Resolved/Approved). Flip `committed` here
+      // so the next list refetch returns an empty `groups` array
+      // and the page swaps in its empty state. (Pre-2026-05-14 the
+      // modal did this via a follow-up `awaiting-payor-again` call;
+      // see the regression-guard stub below.)
+      state.committed = true;
       return route.fulfill(
         json(200, {
           ...buildGroupDetail(state),
+          status: "Resolved",
+          outcome: "Approved",
+          phase: "closed",
+          closureReason: "reattested",
           reattestCompletedAt: new Date().toISOString(),
           reattestCompletedBy: OPERATOR_USER.email,
         }),
@@ -378,25 +392,37 @@ async function installApiStubs(page: Page, state: MockState): Promise<void> {
     },
   );
 
-  // Step 4a (continued) — drop the row off the Review page.
-  // This is what actually commits the group out of `response-pending`
-  // for the re-attest path. We flip `committed` here so the next
-  // list refetch returns an empty `groups` array.
+  // 2026-05-14 — the modal no longer fires `awaiting-payor-again`
+  // after `reattest/complete`. Task #543 made `reattest/complete`
+  // route through `transitionGroupStatusAndOutcome({newStatus:
+  // "Resolved", newOutcome: "Approved"})`, which closes the group
+  // outright and drops it off Responses Awaiting Review on its own.
+  // The legacy follow-up was returning 409 ("Group can only be
+  // flipped back to awaiting-payor-again while it is awaiting review
+  // (response-pending)") and surfacing as a misleading "Re-attest
+  // failed" toast on top of a successful re-attest. The
+  // `reattest_complete` stub above now flips `committed` so the page
+  // swaps in its empty state on the next list refetch — no separate
+  // route is needed. We also assert below that the modal does NOT
+  // call `awaiting-payor-again` (regression guard).
+  let unexpectedAwaitingPayorAgainCalls = 0;
   await page.route(
     `**/api/invoice-groups/${GROUP_ID}/awaiting-payor-again*`,
     async (route: Route, request: Request) => {
       if (request.method() !== "POST") return route.fallback();
-      state.awaitingPayorAgainCount += 1;
-      state.callOrder.push("awaiting_payor_again");
-      state.committed = true;
+      unexpectedAwaitingPayorAgainCalls += 1;
+      // Mirror what production returns so a stray call doesn't
+      // silently 200; the regression assertion checks the counter.
       return route.fulfill(
-        json(200, {
-          ...buildGroupDetail(state),
-          awaitingPayorAgainAt: new Date().toISOString(),
+        json(409, {
+          error:
+            "Group can only be flipped back to awaiting-payor-again while it is awaiting review (response-pending).",
         }),
       );
     },
   );
+  (state as { __unexpectedAwaitingPayorAgainCalls?: () => number }).__unexpectedAwaitingPayorAgainCalls =
+    () => unexpectedAwaitingPayorAgainCalls;
 
   // Step 4c — closure outcome PATCH. The closure dialog routes here
   // after `beforeSubmit` (which calls promote-verdict-drafts).
@@ -622,17 +648,22 @@ test.describe("responses-awaiting-review · Step 3 → Step 4 commit", () => {
       page.getByTestId(`awaiting-review-row-${GROUP_ID}`),
     ).toHaveCount(0);
 
-    // Ordering: promote ran FIRST, then the re-attest stamp, then
-    // the awaiting-payor-again drop. Without the promote-first
-    // ordering the group could leave `response-pending` while still
-    // carrying drafts.
+    // Ordering: promote ran FIRST, then the re-attest stamp.
+    // Without the promote-first ordering the group could leave
+    // `response-pending` while still carrying drafts. Post-2026-05-14
+    // the modal no longer fires a follow-up `awaiting-payor-again` —
+    // `reattest/complete` closes the group on its own (Task #543) —
+    // so we also assert that endpoint was NOT called as a regression
+    // guard against the misleading "Re-attest failed" 409 toast.
     expect(state.promoteCount).toBe(1);
     const promoteIdx = state.callOrder.indexOf("promote");
     const reattestIdx = state.callOrder.indexOf("reattest_complete");
-    const awaitingIdx = state.callOrder.indexOf("awaiting_payor_again");
     expect(promoteIdx).toBeGreaterThanOrEqual(0);
     expect(reattestIdx).toBeGreaterThan(promoteIdx);
-    expect(awaitingIdx).toBeGreaterThan(reattestIdx);
+    expect(state.callOrder).not.toContain("awaiting_payor_again");
+    const stray = (state as { __unexpectedAwaitingPayorAgainCalls?: () => number })
+      .__unexpectedAwaitingPayorAgainCalls?.() ?? 0;
+    expect(stray).toBe(0);
     expect(state.committed).toBe(true);
   });
 

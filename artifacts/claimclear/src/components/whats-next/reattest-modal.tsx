@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useCompleteGroupReattest,
   useBulkQueueGroupReattest,
-  useMarkAwaitingPayorAgain,
 } from "@workspace/api-client-react";
 import type { ClaimResponse, InvoiceGroupResponse } from "@workspace/api-client-react";
 import {
@@ -97,9 +96,10 @@ interface Props {
  *
  *   2. **`now`** — the interactive checklist. The "I'm done" button is
  *      disabled until every box is ticked. On submit:
- *        `POST /invoice-groups/:id/complete-reattest` (group-level
- *        stamp) followed by `POST /invoice-groups/:id/awaiting-payor-again`
- *        so the row drops off the page.
+ *        `POST /invoice-groups/:id/reattest/complete` (group-level
+ *        stamp). That endpoint closes the group via Task #543's
+ *        Resolved/Approved transition, so the row drops off Responses
+ *        Awaiting Review without a separate awaiting-payor-again call.
  *
  *   3. **`queue`** — read-only preview of the same instructions plus an
  *      editable note. The Queue button opens an AlertDialog
@@ -132,7 +132,21 @@ export function ReattestModal({
   // also stamps awaiting_payor_again_at in the same transaction, so
   // we no longer need a separate markWaiting call on the queue path.
   const bulkQueueReattest = useBulkQueueGroupReattest();
-  const markWaiting = useMarkAwaitingPayorAgain();
+  // 2026-05-14 — there used to be a `useMarkAwaitingPayorAgain()` hook
+  // here that was called after `complete-reattest` on the `now` and
+  // `offline` paths to "drop the row off Responses Awaiting Review."
+  // Task #543 made `complete-reattest` route through
+  // `transitionGroupStatusAndOutcome({newStatus: "Resolved", newOutcome:
+  // "Approved"})`, which closes the group and flips its macro phase to
+  // `awaiting-payout`/`closed` — at which point the group is no longer
+  // on Responses Awaiting Review at all, so the markWaiting follow-up
+  // is dead code. Worse, it 409s ("Group can only be flipped back to
+  // awaiting-payor-again while it is awaiting review (response-pending)")
+  // because its source-state guard now rejects the post-close phase,
+  // surfacing as a "Re-attest failed" toast even though the re-attest
+  // itself succeeded. Both call sites were removed; the queue path
+  // already had no markWaiting call (the bulk-queue endpoint stamps
+  // `awaiting_payor_again_at` atomically).
 
   // Task #455 — invoice-number rename state. Pre-filled with the AI
   // suggestion (if any); the operator can edit, blank, or confirm it.
@@ -226,8 +240,7 @@ export function ReattestModal({
   const busy =
     promoting ||
     completeReattest.isPending ||
-    bulkQueueReattest.isPending ||
-    markWaiting.isPending;
+    bulkQueueReattest.isPending;
 
   const handleReattestNow = async () => {
     if (!allChecked) return;
@@ -255,13 +268,16 @@ export function ReattestModal({
           ...(renamePayload ?? {}),
         },
       });
-      // Drop the row off Responses Awaiting Review while the re-attest
-      // propagates back to the payor.
-      await markWaiting.mutateAsync({ id: group.id, data: {} });
+      // No follow-up markWaiting call: complete-reattest already
+      // closes the group (Resolved/Approved → macro phase
+      // awaiting-payout/closed), so the row is off Responses Awaiting
+      // Review immediately. The previous follow-up 409'd against the
+      // post-close phase and surfaced as a misleading "Re-attest
+      // failed" toast on top of a successful re-attest.
       onAfterAction(
         renamePayload
           ? `Re-attest recorded — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
-          : "Re-attest recorded — group is awaiting payor again.",
+          : "Re-attest recorded.",
       );
       close();
     } catch (err: unknown) {
@@ -352,13 +368,13 @@ export function ReattestModal({
         id: group.id,
         data: { ...buildOfflineReattestPayload(offlineNote), ...(renamePayload ?? {}) },
       });
-      // Same as the "now" path: drop the row off Responses Awaiting
-      // Review while the (offline-recorded) re-attest propagates.
-      await markWaiting.mutateAsync({ id: group.id, data: {} });
+      // No follow-up markWaiting call — see the "now" path comment
+      // above. complete-reattest closes the group, so awaiting-payor-
+      // again would 409 on its source-state guard.
       onAfterAction(
         renamePayload
           ? `Recorded as already re-attested (offline) — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
-          : "Recorded as already re-attested (offline) — group is awaiting payor again.",
+          : "Recorded as already re-attested (offline).",
       );
       close();
     } catch (err: unknown) {
