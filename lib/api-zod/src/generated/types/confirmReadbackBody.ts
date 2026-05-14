@@ -13,5 +13,8 @@ understanding readback / preview generation) instead.
  */
 
 export interface ConfirmReadbackBody {
+  /** The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`. */
   readback: string;
+  /** The operator's "Understanding notes" text — the narrative-changing context the readback was generated for. Required (the gate is non-empty-only; an empty note bypasses the check entirely and does not call this endpoint). */
+  specialCircumstances: string;
 }

@@ -2011,7 +2011,12 @@ function PinnedFooter({
         data: {
           invoiceGroupId: groupId,
           actorType: "operator",
-          understandingReadback: detail.understandingReadback ?? "",
+          // Task #745 — `specialCircumstances` is now the operator
+          // note (split from the AI restatement). The submit-time
+          // resolver still accepts `understandingReadback` for legacy
+          // callers, but the canonical field is `specialCircumstances`.
+          specialCircumstances: detail.specialCircumstances ?? "",
+          understandingReadback: detail.understandingReadback ?? null,
           // Forward the operator-reviewed draft so /portal-submissions
           // ships the exact text the user just confirmed on Q5. Falls
           // back to the AI baseline so the backend still has a body if

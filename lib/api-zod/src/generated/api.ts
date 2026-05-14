@@ -545,11 +545,23 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
         ),
+      specialCircumstances: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
         .describe(
-          "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+          "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+        ),
+      understandingReadbackForText: zod
+        .string()
+        .nullish()
+        .describe(
+          "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
         ),
       understandingReadbackAt: zod.coerce.date().nullish(),
       understandingReadbackBy: zod.string().nullish(),
@@ -1289,11 +1301,23 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             .describe(
               "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
             ),
+          specialCircumstances: zod
+            .string()
+            .nullish()
+            .describe(
+              "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+            ),
           understandingReadback: zod
             .string()
             .nullish()
             .describe(
-              "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+              "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+            ),
+          understandingReadbackForText: zod
+            .string()
+            .nullish()
+            .describe(
+              "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
             ),
           understandingReadbackAt: zod.coerce.date().nullish(),
           understandingReadbackBy: zod.string().nullish(),
@@ -2251,11 +2275,23 @@ export const GetInvoiceGroupResponse = zod
       .describe(
         "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
       ),
+    specialCircumstances: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+      ),
     understandingReadback: zod
       .string()
       .nullish()
       .describe(
-        "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+        "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+      ),
+    understandingReadbackForText: zod
+      .string()
+      .nullish()
+      .describe(
+        "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
       ),
     understandingReadbackAt: zod.coerce.date().nullish(),
     understandingReadbackBy: zod.string().nullish(),
@@ -3639,11 +3675,23 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -4157,11 +4205,23 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -4737,11 +4797,23 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -5262,11 +5334,23 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       .describe(
         "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
       ),
+    specialCircumstances: zod
+      .string()
+      .nullish()
+      .describe(
+        "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+      ),
     understandingReadback: zod
       .string()
       .nullish()
       .describe(
-        "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+        "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+      ),
+    understandingReadbackForText: zod
+      .string()
+      .nullish()
+      .describe(
+        "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
       ),
     understandingReadbackAt: zod.coerce.date().nullish(),
     understandingReadbackBy: zod.string().nullish(),
@@ -5792,11 +5876,23 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -6309,11 +6405,23 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -6822,11 +6930,23 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -7628,11 +7748,23 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -8165,11 +8297,23 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -9282,11 +9426,23 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -9481,7 +9637,16 @@ export const ConfirmUnderstandingReadbackParams = zod.object({
 });
 
 export const ConfirmUnderstandingReadbackBody = zod.object({
-  readback: zod.string(),
+  readback: zod
+    .string()
+    .describe(
+      "The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`.",
+    ),
+  specialCircumstances: zod
+    .string()
+    .describe(
+      'The operator\'s \"Understanding notes\" text — the narrative-changing context the readback was generated for. Required (the gate is non-empty-only; an empty note bypasses the check entirely and does not call this endpoint).',
+    ),
 });
 
 export const ConfirmUnderstandingReadbackResponse = zod.object({
@@ -9802,11 +9967,23 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -10328,11 +10505,23 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -10847,11 +11036,23 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -11363,11 +11564,23 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -11881,11 +12094,23 @@ export const StampPreviewGeneratedResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -12429,11 +12654,23 @@ export const CompleteGroupReattestResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),
@@ -12982,11 +13219,23 @@ export const BulkQueueGroupReattestResponse = zod
         .describe(
           "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
         ),
+      specialCircumstances: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
         .describe(
-          "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+          "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+        ),
+      understandingReadbackForText: zod
+        .string()
+        .nullish()
+        .describe(
+          "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
         ),
       understandingReadbackAt: zod.coerce.date().nullish(),
       understandingReadbackBy: zod.string().nullish(),
@@ -27816,7 +28065,18 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
 export const PortalUnderstandingPreflightBody = zod.object({
   invoiceGroupId: zod.number().optional(),
   disputeReason: zod.string().optional(),
-  specialCircumstances: zod.string().optional(),
+  specialCircumstances: zod
+    .string()
+    .optional()
+    .describe(
+      'The operator\'s \"Understanding notes\" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`.',
+    ),
+  understandingReadback: zod
+    .string()
+    .optional()
+    .describe(
+      "Legacy alias for `specialCircumstances` (back-compat). Prefer `specialCircumstances` in new callers.",
+    ),
 });
 
 export const PortalUnderstandingPreflightResponse = zod.object({
@@ -27824,6 +28084,18 @@ export const PortalUnderstandingPreflightResponse = zod.object({
     .string()
     .describe(
       "A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context.",
+    ),
+  previewReadback: zod
+    .string()
+    .optional()
+    .describe(
+      "Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .optional()
+    .describe(
+      "Echo of the `specialCircumstances` text the readback was generated for. The UI uses this to compare against the live textarea contents to detect drift.",
     ),
 });
 
@@ -29693,11 +29965,23 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
         ),
+      specialCircumstances: zod
+        .string()
+        .nullish()
+        .describe(
+          "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+        ),
       understandingReadback: zod
         .string()
         .nullish()
         .describe(
-          "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+          "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+        ),
+      understandingReadbackForText: zod
+        .string()
+        .nullish()
+        .describe(
+          "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
         ),
       understandingReadbackAt: zod.coerce.date().nullish(),
       understandingReadbackBy: zod.string().nullish(),
@@ -33310,11 +33594,23 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .describe(
       "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response.",
     ),
+  specialCircumstances: zod
+    .string()
+    .nullish()
+    .describe(
+      "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.",
+    ),
   understandingReadback: zod
     .string()
     .nullish()
     .describe(
-      "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.",
+      "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).",
+    ),
+  understandingReadbackForText: zod
+    .string()
+    .nullish()
+    .describe(
+      "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.",
     ),
   understandingReadbackAt: zod.coerce.date().nullish(),
   understandingReadbackBy: zod.string().nullish(),

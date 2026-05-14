@@ -6047,9 +6047,15 @@ components:
         draftReviewedByUserId:
           type: ["string", "null"]
           description: "User ID of the operator who marked the draft reviewed. Used to look up reviewedBy on the detail response."
+        specialCircumstances:
+          type: ["string", "null"]
+          description: "Operator's free-text \"Understanding notes\" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them."
         understandingReadback:
           type: ["string", "null"]
-          description: "Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview."
+          description: "The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift)."
+        understandingReadbackForText:
+          type: ["string", "null"]
+          description: "The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check."
         understandingReadbackAt:
           type: ["string", "null"]
           format: date-time
@@ -7528,10 +7534,14 @@ components:
 
     ConfirmReadbackBody:
       type: object
-      required: [readback]
+      required: [readback, specialCircumstances]
       properties:
         readback:
           type: string
+          description: The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`. May be an empty string only when `specialCircumstances` is also empty (the explicit "clear notes" path).
+        specialCircumstances:
+          type: string
+          description: The operator's "Understanding notes" text — the narrative-changing context the readback was generated for. Empty string is the explicit "clear notes" path (no AI check required); a non-empty value triggers the drift gate.
 
     CompleteReattestBody:
       type: object
@@ -8556,6 +8566,10 @@ components:
           type: string
         specialCircumstances:
           type: string
+          description: The operator's "Understanding notes" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`.
+        understandingReadback:
+          type: string
+          description: Legacy alias for `specialCircumstances` (back-compat). Prefer `specialCircumstances` in new callers.
 
     PortalUnderstandingPreflightResponse:
       type: object
@@ -8563,6 +8577,12 @@ components:
         readback:
           type: string
           description: A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context.
+        previewReadback:
+          type: string
+          description: Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string).
+        understandingReadbackForText:
+          type: string
+          description: Echo of the `specialCircumstances` text the readback was generated for. The UI uses this to compare against the live textarea contents to detect drift.
       required:
         - readback
 

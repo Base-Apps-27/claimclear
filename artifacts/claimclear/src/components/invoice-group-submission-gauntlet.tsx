@@ -8,6 +8,7 @@ import {
   useRegenerateInvoiceGroupDraft,
   useMarkInvoiceGroupDraftReviewed,
   useClearLegVerdictDraft,
+  usePortalUnderstandingPreflight,
   getGetInvoiceGroupQueryKey,
   getGetInvoiceGroupValidTransitionsQueryKey,
   getGetClaimQueryKey,
@@ -95,6 +96,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   const { toast } = useToast();
 
   const confirmReadbackMutation = useConfirmUnderstandingReadback();
+  const preflightMutation = usePortalUnderstandingPreflight();
   const stampPreviewMutation = useStampPreviewGenerated();
   const submitMutation = useCreatePortalSubmission();
   const saveDraftMutation = useSaveInvoiceGroupDraft();
@@ -121,18 +123,25 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   // change and replay the animation cleanly across consecutive saves.
   const [draftSaveBreath, setDraftSaveBreath] = useState(0);
 
-  const [readback, setReadback] = useState("");
-  // When the operator has saved a readback, default to a read-only
-  // quoted display (Edit reopens the textarea). When nothing is saved
-  // yet, default to the textarea so they can start typing immediately.
+  // Task #745 — split the operator's note from the AI restatement.
+  // `notes` mirrors `group.specialCircumstances` (the operator's text);
+  // `pendingReadback` / `pendingForText` hold the most recent preflight
+  // response that hasn't been Saved yet (after Save they're moved onto
+  // the group columns and we clear them here). Drift = the live `notes`
+  // textarea no longer matches the text the readback was generated for.
+  const [notes, setNotes] = useState("");
   const [isEditingReadback, setIsEditingReadback] = useState(false);
+  const [pendingReadback, setPendingReadback] = useState<string | null>(null);
+  const [pendingForText, setPendingForText] = useState<string | null>(null);
   useEffect(() => {
-    setReadback(group?.understandingReadback ?? "");
-    // Any external change to the saved readback collapses the editor
-    // back to the read-only display so two operators don't tug on the
-    // same buffer.
+    setNotes(group?.specialCircumstances ?? "");
     setIsEditingReadback(false);
-  }, [group?.understandingReadback]);
+    // External changes (cross-tab save, refetch after our own confirm)
+    // invalidate any in-flight pending preflight so we don't render a
+    // ghost readback that doesn't match the freshly-loaded server state.
+    setPendingReadback(null);
+    setPendingForText(null);
+  }, [group?.specialCircumstances, group?.understandingReadback, group?.understandingReadbackForText]);
 
   // Editable draft state for the new Review & edit step. We hydrate from
   // the saved draft if present, falling back to the AI baseline so the
@@ -198,7 +207,39 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
     }
     return { sop, excluded };
   }, [rides, resolvedIndex]);
-  const readbackConfirmed = !!group?.understandingReadbackAt;
+  // Task #745 — derived states for the verify-then-save gate.
+  // `savedNotes` is the operator's last-saved text; `anchorReadback` and
+  // `anchorForText` are the AI restatement + the exact text it was
+  // generated for (the drift anchor). The pending* values come from the
+  // most recent in-component preflight click and shadow the server
+  // values until the operator hits Save.
+  const savedNotes = (group?.specialCircumstances ?? "").trim();
+  const liveNotes = (notes ?? "").trim();
+  const anchorReadback = pendingReadback ?? group?.understandingReadback ?? null;
+  const anchorForText = pendingForText ?? group?.understandingReadbackForText ?? null;
+  const notesEmpty = liveNotes.length === 0;
+  const notesMatchSaved = liveNotes === savedNotes;
+  const hasAnchor = anchorReadback != null && anchorReadback.trim().length > 0;
+  const notesMatchAnchor = hasAnchor && liveNotes === (anchorForText ?? "").trim();
+  // The gate fires only for non-empty notes that don't match the
+  // anchor. Empty notes (clear path) and unchanged notes never need a
+  // re-check.
+  const needsCheck = !notesEmpty && !notesMatchAnchor;
+  // Task #745 — `readbackConfirmed` must also require the saved note to
+  // match the saved drift anchor. Cross-tab/server drift can leave the
+  // group with `specialCircumstances` (old saved note) and a fresh
+  // `understandingReadbackForText` (other tab ran preflight against
+  // edited text); in that case the readback no longer corresponds to
+  // the saved note and we must force the operator back into the
+  // "needs re-check" state instead of showing a stale saved view that
+  // pairs the old note with a mismatched AI quote.
+  const savedAnchorForText = (group?.understandingReadbackForText ?? "").trim();
+  const savedNotesMatchSavedAnchor =
+    savedNotes.length > 0 && savedNotes === savedAnchorForText;
+  const readbackConfirmed =
+    !!group?.understandingReadbackAt &&
+    (group?.specialCircumstances ?? "").length > 0 &&
+    savedNotesMatchSavedAnchor;
   const previewGenerated = !!group?.previewGeneratedAt;
   const isPreSubmit = group?.status === "New" || group?.status === "Needs Evidence";
 
@@ -264,23 +305,87 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
     qc.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
   }
 
+  function onCheckUnderstanding() {
+    // Empty-note path doesn't call preflight at all — Save is the
+    // explicit "clear notes" action.
+    if (!liveNotes) return;
+    preflightMutation.mutate(
+      { data: { invoiceGroupId: groupId, specialCircumstances: notes } },
+      {
+        onSuccess: (data) => {
+          setPendingReadback(data.readback ?? null);
+          // Server echoes back the exact text it generated for; use it
+          // as the drift anchor so trim/whitespace differences don't
+          // leak between the textarea and the comparison.
+          setPendingForText(
+            data.understandingReadbackForText ?? notes,
+          );
+        },
+        onError: (e: unknown) =>
+          toast({
+            title: "AI check failed",
+            description: String((e as Error).message),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   function onConfirmReadback() {
-    if (!readback.trim()) return;
+    // Drift gate (mirrors the server contract): if the operator typed
+    // something but hasn't re-checked since, force them through the
+    // preflight before allowing Save. The button is disabled in that
+    // state too, but a defensive guard keeps the keyboard-driven path
+    // honest.
+    if (needsCheck) return;
+    const payload = notesEmpty
+      ? { readback: "", specialCircumstances: "" }
+      : {
+          readback: anchorReadback ?? "",
+          specialCircumstances: notes,
+        };
     confirmReadbackMutation.mutate(
-      { id: groupId, data: { readback } },
+      { id: groupId, data: payload },
       {
         onSuccess: () => {
-          successToast({ title: "__VERB__", description: "Understanding notes saved" });
+          successToast({
+            title: "__VERB__",
+            description: notesEmpty
+              ? "Understanding notes cleared"
+              : "Understanding notes saved",
+          });
           setIsEditingReadback(false);
+          setPendingReadback(null);
+          setPendingForText(null);
           invalidateGroup();
         },
-        onError: (e: unknown) => toast({ title: "Save failed", description: String((e as Error).message), variant: "destructive" }),
+        onError: (e: unknown) => {
+          let msg = (e as Error).message;
+          let code: string | undefined;
+          if (e != null && typeof e === "object" && "response" in e) {
+            const axiosErr = e as { response?: { data?: { error?: string; code?: string } } };
+            const data = axiosErr.response?.data;
+            if (data?.error) msg = data.error;
+            if (data?.code) code = data.code;
+          }
+          // 409 with code=stale_readback / missing_readback → blow away
+          // the local pending state so the operator is forced through
+          // the preflight again. The button-state recomputes via the
+          // anchor null-check.
+          if (code === "stale_readback" || code === "missing_readback") {
+            setPendingReadback(null);
+            setPendingForText(null);
+          }
+          toast({ title: "Save failed", description: msg, variant: "destructive" });
+        },
       },
     );
   }
 
   function onCancelReadbackEdit() {
-    setReadback(group?.understandingReadback ?? "");
+    setNotes(group?.specialCircumstances ?? "");
+    setPendingReadback(null);
+    setPendingForText(null);
     setIsEditingReadback(false);
   }
 
@@ -376,7 +481,16 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
         data: {
           invoiceGroupId: groupId,
           actorType: "operator",
-          understandingReadback: group?.understandingReadback ?? readback,
+          // Task #745 — submit MUST only carry the persisted, AI-checked
+          // values. Never thread the unsaved local `notes` textarea here:
+          // doing so would let an operator type a non-empty note, skip
+          // the AI readback gate, and still get that note into the
+          // dispute prompt via `resolveCustomContextNote`. The Save
+          // button is the only path that promotes local text to
+          // `group.specialCircumstances`, and Save itself is gated by
+          // the verify-then-save flow.
+          specialCircumstances: group?.specialCircumstances ?? null,
+          understandingReadback: group?.understandingReadback ?? null,
           // Pass the operator-reviewed text so /portal-submissions uses
           // it as the dispute body. Falls back to the AI baseline so the
           // backend still has something if the draft path was skipped.
@@ -919,11 +1033,12 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2" data-testid="readback-block">
           {readbackConfirmed && !isEditingReadback ? (
-            // Saved-state display: show the operator the exact text
-            // they committed (this is what gets passed to the AI prompt
-            // and to /portal-submissions). Edit reopens the textarea.
+            // Saved + in-sync display: the operator's notes are
+            // committed AND the AI restatement that was generated for
+            // them is on file. Edit reopens the textarea + clears any
+            // pending preflight so the gate runs fresh on the next save.
             <>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -947,16 +1062,30 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                 className="rounded-md border-l-2 border-primary/40 bg-muted/40 px-3 py-2 text-xs whitespace-pre-wrap"
                 data-testid="readback-saved-display"
               >
-                {group.understandingReadback}
+                {group.specialCircumstances}
               </blockquote>
+              {group.understandingReadback ? (
+                <details className="text-xs text-muted-foreground" data-testid="readback-saved-ai-quote-wrap">
+                  <summary className="cursor-pointer select-none">What the AI heard</summary>
+                  <blockquote
+                    className="mt-1 rounded-md border-l-2 border-blue-300/60 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-2 whitespace-pre-wrap"
+                    data-testid="readback-saved-ai-quote"
+                  >
+                    {group.understandingReadback}
+                  </blockquote>
+                </details>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 Included as additional context in the AI write-up.
               </p>
             </>
           ) : (
-            // Editable state: empty (no save yet) or the operator
-            // clicked Edit. Save & include is enabled only when there's
-            // non-empty text that differs from what's already saved.
+            // Editable state — three sub-states driven by the drift gate:
+            //  1. Empty notes → Save acts as "clear" (no AI check).
+            //  2. Typed but not checked, or drifted from the anchor →
+            //     show "Check AI understanding"; Save is disabled.
+            //  3. Checked + in sync → show the readback blockquote and
+            //     enable Save.
             <>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -976,36 +1105,89 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                       Cancel
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={onConfirmReadback}
-                    disabled={
-                      !isPreSubmit ||
-                      confirmReadbackMutation.isPending ||
-                      !readback.trim() ||
-                      readback === (group.understandingReadback ?? "")
-                    }
-                    data-testid="readback-confirm"
-                  >
-                    {confirmReadbackMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                    ) : null}
-                    Save &amp; include in submission
-                  </Button>
+                  {needsCheck ? (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={onCheckUnderstanding}
+                      disabled={
+                        !isPreSubmit ||
+                        preflightMutation.isPending ||
+                        notesEmpty
+                      }
+                      data-testid="readback-check"
+                    >
+                      {preflightMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Check AI understanding
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onConfirmReadback}
+                      disabled={
+                        !isPreSubmit ||
+                        confirmReadbackMutation.isPending ||
+                        // Only suppress Save when there's literally nothing
+                        // to persist: text matches the already-saved note
+                        // AND the saved confirmation is still valid (no
+                        // server/cross-tab drift, no pending re-check).
+                        // Migrated rows arrive with savedNotes ===
+                        // liveNotes but no valid confirmation, so they
+                        // must be allowed to Save after running Check.
+                        (notesMatchSaved && readbackConfirmed)
+                      }
+                      data-testid="readback-confirm"
+                    >
+                      {confirmReadbackMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : null}
+                      {notesEmpty ? "Save (clear)" : "Save \u0026 include in submission"}
+                    </Button>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
                 Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
               </p>
               <Textarea
-                value={readback}
-                onChange={(e) => setReadback(e.target.value)}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 disabled={!isPreSubmit}
                 placeholder="Optional — leave blank if there's nothing extra to add."
                 data-testid="readback-input"
               />
+              {!notesEmpty && hasAnchor && notesMatchAnchor ? (
+                <div data-testid="readback-preview-wrap" className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    AI understanding
+                  </p>
+                  <blockquote
+                    className="rounded-md border-l-2 border-blue-300/60 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-2 text-xs whitespace-pre-wrap"
+                    data-testid="readback-preview"
+                  >
+                    {anchorReadback}
+                  </blockquote>
+                  <p className="text-[11px] text-muted-foreground">
+                    Save to include this note in the submission. Edit the text above to re-check.
+                  </p>
+                </div>
+              ) : null}
+              {!notesEmpty && needsCheck ? (
+                <p
+                  className="text-[11px] text-amber-700 dark:text-amber-400"
+                  data-testid="readback-needs-check-hint"
+                >
+                  {hasAnchor
+                    ? "Notes changed since the last AI check — re-check before saving."
+                    : "Run an AI check before saving — this field carries extra weight in the write-up."}
+                </p>
+              ) : null}
             </>
           )}
         </div>

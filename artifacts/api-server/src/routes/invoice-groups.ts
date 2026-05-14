@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
+import crypto from "node:crypto";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable } from "@workspace/db";
@@ -3021,18 +3022,44 @@ router.post("/invoice-groups/:id/group-context", asyncHandler(async (req, res): 
   res.json(updated);
 }));
 
-// POST /invoice-groups/:id/understanding-readback — operator confirms the
-// "this is what I'm asking for" sentence before generating the preview.
-// Source-state: pre-submit AND every disputed leg is resolved.
+// POST /invoice-groups/:id/understanding-readback — operator confirms
+// the AI restatement of their "Understanding notes" before saving the
+// note to the group. Task #745 turned this into the verify-then-save
+// gate: the request body MUST carry both the operator's note text
+// (`specialCircumstances`) AND the AI restatement they just verified
+// (`readback`), and the server cross-checks them against the most
+// recent preflight for this group. Mismatches return 409 with a typed
+// `code` so the UI can prompt for a fresh re-check.
 router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   if (await blockMutationOnTourSampleGroup(id, res)) return;
-  const readback = (req.body?.readback ?? "") as string;
-  if (!readback || typeof readback !== "string") {
-    res.status(400).json({ error: "readback is required" });
+  // Task #745 — both fields are REQUIRED in the wire contract. We must
+  // distinguish "omitted" (legacy/buggy caller — reject) from "empty
+  // string" (the explicit clear path). An omitted `specialCircumstances`
+  // would otherwise silently wipe the operator's note, and an omitted
+  // `readback` on a non-empty note would silently bypass the AI gate.
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (!("specialCircumstances" in body)) {
+    res.status(400).json({ error: "specialCircumstances is required", code: "missing_special_circumstances" });
     return;
   }
+  if (!("readback" in body)) {
+    res.status(400).json({ error: "readback is required", code: "missing_readback_field" });
+    return;
+  }
+  const readbackRaw = body.readback;
+  const specialCircumstancesRaw = body.specialCircumstances;
+  if (typeof readbackRaw !== "string") {
+    res.status(400).json({ error: "readback must be a string" });
+    return;
+  }
+  if (typeof specialCircumstancesRaw !== "string") {
+    res.status(400).json({ error: "specialCircumstances must be a string" });
+    return;
+  }
+  const readback = readbackRaw;
+  const specialCircumstances = specialCircumstancesRaw.trim();
 
   const group = await loadGroupOr404(id, res);
   if (!group) return;
@@ -3057,25 +3084,97 @@ router.post("/invoice-groups/:id/understanding-readback", asyncHandler(async (re
     return;
   }
 
+  // Task #745 — empty notes are an explicit "clear" path: the operator
+  // has nothing extra to add about the case, so we wipe the column +
+  // any stale readback anchor in one shot. No AI check needed because
+  // there is nothing for the AI to restate.
+  if (specialCircumstances.length === 0) {
+    const now = new Date();
+    const [updated] = await db
+      .update(invoiceGroupsTable)
+      .set({
+        specialCircumstances: null,
+        understandingReadback: null,
+        understandingReadbackForText: null,
+        understandingReadbackAt: now,
+        understandingReadbackBy: req.user?.email ?? null,
+      })
+      .where(eq(invoiceGroupsTable.id, id))
+      .returning();
+    await createGroupAuditLog(id, "understanding_readback_confirmed", "Understanding notes cleared", req, {
+      cleared: true,
+      readbackLength: 0,
+      specialCircumstancesLength: 0,
+    });
+    await emitStateEvent({
+      eventKey: "group.readback_confirmed",
+      invoiceGroupId: id,
+      actorUserId: req.user?.email ?? null,
+      metadata: { cleared: true, readbackLength: 0, specialCircumstancesLength: 0 },
+    });
+    emitGroupEvent(id, "readback_confirmed", req);
+    res.json(updated);
+    return;
+  }
+
+  // Drift gate (Task #745): the server-side anchor for the most recent
+  // preflight is `understandingReadback` + `understandingReadbackForText`
+  // on the group itself (the preflight route writes both). Reject if:
+  //   - no preflight has run yet for this group → missing_readback
+  //   - the supplied note doesn't match the anchor → stale_readback
+  //   - the supplied readback doesn't match the anchor → stale_readback
+  const anchorReadback = (group.understandingReadback ?? "").trim();
+  const anchorForText = (group.understandingReadbackForText ?? "").trim();
+  if (anchorReadback.length === 0 || group.understandingReadbackForText === null) {
+    res.status(409).json({
+      error: "Run an AI check first — this field carries extra weight in the write-up.",
+      code: "missing_readback",
+    });
+    return;
+  }
+  if (anchorForText !== specialCircumstances) {
+    res.status(409).json({
+      error: "Understanding notes changed since the last AI check. Re-run the check before saving.",
+      code: "stale_readback",
+    });
+    return;
+  }
+  if (anchorReadback !== readback.trim()) {
+    res.status(409).json({
+      error: "The supplied readback does not match the most recent AI check. Re-run the check before saving.",
+      code: "stale_readback",
+    });
+    return;
+  }
+
   const now = new Date();
   const [updated] = await db
     .update(invoiceGroupsTable)
     .set({
-      understandingReadback: readback,
+      specialCircumstances,
+      understandingReadback: anchorReadback,
+      understandingReadbackForText: specialCircumstances,
       understandingReadbackAt: now,
       understandingReadbackBy: req.user?.email ?? null,
     })
     .where(eq(invoiceGroupsTable.id, id))
     .returning();
 
-  await createGroupAuditLog(id, "group_readback_confirmed", "Understanding readback confirmed", req, {
-    readbackLength: readback.length,
+  const noteHash = crypto.createHash("sha1").update(specialCircumstances).digest("hex");
+  await createGroupAuditLog(id, "understanding_readback_confirmed", "Understanding readback confirmed", req, {
+    readbackLength: anchorReadback.length,
+    specialCircumstancesLength: specialCircumstances.length,
+    noteHash,
   });
   await emitStateEvent({
     eventKey: "group.readback_confirmed",
     invoiceGroupId: id,
     actorUserId: req.user?.email ?? null,
-    metadata: { readbackLength: readback.length },
+    metadata: {
+      readbackLength: anchorReadback.length,
+      specialCircumstancesLength: specialCircumstances.length,
+      noteHash,
+    },
   });
   emitGroupEvent(id, "readback_confirmed", req);
   res.json(updated);
@@ -3139,6 +3238,11 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
     draft = await generatePortalDraftForGroup(
       {
         invoiceGroupId: id,
+        // Task #745: prefer the dedicated `specialCircumstances` column
+        // (the operator's note). Pass `understandingReadback` too so the
+        // legacy fallback in `resolveCustomContextNote` still covers
+        // pre-migration rows whose note text was never copied across.
+        specialCircumstances: group.specialCircumstances ?? null,
         understandingReadback: group.understandingReadback ?? null,
       },
       req,
@@ -3297,6 +3401,11 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
     draft = await generatePortalDraftForGroup(
       {
         invoiceGroupId: id,
+        // Task #745: prefer the dedicated `specialCircumstances` column
+        // (the operator's note). Pass `understandingReadback` too so the
+        // legacy fallback in `resolveCustomContextNote` still covers
+        // pre-migration rows whose note text was never copied across.
+        specialCircumstances: group.specialCircumstances ?? null,
         understandingReadback: group.understandingReadback ?? null,
       },
       req,

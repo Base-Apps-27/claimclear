@@ -949,10 +949,20 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    */
   draftReviewedByUserId?: string | null;
   /**
-   * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
+   * Operator's free-text "Understanding notes" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.
+   * @nullable
+   */
+  specialCircumstances?: string | null;
+  /**
+   * The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).
    * @nullable
    */
   understandingReadback?: string | null;
+  /**
+   * The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.
+   * @nullable
+   */
+  understandingReadbackForText?: string | null;
   /** @nullable */
   understandingReadbackAt?: string | null;
   /** @nullable */
@@ -2563,7 +2573,10 @@ export interface SaveInvoiceGroupDraftBody {
 }
 
 export interface ConfirmReadbackBody {
+  /** The AI restatement the operator just verified. Must match the most recent preflight for the supplied `specialCircumstances`. */
   readback: string;
+  /** The operator's "Understanding notes" text — the narrative-changing context the readback was generated for. Required (the gate is non-empty-only; an empty note bypasses the check entirely and does not call this endpoint). */
+  specialCircumstances: string;
 }
 
 export interface CompleteReattestBody {
@@ -3256,12 +3269,19 @@ operator overrode the warning, not just *that* they did.
 export interface PortalUnderstandingPreflightBody {
   invoiceGroupId?: number;
   disputeReason?: string;
+  /** The operator's "Understanding notes" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`. */
   specialCircumstances?: string;
+  /** Legacy alias for `specialCircumstances` (back-compat). Prefer `specialCircumstances` in new callers. */
+  understandingReadback?: string;
 }
 
 export interface PortalUnderstandingPreflightResponse {
   /** A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context. */
   readback: string;
+  /** Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string). */
+  previewReadback?: string;
+  /** Echo of the `specialCircumstances` text the readback was generated for. The UI uses this to compare against the live textarea contents to detect drift. */
+  understandingReadbackForText?: string;
 }
 
 export interface PollSubmissionsBody {

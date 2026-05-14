@@ -240,10 +240,20 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    */
   draftReviewedByUserId?: string | null;
   /**
-   * Confirmed AI readback string of the group + leg contexts, captured immediately before the operator generates the dispute preview.
+   * Operator's free-text "Understanding notes" — the narrative-changing context that lands verbatim in the dispute write-up's CRITICAL CONTEXT block. Task #745 split this off `understandingReadback` so the verify-then-save gate can compare them.
+   * @nullable
+   */
+  specialCircumstances?: string | null;
+  /**
+   * The AI's 2–4 sentence restatement of what the dispute is about, given `specialCircumstances` + per-leg findings + decision-tree outcome. Cleared when `specialCircumstances` changes (drift).
    * @nullable
    */
   understandingReadback?: string | null;
+  /**
+   * The exact `specialCircumstances` text the most recent readback was generated for. Drift anchor — if it differs from the live `specialCircumstances`, the readback is stale and the UI must re-check.
+   * @nullable
+   */
+  understandingReadbackForText?: string | null;
   /** @nullable */
   understandingReadbackAt?: Date | null;
   /** @nullable */

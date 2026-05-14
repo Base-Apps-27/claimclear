@@ -79,9 +79,20 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   draftEditedBy: text("draft_edited_by"),
   draftReviewedAt: timestamp("draft_reviewed_at", { withTimezone: true }),
   draftReviewedBy: text("draft_reviewed_by"),
-  // Operator-authored "this is what I'm asking for" sentence shown back to
-  // the operator before generating the dispute preview.
+  // Operator's free-text "Understanding notes" — the narrative-changing
+  // context that lands verbatim in the dispute write-up's CRITICAL CONTEXT
+  // block. Task #745 split this off `understanding_readback` (which used to
+  // double-duty as both the operator's note and the AI restatement) so the
+  // verify-then-save gate can compare them.
+  specialCircumstances: text("special_circumstances"),
+  // The AI's 2–4 sentence restatement of what the dispute is about, given
+  // `specialCircumstances` + per-leg findings + decision-tree outcome.
+  // Cleared when `specialCircumstances` changes (drift).
   understandingReadback: text("understanding_readback"),
+  // The exact `specialCircumstances` text the most recent readback was
+  // generated for. Drift anchor: if it differs from the live
+  // `specialCircumstances`, the readback is stale and the UI must re-check.
+  understandingReadbackForText: text("understanding_readback_for_text"),
   understandingReadbackAt: timestamp("understanding_readback_at", { withTimezone: true }),
   understandingReadbackBy: text("understanding_readback_by"),
   // Stamped on each preview generation; the contracts task uses these to

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, claimsTable, invoiceGroupsTable, auditLogsTable, botActivityLogTable, errorTypesTable, appSettingsTable, claimEvidenceTable, stateEventsTable, portalBatchRunsTable } from "@workspace/db";
@@ -1015,10 +1016,11 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
  * verified AI understanding before generating the full draft.
  */
 router.post("/portal-submissions/preflight-understanding", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, disputeReason, specialCircumstances } = req.body as {
+  const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
     invoiceGroupId?: number;
     disputeReason?: string;
     specialCircumstances?: string;
+    understandingReadback?: string;
   };
   if (!invoiceGroupId) {
     res.status(400).json({ error: "invoiceGroupId is required" });
@@ -1030,7 +1032,11 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
 
   const errorType = await loadErrorTypeForContext(ctx);
   const reason = (disputeReason || "").trim();
-  const trimmedSpecial = (specialCircumstances || "").trim();
+  // Task #745: accept either field name. Legacy callers (the old
+  // gauntlet UI, scripts) sent `specialCircumstances`; back-compat
+  // callers may pass `understandingReadback`. Both route through the
+  // same resolver so the AI prompt sees the same string regardless.
+  const trimmedSpecial = resolveCustomContextNote({ specialCircumstances, understandingReadback });
 
   // Pre-compute prompt-leg inputs (Task #307 guard #10): the readback sees
   // the same per-leg findings the full draft will see so the operator's
@@ -1066,6 +1072,27 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   }
   const readback = (textBlock as { type: "text"; text: string }).text.trim();
 
+  // Task #745: persist the AI restatement + the exact note text it was
+  // generated for. The note text is the drift anchor — confirm-readback
+  // compares the operator's saved `specialCircumstances` against this
+  // value to detect "edited since check". We do NOT touch
+  // `specialCircumstances` here (that column is only written on Save) so
+  // the operator can re-check freely without committing the note.
+  // We also do not stamp `understandingReadbackAt/By` — those are the
+  // "operator confirmed" stamps owned by the confirm-readback route.
+  await db
+    .update(invoiceGroupsTable)
+    .set({
+      understandingReadback: readback,
+      understandingReadbackForText: trimmedSpecial,
+    })
+    .where(eq(invoiceGroupsTable.id, ctx.group.id));
+
+  // Hash the note text so cross-tab drift detection has a deterministic,
+  // size-bounded fingerprint in the audit log even if the text itself is
+  // long. SHA-1 is fine here — we are not authenticating, just diffing.
+  const noteHash = crypto.createHash("sha1").update(trimmedSpecial).digest("hex");
+
   await db.insert(auditLogsTable).values({
     claimId: ctx.primaryClaim.id,
     invoiceGroupId: ctx.group.id,
@@ -1077,13 +1104,18 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
       hasSpecialCircumstances: trimmedSpecial.length > 0,
       specialCircumstancesLength: trimmedSpecial.length,
       readbackLength: readback.length,
+      noteHash,
       ...promptLegAuditCounters(promptLegInputs),
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,
   });
 
-  res.json({ readback });
+  res.json({
+    readback,
+    previewReadback: readback,
+    understandingReadbackForText: trimmedSpecial,
+  });
 }));
 
 /**

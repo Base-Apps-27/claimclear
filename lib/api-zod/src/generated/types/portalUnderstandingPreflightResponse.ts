@@ -15,4 +15,8 @@ understanding readback / preview generation) instead.
 export interface PortalUnderstandingPreflightResponse {
   /** A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context. */
   readback: string;
+  /** Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string). */
+  previewReadback?: string;
+  /** Echo of the `specialCircumstances` text the readback was generated for. The UI uses this to compare against the live textarea contents to detect drift. */
+  understandingReadbackForText?: string;
 }
