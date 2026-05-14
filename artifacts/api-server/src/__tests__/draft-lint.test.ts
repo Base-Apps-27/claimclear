@@ -20,7 +20,10 @@ function makeSubmission(descriptionHtml: string, confNumber: string | null = nul
 //
 // When the caller threads leg context, the legacy `missing_conf_number`
 // rule is replaced by `missing_conf_number_for_leg:<legId>`, which
-// requires each contestable leg's conf to appear in its own paragraph.
+// requires each contestable leg's conf to appear somewhere in the
+// description. (The earlier "give it its own paragraph" sub-rule was
+// removed 2026-05-14 — the portal does not need dedicated paragraphs
+// to attribute prose, and the rule was blocking valid write-ups.)
 // Tests that pass NO leg context exercise the legacy fallback and keep
 // using the original rule key.
 
@@ -96,7 +99,12 @@ test("per-leg: multi-leg with two confs in the same paragraph and one missing fa
   assert.doesNotMatch(missing!.message, /not mentioned[^.]*14879280/);
 });
 
-test("per-leg: two confs sharing a single paragraph each fail as ambiguous attribution", () => {
+test("per-leg: two confs sharing a single paragraph passes (the 'own paragraph' branch was removed 2026-05-14)", () => {
+  // Pin the post-2026-05-14 behavior: the portal does not require a
+  // dedicated paragraph per leg to attribute prose, so a write-up that
+  // names two confs in the same paragraph must NOT be blocked. The
+  // earlier rule fired here and surfaced the "Submission blocked: give
+  // it its own paragraph" dialog on legitimate write-ups.
   const sub = makeSubmission(
     "<p>Conf #14879280 and Conf #14879277 are both addressed below.</p>",
     "14879280; 14879277",
@@ -104,12 +112,11 @@ test("per-leg: two confs sharing a single paragraph each fail as ambiguous attri
   const results = lintDraft(sub, baseClaim, [], {
     legs: [confLeg(1, "14879280"), confLeg(2, "14879277")],
   });
-  const a = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:1");
-  const b = results.find((r) => r.ruleKey === "missing_conf_number_for_leg:2");
-  assert.ok(a, "expected ambiguous-attribution fail for leg 1");
-  assert.ok(b, "expected ambiguous-attribution fail for leg 2");
-  assert.match(a!.message, /14879280/);
-  assert.match(b!.message, /14879277/);
+  assert.equal(
+    results.find((r) => r.ruleKey.startsWith("missing_conf_number_for_leg:")),
+    undefined,
+    "shared-paragraph attribution must not fire the per-leg rule",
+  );
 });
 
 test("per-leg: substring-of-longer-digit-run guard — leg fails when only a superstring appears", () => {

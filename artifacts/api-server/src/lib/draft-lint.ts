@@ -346,11 +346,16 @@ function ruleRequiresEvidenceNode(
  * that lets through narratives that mention three of four legs and
  * silently omit the fourth. This rule fires once per contestable leg
  * (one finding per leg keyed `missing_conf_number_for_leg:<legId>`)
- * when:
- *   (a) the leg's conf number is absent from every paragraph, OR
- *   (b) the leg's conf number appears only in paragraphs that ALSO
- *       name another contestable leg's conf — i.e. there is no
- *       paragraph that uniquely attributes prose to this leg.
+ * when the leg's conf number is absent from every paragraph.
+ *
+ * History: an earlier version of this rule also failed when a leg's
+ * conf appeared only in paragraphs that named another leg's conf
+ * (the "give it its own paragraph" branch). That requirement was
+ * removed 2026-05-14: the portal does not require dedicated paragraphs
+ * to attribute prose, so demanding them was over-strict and blocked
+ * legitimate write-ups. The rule now only enforces "every contestable
+ * conf is mentioned somewhere in the description".
+ *
  * The substring guard (`(?<!\d)NUM(?!\d)`) is reused via
  * descriptionContainsNumber so 14879280 doesn't satisfy 1487928.
  */
@@ -364,10 +369,6 @@ function ruleMissingConfNumberPerLeg(
   );
   for (const leg of contestable) {
     const conf = leg.confNumber.trim();
-    const otherConfs = contestable
-      .filter((other) => other.id !== leg.id)
-      .map((other) => other.confNumber.trim())
-      .filter((c) => c.length > 0 && c !== conf);
     const containing = paragraphs.filter((p) => descriptionContainsNumber(p, conf));
     const errorTypeLabel = leg.errorTypeName?.trim();
     const legLabel = errorTypeLabel ? `leg ${conf} (${errorTypeLabel})` : `leg ${conf}`;
@@ -376,17 +377,6 @@ function ruleMissingConfNumberPerLeg(
         ruleKey: `missing_conf_number_for_leg:${leg.id}`,
         severity: "fail",
         message: `Confirmation number ${conf} for ${legLabel} is not mentioned in the description.`,
-      });
-      continue;
-    }
-    const hasOwnParagraph = containing.some(
-      (p) => !otherConfs.some((other) => descriptionContainsNumber(p, other)),
-    );
-    if (!hasOwnParagraph) {
-      out.push({
-        ruleKey: `missing_conf_number_for_leg:${leg.id}`,
-        severity: "fail",
-        message: `Confirmation number ${conf} for ${legLabel} only appears in paragraphs that also name another leg's confirmation number — give it its own paragraph so the portal can attribute the prose.`,
       });
     }
   }
