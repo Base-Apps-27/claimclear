@@ -105,9 +105,21 @@ async function loadGroupLintEvidence(
  * (legacy claims) get an empty set — see `requiredEvidenceNodeIdsForWalk`
  * for why this is the deliberately-safe fallback.
  */
-async function buildLintLegs(
+export async function buildLintLegs(
   rides: (typeof claimsTable.$inferSelect)[],
 ): Promise<import("../lib/draft-lint").LintLeg[]> {
+  // Regression fix (2026-05-14): the structural rules in `lib/draft-lint.ts`
+  // (notably `ruleMissingConfNumberPerLeg` from Task #708) only filter by
+  // `includedInDispute !== false`, so a leg whose SOP terminated at
+  // `non_issue` / `cannot_dispute` (and whose disposition is therefore
+  // `disposed_nonissue` / `disposed_withdraw`) was being demanded in the
+  // write-up even though `filterRidesForSubmission` correctly excludes it
+  // from the AI prompt and the bot's upload set. The two sides disagreed
+  // about "what's in the dispute", which manifested as the user-reported
+  // "Submission blocked: give it its own paragraph" dialog on legs that
+  // have no issue to write up. We mirror `filterRidesForSubmission` here
+  // so every structural rule sees the same set the bot will file.
+  rides = rides.filter((r) => !isNonContestable(r));
   const errorTypeIds = new Set<number>();
   for (const r of rides) {
     if (!r.errorTypeId) continue;

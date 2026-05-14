@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { isNonContestable } from "../routes/portal-submissions";
+import { buildLintLegs, isNonContestable } from "../routes/portal-submissions";
+import { lintDraft } from "../lib/draft-lint";
 import type { Claim } from "@workspace/db";
 
 // Regression coverage for the surface bug where a 2-leg invoice
@@ -222,5 +223,138 @@ test("regression: all-non-contestable invoice yields zero candidates (filter wou
     candidates.length,
     0,
     "every leg is non-contestable; downstream filter must throw NoEligibleLegsError",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Regression (2026-05-14): the draft-lint structural rules (notably
+// `ruleMissingConfNumberPerLeg` from Task #708) only filter by
+// `includedInDispute !== false`. A leg that SOP terminated as
+// `non_issue` / `cannot_dispute` (and so is correctly omitted from the
+// AI prompt and the bot upload set by `filterRidesForSubmission`) was
+// still reaching `lintDraft` because `buildLintLegs` was building from
+// the unfiltered `rides` list. The lint then demanded a paragraph for
+// the non-issue leg's conf number and showed "Submission blocked: give
+// it its own paragraph" to operators.
+//
+// Fix: `buildLintLegs` now mirrors `filterRidesForSubmission` and drops
+// non-contestable rides at the source so every structural rule sees the
+// same set the bot will file.
+// ---------------------------------------------------------------------------
+
+test("buildLintLegs: non-contestable rides are dropped before lint sees them", async () => {
+  const rides: Claim[] = [
+    makeClaim({
+      id: 14998441,
+      confNumber: "14998441",
+      errorTypeId: null,
+      errorTypeName: "GPS Deviation Status",
+      disposition: "disposed_nonissue",
+      sopOutcome: "non_issue",
+    }),
+    makeClaim({
+      id: 15011302,
+      confNumber: "15011302",
+      errorTypeId: null,
+      errorTypeName: "GPS Deviation Status",
+      disposition: "disposed_nonissue",
+      sopOutcome: "non_issue",
+    }),
+    makeClaim({
+      id: 15011303,
+      confNumber: "15011303",
+      errorTypeId: null,
+      errorTypeName: "Incomplete GPS",
+      disposition: "disposed_portal",
+      sopOutcome: "portal_dispute",
+    }),
+  ];
+  const legs = await buildLintLegs(rides);
+  assert.equal(
+    legs.length,
+    1,
+    "only the contestable leg should reach the lint",
+  );
+  assert.equal(legs[0].confNumber, "15011303");
+});
+
+test("end-to-end regression: mixed group, draft mentions only the contestable leg → lint passes", async () => {
+  // The exact shape of the user-reported failure (screenshot 2026-05-14):
+  // 2 GPS Deviation Status legs that operator marked non-issue + 1
+  // contestable leg. The AI write-up correctly mentions only the
+  // contestable conf. Pre-fix, lintDraft demanded paragraphs for the
+  // two non-issue legs and surfaced "Submission blocked: give it its
+  // own paragraph". Post-fix, buildLintLegs drops them at the source
+  // and the lint must pass cleanly.
+  const rides: Claim[] = [
+    makeClaim({
+      id: 14998441,
+      confNumber: "14998441",
+      errorTypeId: null,
+      errorTypeName: "GPS Deviation Status",
+      disposition: "disposed_nonissue",
+      sopOutcome: "non_issue",
+    }),
+    makeClaim({
+      id: 15011302,
+      confNumber: "15011302",
+      errorTypeId: null,
+      errorTypeName: "GPS Deviation Status",
+      disposition: "disposed_nonissue",
+      sopOutcome: "non_issue",
+    }),
+    makeClaim({
+      id: 15011303,
+      confNumber: "15011303",
+      errorTypeId: null,
+      errorTypeName: "Incomplete GPS",
+      disposition: "disposed_portal",
+      sopOutcome: "portal_dispute",
+    }),
+  ];
+  const lintLegs = await buildLintLegs(rides);
+  const results = lintDraft(
+    {
+      descriptionHtml:
+        "<p>Conf #15011303 — disputing per attached GPS evidence.</p>",
+      confNumber: "15011303",
+      attachmentUrls: [],
+    },
+    { confNumber: "15011303", claimAmount: "10.00" },
+    [],
+    { legs: lintLegs },
+  );
+  const offending = results.filter((r) =>
+    r.ruleKey.startsWith("missing_conf_number_for_leg:"),
+  );
+  assert.deepEqual(
+    offending,
+    [],
+    "no per-leg conf-coverage fail should fire — non-issue legs were filtered out",
+  );
+});
+
+test("buildLintLegs: all-non-contestable invoice yields zero lint legs", async () => {
+  const rides: Claim[] = [
+    makeClaim({
+      id: 14998441,
+      confNumber: "14998441",
+      errorTypeId: null,
+      disposition: "disposed_nonissue",
+      sopOutcome: "non_issue",
+    }),
+    makeClaim({
+      id: 15011302,
+      confNumber: "15011302",
+      errorTypeId: null,
+      disposition: "disposed_withdraw",
+      sopOutcome: "cannot_dispute",
+    }),
+  ];
+  const legs = await buildLintLegs(rides);
+  assert.equal(
+    legs.length,
+    0,
+    "an all-non-contestable invoice must not emit any per-leg lint findings",
   );
 });
