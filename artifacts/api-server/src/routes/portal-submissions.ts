@@ -504,6 +504,26 @@ export function buildPortalDescriptionPrompt(opts: {
 
   const ridesBlock = promptLegInputs.ridesBlock;
 
+  // Task #708 paragraph-attribution requirement (2026-05-14 prod fix).
+  // The structural lint `ruleMissingConfNumberPerLeg` (lib/draft-lint.ts)
+  // requires every contestable leg to appear in at least one paragraph
+  // that does NOT also name another leg's conf number, so the portal can
+  // attribute prose to the correct leg. The lint is correct, but the
+  // prompt previously only said "2-4 paragraphs maximum" without
+  // explaining the attribution constraint, so on multi-leg disputes the
+  // model would bundle legs into a single paragraph and trip the
+  // "Submission blocked: give it its own paragraph" dialog. This block
+  // tells the model the rule explicitly and lists the conf numbers that
+  // each need their own paragraph. Single-leg disputes don't need this
+  // (one paragraph trivially attributes to the only leg).
+  const contestableConfs = rides
+    .filter((r) => !isNonContestable(r))
+    .map((r) => (r.confNumber || "").trim())
+    .filter((c) => c.length > 0);
+  const paragraphAttributionRule = contestableConfs.length > 1
+    ? `\n- HARD REQUIREMENT — paragraph attribution: each of these confirmation numbers must appear in at least one paragraph that names ONLY that confirmation number (no other leg's conf in the same paragraph): ${contestableConfs.join(", ")}. The portal attributes prose to a leg by paragraph, so a paragraph that names two confs is unattributable. A shared opening paragraph that names every conf is fine, but each leg must ALSO have its own dedicated paragraph.`
+    : "";
+
   // Task #398: dollar amounts are deliberately omitted from the prompt —
   // the dispute write-up never reasons about money, and including totals
   // invites cost-framing language that has no place in a portal note.
@@ -527,14 +547,14 @@ ${ridesBlock}`;
 - References specific evidence (and notes that supporting files are attached, when applicable)
 - Is professional but sounds natural and human — vary phrasing
 - Is concise (2-4 paragraphs maximum)
-- Does NOT include a greeting line ("Hello,") or a sign-off / signature — those will be added automatically when the message is wrapped into an email`
+- Does NOT include a greeting line ("Hello,") or a sign-off / signature — those will be added automatically when the message is wrapped into an email${paragraphAttributionRule}`
     : `Write a clear, factual portal submission note that:
 - States the reason for the dispute/correction request
 - ${group ? `References the invoice number (${group.invoiceNumber}) and lists the affected confirmation numbers` : "References the confirmation number"}
 - References specific evidence
 - Is professional but sounds natural and human — vary phrasing
 - Is concise (2-4 paragraphs maximum)
-- Does NOT include email-style greetings or sign-offs (this goes in a portal text field, not an email)`;
+- Does NOT include email-style greetings or sign-offs (this goes in a portal text field, not an email)${paragraphAttributionRule}`;
 
   const channelLine = isDirectEmail
     ? "Write a concise dispute message for an NEMT (Non-Emergency Medical Transportation) claim correction request that will be sent as an email to MAS Trip Inventory Resolution."
