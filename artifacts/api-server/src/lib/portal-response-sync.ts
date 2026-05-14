@@ -247,6 +247,35 @@ function isScrapableTicketId(t: string | null | undefined): t is string {
   return true;
 }
 
+// Task #738. Stamp `last_scraped_at` / `last_scrape_outcome` /
+// `last_scrape_error` for every ticket actually considered on a
+// portal_response_sync run. Skipped synthetic / no-ticket rows are NOT
+// written so the column is honest about what was checked. Errors here
+// are swallowed: a failed UPDATE must never poison the sync result.
+// Exported (Task #738) so the orchestrator-outcome unit tests can
+// assert each of the three per-submission outcomes (new_reply,
+// no_change, error) actually writes the expected columns. Production
+// callers (the various early-return paths in
+// `syncPortalResponsesForSubmission`) keep using it as before.
+export async function recordScrapeOutcome(
+  submissionId: number,
+  outcome: "new_reply" | "no_change" | "error",
+  error: string | null,
+): Promise<void> {
+  try {
+    await db
+      .update(portalSubmissionsTable)
+      .set({
+        lastScrapedAt: new Date(),
+        lastScrapeOutcome: outcome,
+        lastScrapeError: error ? error.slice(0, 1000) : null,
+      })
+      .where(eq(portalSubmissionsTable.id, submissionId));
+  } catch (err) {
+    logger.warn({ err, submissionId, outcome }, "Portal sync: failed to write per-submission scrape outcome");
+  }
+}
+
 /**
  * Read one ticket and POST any new conversation entries. Acquires the
  * shared portal browser gate around the Playwright work so the submit
@@ -324,6 +353,8 @@ export async function syncPortalResponsesForSubmission(
     }
   });
   if (gateOutcome.kind === "skipped") {
+    const errorMessage = "portal browser busy (gate held by submit bot or another reader)";
+    await recordScrapeOutcome(submissionId, "error", errorMessage);
     return {
       submissionId,
       ticketId,
@@ -331,7 +362,7 @@ export async function syncPortalResponsesForSubmission(
       newResponses: 0,
       totalMessages: 0,
       portalStatus: null,
-      errorMessage: "portal browser busy (gate held by submit bot or another reader)",
+      errorMessage,
     };
   }
   try {
@@ -341,6 +372,7 @@ export async function syncPortalResponsesForSubmission(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ submissionId, ticketId, err: msg }, "Portal sync: reader failed");
+    await recordScrapeOutcome(submissionId, "error", msg);
     return {
       submissionId,
       ticketId,
@@ -387,6 +419,11 @@ export async function syncPortalResponsesForSubmission(
     return true;
   });
   if (fresh.length === 0 || opts.dryRun) {
+    // dryRun never persists side-effects (the operator is just
+    // sampling); only stamp the per-submission outcome on a real
+    // sweep so the "Last checked" timestamp matches what actually
+    // hit the DB.
+    if (!opts.dryRun) await recordScrapeOutcome(submissionId, "no_change", null);
     return {
       submissionId,
       ticketId,
@@ -532,6 +569,8 @@ export async function syncPortalResponsesForSubmission(
     { submissionId, ticketId },
   );
   if (posted === 0 && postFailures > 0) {
+    const errorMessage = `record-portal poster failed for all ${postFailures} message(s); last error: ${lastPostError}`;
+    await recordScrapeOutcome(submissionId, "error", errorMessage);
     return {
       submissionId,
       ticketId,
@@ -539,9 +578,17 @@ export async function syncPortalResponsesForSubmission(
       newResponses: 0,
       totalMessages: readerCtx.parsed!.messages.length,
       portalStatus: readerCtx.parsed!.status,
-      errorMessage: `record-portal poster failed for all ${postFailures} message(s); last error: ${lastPostError}`,
+      errorMessage,
     };
   }
+  // Partial-failure runs (some POSTs succeeded, others didn't) still
+  // count as `new_reply` so the Portal Submissions queue surfaces the
+  // fresh portal_responses immediately; the error excerpt rides along
+  // in `last_scrape_error` so the drawer can flag the partial outcome.
+  const partialError = postFailures > 0
+    ? `${postFailures} of ${fresh.length} POST(s) failed; last error: ${lastPostError}`
+    : null;
+  await recordScrapeOutcome(submissionId, "new_reply", partialError);
   return {
     submissionId,
     ticketId,
@@ -549,7 +596,7 @@ export async function syncPortalResponsesForSubmission(
     newResponses: posted,
     totalMessages: readerCtx.parsed!.messages.length,
     portalStatus: readerCtx.parsed!.status,
-    errorMessage: postFailures > 0 ? `${postFailures} of ${fresh.length} POST(s) failed; last error: ${lastPostError}` : undefined,
+    errorMessage: partialError ?? undefined,
   };
 }
 
@@ -644,6 +691,36 @@ export interface SyncSweepResult {
  * `portalBrowserGate` already serialises each Playwright launch — the
  * jitter just smoothes the request rate against MAS.
  */
+// Task #738. The 3-way cron-status decision for a portal_response_sync
+// sweep. Exported so the cron callback in index.ts and the regression
+// tests both call the exact same function — no scattered conditionals,
+// no drift between code and tests.
+//
+// Semantics (per Task #738 spec, post-code-review):
+//   * zero considered (no due tickets at this tick) → "degraded".
+//     This is "normal-but-not-actionable": the cron fired, did no
+//     work, and we want the rollup tile to show amber so operators
+//     can distinguish "the cron is doing its job" from "a real
+//     sweep happened and everything passed". Picking "ok" here was
+//     rejected at code-review because it makes a quiet cron
+//     indistinguishable from a successful 25/25 sweep.
+//   * all considered errored (errored>0 AND scraped===0) → "failed".
+//     The bot is 100% blind for this sweep — operationally
+//     indistinguishable from a hard crash.
+//   * partial (errored>0 AND scraped>0) → "degraded".
+//   * none errored → "ok".
+export type PortalSyncCronStatus = "ok" | "degraded" | "failed";
+export function derivePortalSyncCronStatus(result: {
+  considered: number;
+  scraped: number;
+  errored: number;
+}): PortalSyncCronStatus {
+  if (result.considered === 0) return "degraded";
+  if (result.errored === 0) return "ok";
+  if (result.scraped === 0) return "failed";
+  return "degraded";
+}
+
 export async function syncDuePortalSubmissions(
   due: DueSubmission[],
   opts: { dryRun?: boolean; minPauseMs?: number; maxPauseMs?: number } = {},

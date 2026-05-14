@@ -4,28 +4,33 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface CronRunResult {
-  // Producer-facing vocabulary (kept for backwards compatibility with
-  // the existing call sites in system-health-rollup.ts and
-  // batch-processor.ts that build `{status: "ok"|"degraded"}` shapes).
-  // The recorder maps this onto the canonical 3-value run-state
-  // {running | completed | failed} written to `cron_runs.status`:
+  // Producer-facing vocabulary the cron callers in
+  // system-health-rollup.ts, batch-processor.ts, and
+  // portal-response-sync.ts already build. The recorder maps this
+  // onto the run-state column written to `cron_runs.status`:
   //   ok        → completed
-  //   degraded  → failed   (surfaces as a failure in the health rollup;
-  //                         partial-success metadata stays in `message`)
+  //   degraded  → degraded   (Task #738: partial-failure runs — e.g.
+  //                           a portal scrape sweep where 19/25 tickets
+  //                           succeeded and 6 errored — must be visible
+  //                           as amber on the health rollup, not red.
+  //                           Wave D-PR6's original collapse to "failed"
+  //                           lost that signal; the rollup tile then
+  //                           said "failed" for an in-tolerance
+  //                           partial-success run, which trained
+  //                           operators to ignore the dot.)
   //   failed    → failed
   // A thrown error from the job also becomes status="failed".
-  //
-  // Wave D-PR6 / state-fingerprint §G: this collapse drops the
-  // `cron_drift` violation count to zero by removing the legacy
-  // "ok"/"degraded" string mismatch against the {running|completed|
-  // failed} contract. Existing rows are normalised in migration 0039.
   status?: "ok" | "degraded" | "failed";
   message?: string;
   metadata?: Record<string, unknown>;
 }
 
-function mapResultStatus(s: CronRunResult["status"]): "completed" | "failed" {
-  if (s === "failed" || s === "degraded") return "failed";
+// Exported for tests so the producer→column mapping is exercised
+// against the real implementation rather than a mirror. The function
+// is also used internally by `recordCronRun` below.
+export function mapResultStatus(s: CronRunResult["status"]): "completed" | "degraded" | "failed" {
+  if (s === "failed") return "failed";
+  if (s === "degraded") return "degraded";
   return "completed";
 }
 

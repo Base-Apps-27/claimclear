@@ -15,6 +15,7 @@ import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { PortalSubmissionResponseCompletedElsewhere } from "./portalSubmissionResponseCompletedElsewhere";
 import type { PortalSubmissionResponseDescriptionHistoryItem } from "./portalSubmissionResponseDescriptionHistoryItem";
 import type { PortalSubmissionResponseGroupMacroPhase } from "./portalSubmissionResponseGroupMacroPhase";
+import type { PortalSubmissionResponseLastScrapeOutcome } from "./portalSubmissionResponseLastScrapeOutcome";
 import type { PortalSubmissionResponseLegsItem } from "./portalSubmissionResponseLegsItem";
 import type { PortalSubmissionResponseStatus } from "./portalSubmissionResponseStatus";
 
@@ -97,6 +98,30 @@ export interface PortalSubmissionResponse {
   errorMessage?: string | null;
   /** @nullable */
   submittedAt?: string | null;
+  /**
+   * Task #738. ISO timestamp of the most recent
+`portal_response_sync` attempt that *actually considered*
+this row. Skipped synthetic / no-ticket rows are not
+written, so the column reflects what was checked, not
+every cron tick.
+
+   * @nullable
+   */
+  lastScrapedAt?: string | null;
+  /**
+   * Outcome of the most recent scrape:
+  new_reply — at least one fresh portal message was posted
+  no_change — reader succeeded; nothing new
+  error     — reader / poster threw, or the gate was busy
+
+   * @nullable
+   */
+  lastScrapeOutcome?: PortalSubmissionResponseLastScrapeOutcome;
+  /**
+   * Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.
+   * @nullable
+   */
+  lastScrapeError?: string | null;
   attempts: number;
   maxAttempts: number;
   /** @nullable */

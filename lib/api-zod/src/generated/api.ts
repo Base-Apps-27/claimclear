@@ -2952,6 +2952,29 @@ export const GetInvoiceGroupResponse = zod
             screenshotUrl: zod.string().nullish(),
             errorMessage: zod.string().nullish(),
             submittedAt: zod.string().nullish(),
+            lastScrapedAt: zod
+              .string()
+              .nullish()
+              .describe(
+                "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+              ),
+            lastScrapeOutcome: zod
+              .union([
+                zod.literal("new_reply"),
+                zod.literal("no_change"),
+                zod.literal("error"),
+                zod.literal(null),
+              ])
+              .nullish()
+              .describe(
+                "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+              ),
+            lastScrapeError: zod
+              .string()
+              .nullish()
+              .describe(
+                "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+              ),
             attempts: zod.number(),
             maxAttempts: zod.number(),
             nextRetryAt: zod.string().nullish(),
@@ -26619,6 +26642,29 @@ export const ListPortalSubmissionsResponseItem = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -26882,6 +26928,29 @@ export const GetPortalSubmissionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -27096,6 +27165,29 @@ export const RetryPortalSubmissionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -27310,6 +27402,29 @@ export const CancelPortalSubmissionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -27563,6 +27678,29 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -27819,6 +27957,29 @@ export const UpdatePortalSubmissionDraftResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -28033,6 +28194,29 @@ export const RegeneratePortalSubmissionTextResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -28255,6 +28439,29 @@ export const RevertPortalSubmissionDescriptionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -28492,6 +28699,29 @@ export const ConfirmPortalSubmissionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -28706,6 +28936,29 @@ export const SandboxRunPortalSubmissionResponse = zod.object({
   screenshotUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
   submittedAt: zod.string().nullish(),
+  lastScrapedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #738. ISO timestamp of the most recent\n`portal_response_sync` attempt that \*actually considered\*\nthis row. Skipped synthetic \/ no-ticket rows are not\nwritten, so the column reflects what was checked, not\nevery cron tick.\n",
+    ),
+  lastScrapeOutcome: zod
+    .union([
+      zod.literal("new_reply"),
+      zod.literal("no_change"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Outcome of the most recent scrape:\n  new_reply — at least one fresh portal message was posted\n  no_change — reader succeeded; nothing new\n  error     — reader \/ poster threw, or the gate was busy\n",
+    ),
+  lastScrapeError: zod
+    .string()
+    .nullish()
+    .describe(
+      "Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.",
+    ),
   attempts: zod.number(),
   maxAttempts: zod.number(),
   nextRetryAt: zod.string().nullish(),
@@ -31840,6 +32093,74 @@ export const GetSystemHealthDailyBriefResponse = zod.object({
 });
 
 /**
+ * Task #738. Joins the most recent `portal_response_sync` cron_run
+with the per-submission `last_scraped_at` rows that the
+orchestrator stamps for every ticket actually considered on the
+sweep. Lets the System Health "Last portal scrape" panel show
+which tickets were scraped, which errored, and what the error
+excerpt was — without operators having to dig into
+`cron_runs.metadata`.
+
+ * @summary Last portal-scrape sweep detail (admin only)
+ */
+export const GetSystemHealthPortalScrapeResponse = zod.object({
+  lastRun: zod.union([
+    zod.object({
+      id: zod.number(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullable(),
+      status: zod.enum(["running", "completed", "degraded", "failed"]),
+      message: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  considered: zod.number().nullish(),
+  scraped: zod.number().nullish(),
+  skipped: zod.number().nullish(),
+  errored: zod.number().nullish(),
+  newResponses: zod.number().nullish(),
+  submissions: zod.array(
+    zod.object({
+      submissionId: zod.number(),
+      invoiceGroupId: zod.number(),
+      invoiceNumber: zod.string().nullable(),
+      portalTicketId: zod.string().nullable(),
+      lastScrapedAt: zod.string().nullable(),
+      outcome: zod
+        .union([
+          zod.literal("new_reply"),
+          zod.literal("no_change"),
+          zod.literal("error"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      errorExcerpt: zod.string().nullable(),
+    }),
+  ),
+  errors: zod
+    .array(
+      zod.object({
+        submissionId: zod.number(),
+        invoiceGroupId: zod.number(),
+        invoiceNumber: zod.string().nullable(),
+        portalTicketId: zod.string().nullable(),
+        lastScrapedAt: zod.string().nullable(),
+        outcome: zod
+          .union([
+            zod.literal("new_reply"),
+            zod.literal("no_change"),
+            zod.literal("error"),
+            zod.literal(null),
+          ])
+          .nullable(),
+        errorExcerpt: zod.string().nullable(),
+      }),
+    )
+    .optional(),
+  errorOverflow: zod.number().optional(),
+});
+
+/**
  * @summary On-demand portal worker activity (admin only)
  */
 export const GetSystemHealthWorkerActivityResponse = zod.object({
@@ -31915,6 +32236,29 @@ export const GetSystemHealthWorkerActivityResponse = zod.object({
     }),
     zod.null(),
   ]),
+  lastPortalScrape: zod
+    .union([
+      zod
+        .object({
+          startedAt: zod.string(),
+          finishedAt: zod.string().nullable(),
+          status: zod.enum(["running", "completed", "degraded", "failed"]),
+          message: zod.string().nullable(),
+          considered: zod.number().nullable(),
+          scraped: zod.number().nullable(),
+          skipped: zod.number().nullable(),
+          errored: zod.number().nullable(),
+          newResponses: zod.number().nullable(),
+        })
+        .describe(
+          'Task #738. At-a-glance summary of the most recent\n`portal_response_sync` cron_run, embedded on both the rollup\nand worker-activity payloads so the System Health \"Last portal\nscrape\" panel header can render without an extra fetch.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #738. Most recent `portal_response_sync` summary; null\nuntil the cron has run at least once after deploy.\n",
+    ),
 });
 
 /**
@@ -31974,6 +32318,29 @@ export const GetSystemHealthRollupResponse = zod.object({
     .string()
     .describe(
       'ISO timestamp of when the API server process started. Used by the System Health page to contextualize \"awaiting first scheduled run\" notes.',
+    ),
+  lastPortalScrape: zod
+    .union([
+      zod
+        .object({
+          startedAt: zod.string(),
+          finishedAt: zod.string().nullable(),
+          status: zod.enum(["running", "completed", "degraded", "failed"]),
+          message: zod.string().nullable(),
+          considered: zod.number().nullable(),
+          scraped: zod.number().nullable(),
+          skipped: zod.number().nullable(),
+          errored: zod.number().nullable(),
+          newResponses: zod.number().nullable(),
+        })
+        .describe(
+          'Task #738. At-a-glance summary of the most recent\n`portal_response_sync` cron_run, embedded on both the rollup\nand worker-activity payloads so the System Health \"Last portal\nscrape\" panel header can render without an extra fetch.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      'Task #738. Most recent `portal_response_sync` summary so the\n\"Last portal scrape\" panel header on System Health can render\nwithout an extra admin-only fetch (the per-row drill-down is\nstill admin-only).\n',
     ),
 });
 

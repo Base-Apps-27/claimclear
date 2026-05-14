@@ -199,7 +199,23 @@ export default function PortalSubmissions() {
   const [batchAborting, setBatchAborting] = useState(false);
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
 
-  const { data: submissions, isLoading } = useListPortalSubmissions(undefined);
+  // Task #738. Poll the submissions list so per-row `lastScrapedAt`
+  // / `lastScrapeOutcome` / `lastScrapeError` updates from the
+  // `portal_response_sync` cron surface without a manual refresh —
+  // matches the WorkerHealthBanner refetch cadence (30s).
+  const { data: submissions, isLoading } = useListPortalSubmissions(undefined, {
+    query: {
+      queryKey: getListPortalSubmissionsQueryKey(),
+      refetchInterval: 30000,
+    },
+  });
+
+  // Task #738. Sort control for the per-status-group rows. "Updated"
+  // (the legacy default) keeps the existing newest-first ordering.
+  // "Last checked" sorts by the per-submission `lastScrapedAt` so an
+  // operator triaging fresh portal-scrape outcomes can pull the most
+  // recently checked rows to the top of every group.
+  const [sortBy, setSortBy] = useState<"updated" | "lastChecked">("updated");
 
   // Worker health rollup — collapsed into the one-line status strip.
   // The endpoint denies clerks; skip the query for them to avoid 403 churn.
@@ -251,7 +267,11 @@ export default function PortalSubmissions() {
     });
   }, [normalizedSubs, statusFilter, search]);
 
-  // Group by status for the list rendering.
+  // Group by status for the list rendering. When the operator picks
+  // "Last checked" as the sort, rows inside each group are reordered
+  // by `lastScrapedAt` desc with un-scraped rows pushed to the
+  // bottom — Task #738 sortable-Last-checked control. The default
+  // "Updated" preserves the existing list order.
   const groupedSubs = useMemo(() => {
     const groups: Record<string, typeof filtered> = {};
     for (const s of filtered) {
@@ -259,8 +279,17 @@ export default function PortalSubmissions() {
       if (!groups[k]) groups[k] = [];
       groups[k].push(s);
     }
+    if (sortBy === "lastChecked") {
+      for (const k of Object.keys(groups)) {
+        groups[k] = [...groups[k]].sort((a, b) => {
+          const at = a.lastScrapedAt ? new Date(a.lastScrapedAt).getTime() : 0;
+          const bt = b.lastScrapedAt ? new Date(b.lastScrapedAt).getTime() : 0;
+          return bt - at;
+        });
+      }
+    }
     return groups;
-  }, [filtered]);
+  }, [filtered, sortBy]);
 
   const pendingSubmissions = useMemo(() => normalizedSubs.filter(s => s._displayStatus === "pending"), [normalizedSubs]);
 
@@ -457,10 +486,12 @@ export default function PortalSubmissions() {
         </div>
       </div>
 
-      {/* One-line status strip (worker health + last batch + recent runs link) */}
+      {/* One-line status strip (worker health + last batch + last
+          portal-scrape sweep + recent runs link). Task #738. */}
       <StatusStrip
         health={healthData}
         lastRun={recentRuns?.[0]}
+        lastPortalScrape={healthData?.lastPortalScrape ?? null}
         loading={recentRunsLoading}
       />
 
@@ -484,6 +515,23 @@ export default function PortalSubmissions() {
             matchingCount={filtered.length}
             matchingNoun={{ one: "submission", other: "submissions" }}
           />
+
+          {/* Task #738. Sort control — operators triaging fresh
+              portal-scrape outcomes pick "Last checked" to pull the
+              most recently scraped rows to the top of every group. */}
+          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <label htmlFor="portal-submissions-sort">Sort by</label>
+            <select
+              id="portal-submissions-sort"
+              data-testid="select-portal-submissions-sort"
+              className="h-7 rounded-md border bg-background px-2 text-xs"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "updated" | "lastChecked")}
+            >
+              <option value="updated">Updated (default)</option>
+              <option value="lastChecked">Last checked</option>
+            </select>
+          </div>
 
           {/* Recommendation banner — hidden for clerks (no bulk queue). */}
           {!clerk && draftsReadyToQueue.length > 0 && !batchInFlight && (
@@ -657,7 +705,24 @@ export default function PortalSubmissions() {
 // =====================================================================
 // Status strip — collapses worker health + last batch + recent runs link
 // =====================================================================
-function StatusStrip({ health, lastRun, loading }: { health?: { overall: string; overdueCount: number; overdueGraceMinutes: number; components: Array<{ name: string; status: string; detail?: string | null }> } | null; lastRun?: BatchRunHistoryEntry; loading?: boolean }) {
+function StatusStrip({ health, lastRun, lastPortalScrape, loading }: {
+  health?: { overall: string; overdueCount: number; overdueGraceMinutes: number; components: Array<{ name: string; status: string; detail?: string | null }> } | null;
+  lastRun?: BatchRunHistoryEntry;
+  // Task #738. Embedded on the rollup payload so the strip can render
+  // the most recent portal_response_sync sweep inline.
+  lastPortalScrape?: {
+    startedAt: string;
+    finishedAt?: string | null;
+    status: string;
+    message?: string | null;
+    considered?: number | null;
+    scraped?: number | null;
+    skipped?: number | null;
+    errored?: number | null;
+    newResponses?: number | null;
+  } | null;
+  loading?: boolean;
+}) {
   const isHealthy = !health || health.overall === "ok";
   const isFailed = health?.overall === "failed";
   const dotClass = isFailed ? "bg-red-500" : isHealthy ? "bg-green-500" : "bg-amber-500";
@@ -687,6 +752,43 @@ function StatusStrip({ health, lastRun, loading }: { health?: { overall: string;
             {lastRun.succeeded}/{lastRun.total} succeeded
             {lastRun.failed > 0 ? `, ${lastRun.failed} failed` : ""}
           </span>
+        </>
+      )}
+      {/* Task #738. Per-sweep portal-scrape strip. Click-through opens
+          the System Health drill-down for the same run. Hidden if the
+          rollup hasn't surfaced a sweep yet (admin-gated payload
+          field, so clerks won't see it either). */}
+      {lastPortalScrape && (
+        <>
+          <span className="text-muted-foreground">·</span>
+          <a
+            href="/system-health#last-portal-scrape"
+            className="flex items-center gap-1.5 hover:underline"
+            title={lastPortalScrape.message ?? "Open the last portal scrape detail"}
+            data-testid="link-last-portal-scrape"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                lastPortalScrape.status === "failed"
+                  ? "bg-red-500"
+                  : lastPortalScrape.status === "degraded"
+                    ? "bg-amber-500"
+                    : "bg-green-500"
+              }`}
+            />
+            <span className="text-muted-foreground">
+              Last scrape <span className="text-foreground">{timeAgo(lastPortalScrape.startedAt)}</span>
+              {typeof lastPortalScrape.scraped === "number" && typeof lastPortalScrape.considered === "number" && (
+                <> · checked <span className="text-foreground">{lastPortalScrape.scraped}/{lastPortalScrape.considered}</span></>
+              )}
+              {typeof lastPortalScrape.newResponses === "number" && lastPortalScrape.newResponses > 0 && (
+                <>, new <span className="text-foreground">{lastPortalScrape.newResponses}</span></>
+              )}
+              {typeof lastPortalScrape.errored === "number" && lastPortalScrape.errored > 0 && (
+                <>, errors <span className="text-amber-700 dark:text-amber-300">{lastPortalScrape.errored}</span></>
+              )}
+            </span>
+          </a>
         </>
       )}
       {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
@@ -1178,6 +1280,40 @@ function SubmissionRow({
       </span>
       <span className="text-sm font-medium font-mono min-w-[64px] text-right">{formatCurrency(sub.claimAmount || "0")}</span>
       <span className="text-[11px] text-muted-foreground min-w-[56px] text-right">{timeAgo(sub.createdAt)}</span>
+
+      {/* Task #738. "Last checked" column — always rendered so the
+          column lines up across rows; "—" empty state for rows that
+          have never been scraped (synthetic / no-ticket submissions).
+          Outcome-coloured for scraped rows so operators can spot
+          fresh replies / scrape errors without opening the drawer.
+          Sortable from the header strip's "Sort by" control. */}
+      <span
+        className="text-[11px] min-w-[88px] text-right hidden md:inline-flex items-center justify-end gap-1 flex-shrink-0"
+        data-testid={`row-last-checked-${sub.id}`}
+      >
+        {sub.lastScrapedAt ? (
+          <WrapTooltip content={
+            sub.lastScrapeOutcome === "error" && sub.lastScrapeError
+              ? `Last scrape error: ${sub.lastScrapeError}`
+              : `Last portal scrape · ${sub.lastScrapeOutcome ?? "unknown"} · ${absoluteTooltip(sub.lastScrapedAt)}`
+          }>
+            <span
+              className={`cursor-help inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
+                sub.lastScrapeOutcome === "new_reply"
+                  ? "bg-indigo-50 text-indigo-700 border border-indigo-300"
+                  : sub.lastScrapeOutcome === "error"
+                    ? "bg-rose-50 text-rose-700 border border-rose-300"
+                    : "bg-stone-50 text-stone-700 border border-stone-300"
+              }`}
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+              {timeAgo(sub.lastScrapedAt)}
+            </span>
+          </WrapTooltip>
+        ) : (
+          <span className="text-muted-foreground" title="This submission has never been scraped.">—</span>
+        )}
+      </span>
 
       {sub.status === "draft" && (
         <div onClick={e => e.stopPropagation()} className="flex items-center gap-1">

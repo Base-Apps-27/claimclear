@@ -396,15 +396,26 @@ cron.schedule(RESPONSE_TRACKER.cron, async () => {
 // route operators see. Rate-limited internally with a per-ticket jitter.
 cron.schedule(PORTAL_RESPONSE_SYNC.cron, async () => {
   await recordCronRun(PORTAL_RESPONSE_SYNC.name, async () => {
-    const { findDuePortalSyncSubmissions, syncDuePortalSubmissions } = await import("./lib/portal-response-sync");
+    const { findDuePortalSyncSubmissions, syncDuePortalSubmissions, derivePortalSyncCronStatus } = await import("./lib/portal-response-sync");
     const due = await findDuePortalSyncSubmissions({ limit: 25 });
     if (due.length === 0) {
-      return { message: "Portal response sync: no due submissions" };
+      // Task #738. Zero-due ticks share the same `derivePortalSyncCronStatus`
+      // decision as a real sweep — they surface as "degraded" so a quiet
+      // cron is visually distinct from a successful 25/25 sweep on the
+      // System Health rollup tile.
+      return {
+        status: derivePortalSyncCronStatus({ considered: 0, scraped: 0, errored: 0 }),
+        message: "Portal response sync: no due submissions",
+        metadata: { considered: 0, scraped: 0, skipped: 0, errored: 0, newResponses: 0 },
+      };
     }
     logger.info({ count: due.length }, "Portal response sync: starting sweep");
     const result = await syncDuePortalSubmissions(due);
+    // Task #738. The 3-way status decision lives in
+    // `derivePortalSyncCronStatus` so the cron caller and the
+    // regression tests can't drift.
     return {
-      status: result.errored > 0 ? ("degraded" as const) : ("ok" as const),
+      status: derivePortalSyncCronStatus(result),
       message: `Scraped ${result.scraped}/${result.considered} (${result.newResponses} new, ${result.errored} errors)`,
       metadata: {
         considered: result.considered,

@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { PortalScrapeSummary } from "./portalScrapeSummary";
 import type { SystemHealthRollupComponent } from "./systemHealthRollupComponent";
 import type { SystemHealthRollupResponseOverall } from "./systemHealthRollupResponseOverall";
 import type { WorkerRunSummary } from "./workerRunSummary";
@@ -32,4 +33,10 @@ still-pending rows are flagged as past their cycle.
   generatedAt: string;
   /** ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes. */
   bootedAt: string;
+  /** Task #738. Most recent `portal_response_sync` summary so the
+"Last portal scrape" panel header on System Health can render
+without an extra admin-only fetch (the per-row drill-down is
+still admin-only).
+ */
+  lastPortalScrape?: PortalScrapeSummary | null;
 }

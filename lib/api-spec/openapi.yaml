@@ -5085,6 +5085,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/DailyBriefDetailResponse'
 
+  /admin/system-health/portal-scrape:
+    get:
+      operationId: getSystemHealthPortalScrape
+      tags: [systemHealth]
+      summary: Last portal-scrape sweep detail (admin only)
+      description: |
+        Task #738. Joins the most recent `portal_response_sync` cron_run
+        with the per-submission `last_scraped_at` rows that the
+        orchestrator stamps for every ticket actually considered on the
+        sweep. Lets the System Health "Last portal scrape" panel show
+        which tickets were scraped, which errored, and what the error
+        excerpt was — without operators having to dig into
+        `cron_runs.metadata`.
+      responses:
+        '200':
+          description: Last portal scrape detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalScrapeDetailResponse'
+
   /admin/system-health/worker-activity:
     get:
       operationId: getSystemHealthWorkerActivity
@@ -8367,6 +8388,25 @@ components:
           type: ["string", "null"]
         submittedAt:
           type: ["string", "null"]
+        lastScrapedAt:
+          type: ["string", "null"]
+          description: |
+            Task #738. ISO timestamp of the most recent
+            `portal_response_sync` attempt that *actually considered*
+            this row. Skipped synthetic / no-ticket rows are not
+            written, so the column reflects what was checked, not
+            every cron tick.
+        lastScrapeOutcome:
+          type: ["string", "null"]
+          enum: ["new_reply", "no_change", "error", null]
+          description: |
+            Outcome of the most recent scrape:
+              new_reply — at least one fresh portal message was posted
+              no_change — reader succeeded; nothing new
+              error     — reader / poster threw, or the gate was busy
+        lastScrapeError:
+          type: ["string", "null"]
+          description: Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.
         attempts:
           type: integer
         maxAttempts:
@@ -10924,6 +10964,123 @@ components:
           type: string
           nullable: true
 
+    PortalScrapeSummary:
+      type: object
+      description: |
+        Task #738. At-a-glance summary of the most recent
+        `portal_response_sync` cron_run, embedded on both the rollup
+        and worker-activity payloads so the System Health "Last portal
+        scrape" panel header can render without an extra fetch.
+      required: [startedAt, finishedAt, status, message, considered, scraped, skipped, errored, newResponses]
+      properties:
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [running, completed, degraded, failed]
+        message:
+          type: string
+          nullable: true
+        considered:
+          type: integer
+          nullable: true
+        scraped:
+          type: integer
+          nullable: true
+        skipped:
+          type: integer
+          nullable: true
+        errored:
+          type: integer
+          nullable: true
+        newResponses:
+          type: integer
+          nullable: true
+
+    PortalScrapeDetailRow:
+      type: object
+      required: [submissionId, invoiceGroupId, invoiceNumber, portalTicketId, lastScrapedAt, outcome, errorExcerpt]
+      properties:
+        submissionId:
+          type: integer
+        invoiceGroupId:
+          type: integer
+        invoiceNumber:
+          type: string
+          nullable: true
+        portalTicketId:
+          type: string
+          nullable: true
+        lastScrapedAt:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+          nullable: true
+          enum: [new_reply, no_change, error, null]
+        errorExcerpt:
+          type: string
+          nullable: true
+
+    PortalScrapeDetailLastRun:
+      type: object
+      required: [id, startedAt, finishedAt, status, message]
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [running, completed, degraded, failed]
+        message:
+          type: string
+          nullable: true
+
+    PortalScrapeDetailResponse:
+      type: object
+      required: [lastRun, submissions]
+      properties:
+        lastRun:
+          oneOf:
+            - $ref: '#/components/schemas/PortalScrapeDetailLastRun'
+            - type: 'null'
+        considered:
+          type: integer
+          nullable: true
+        scraped:
+          type: integer
+          nullable: true
+        skipped:
+          type: integer
+          nullable: true
+        errored:
+          type: integer
+          nullable: true
+        newResponses:
+          type: integer
+          nullable: true
+        submissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalScrapeDetailRow'
+        # Task #738. Capped error-row digest: at most 50 entries
+        # (most recent first); `errorOverflow` is the count of
+        # additional error rows not included so the UI can render a
+        # "+N more" affordance on the panel.
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalScrapeDetailRow'
+        errorOverflow:
+          type: integer
+
     WorkerActivityResponse:
       type: object
       required: [isRunning, lastRun, recentRuns, pendingDueCount, overdueCount, overdueGraceMinutes, nextSweepAt, lastSweepAt, lastSuccessfulSubmission, lastFailedSubmission]
@@ -10968,6 +11125,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/WorkerFailedSubmissionEvent"
             - type: "null"
+        lastPortalScrape:
+          oneOf:
+            - $ref: "#/components/schemas/PortalScrapeSummary"
+            - type: "null"
+          description: |
+            Task #738. Most recent `portal_response_sync` summary; null
+            until the cron has run at least once after deploy.
 
     WorkerSubmissionEvent:
       type: object
@@ -11065,6 +11229,15 @@ components:
         bootedAt:
           type: string
           description: ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes.
+        lastPortalScrape:
+          oneOf:
+            - $ref: "#/components/schemas/PortalScrapeSummary"
+            - type: "null"
+          description: |
+            Task #738. Most recent `portal_response_sync` summary so the
+            "Last portal scrape" panel header on System Health can render
+            without an extra admin-only fetch (the per-row drill-down is
+            still admin-only).
 
     ClassifierVerdictBin:
       type: string

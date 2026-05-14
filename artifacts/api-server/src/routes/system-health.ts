@@ -252,6 +252,120 @@ router.get("/admin/system-health/daily-brief", requireAdmin, asyncHandler(async 
   await buildBriefDetail("daily_brief", res);
 }));
 
+// Task #738. Drill-down for the most recent `portal_response_sync`
+// run — mirrors `buildBriefDetail` exactly: pull the cron_run, then
+// pull every portal_submission whose `last_scraped_at` falls inside
+// that run's window. The per-ticket rows include the outcome + error
+// excerpt + invoice number / group id so the System Health "Last
+// portal scrape" panel can render the same level of detail operators
+// are used to seeing on the daily brief panel.
+router.get("/admin/system-health/portal-scrape", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  const [lastRun] = await db
+    .select()
+    .from(cronRunsTable)
+    .where(eq(cronRunsTable.jobName, "portal_response_sync"))
+    .orderBy(desc(cronRunsTable.startedAt))
+    .limit(1);
+
+  if (!lastRun) {
+    res.json({ lastRun: null, submissions: [] });
+    return;
+  }
+
+  // Use the run window (started_at .. finished_at + 60s grace) to scope
+  // which portal_submissions rows belong to this sweep. The per-row
+  // `last_scraped_at` is stamped inside `syncPortalResponsesForSubmission`
+  // for every ticket actually considered, so a window query is the
+  // honest answer to "what did this run touch?".
+  const startedAt = lastRun.startedAt;
+  const windowEnd = lastRun.finishedAt
+    ? new Date(lastRun.finishedAt.getTime() + 60 * 1000)
+    : new Date(lastRun.startedAt.getTime() + 30 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      id: portalSubmissionsTable.id,
+      invoiceGroupId: portalSubmissionsTable.invoiceGroupId,
+      invoiceNumber: portalSubmissionsTable.invoiceNumber,
+      portalTicketId: portalSubmissionsTable.portalTicketId,
+      lastScrapedAt: portalSubmissionsTable.lastScrapedAt,
+      lastScrapeOutcome: portalSubmissionsTable.lastScrapeOutcome,
+      lastScrapeError: portalSubmissionsTable.lastScrapeError,
+    })
+    .from(portalSubmissionsTable)
+    .where(and(
+      gte(portalSubmissionsTable.lastScrapedAt, startedAt),
+      lte(portalSubmissionsTable.lastScrapedAt, windowEnd),
+    ))
+    .orderBy(desc(portalSubmissionsTable.lastScrapedAt))
+    .limit(200);
+
+  // Task #738. Cap the error-row list separately from the overall
+  // submission list so a sweep that errored on hundreds of tickets
+  // can still surface a meaningful "first N + (M more)" digest in
+  // the panel without blowing up the payload. The total count is
+  // returned alongside so the UI can render "+N more" overflow.
+  const ERROR_CAP = 50;
+  const allErrorRows = rows.filter((r) => r.lastScrapeOutcome === "error");
+  const cappedErrorRows = allErrorRows.slice(0, ERROR_CAP);
+
+  const submissions = rows.map((r) => ({
+    submissionId: r.id,
+    invoiceGroupId: r.invoiceGroupId,
+    invoiceNumber: r.invoiceNumber,
+    portalTicketId: r.portalTicketId,
+    lastScrapedAt: r.lastScrapedAt?.toISOString() ?? null,
+    outcome: r.lastScrapeOutcome,
+    errorExcerpt: r.lastScrapeError,
+  }));
+  const errors = cappedErrorRows.map((r) => ({
+    submissionId: r.id,
+    invoiceGroupId: r.invoiceGroupId,
+    invoiceNumber: r.invoiceNumber,
+    portalTicketId: r.portalTicketId,
+    lastScrapedAt: r.lastScrapedAt?.toISOString() ?? null,
+    // Task #738: include `outcome` so this row matches the
+    // PortalScrapeDetailRow shape (always "error" by construction —
+    // the parent list is filtered on lastScrapeOutcome === "error").
+    outcome: r.lastScrapeOutcome,
+    errorExcerpt: r.lastScrapeError,
+  }));
+  const errorOverflow = Math.max(0, allErrorRows.length - cappedErrorRows.length);
+
+  // Pull the run's metadata totals so the panel header can render
+  // "19/25 scraped, 6 errored" without recomputing from per-row
+  // outcome counts (which can drift if rows were re-scraped after
+  // the run finished).
+  const meta = (lastRun.metadata as Record<string, unknown> | null) ?? {};
+  const considered = typeof meta.considered === "number" ? meta.considered : null;
+  const scraped = typeof meta.scraped === "number" ? meta.scraped : null;
+  const skipped = typeof meta.skipped === "number" ? meta.skipped : null;
+  const errored = typeof meta.errored === "number" ? meta.errored : null;
+  const newResponses = typeof meta.newResponses === "number" ? meta.newResponses : null;
+
+  res.json({
+    lastRun: {
+      id: lastRun.id,
+      startedAt: lastRun.startedAt.toISOString(),
+      finishedAt: lastRun.finishedAt?.toISOString() ?? null,
+      status: lastRun.status,
+      message: lastRun.message,
+    },
+    considered,
+    scraped,
+    skipped,
+    errored,
+    newResponses,
+    submissions,
+    // Task #738. Capped error-row digest. `errors` contains at most
+    // `ERROR_CAP` entries (most recent first); `errorOverflow` is
+    // the number of additional error rows that exist but weren't
+    // included so the UI can render a "+N more" affordance.
+    errors,
+    errorOverflow,
+  });
+}));
+
 router.get("/admin/system-health/weekly-digest", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
   await buildBriefDetail("weekly_digest", res);
 }));
@@ -291,6 +405,47 @@ router.get("/admin/system-health/bounces", requireAdmin, asyncHandler(async (req
     })),
   });
 }));
+
+// Task #738. At-a-glance summary of the most recent
+// `portal_response_sync` cron_run plus per-row outcome counts derived
+// from `portal_submissions.last_scrape_outcome`. Lives behind a helper
+// because both `/worker-activity` (admin drill-down) and `/rollup`
+// (auth-only summary banner) embed the same shape so the System Health
+// "Last portal scrape" panel header can render before the drill-down
+// fetch finishes.
+async function buildLastPortalScrapeSummary(): Promise<{
+  startedAt: string;
+  finishedAt: string | null;
+  status: string;
+  message: string | null;
+  considered: number | null;
+  scraped: number | null;
+  skipped: number | null;
+  errored: number | null;
+  newResponses: number | null;
+} | null> {
+  const [lastRun] = await db
+    .select()
+    .from(cronRunsTable)
+    .where(eq(cronRunsTable.jobName, "portal_response_sync"))
+    .orderBy(desc(cronRunsTable.startedAt))
+    .limit(1);
+  if (!lastRun) return null;
+  const meta = (lastRun.metadata as Record<string, unknown> | null) ?? {};
+  const numOrNull = (k: string): number | null =>
+    typeof meta[k] === "number" ? (meta[k] as number) : null;
+  return {
+    startedAt: lastRun.startedAt.toISOString(),
+    finishedAt: lastRun.finishedAt?.toISOString() ?? null,
+    status: lastRun.status,
+    message: lastRun.message,
+    considered: numOrNull("considered"),
+    scraped: numOrNull("scraped"),
+    skipped: numOrNull("skipped"),
+    errored: numOrNull("errored"),
+    newResponses: numOrNull("newResponses"),
+  };
+}
 
 router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
   const now = new Date();
@@ -352,6 +507,8 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     logger.warn("worker-activity: failed to compute nextSweepAt");
   }
 
+  const lastPortalScrape = await buildLastPortalScrapeSummary();
+
   res.json({
     isRunning: isWorkerRunInProgress(),
     lastRun: getLastWorkerRun(),
@@ -361,6 +518,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     overdueGraceMinutes: OVERDUE_GRACE_MINUTES,
     nextSweepAt: nextSweepFire?.toISOString() ?? null,
     lastSweepAt: prevSweepFire?.toISOString() ?? null,
+    lastPortalScrape,
     lastSuccessfulSubmission: lastSuccess
       ? {
           submissionId: lastSuccess.id,
@@ -506,6 +664,8 @@ router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(a
       : { totalGroups: driftReport.totalGroups, driftCount: driftReport.driftCount },
   });
 
+  const lastPortalScrape = await buildLastPortalScrapeSummary();
+
   res.json({
     overall,
     components,
@@ -515,6 +675,7 @@ router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(a
     overdueGraceMinutes: OVERDUE_GRACE_MINUTES,
     nextSweepAt: nextSweepFire?.toISOString() ?? null,
     lastSweepAt: prevSweepFire?.toISOString() ?? null,
+    lastPortalScrape,
     generatedAt: now.toISOString(),
     bootedAt: bootTime.toISOString(),
   });

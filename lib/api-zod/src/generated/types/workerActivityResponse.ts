@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { PortalScrapeSummary } from "./portalScrapeSummary";
 import type { WorkerFailedSubmissionEvent } from "./workerFailedSubmissionEvent";
 import type { WorkerRunSummary } from "./workerRunSummary";
 import type { WorkerSubmissionEvent } from "./workerSubmissionEvent";
@@ -36,4 +37,8 @@ still-pending rows are flagged as past their cycle.
   lastSweepAt: string | null;
   lastSuccessfulSubmission: WorkerSubmissionEvent | null;
   lastFailedSubmission: WorkerFailedSubmissionEvent | null;
+  /** Task #738. Most recent `portal_response_sync` summary; null
+until the cron has run at least once after deploy.
+ */
+  lastPortalScrape?: PortalScrapeSummary | null;
 }

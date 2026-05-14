@@ -161,6 +161,7 @@ import type {
   NotificationPreferencesResponse,
   PlaceHoldBody,
   PortalResponseItem,
+  PortalScrapeDetailResponse,
   PortalSubmissionResponse,
   PortalUnderstandingPreflightBody,
   PortalUnderstandingPreflightResponse,
@@ -14688,6 +14689,94 @@ export function useGetSystemHealthDailyBrief<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSystemHealthDailyBriefQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Task #738. Joins the most recent `portal_response_sync` cron_run
+with the per-submission `last_scraped_at` rows that the
+orchestrator stamps for every ticket actually considered on the
+sweep. Lets the System Health "Last portal scrape" panel show
+which tickets were scraped, which errored, and what the error
+excerpt was — without operators having to dig into
+`cron_runs.metadata`.
+
+ * @summary Last portal-scrape sweep detail (admin only)
+ */
+export const getGetSystemHealthPortalScrapeUrl = () => {
+  return `/api/admin/system-health/portal-scrape`;
+};
+
+export const getSystemHealthPortalScrape = async (
+  options?: RequestInit,
+): Promise<PortalScrapeDetailResponse> => {
+  return customFetch<PortalScrapeDetailResponse>(
+    getGetSystemHealthPortalScrapeUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSystemHealthPortalScrapeQueryKey = () => {
+  return [`/api/admin/system-health/portal-scrape`] as const;
+};
+
+export const getGetSystemHealthPortalScrapeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthPortalScrape>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthPortalScrape>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthPortalScrapeQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthPortalScrape>>
+  > = ({ signal }) =>
+    getSystemHealthPortalScrape({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthPortalScrape>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthPortalScrapeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthPortalScrape>>
+>;
+export type GetSystemHealthPortalScrapeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Last portal-scrape sweep detail (admin only)
+ */
+
+export function useGetSystemHealthPortalScrape<
+  TData = Awaited<ReturnType<typeof getSystemHealthPortalScrape>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthPortalScrape>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthPortalScrapeQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

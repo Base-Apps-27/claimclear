@@ -1051,6 +1051,24 @@ export const PortalSubmissionResponseStatus = {
 } as const;
 
 /**
+ * Outcome of the most recent scrape:
+  new_reply — at least one fresh portal message was posted
+  no_change — reader succeeded; nothing new
+  error     — reader / poster threw, or the gate was busy
+
+ * @nullable
+ */
+export type PortalSubmissionResponseLastScrapeOutcome =
+  | (typeof PortalSubmissionResponseLastScrapeOutcome)[keyof typeof PortalSubmissionResponseLastScrapeOutcome]
+  | null;
+
+export const PortalSubmissionResponseLastScrapeOutcome = {
+  new_reply: "new_reply",
+  no_change: "no_change",
+  error: "error",
+} as const;
+
+/**
  * Macro lifecycle phase of the parent invoice group at read time.
 Surfaced so the Portal Submissions UI can render the macro phase as
 the *primary* state chip and the Submission Stage as a subordinate
@@ -1217,6 +1235,30 @@ export interface PortalSubmissionResponse {
   errorMessage?: string | null;
   /** @nullable */
   submittedAt?: string | null;
+  /**
+   * Task #738. ISO timestamp of the most recent
+`portal_response_sync` attempt that *actually considered*
+this row. Skipped synthetic / no-ticket rows are not
+written, so the column reflects what was checked, not
+every cron tick.
+
+   * @nullable
+   */
+  lastScrapedAt?: string | null;
+  /**
+   * Outcome of the most recent scrape:
+  new_reply — at least one fresh portal message was posted
+  no_change — reader succeeded; nothing new
+  error     — reader / poster threw, or the gate was busy
+
+   * @nullable
+   */
+  lastScrapeOutcome?: PortalSubmissionResponseLastScrapeOutcome;
+  /**
+   * Error excerpt for the most recent failed or partial scrape (truncated to 1000 chars). Null on clean runs.
+   * @nullable
+   */
+  lastScrapeError?: string | null;
   attempts: number;
   maxAttempts: number;
   /** @nullable */
@@ -4574,6 +4616,85 @@ export interface DailyBriefDetailResponse {
   recipientCount?: number;
 }
 
+export type PortalScrapeSummaryStatus =
+  (typeof PortalScrapeSummaryStatus)[keyof typeof PortalScrapeSummaryStatus];
+
+export const PortalScrapeSummaryStatus = {
+  running: "running",
+  completed: "completed",
+  degraded: "degraded",
+  failed: "failed",
+} as const;
+
+/**
+ * Task #738. At-a-glance summary of the most recent
+`portal_response_sync` cron_run, embedded on both the rollup
+and worker-activity payloads so the System Health "Last portal
+scrape" panel header can render without an extra fetch.
+
+ */
+export interface PortalScrapeSummary {
+  startedAt: string;
+  finishedAt: string | null;
+  status: PortalScrapeSummaryStatus;
+  message: string | null;
+  considered: number | null;
+  scraped: number | null;
+  skipped: number | null;
+  errored: number | null;
+  newResponses: number | null;
+}
+
+export type PortalScrapeDetailRowOutcome =
+  | (typeof PortalScrapeDetailRowOutcome)[keyof typeof PortalScrapeDetailRowOutcome]
+  | null;
+
+export const PortalScrapeDetailRowOutcome = {
+  new_reply: "new_reply",
+  no_change: "no_change",
+  error: "error",
+} as const;
+
+export interface PortalScrapeDetailRow {
+  submissionId: number;
+  invoiceGroupId: number;
+  invoiceNumber: string | null;
+  portalTicketId: string | null;
+  lastScrapedAt: string | null;
+  outcome: PortalScrapeDetailRowOutcome;
+  errorExcerpt: string | null;
+}
+
+export type PortalScrapeDetailLastRunStatus =
+  (typeof PortalScrapeDetailLastRunStatus)[keyof typeof PortalScrapeDetailLastRunStatus];
+
+export const PortalScrapeDetailLastRunStatus = {
+  running: "running",
+  completed: "completed",
+  degraded: "degraded",
+  failed: "failed",
+} as const;
+
+export interface PortalScrapeDetailLastRun {
+  id: number;
+  startedAt: string;
+  finishedAt: string | null;
+  status: PortalScrapeDetailLastRunStatus;
+  message: string | null;
+}
+
+export interface PortalScrapeDetailResponse {
+  lastRun: PortalScrapeDetailLastRun | null;
+  considered?: number | null;
+  scraped?: number | null;
+  skipped?: number | null;
+  errored?: number | null;
+  newResponses?: number | null;
+  submissions: PortalScrapeDetailRow[];
+  errors?: PortalScrapeDetailRow[];
+  errorOverflow?: number;
+}
+
 export interface WorkerSubmissionEvent {
   submissionId: number;
   invoiceGroupId: number;
@@ -4614,6 +4735,10 @@ still-pending rows are flagged as past their cycle.
   lastSweepAt: string | null;
   lastSuccessfulSubmission: WorkerSubmissionEvent | null;
   lastFailedSubmission: WorkerFailedSubmissionEvent | null;
+  /** Task #738. Most recent `portal_response_sync` summary; null
+until the cron has run at least once after deploy.
+ */
+  lastPortalScrape?: PortalScrapeSummary | null;
 }
 
 export type SystemHealthRollupComponentStatus =
@@ -4665,6 +4790,12 @@ still-pending rows are flagged as past their cycle.
   generatedAt: string;
   /** ISO timestamp of when the API server process started. Used by the System Health page to contextualize "awaiting first scheduled run" notes. */
   bootedAt: string;
+  /** Task #738. Most recent `portal_response_sync` summary so the
+"Last portal scrape" panel header on System Health can render
+without an extra admin-only fetch (the per-row drill-down is
+still admin-only).
+ */
+  lastPortalScrape?: PortalScrapeSummary | null;
 }
 
 /**

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { absoluteTooltip } from "@/lib/time";
+import { absoluteTooltip, formatRelative } from "@/lib/time";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 
@@ -175,8 +175,17 @@ export function PortalSubmissionDrawer({
   const [sandboxRunning, setSandboxRunning] = useState(false);
   const [sandboxError, setSandboxError] = useState("");
 
+  // Task #738. Poll the open submission every 30s so the "Last
+  // portal scrape" section in the drawer reflects fresh outcomes from
+  // the next `portal_response_sync` cron tick without the operator
+  // having to close and reopen the drawer. Matches the
+  // WorkerHealthBanner / list-page polling cadence.
   const { data: fetched, isLoading: subLoading } = useGetPortalSubmission(submissionId || 0, {
-    query: { queryKey: getGetPortalSubmissionQueryKey(submissionId || 0), enabled: !!submissionId && open },
+    query: {
+      queryKey: getGetPortalSubmissionQueryKey(submissionId || 0),
+      enabled: !!submissionId && open,
+      refetchInterval: open ? 30000 : false,
+    },
   });
   const submission = fetched ?? initialSubmission ?? null;
 
@@ -775,6 +784,52 @@ export function PortalSubmissionDrawer({
                     <p className="text-xs text-muted-foreground">No activity recorded yet.</p>
                   )}
                 </DrawerSection>
+
+                {/* Task #738 — per-submission portal-scrape outcome.
+                    Mirrors the row badge but with the full error excerpt
+                    so operators can diagnose reader/poster failures
+                    without leaving the drawer. */}
+                {submission.lastScrapedAt && (
+                  <DrawerSection title="Last portal scrape">
+                    <div className="flex items-center gap-2 text-sm" data-testid="drawer-last-scrape">
+                      {submission.lastScrapeOutcome === "new_reply" ? (
+                        <Badge className="bg-indigo-600 text-white">new reply</Badge>
+                      ) : submission.lastScrapeOutcome === "no_change" ? (
+                        <Badge variant="secondary">no change</Badge>
+                      ) : submission.lastScrapeOutcome === "error" ? (
+                        <Badge className="bg-rose-600 text-white">error</Badge>
+                      ) : (
+                        <Badge variant="outline">unknown</Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground" title={absoluteTooltip(submission.lastScrapedAt)}>
+                        Checked {formatRelative(submission.lastScrapedAt) || "—"}
+                      </span>
+                    </div>
+                    {submission.lastScrapeError ? (
+                      <div className="mt-2 text-xs text-rose-700 break-words" data-testid="drawer-last-scrape-error">
+                        {submission.lastScrapeError}
+                      </div>
+                    ) : null}
+                    {/* Task #738. When the most recent scrape produced a
+                        new reply, the orchestrator records a row in
+                        `portal_responses` keyed off this submission's
+                        invoice group. Link operators directly to the
+                        invoice group's Responses panel so they don't
+                        have to navigate up two levels to read it. */}
+                    {submission.lastScrapeOutcome === "new_reply" && (
+                      <div className="mt-2">
+                        <Link
+                          href={`/invoice-groups/${submission.invoiceGroupId}#responses`}
+                          className="inline-flex items-center gap-1 text-xs text-indigo-700 hover:underline"
+                          data-testid="drawer-last-scrape-response-link"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open the new portal response
+                        </Link>
+                      </div>
+                    )}
+                  </DrawerSection>
+                )}
 
                 {(submission.portalTicketId || submission.errorMessage) && (
                   <DrawerSection title="Result">

@@ -7,6 +7,19 @@ export const portalSubmissionStatusEnum = pgEnum("portal_submission_status", [
   "draft", "pending", "in_progress", "submitted", "failed", "cancelled", "dry_run"
 ]);
 
+// Task #738. Per-submission outcome of the most recent
+// `portal_response_sync` scrape attempt. Surfaces alongside
+// `lastScrapedAt`/`lastScrapeError` on the Portal Submissions row so the
+// drawer + the System Health drill-down can render scrape state
+// without re-joining to `cron_runs.metadata.perSubmission[]`.
+//   new_reply — at least one fresh portal message was posted to
+//               `portal_responses` for this submission on the run
+//   no_change — reader succeeded; nothing new since last scrape
+//   error     — reader / poster threw, or the gate was busy
+export const portalScrapeOutcomeEnum = pgEnum("portal_scrape_outcome", [
+  "new_reply", "no_change", "error",
+]);
+
 export const portalSubmissionsTable = pgTable("portal_submissions", {
   id: serial("id").primaryKey(),
   invoiceGroupId: integer("invoice_group_id").notNull().references(() => invoiceGroupsTable.id, { onDelete: "cascade" }),
@@ -82,11 +95,21 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   // elsewhere. Joined against `portal_batch_runs.batch_id` to resolve the
   // numeric run id used in the user-facing label.
   submittedInBatchId: text("submitted_in_batch_id"),
+  // Task #738. Stamped by `syncPortalResponsesForSubmission` for every
+  // ticket that was actually considered on a `portal_response_sync`
+  // run (skipped synthetic / no-ticket rows are NOT written so the
+  // column is honest about what was checked). The drawer + the
+  // sortable "Last checked" column on Portal Submissions read these
+  // three fields directly.
+  lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
+  lastScrapeOutcome: portalScrapeOutcomeEnum("last_scrape_outcome"),
+  lastScrapeError: text("last_scrape_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
   index("portal_submissions_invoice_group_id_idx").on(table.invoiceGroupId),
   index("portal_submissions_status_idx").on(table.status),
+  index("portal_submissions_last_scraped_at_idx").on(table.lastScrapedAt),
 ]);
 
 export const insertPortalSubmissionSchema = createInsertSchema(portalSubmissionsTable).omit({ id: true, createdAt: true, updatedAt: true });

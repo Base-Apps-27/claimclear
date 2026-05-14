@@ -6,6 +6,7 @@ import {
   useGetSystemHealthRollup,
   useGetSystemHealthClassifierStats,
   useGetSystemHealthDailyBrief,
+  useGetSystemHealthPortalScrape,
   useRunExpiredSweep,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
@@ -14,6 +15,7 @@ import {
   getGetSystemHealthRollupQueryKey,
   getGetSystemHealthClassifierStatsQueryKey,
   getGetSystemHealthDailyBriefQueryKey,
+  getGetSystemHealthPortalScrapeQueryKey,
   type ClassifierStatsResponse,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +34,15 @@ function statusBadge(status: string) {
   switch (status) {
     case "ok":
     case "healthy":
-      return <Badge className="bg-green-600 text-white">{status}</Badge>;
+    // Task #738. The cron-runs layer stamps the success status as
+    // `completed` (see `mapResultStatus` in cron-runs.ts), but every
+    // verdict chip across the System Health page must paint
+    // success-states in the same green token regardless of which
+    // upstream alias the backend returned. Treat `completed` as an
+    // ok-equivalent so the new "Last portal scrape" panel chip lines
+    // up with the rest of the page (Daily Brief, Connectors, Worker).
+    case "completed":
+      return <Badge className="bg-green-600 text-white">{status === "completed" ? "ok" : status}</Badge>;
     case "running":
       return <Badge className="bg-blue-500 text-white">{status}</Badge>;
     case "degraded":
@@ -111,6 +121,15 @@ export default function SystemHealth() {
   const { data: briefDetail, isLoading: briefDetailLoading } = useGetSystemHealthDailyBrief({
     query: {
       queryKey: getGetSystemHealthDailyBriefQueryKey(),
+      refetchInterval: REFRESH_MS,
+    },
+  });
+  // Task #738. Per-ticket detail for the most recent
+  // `portal_response_sync` cron sweep — drives the "Last portal scrape"
+  // panel below "Last Daily Brief".
+  const { data: scrapeDetail, isLoading: scrapeDetailLoading } = useGetSystemHealthPortalScrape({
+    query: {
+      queryKey: getGetSystemHealthPortalScrapeQueryKey(),
       refetchInterval: REFRESH_MS,
     },
   });
@@ -349,6 +368,131 @@ export default function SystemHealth() {
                     ))}
                   </ul>
                 </div>
+              ) : null}
+            </div>
+          )}
+          </SkeletonSwap>
+        </CardContent>
+      </Card>
+
+      {/* Task #738 — mirror of "Last Daily Brief" but for the
+          `portal_response_sync` cron. The header counts come from the
+          run's metadata snapshot; the per-ticket table comes from the
+          per-submission `last_scrape_outcome` columns the orchestrator
+          stamps for every considered ticket. */}
+      <Card id="last-portal-scrape" data-testid="last-portal-scrape-panel">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-indigo-600" /> Last portal scrape
+          </CardTitle>
+          <CardDescription>
+            Per-ticket outcome of the most recent <span className="font-mono">portal_response_sync</span> sweep —
+            new replies, no-change passes, and any reader/poster errors with their excerpts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SkeletonSwap loading={scrapeDetailLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+          {!scrapeDetail?.lastRun ? (
+            <p className="text-sm text-muted-foreground">No portal scrape has run yet.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {statusBadge(scrapeDetail.lastRun.status)}
+                <span className="text-xs text-muted-foreground">
+                  Started {relTime(scrapeDetail.lastRun.startedAt)}
+                </span>
+                {/* Task #738 — header parity with the Daily Brief panel:
+                    finished + duration shown alongside started so an
+                    operator can see a stuck/long sweep at a glance. */}
+                {scrapeDetail.lastRun.finishedAt ? (
+                  <>
+                    <span className="text-xs text-muted-foreground">
+                      Finished {relTime(scrapeDetail.lastRun.finishedAt)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      ({Math.max(0, Math.round((new Date(scrapeDetail.lastRun.finishedAt).getTime() - new Date(scrapeDetail.lastRun.startedAt).getTime()) / 1000))}s)
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs text-blue-600">running…</span>
+                )}
+                <span className="text-xs">
+                  <span className="text-green-600 font-medium">{scrapeDetail.scraped ?? 0}</span>
+                  {" / "}
+                  <span className="font-medium">{scrapeDetail.considered ?? 0}</span>
+                  {" scraped"}
+                  {scrapeDetail.errored && scrapeDetail.errored > 0 ? (
+                    <span className="text-rose-600 ml-1">({scrapeDetail.errored} errored)</span>
+                  ) : null}
+                  {scrapeDetail.newResponses && scrapeDetail.newResponses > 0 ? (
+                    <span className="text-indigo-600 ml-1">· {scrapeDetail.newResponses} new repl{scrapeDetail.newResponses === 1 ? "y" : "ies"}</span>
+                  ) : null}
+                </span>
+              </div>
+              {scrapeDetail.lastRun.message ? (
+                <p className="text-xs text-muted-foreground">{scrapeDetail.lastRun.message}</p>
+              ) : null}
+              {scrapeDetail.submissions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="portal-scrape-table">
+                    <thead className="text-xs text-muted-foreground uppercase border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2">Submission</th>
+                        <th className="text-left px-3 py-2">Ticket</th>
+                        <th className="text-left px-3 py-2">Last checked</th>
+                        <th className="text-left px-3 py-2">Outcome</th>
+                        <th className="text-left px-3 py-2">Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scrapeDetail.submissions.map((s) => (
+                        <tr key={s.submissionId} className="border-b last:border-0">
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {s.invoiceNumber ?? `#${s.submissionId}`}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                            {s.portalTicketId ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
+                            {relTime(s.lastScrapedAt)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {s.outcome === "new_reply" ? (
+                              <Badge className="bg-indigo-600 text-white">new reply</Badge>
+                            ) : s.outcome === "no_change" ? (
+                              <Badge variant="secondary">no change</Badge>
+                            ) : s.outcome === "error" ? (
+                              <Badge className="bg-rose-600 text-white">error</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs max-w-md truncate" title={s.errorExcerpt ?? ""}>
+                            {s.errorExcerpt ? (
+                              <span className="text-rose-600">{s.errorExcerpt}</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No tickets were considered on this run (zero-due window).
+                </p>
+              )}
+              {/* Task #738. Surface the capped error-row digest's
+                  overflow count so a sweep that errored on hundreds
+                  of tickets shows "+N more" rather than silently
+                  hiding them. The route returns at most 50 error
+                  rows in `errors[]`. */}
+              {scrapeDetail.errorOverflow && scrapeDetail.errorOverflow > 0 ? (
+                <p className="text-xs text-rose-600" data-testid="portal-scrape-error-overflow">
+                  +{scrapeDetail.errorOverflow} more errored ticket{scrapeDetail.errorOverflow === 1 ? "" : "s"} not shown
+                </p>
               ) : null}
             </div>
           )}
