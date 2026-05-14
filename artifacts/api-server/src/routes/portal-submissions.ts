@@ -1131,8 +1131,18 @@ interface PreparedDraftContent {
 async function preparePortalDraftContent(
   opts: GeneratePortalDraftOpts,
 ): Promise<PreparedDraftContent> {
-  const trimmedSpecial = (opts.specialCircumstances || "").trim();
   const trimmedReadback = (opts.understandingReadback || "").trim();
+  // The gauntlet's "Understanding notes" textarea persists the operator's
+  // custom context onto invoice_groups.understandingReadback, and the
+  // preview-generated route forwards it as `understandingReadback` (not
+  // `specialCircumstances`). Fall back to it here so that note actually
+  // reaches the prompt's CRITICAL CONTEXT block — without this fallback
+  // the textarea's promise ("Included as additional context in the AI
+  // write-up") was silently broken on the live Generate-preview path.
+  // Legacy callers (the back-compat /portal-submissions/generate-preview
+  // route, tests, scripts) that pass `specialCircumstances` still take
+  // precedence when both are supplied.
+  const trimmedSpecial = ((opts.specialCircumstances || "").trim()) || trimmedReadback;
 
   const rawCtx = await resolveContext({ invoiceGroupId: opts.invoiceGroupId });
   if (!rawCtx) throw new GroupNotFoundError();
