@@ -398,7 +398,7 @@ export default function Import() {
         setErrorMessage(
           records.length < 2
             ? "File appears to be empty or has no data rows."
-            : "No valid claims found. Make sure there is a column with confirmation numbers."
+            : "No valid invoices found. Make sure there is a column with confirmation numbers."
         );
         return;
       }
@@ -619,18 +619,27 @@ export default function Import() {
   const handleCloseReview = () => setReviewGroup(null);
 
   const totalAmount = rows.reduce((s, r) => s + (r.claimAmount || 0), 0);
+  // Mirror the server's invoice-grouping rule from
+  // `artifacts/api-server/src/lib/parseInvoiceNumber.ts` and
+  // `artifacts/api-server/src/routes/import.ts` (`invoiceMap` keyed by
+  // `parseInvoiceNumber(refNumber)`). The server takes the first
+  // whitespace-separated token of the Ref # column, accepts it only
+  // if it's all digits, and groups rows by that invoice number.
+  // Rows whose Ref # doesn't yield a digit token go to `noInvoiceRows`
+  // — they import as standalone claims with no invoice group, so they
+  // do NOT contribute to the invoice count (the server's
+  // `invoiceGroupCount` mirrors `invoiceMap.size`). The previous
+  // logic added one invoice per blank-ref row, which inflated the
+  // count (e.g. 137 for ~80 real invoices).
   const invoiceCount = useMemo<number>(() => {
     const seen = new Set<string>();
-    let blanks = 0;
     for (const r of rows) {
-      const key = (r.refNumber ?? "").trim().toLowerCase();
-      if (key === "") {
-        blanks += 1;
-      } else {
-        seen.add(key);
-      }
+      const trimmed = (r.refNumber ?? "").trim();
+      if (!trimmed) continue;
+      const firstToken = trimmed.split(/\s+/)[0];
+      if (/^\d+$/.test(firstToken)) seen.add(firstToken);
     }
-    return seen.size + blanks;
+    return seen.size;
   }, [rows]);
   const isProcessing = stage === "reading" || stage === "parsing";
 
@@ -711,11 +720,18 @@ export default function Import() {
       };
     }
     if (stepKey === "confirm" && stage === "complete" && result) {
+      const r = result as { invoiceGroupCount?: number; groupsCreated?: number };
+      const invTotal = r.invoiceGroupCount ?? 0;
+      const invNew = r.groupsCreated ?? 0;
       return {
         text: (
           <>
-            <strong>Import complete.</strong> Created {result.created}, updated {result.updated},
-            skipped {result.skipped}.
+            <strong>Import complete.</strong>{" "}
+            {invTotal > 0 ? (
+              <><strong>{invTotal} invoice{invTotal === 1 ? "" : "s"} ready</strong>{invNew > 0 ? ` (${invNew} new)` : ""} · {result.created} leg{result.created === 1 ? "" : "s"} created, {result.updated} updated, {result.skipped} skipped.</>
+            ) : (
+              <>{result.created} leg{result.created === 1 ? "" : "s"} created, {result.updated} updated, {result.skipped} skipped.</>
+            )}
           </>
         ),
         meta: `Batch ${result.batchId}`,
@@ -747,7 +763,7 @@ export default function Import() {
           <div className="flex-1 text-sm">
             <strong>Pick up where you left off.</strong>{" "}
             You saved an import session for <span className="font-mono">{resume.fileName}</span>{" "}
-            ({resume.rows.length} claim{resume.rows.length === 1 ? "" : "s"})
+            ({resume.rows.length} leg{resume.rows.length === 1 ? "" : "s"})
             {" "}on{" "}
             {formatDate(new Date(resume.savedAt).toISOString())}.
           </div>
@@ -803,6 +819,7 @@ export default function Import() {
             fileName={fileName}
             fileSize={fileSize}
             totalAmount={totalAmount}
+            invoiceCount={invoiceCount}
             duplicateAction={duplicateAction}
             setDuplicateAction={setDuplicateAction}
             handleReset={handleReset}
@@ -825,6 +842,7 @@ export default function Import() {
             classifyGroups={classifyGroups}
             duplicateAction={duplicateAction}
             totalAmount={totalAmount}
+            invoiceCount={invoiceCount}
             result={result}
             handleReset={handleReset}
             navigate={navigate}
@@ -847,6 +865,7 @@ export default function Import() {
             {stepKey === "map" && (
               <MapRail
                 rows={rows}
+                invoiceCount={invoiceCount}
                 warnings={warnings}
                 classifyLoading={classifyLoading}
                 onClassify={handleStartClassify}
@@ -874,6 +893,7 @@ export default function Import() {
               <ConfirmRail
                 stage={stage}
                 rows={rows}
+                invoiceCount={invoiceCount}
                 result={result}
                 pending={importClaims.isPending}
                 onStartImport={handleStartImport}
@@ -891,7 +911,7 @@ export default function Import() {
                 {stepKey === "classify"
                   ? <>If a code keeps showing up as <strong>Unknown</strong>, edit your <Link href="/error-types" className="underline">coding rules</Link> to map it permanently.</>
                   : stepKey === "map"
-                    ? <>Existing claims are matched by <strong>confirmation #</strong>. Choose <em>Skip</em> to leave them untouched, or <em>Update</em> to overwrite with new values.</>
+                    ? <>Existing legs are matched by <strong>confirmation #</strong>. Choose <em>Skip</em> to leave them untouched, or <em>Update</em> to overwrite with new values.</>
                     : stepKey === "upload"
                       ? <>The system auto-detects columns like <strong>Conf #</strong>, <strong>Date</strong>, <strong>Ref #</strong>, <strong>Client #</strong>, <strong>Car #</strong>, <strong>Error Details</strong>, and <strong>Amount</strong>.</>
                       : <>You can run another import from the same screen — it'll pick up new rows and skip duplicates.</>}
@@ -1022,18 +1042,18 @@ function UploadStep({
 }
 
 function MapStep({
-  rows, warnings, sheetInfos, fileName, fileSize, totalAmount,
+  rows, warnings, sheetInfos, fileName, fileSize, totalAmount, invoiceCount,
   duplicateAction, setDuplicateAction, handleReset,
 }: {
   rows: ParsedRow[]; warnings: ParseWarning[]; sheetInfos: SheetInfo[];
-  fileName: string; fileSize: number; totalAmount: number;
+  fileName: string; fileSize: number; totalAmount: number; invoiceCount: number;
   duplicateAction: string; setDuplicateAction: (v: string) => void;
   handleReset: () => void;
 }) {
   return (
     <>
       <Section
-        title={`${rows.length} claims parsed`}
+        title={`${invoiceCount} invoice${invoiceCount === 1 ? "" : "s"} parsed · ${rows.length} leg${rows.length === 1 ? "" : "s"}`}
         icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
         action={
           <Badge variant="outline" className="text-xs">
@@ -1114,7 +1134,7 @@ function MapStep({
           <div className="flex items-center gap-2 text-sm">
             <Label className="flex items-center gap-1">
               Duplicates:
-              <InfoTooltip content="How to handle claims with a confirmation number that already exists. 'Skip' leaves existing claims untouched; 'Update' overwrites them." />
+              <InfoTooltip content="How to handle legs with a confirmation number that already exists. 'Skip' leaves existing legs untouched; 'Update' overwrites them." />
             </Label>
             <Select value={duplicateAction} onValueChange={setDuplicateAction}>
               <SelectTrigger className="w-[130px] h-8 text-sm" data-testid="select-duplicate-action">
@@ -1126,7 +1146,7 @@ function MapStep({
               </SelectContent>
             </Select>
             <span className="text-xs text-muted-foreground">
-              {duplicateAction === "skip" ? "Existing claims won't be changed" : "Existing claims will be updated"}
+              {duplicateAction === "skip" ? "Existing legs won't be changed" : "Existing legs will be updated"}
             </span>
           </div>
         </div>
@@ -1155,7 +1175,7 @@ function ClassifyStep({
         icon={<Tag className="h-4 w-4 text-muted-foreground" />}
       >
         <p className="text-sm text-muted-foreground">
-          No error details were found in the imported claims. Continue to import — claims will land
+          No error details were found in the imported invoices. Continue to import — legs will land
           in the classification queue without an error type.
         </p>
       </Section>
@@ -1179,7 +1199,7 @@ function ClassifyStep({
           style={{ gridTemplateColumns: "minmax(200px,1fr) 70px minmax(220px,1fr) 90px 80px" }}
         >
           <div>Source code</div>
-          <div className="text-right">Claims</div>
+          <div className="text-right">Legs</div>
           <div>Suggested error type</div>
           <div>Confidence</div>
           <div />
@@ -1219,7 +1239,7 @@ function ClassifyStep({
                 <div className="pr-3">
                   {group.isMultiError ? (
                     <span className="text-xs text-muted-foreground italic">
-                      Assigned per claim during classification
+                      Assigned per leg during classification
                     </span>
                   ) : (
                     <Select
@@ -1272,13 +1292,14 @@ function ClassifyStep({
 }
 
 function ConfirmStep({
-  stage, rows, classifyGroups, duplicateAction, totalAmount, result, handleReset, navigate,
+  stage, rows, classifyGroups, duplicateAction, totalAmount, invoiceCount, result, handleReset, navigate,
 }: {
   stage: UploadStage;
   rows: ParsedRow[];
   classifyGroups: ClassifyGroup[];
   duplicateAction: string;
   totalAmount: number;
+  invoiceCount: number;
   result: ImportSummary | null;
   handleReset: () => void;
   navigate: (path: string) => void;
@@ -1297,8 +1318,9 @@ function ConfirmStep({
           title="Review before import"
           icon={<CheckCircle2 className="h-4 w-4 text-blue-600" />}
         >
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <ResultTile label="Claims" value={rows.length} tone="blue" />
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            <ResultTile label="Invoices" value={invoiceCount} tone="blue" />
+            <ResultTile label="Legs" value={rows.length} tone="muted" />
             <ResultTile label="Groups" value={groupCount} tone="muted" />
             <ResultTile label="Classified" value={assigned} tone="green" />
             <ResultTile label="Unknowns" value={unknownGroups.length} tone={unknownGroups.length > 0 ? "amber" : "muted"} />
@@ -1324,13 +1346,13 @@ function ConfirmStep({
             {multiErrorGroups.length > 0 && (
               <div className="flex items-center justify-between px-3 py-2">
                 <dt className="text-muted-foreground">Multi-error rows</dt>
-                <dd>{multiErrorGroups.length} group{multiErrorGroups.length === 1 ? "" : "s"} — error type assigned per claim during classification</dd>
+                <dd>{multiErrorGroups.length} group{multiErrorGroups.length === 1 ? "" : "s"} — error type assigned per leg during classification</dd>
               </div>
             )}
           </dl>
 
           <p className="text-xs text-muted-foreground mt-3">
-            Click <strong>Start import</strong> in the side panel to save these {rows.length} claim{rows.length === 1 ? "" : "s"} to ClaimClear.
+            Click <strong>Start import</strong> in the side panel to save these {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"} ({rows.length} leg{rows.length === 1 ? "" : "s"}) to ClaimClear.
             Nothing has been saved yet.
           </p>
         </Section>
@@ -1346,8 +1368,8 @@ function ConfirmStep({
       >
         <div className="flex flex-col items-center py-10">
           <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-          <p className="text-base font-medium">Importing {rows.length} claims…</p>
-          <p className="text-sm text-muted-foreground mt-1">This may take a moment for large files.</p>
+          <p className="text-base font-medium">Importing {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"}…</p>
+          <p className="text-sm text-muted-foreground mt-1">{rows.length} leg{rows.length === 1 ? "" : "s"} · this may take a moment for large files.</p>
         </div>
       </Section>
     );
@@ -1421,14 +1443,24 @@ function ConfirmStep({
               className="rounded-md border px-3 py-2 text-sm space-y-1"
               style={{ background: TONE_STYLE.green.bg, borderColor: TONE_STYLE.green.border, color: TONE_STYLE.green.fg }}
             >
-              <p>{result.created} new claim{result.created !== 1 ? "s" : ""} added to your tracker.</p>
-              {(result as { invoiceGroupCount?: number; groupsCreated?: number }).invoiceGroupCount && (result as { invoiceGroupCount?: number; groupsCreated?: number }).invoiceGroupCount! > 0 && (
-                <p className="font-medium">
-                  Organized into {(result as { invoiceGroupCount?: number; groupsCreated?: number }).invoiceGroupCount} invoice group
-                  {(result as { invoiceGroupCount?: number; groupsCreated?: number }).invoiceGroupCount !== 1 ? "s" : ""}
-                  {(result as { invoiceGroupCount?: number; groupsCreated?: number }).groupsCreated! > 0 && ` (${(result as { invoiceGroupCount?: number; groupsCreated?: number }).groupsCreated} new)`}.
-                </p>
-              )}
+              {(() => {
+                const r = result as { invoiceGroupCount?: number; groupsCreated?: number };
+                const groupTotal = r.invoiceGroupCount ?? 0;
+                const groupsNew = r.groupsCreated ?? 0;
+                return groupTotal > 0 ? (
+                  <>
+                    <p className="font-medium">
+                      {groupTotal} invoice{groupTotal === 1 ? "" : "s"} ready to work
+                      {groupsNew > 0 ? ` (${groupsNew} new)` : ""}.
+                    </p>
+                    <p className="text-xs opacity-90">
+                      {result.created} leg{result.created === 1 ? "" : "s"} added to your tracker.
+                    </p>
+                  </>
+                ) : (
+                  <p>{result.created} leg{result.created !== 1 ? "s" : ""} added to your tracker.</p>
+                );
+              })()}
             </div>
           )}
 
@@ -1839,9 +1871,9 @@ function UploadRail({
 }
 
 function MapRail({
-  rows, warnings, classifyLoading, onClassify, onSkip, onBack,
+  rows, invoiceCount, warnings, classifyLoading, onClassify, onSkip, onBack,
 }: {
-  rows: ParsedRow[]; warnings: ParseWarning[]; classifyLoading: boolean;
+  rows: ParsedRow[]; invoiceCount: number; warnings: ParseWarning[]; classifyLoading: boolean;
   onClassify: () => void; onSkip: () => void; onBack: () => void;
 }) {
   return (
@@ -1851,8 +1883,9 @@ function MapRail({
         description="We'll match each error description against your coding rules so you only review the new ones."
       >
         <div className="text-sm font-semibold mb-2">
-          Continue to classify {rows.length} claim{rows.length === 1 ? "" : "s"}
+          Continue to classify {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"}
         </div>
+        <div className="text-xs mb-2 opacity-85">{rows.length} leg{rows.length === 1 ? "" : "s"}</div>
         <ToneButton tone="blue" onClick={onClassify} disabled={classifyLoading} testId="rail-button-continue-classify">
           {classifyLoading ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> Looking up…</>
@@ -1972,7 +2005,7 @@ function ClassifyRail({
         <ActionRow
           icon={<Layers className="w-3.5 h-3.5 text-muted-foreground" />}
           label={`${multiErrorCount} multi-error`}
-          sub="Assigned later, per claim"
+          sub="Assigned later, per leg"
           muted
           disabled
         />
@@ -2010,10 +2043,11 @@ function ClassifyRail({
 }
 
 function ConfirmRail({
-  stage, rows, result, pending, onStartImport, onBack, onAnother, navigate,
+  stage, rows, invoiceCount, result, pending, onStartImport, onBack, onAnother, navigate,
 }: {
   stage: UploadStage;
   rows: ParsedRow[];
+  invoiceCount: number;
   result: ImportSummary | null;
   pending: boolean;
   onStartImport: () => void;
@@ -2039,8 +2073,9 @@ function ConfirmRail({
           description="Save the parsed rows to ClaimClear. Existing claims follow your duplicate setting."
         >
           <div className="text-sm font-semibold mb-2">
-            Start import of {rows.length} claim{rows.length === 1 ? "" : "s"}
+            Start import of {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"}
           </div>
+          <div className="text-xs mb-2 opacity-85">{rows.length} leg{rows.length === 1 ? "" : "s"}</div>
           <ToneButton
             tone="blue"
             onClick={onStartImport}
@@ -2081,17 +2116,23 @@ function ConfirmRail({
     <>
       <ActionsRailRecommended
         label="Recommended"
-        description="The new claims are ready to classify in the queue."
+        description="The new legs are ready to classify in the queue."
       >
         <div className="text-sm font-semibold mb-2">Open the classification queue</div>
         <ToneButton tone="blue" onClick={() => navigate("/queue")} testId="rail-button-open-queue">
           <ArrowRight className="w-4 h-4" /> Open Queue
         </ToneButton>
-        {result && (
-          <div className="text-xs mt-2 opacity-85">
-            {result.created} new claim{result.created === 1 ? "" : "s"} are waiting.
-          </div>
-        )}
+        {result && (() => {
+          const r = result as { invoiceGroupCount?: number };
+          const invoices = r.invoiceGroupCount ?? 0;
+          return (
+            <div className="text-xs mt-2 opacity-85">
+              {invoices > 0
+                ? <>{invoices} invoice{invoices === 1 ? "" : "s"} ready ({result.created} leg{result.created === 1 ? "" : "s"}).</>
+                : <>{result.created} leg{result.created === 1 ? "" : "s"} added.</>}
+            </div>
+          );
+        })()}
       </ActionsRailRecommended>
 
       <ActionGroup label="Then">
@@ -2152,11 +2193,11 @@ function ReviewDialog({
         <DialogHeader>
           <DialogTitle>Review error group</DialogTitle>
           <DialogDescription>
-            {matchingRows.length} claim{matchingRows.length === 1 ? "" : "s"} in this group.
+            {matchingRows.length} leg{matchingRows.length === 1 ? "" : "s"} in this group.
             {group.matched
               ? " Already matched by an existing coding rule."
               : group.isMultiError
-                ? " This is a multi-error row — error types are assigned per claim during classification."
+                ? " This is a multi-error row — error types are assigned per leg during classification."
                 : " Pick the right type to apply it to every row in the group."}
           </DialogDescription>
         </DialogHeader>
@@ -2196,7 +2237,7 @@ function ReviewDialog({
 
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
-              Claims in this group
+              Legs in this group
             </p>
             <div className="max-h-[260px] overflow-auto border border-border rounded-md">
               <table className="w-full text-sm">
@@ -2238,7 +2279,7 @@ function ReviewDialog({
               disabled={!selected}
               data-testid="button-review-apply"
             >
-              Apply to {matchingRows.length} claim{matchingRows.length === 1 ? "" : "s"}
+              Apply to {matchingRows.length} leg{matchingRows.length === 1 ? "" : "s"}
             </Button>
           )}
         </DialogFooter>
