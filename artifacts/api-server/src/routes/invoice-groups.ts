@@ -4355,6 +4355,23 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
           reattestCompletedBy: req.user?.email ?? null,
           reattestNote: fullNote,
           closureReason: "reattested",
+          // Task #648 — recovered $ default. This endpoint always stamps
+          // outcome='Approved' (full approval, not Partially Approved),
+          // and a full approval by definition recovers `total_amount`.
+          // Without this default the column stays NULL and every
+          // recovered-$ tile (Dashboard hero, daily-brief recovery
+          // block, Insights money) reads $0 even though the wins count
+          // is non-zero. We only fill when the column is currently NULL
+          // or 0 so an operator-entered Partial value (set via the
+          // /outcome endpoint before re-attest completion) is never
+          // overwritten. Partially Approved still requires an explicit
+          // approved_amount via the /outcome endpoint — that path is
+          // unchanged.
+          // `sql<string>` cast: Drizzle's `numeric` column types its
+          // insert value as `string | null`, but accepts a SQL fragment
+          // at runtime. Cast through `as unknown as string` so TS is
+          // satisfied without weakening the surrounding object type.
+          approvedAmount: (sql<string>`COALESCE(NULLIF(${invoiceGroupsTable.approvedAmount}, 0), ${invoiceGroupsTable.totalAmount})` as unknown as string),
         },
         executor: tx,
       });
