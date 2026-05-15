@@ -196,7 +196,7 @@ or before this ISO `YYYY-MM-DD`. Pairs with `serviceDateFrom`.
  */
   serviceDateTo?: string;
   /**
- * Task #753. Restrict to groups whose latest reviewable
+ * Task #753. Restrict to groups whose latest payor reply
 portal_response was received on or after this ISO
 `YYYY-MM-DD`. Drives the "Response received" facet on the
 Responses Awaiting Review page.
@@ -204,7 +204,7 @@ Responses Awaiting Review page.
  */
   responseReceivedFrom?: string;
   /**
- * Task #753. Restrict to groups whose latest reviewable
+ * Task #753. Restrict to groups whose latest payor reply
 portal_response was received on or before this ISO
 `YYYY-MM-DD`. Pairs with `responseReceivedFrom`.
 
@@ -214,7 +214,8 @@ portal_response was received on or before this ISO
  * Task #753. Comma-separated list of `responseType` values
 (`approval`, `denial`, `partial_approval`, `info_request`,
 `acknowledgment`, `other`). Restricts to groups whose latest
-reviewable portal_response matches one of the values.
+payor reply (any responseType, including acknowledgment)
+matches one of the values.
 
  */
   responseType?: string;

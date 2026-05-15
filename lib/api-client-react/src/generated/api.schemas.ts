@@ -654,7 +654,7 @@ export type InvoiceGroupResponseLegSubStatusCounts = {
 } | null;
 
 /**
- * Task #753. The leg the latest reviewable payor response
+ * Task #753. The leg the latest payor reply
 references when known (via `portal_responses.claim_id`),
 otherwise the earliest leg by id as a stable fallback. Used
 by the Responses Awaiting Review row meta line and the
@@ -1008,7 +1008,7 @@ don't compute it (PATCH echoes, detail endpoint).
    */
   legCount?: number | null;
   /**
-   * Task #753. The leg the latest reviewable payor response
+   * Task #753. The leg the latest payor reply
 references when known (via `portal_responses.claim_id`),
 otherwise the earliest leg by id as a stable fallback. Used
 by the Responses Awaiting Review row meta line and the
@@ -5369,7 +5369,7 @@ or before this ISO `YYYY-MM-DD`. Pairs with `serviceDateFrom`.
  */
   serviceDateTo?: string;
   /**
- * Task #753. Restrict to groups whose latest reviewable
+ * Task #753. Restrict to groups whose latest payor reply
 portal_response was received on or after this ISO
 `YYYY-MM-DD`. Drives the "Response received" facet on the
 Responses Awaiting Review page.
@@ -5377,7 +5377,7 @@ Responses Awaiting Review page.
  */
   responseReceivedFrom?: string;
   /**
- * Task #753. Restrict to groups whose latest reviewable
+ * Task #753. Restrict to groups whose latest payor reply
 portal_response was received on or before this ISO
 `YYYY-MM-DD`. Pairs with `responseReceivedFrom`.
 
@@ -5387,7 +5387,8 @@ portal_response was received on or before this ISO
  * Task #753. Comma-separated list of `responseType` values
 (`approval`, `denial`, `partial_approval`, `info_request`,
 `acknowledgment`, `other`). Restricts to groups whose latest
-reviewable portal_response matches one of the values.
+payor reply (any responseType, including acknowledgment)
+matches one of the values.
 
  */
   responseType?: string;

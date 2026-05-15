@@ -283,7 +283,7 @@ don't compute it (PATCH echoes, detail endpoint).
    */
   legCount?: number | null;
   /**
-   * Task #753. The leg the latest reviewable payor response
+   * Task #753. The leg the latest payor reply
 references when known (via `portal_responses.claim_id`),
 otherwise the earliest leg by id as a stable fallback. Used
 by the Responses Awaiting Review row meta line and the

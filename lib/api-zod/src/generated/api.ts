@@ -207,19 +207,19 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      'Task #753. Restrict to groups whose latest reviewable\nportal_response was received on or after this ISO\n`YYYY-MM-DD`. Drives the \"Response received\" facet on the\nResponses Awaiting Review page.\n',
+      'Task #753. Restrict to groups whose latest payor reply\nportal_response was received on or after this ISO\n`YYYY-MM-DD`. Drives the \"Response received\" facet on the\nResponses Awaiting Review page.\n',
     ),
   responseReceivedTo: zod.coerce
     .string()
     .optional()
     .describe(
-      "Task #753. Restrict to groups whose latest reviewable\nportal_response was received on or before this ISO\n`YYYY-MM-DD`. Pairs with `responseReceivedFrom`.\n",
+      "Task #753. Restrict to groups whose latest payor reply\nportal_response was received on or before this ISO\n`YYYY-MM-DD`. Pairs with `responseReceivedFrom`.\n",
     ),
   responseType: zod.coerce
     .string()
     .optional()
     .describe(
-      "Task #753. Comma-separated list of `responseType` values\n(`approval`, `denial`, `partial_approval`, `info_request`,\n`acknowledgment`, `other`). Restricts to groups whose latest\nreviewable portal_response matches one of the values.\n",
+      "Task #753. Comma-separated list of `responseType` values\n(`approval`, `denial`, `partial_approval`, `info_request`,\n`acknowledgment`, `other`). Restricts to groups whose latest\npayor reply (any responseType, including acknowledgment)\nmatches one of the values.\n",
     ),
   clientNumber: zod.coerce
     .string()
@@ -798,7 +798,7 @@ export const ListInvoiceGroupsResponse = zod.object({
         })
         .nullish()
         .describe(
-          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+          'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
         ),
     }),
   ),
@@ -1579,7 +1579,7 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             })
             .nullish()
             .describe(
-              'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+              'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
             ),
         }),
         legs: zod.array(
@@ -2558,7 +2558,7 @@ export const GetInvoiceGroupResponse = zod
       })
       .nullish()
       .describe(
-        'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+        'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
       ),
   })
   .and(
@@ -3973,7 +3973,7 @@ export const UpdateInvoiceGroupResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -4518,7 +4518,7 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -5125,7 +5125,7 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -5677,7 +5677,7 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       })
       .nullish()
       .describe(
-        'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+        'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
       ),
   })
   .and(
@@ -6234,7 +6234,7 @@ export const TriageInvoiceGroupResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -6778,7 +6778,7 @@ export const HoldInvoiceGroupResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -7318,7 +7318,7 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -8358,7 +8358,7 @@ export const RecordPayorDenialReasonResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -8922,7 +8922,7 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -10066,7 +10066,7 @@ export const SetGroupContextResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -10622,7 +10622,7 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -11175,7 +11175,7 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -11721,7 +11721,7 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -12264,7 +12264,7 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -12809,7 +12809,7 @@ export const StampPreviewGeneratedResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -13384,7 +13384,7 @@ export const CompleteGroupReattestResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -13964,7 +13964,7 @@ export const BulkQueueGroupReattestResponse = zod
         })
         .nullish()
         .describe(
-          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+          'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
         ),
     }),
     queuedLegIds: zod
@@ -30758,7 +30758,7 @@ export const GetDashboardSummaryResponse = zod.object({
         })
         .nullish()
         .describe(
-          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+          'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
         ),
     }),
   ),
@@ -34426,7 +34426,7 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     })
     .nullish()
     .describe(
-      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+      'Task #753. The leg the latest payor reply\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
