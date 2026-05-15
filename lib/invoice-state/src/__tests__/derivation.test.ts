@@ -87,6 +87,12 @@ describe("derivePhaseFromLegacy", () => {
     assert.equal(r.closureReason, "denied_by_payor");
   });
 
+  it("Resolved + No Action Needed → closed/non_issue (Task #648 follow-up — keeps refreshGroupDerivedFields from snapping pre-app neutralized rows back to triage)", () => {
+    const r = derivePhaseFromLegacy(group({ status: "Resolved", outcome: "No Action Needed" }));
+    assert.equal(r.phase, "closed");
+    assert.equal(r.closureReason, "non_issue");
+  });
+
   it("Resolved + Withdrawn carries closure_reason forward (cannot_dispute fallback)", () => {
     const a = derivePhaseFromLegacy(
       group({ status: "Resolved", outcome: "Withdrawn", closureReason: "non_issue" }),

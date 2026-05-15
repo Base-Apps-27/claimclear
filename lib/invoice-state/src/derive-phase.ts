@@ -38,6 +38,22 @@ export function derivePhaseFromLegacy(group: LegacyInvoiceGroupShape): DerivedPh
     return { phase: "closed", closureReason: cr, prePhaseHint: null };
   }
 
+  // Task #648 follow-up (2026-05-15). "No Action Needed" is the
+  // system-asserted "closed without a dispute outcome" verdict (Task
+  // #714). The writer (`transitionGroupOutcome` in
+  // `group-transitions.ts`) lands phase='closed' directly when it
+  // stamps this outcome, but the deriver fell through to the generic
+  // `Resolved → triage` arm at the bottom of this function — meaning
+  // any later `refreshGroupDerivedFields` call would snap the group
+  // back to triage and re-pollute the dashboard money tiles that
+  // exclude `outcome IN ('Withdrawn','Non-Issue','No Action Needed')`.
+  // Closure reason is locked to 'non_issue' for this outcome by the
+  // writer at `group-transitions.ts:646`, so we mirror that here
+  // instead of consulting the legacy fallback table.
+  if (group.status === "Resolved" && group.outcome === "No Action Needed") {
+    return { phase: "closed", closureReason: "non_issue", prePhaseHint: null };
+  }
+
   if (group.status === "On Hold") {
     return { phase: "triage", closureReason: null, prePhaseHint: null };
   }

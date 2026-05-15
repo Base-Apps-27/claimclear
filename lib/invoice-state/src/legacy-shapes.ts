@@ -19,6 +19,7 @@ export type LegacyOutcome =
   | "Denied"
   | "Partially Approved"
   | "Non-Issue"
+  | "No Action Needed"
   | "Withdrawn";
 
 export type LegacySopOutcome =
