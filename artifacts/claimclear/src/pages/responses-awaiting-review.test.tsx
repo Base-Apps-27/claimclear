@@ -16,7 +16,11 @@ import * as React from "react";
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BulkApproveDialogBody, bulkApproveSkipLabel } from "@/components/bulk-approve-dialog";
+import {
+  BulkApproveDialogBody,
+  BulkApproveProgressBar,
+  bulkApproveSkipLabel,
+} from "@/components/bulk-approve-dialog";
 
 void React;
 
@@ -91,6 +95,27 @@ test("BulkApproveDialog: data-testid hooks are present", () => {
   assert.match(html, /data-testid="bulk-approve-dialog-confirm"/);
   assert.match(html, /data-testid="bulk-approve-dialog-cancel"/);
   assert.match(html, /data-testid="bulk-approve-note"/);
+});
+
+test("BulkApproveProgressBar: renders X of N approved · Y skipped · Z failed and percent fill", () => {
+  const html = renderToStaticMarkup(
+    <BulkApproveProgressBar
+      progress={{
+        bulkApproveRunId: "run-x",
+        total: 4,
+        processed: 3,
+        approved: 2,
+        skipped: 1,
+        failed: 0,
+        status: "running",
+      }}
+      eligibleCount={4}
+    />,
+  );
+  assert.match(html, /data-testid="bulk-approve-progress"/);
+  assert.match(html, /data-testid="bulk-approve-progress-summary"[^>]*>[^<]*2 of 4 approved/);
+  assert.match(html, /1 skipped/);
+  assert.match(html, /style="width:\s*75%"\s*data-testid="bulk-approve-progress-fill"/);
 });
 
 test("bulkApproveSkipLabel: maps known skip reasons to friendly text and falls back to the raw reason", () => {

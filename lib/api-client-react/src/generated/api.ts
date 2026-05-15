@@ -48,6 +48,7 @@ import type {
   BulkApproveInvoiceGroupsPreflight400,
   BulkApproveInvoiceGroupsPreflightBody,
   BulkApprovePreflightResult,
+  BulkApproveProgress,
   BulkApproveResult,
   BulkAssignErrorType409,
   BulkAssignErrorTypeBody,
@@ -113,6 +114,7 @@ import type {
   GenerateEmailBody,
   GetAiCalibrationParams,
   GetAuthSession200,
+  GetBulkApproveProgress404,
   GetClaimValidTransitions200,
   GetCurrentAuthUser200,
   GetDashboardActivityParams,
@@ -2388,6 +2390,117 @@ export const useBulkApproveInvoiceGroups = <
 > => {
   return useMutation(getBulkApproveInvoiceGroupsMutationOptions(options));
 };
+
+/**
+ * Returns the live progress of a bulk-approve run, keyed off the
+`bulkApproveRunId` the client supplied with `POST /invoice-groups/bulk-approve`.
+Backed by an in-memory tracker the POST handler updates after
+each per-group transaction commits or skips.
+
+Useful for showing a "X of N approved, Y skipped, Z failed"
+progress bar in the confirmation dialog while the POST request
+is still streaming through its server-side batches.
+
+Returns 404 if the run id is unknown (it was never registered,
+or the tracker has aged out of the in-memory cache).
+
+ * @summary Poll the progress of an in-flight bulk-approve run
+ */
+export const getGetBulkApproveProgressUrl = (bulkApproveRunId: string) => {
+  return `/api/invoice-groups/bulk-approve/${bulkApproveRunId}/progress`;
+};
+
+export const getBulkApproveProgress = async (
+  bulkApproveRunId: string,
+  options?: RequestInit,
+): Promise<BulkApproveProgress> => {
+  return customFetch<BulkApproveProgress>(
+    getGetBulkApproveProgressUrl(bulkApproveRunId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetBulkApproveProgressQueryKey = (bulkApproveRunId: string) => {
+  return [
+    `/api/invoice-groups/bulk-approve/${bulkApproveRunId}/progress`,
+  ] as const;
+};
+
+export const getGetBulkApproveProgressQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBulkApproveProgress>>,
+  TError = ErrorType<GetBulkApproveProgress404>,
+>(
+  bulkApproveRunId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBulkApproveProgress>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetBulkApproveProgressQueryKey(bulkApproveRunId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBulkApproveProgress>>
+  > = ({ signal }) =>
+    getBulkApproveProgress(bulkApproveRunId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!bulkApproveRunId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBulkApproveProgress>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBulkApproveProgressQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBulkApproveProgress>>
+>;
+export type GetBulkApproveProgressQueryError =
+  ErrorType<GetBulkApproveProgress404>;
+
+/**
+ * @summary Poll the progress of an in-flight bulk-approve run
+ */
+
+export function useGetBulkApproveProgress<
+  TData = Awaited<ReturnType<typeof getBulkApproveProgress>>,
+  TError = ErrorType<GetBulkApproveProgress404>,
+>(
+  bulkApproveRunId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBulkApproveProgress>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBulkApproveProgressQueryOptions(
+    bulkApproveRunId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Read-only companion to `POST /invoice-groups/bulk-approve`.

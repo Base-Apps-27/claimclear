@@ -4410,6 +4410,37 @@ export interface BulkApprovePreflightResult {
   cap: number;
 }
 
+/**
+ * `running` while the POST handler is still processing; `complete` once it has returned.
+ */
+export type BulkApproveProgressStatus =
+  (typeof BulkApproveProgressStatus)[keyof typeof BulkApproveProgressStatus];
+
+export const BulkApproveProgressStatus = {
+  running: "running",
+  complete: "complete",
+} as const;
+
+/**
+ * Live snapshot of an in-flight bulk-approve run, served by
+`GET /invoice-groups/bulk-approve/{bulkApproveRunId}/progress`.
+
+ */
+export interface BulkApproveProgress {
+  bulkApproveRunId: string;
+  /** Total portal_response ids the run is processing. */
+  total: number;
+  /** Count of ids the run has finished (approved + skipped + failed). */
+  processed: number;
+  approved: number;
+  skipped: number;
+  failed: number;
+  /** `running` while the POST handler is still processing; `complete` once it has returned. */
+  status: BulkApproveProgressStatus;
+  startedAt?: string;
+  updatedAt?: string;
+}
+
 export type BulkGenerateAndReviewResultGeneratedItemsItem = {
   id: number;
   refNumber?: string | null;
@@ -5518,12 +5549,25 @@ export type BulkApproveInvoiceGroupsBody = {
    * @minLength 1
    */
   note: string;
+  /** Optional client-supplied UUID for the run. When provided,
+the server keys its in-memory progress tracker off this
+id so the client can poll
+`GET /invoice-groups/bulk-approve/{bulkApproveRunId}/progress`
+while the request is in flight. If omitted, the server
+generates one and returns it in the response (no polling
+is possible in that case).
+ */
+  bulkApproveRunId?: string;
 };
 
 export type BulkApproveInvoiceGroups400 = {
   error?: string;
   code?: string;
   cap?: number;
+};
+
+export type GetBulkApproveProgress404 = {
+  error?: string;
 };
 
 export type BulkApproveInvoiceGroupsPreflightBody = {

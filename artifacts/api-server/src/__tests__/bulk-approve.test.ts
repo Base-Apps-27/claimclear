@@ -488,6 +488,60 @@ test("bulk-approve preflight: separate endpoint returns eligibility preview with
   }
 });
 
+// Task #751 — progress tracker.
+
+test("bulk-approve progress: client-supplied runId registers tracker; GET reports complete totals after POST returns", async () => {
+  const eligible = await seedGroup();
+  const lowConf = await seedGroup({ classifierConfidence: "medium" });
+  const runId = `test-run-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  try {
+    const post = await fetchJson<BulkApproveBody>(
+      "/api/invoice-groups/bulk-approve",
+      {
+        method: "POST",
+        body: {
+          portalResponseIds: [eligible.portalResponseId, lowConf.portalResponseId],
+          note: "progress tracker check",
+          bulkApproveRunId: runId,
+        },
+      },
+    );
+    assert.equal(post.status, 200);
+    assert.equal(post.json.bulkApproveRunId, runId,
+      "server should honour the client-supplied runId");
+
+    const progress = await fetchJson<{
+      bulkApproveRunId: string;
+      total: number;
+      processed: number;
+      approved: number;
+      skipped: number;
+      failed: number;
+      status: "running" | "complete";
+    }>(`/api/invoice-groups/bulk-approve/${runId}/progress`);
+    assert.equal(progress.status, 200);
+    assert.equal(progress.json.bulkApproveRunId, runId);
+    assert.equal(progress.json.total, 2);
+    assert.equal(progress.json.processed, 2);
+    assert.equal(progress.json.approved, 1);
+    assert.equal(progress.json.skipped, 1);
+    assert.equal(progress.json.failed, 0);
+    assert.equal(progress.json.status, "complete");
+  } finally {
+    await cleanupSeeded(eligible);
+    await cleanupSeeded(lowConf);
+  }
+});
+
+test("bulk-approve progress: GET on unknown runId returns 404", async () => {
+  const ghost = `nope-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const res = await fetchJson<{ error: string }>(
+    `/api/invoice-groups/bulk-approve/${ghost}/progress`,
+  );
+  assert.equal(res.status, 404);
+  assert.equal(res.json.error, "unknown_bulk_approve_run_id");
+});
+
 test("bulk-approve: missing portal_response id is reported as skipped without poisoning the batch", async () => {
   const good = await seedGroup();
   const ghostId = 999_000_000 + Math.floor(Math.random() * 1e6);

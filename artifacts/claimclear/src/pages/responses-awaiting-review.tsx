@@ -22,7 +22,9 @@ import {
   useBulkAssignInvoiceGroupErrorType,
   useBulkApproveInvoiceGroups,
   bulkApproveInvoiceGroupsPreflight,
+  getBulkApproveProgress,
 } from "@workspace/api-client-react";
+import type { BulkApproveProgress } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -557,12 +559,55 @@ function VerdictPendingTabContent() {
     [dialogEligible],
   );
 
+  // Task #751 — live progress for the in-flight bulk-approve. We
+  // generate the runId on the client and ship it in the POST body so
+  // the server keys its in-memory tracker off it. While the POST
+  // request is in flight we poll
+  // `GET /invoice-groups/bulk-approve/:runId/progress` every 750ms and
+  // hand the snapshot to the dialog. On success/failure we clear the
+  // poll. Reset on dialog close so a re-open starts fresh.
+  const [bulkProgress, setBulkProgress] = useState<BulkApproveProgress | null>(null);
+  const bulkRunIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bulkConfirmOpen) {
+      setBulkProgress(null);
+      bulkRunIdRef.current = null;
+    }
+  }, [bulkConfirmOpen]);
+  useEffect(() => {
+    if (!bulkApproveMutation.isPending) return;
+    const runId = bulkRunIdRef.current;
+    if (!runId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const snap = await getBulkApproveProgress(runId);
+        if (!cancelled) setBulkProgress(snap);
+      } catch {
+        // 404 just means the tracker hasn't registered yet (or has
+        // aged out). Either way: nothing to render, keep waiting.
+      }
+    };
+    void tick();
+    const handle = setInterval(() => { void tick(); }, 750);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [bulkApproveMutation.isPending]);
+
   const submitBulkApprove = async (note: string) => {
     const portalResponseIds = dialogEligible.map((e) => e.portalResponseId);
     if (portalResponseIds.length === 0) return;
+    const runId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `bulk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    bulkRunIdRef.current = runId;
+    setBulkProgress(null);
     try {
       const result = await bulkApproveMutation.mutateAsync({
-        data: { portalResponseIds, note },
+        data: { portalResponseIds, note, bulkApproveRunId: runId },
       });
       successToast({
         title: `Approved ${result.approved} response${result.approved === 1 ? "" : "s"}`,
@@ -687,6 +732,7 @@ function VerdictPendingTabContent() {
         totalDollars={dialogTotalDollars}
         cap={BULK_APPROVE_MAX_ROWS}
         isSubmitting={bulkApproveMutation.isPending}
+        progress={bulkProgress}
         onConfirm={submitBulkApprove}
       />
     </div>

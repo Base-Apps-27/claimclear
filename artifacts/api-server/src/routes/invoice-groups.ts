@@ -5293,6 +5293,42 @@ const BULK_APPROVE_MAX_ROWS = 200;
 const BULK_APPROVE_BATCH_SIZE = 10;
 const BULK_APPROVE_PRESENCE_WINDOW_MS = 45 * 1000;
 
+// Task #751 — in-memory progress tracker for in-flight bulk-approve runs.
+// The POST handler updates one of these per request as each per-group
+// transaction commits or skips, and the
+// `GET /invoice-groups/bulk-approve/:bulkApproveRunId/progress` endpoint
+// reads it so the client dialog can render a live progress bar instead
+// of staring at a spinner for ~30s on a 150-row run.
+//
+// Trackers are kept around for a short window after the run completes
+// so a slow last poll still gets the final numbers, then garbage-
+// collected on next access. Process-local — no need to survive
+// restarts; if the API server restarts mid-run the client just falls
+// back to "no progress data" and waits for the POST to return.
+type BulkApproveRunStatus = "running" | "complete";
+interface BulkApproveProgressEntry {
+  bulkApproveRunId: string;
+  total: number;
+  processed: number;
+  approved: number;
+  skipped: number;
+  failed: number;
+  status: BulkApproveRunStatus;
+  startedAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+}
+const BULK_APPROVE_PROGRESS_TTL_MS = 5 * 60 * 1000;
+const bulkApproveProgress = new Map<string, BulkApproveProgressEntry>();
+
+function pruneBulkApproveProgress(now: number): void {
+  for (const [id, entry] of bulkApproveProgress) {
+    if (entry.completedAt && now - entry.completedAt.getTime() > BULK_APPROVE_PROGRESS_TTL_MS) {
+      bulkApproveProgress.delete(id);
+    }
+  }
+}
+
 type BulkApproveSkipped = { portalResponseId: number; id: number | null; refNumber: string | null; reason: string };
 type BulkApproveApproved = {
   portalResponseId: number;
@@ -5442,10 +5478,41 @@ router.post("/invoice-groups/bulk-approve/preflight", denyClerk, asyncHandler(as
   });
 }));
 
+// Task #751 — GET /invoice-groups/bulk-approve/:bulkApproveRunId/progress.
+// Read-only progress poll keyed off the in-memory tracker. Returns 404
+// if the run id is unknown (never registered, or aged out of the
+// tracker after completion). Polled by the bulk-approve dialog while
+// the POST request is in flight.
+router.get(
+  "/invoice-groups/bulk-approve/:bulkApproveRunId/progress",
+  denyClerk,
+  asyncHandler(async (req, res): Promise<void> => {
+    const { bulkApproveRunId } = req.params as { bulkApproveRunId?: string };
+    pruneBulkApproveProgress(Date.now());
+    const entry = bulkApproveRunId ? bulkApproveProgress.get(bulkApproveRunId) : undefined;
+    if (!entry) {
+      res.status(404).json({ error: "unknown_bulk_approve_run_id" });
+      return;
+    }
+    res.json({
+      bulkApproveRunId: entry.bulkApproveRunId,
+      total: entry.total,
+      processed: entry.processed,
+      approved: entry.approved,
+      skipped: entry.skipped,
+      failed: entry.failed,
+      status: entry.status,
+      startedAt: entry.startedAt.toISOString(),
+      updatedAt: entry.updatedAt.toISOString(),
+    });
+  }),
+);
+
 router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, res): Promise<void> => {
-  const { portalResponseIds, note } = (req.body ?? {}) as {
+  const { portalResponseIds, note, bulkApproveRunId: clientRunId } = (req.body ?? {}) as {
     portalResponseIds?: unknown;
     note?: unknown;
+    bulkApproveRunId?: unknown;
   };
 
   if (!Array.isArray(portalResponseIds) || portalResponseIds.length === 0) {
@@ -5470,7 +5537,14 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
     .map((v) => Number(v))
     .filter((n) => Number.isFinite(n) && n > 0);
 
-  const bulkApproveRunId = crypto.randomUUID();
+  // Task #751 — accept an optional client-supplied UUID so the dialog
+  // can poll the in-memory progress tracker before this request
+  // returns. Fall back to a server-generated UUID if absent (older
+  // clients / direct API callers — they just won't get live progress).
+  const bulkApproveRunId =
+    typeof clientRunId === "string" && clientRunId.length > 0 && clientRunId.length <= 100
+      ? clientRunId
+      : crypto.randomUUID();
   const actor = actorFromReq(req);
   const actorIdentity = actor.userEmail || actor.userName || "unknown";
   const actorEmailLower = (actor.userEmail ?? "").toLowerCase();
@@ -5479,12 +5553,37 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
   const skipped: BulkApproveSkipped[] = [];
   const failed: BulkApproveFailed[] = [];
 
+  // Task #751 — register the in-memory progress tracker before we
+  // start writing. Each per-row outcome (approved/skipped/failed)
+  // bumps `processed` so the dialog's poll sees the bar advance.
+  const startedAt = new Date();
+  pruneBulkApproveProgress(startedAt.getTime());
+  const progressEntry: BulkApproveProgressEntry = {
+    bulkApproveRunId,
+    total: requestedIds.length,
+    processed: 0,
+    approved: 0,
+    skipped: 0,
+    failed: 0,
+    status: "running",
+    startedAt,
+    updatedAt: startedAt,
+    completedAt: null,
+  };
+  bulkApproveProgress.set(bulkApproveRunId, progressEntry);
+  const bumpProgress = (kind: "approved" | "skipped" | "failed"): void => {
+    progressEntry.processed += 1;
+    progressEntry[kind] += 1;
+    progressEntry.updatedAt = new Date();
+  };
+
   for (let batchStart = 0; batchStart < requestedIds.length; batchStart += BULK_APPROVE_BATCH_SIZE) {
     const batch = requestedIds.slice(batchStart, batchStart + BULK_APPROVE_BATCH_SIZE);
     for (const prId of batch) {
       const evalResult = await evaluateBulkApproveCandidate(prId, actorEmailLower);
       if (evalResult.kind === "skip") {
         skipped.push(evalResult.row);
+        bumpProgress("skipped");
         continue;
       }
       const { groupId, group, disputedLegs, legsNeedingQueue } = evalResult;
@@ -5579,6 +5678,7 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
         const msg = err instanceof Error ? err.message : "transaction_error";
         logger.warn({ err, prId, groupId, bulkApproveRunId }, "bulk-approve: per-group txn failed; isolated to this id");
         failed.push({ portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: msg });
+        bumpProgress("failed");
         continue;
       }
 
@@ -5622,8 +5722,16 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
         queuedLegCount: legsNeedingQueue.length,
         ...(warnings.length > 0 ? { warnings } : {}),
       });
+      bumpProgress("approved");
     }
   }
+
+  // Task #751 — mark the tracker complete so a final progress poll
+  // (and the dialog's "done" branch) can read terminal counts even
+  // after the POST returns. Tracker is GC'd after the TTL window.
+  progressEntry.status = "complete";
+  progressEntry.completedAt = new Date();
+  progressEntry.updatedAt = progressEntry.completedAt;
 
   res.json({
     success: true,

@@ -7362,6 +7362,12 @@ export const BulkApproveInvoiceGroupsBody = zod.object({
     .describe(
       "Required short note recorded once and applied to every group's audit trail.",
     ),
+  bulkApproveRunId: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional client-supplied UUID for the run. When provided,\nthe server keys its in-memory progress tracker off this\nid so the client can poll\n`GET \/invoice-groups\/bulk-approve\/{bulkApproveRunId}\/progress`\nwhile the request is in flight. If omitted, the server\ngenerates one and returns it in the response (no polling\nis possible in that case).\n",
+    ),
 });
 
 export const BulkApproveInvoiceGroupsResponse = zod.object({
@@ -7410,6 +7416,51 @@ export const BulkApproveInvoiceGroupsResponse = zod.object({
     .number()
     .describe("Server-enforced maximum portal_response ids per request."),
 });
+
+/**
+ * Returns the live progress of a bulk-approve run, keyed off the
+`bulkApproveRunId` the client supplied with `POST /invoice-groups/bulk-approve`.
+Backed by an in-memory tracker the POST handler updates after
+each per-group transaction commits or skips.
+
+Useful for showing a "X of N approved, Y skipped, Z failed"
+progress bar in the confirmation dialog while the POST request
+is still streaming through its server-side batches.
+
+Returns 404 if the run id is unknown (it was never registered,
+or the tracker has aged out of the in-memory cache).
+
+ * @summary Poll the progress of an in-flight bulk-approve run
+ */
+export const GetBulkApproveProgressParams = zod.object({
+  bulkApproveRunId: zod.coerce.string(),
+});
+
+export const GetBulkApproveProgressResponse = zod
+  .object({
+    bulkApproveRunId: zod.string(),
+    total: zod
+      .number()
+      .describe("Total portal_response ids the run is processing."),
+    processed: zod
+      .number()
+      .describe(
+        "Count of ids the run has finished (approved + skipped + failed).",
+      ),
+    approved: zod.number(),
+    skipped: zod.number(),
+    failed: zod.number(),
+    status: zod
+      .enum(["running", "complete"])
+      .describe(
+        "`running` while the POST handler is still processing; `complete` once it has returned.",
+      ),
+    startedAt: zod.coerce.date().optional(),
+    updatedAt: zod.coerce.date().optional(),
+  })
+  .describe(
+    "Live snapshot of an in-flight bulk-approve run, served by\n`GET \/invoice-groups\/bulk-approve\/{bulkApproveRunId}\/progress`.\n",
+  );
 
 /**
  * Read-only companion to `POST /invoice-groups/bulk-approve`.

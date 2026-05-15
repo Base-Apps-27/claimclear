@@ -47,6 +47,20 @@ export function bulkApproveSkipLabel(reason: string): string {
   return BULK_APPROVE_SKIP_REASON_LABELS[reason] ?? reason;
 }
 
+// Task #751 — live progress snapshot from the API server's in-memory
+// tracker. Passed in by the parent while the bulk-approve POST is in
+// flight so the dialog can show "X of N approved" instead of just a
+// spinner. `null` while we don't yet have a snapshot (request just
+// started, first poll hasn't returned).
+export interface BulkApproveProgressSnapshot {
+  total: number;
+  processed: number;
+  approved: number;
+  skipped: number;
+  failed: number;
+  status: "running" | "complete";
+}
+
 export interface BulkApproveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,6 +69,7 @@ export interface BulkApproveDialogProps {
   totalDollars: number;
   cap: number;
   isSubmitting: boolean;
+  progress?: BulkApproveProgressSnapshot | null;
   onConfirm: (note: string) => Promise<void> | void;
 }
 
@@ -66,6 +81,7 @@ export function BulkApproveDialog({
   totalDollars,
   cap,
   isSubmitting,
+  progress,
   onConfirm,
 }: BulkApproveDialogProps) {
   const [note, setNote] = useState("");
@@ -83,6 +99,7 @@ export function BulkApproveDialog({
           totalDollars={totalDollars}
           cap={cap}
           isSubmitting={isSubmitting}
+          progress={progress ?? null}
           note={note}
           onNoteChange={setNote}
           submitDisabled={submitDisabled}
@@ -91,6 +108,65 @@ export function BulkApproveDialog({
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Task #751 — live progress bar shown only while the bulk-approve POST
+// is in flight. Falls back to an indeterminate "starting…" message
+// until the first poll snapshot arrives. After the snapshot arrives
+// renders "X of N approved · Y skipped · Z failed" with a green/grey
+// fill bar so the operator can see partial failures land in real time
+// instead of staring at a spinner for tens of seconds.
+export interface BulkApproveProgressBarProps {
+  progress: BulkApproveProgressSnapshot | null;
+  eligibleCount: number;
+}
+
+export function BulkApproveProgressBar({ progress, eligibleCount }: BulkApproveProgressBarProps) {
+  const total = progress?.total ?? eligibleCount;
+  const processed = progress?.processed ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const haveSnapshot = progress !== null;
+  return (
+    <div
+      className="rounded-md border bg-muted/40 px-3 py-2 space-y-1.5"
+      data-testid="bulk-approve-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center justify-between text-xs">
+        <span
+          className="font-medium text-foreground"
+          data-testid="bulk-approve-progress-summary"
+        >
+          {haveSnapshot ? (
+            <>
+              {progress!.approved} of {total} approved
+              {progress!.skipped > 0 ? ` · ${progress!.skipped} skipped` : ""}
+              {progress!.failed > 0 ? ` · ${progress!.failed} failed` : ""}
+            </>
+          ) : (
+            <>Starting bulk approve…</>
+          )}
+        </span>
+        <span
+          className="text-[11px] text-muted-foreground tabular-nums"
+          data-testid="bulk-approve-progress-pct"
+        >
+          {pct}%
+        </span>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        aria-hidden="true"
+      >
+        <div
+          className="h-full bg-emerald-500 transition-all duration-200"
+          style={{ width: `${pct}%` }}
+          data-testid="bulk-approve-progress-fill"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -105,6 +181,7 @@ export interface BulkApproveDialogBodyProps {
   totalDollars: number;
   cap: number;
   isSubmitting: boolean;
+  progress?: BulkApproveProgressSnapshot | null;
   note: string;
   onNoteChange: (value: string) => void;
   submitDisabled: boolean;
@@ -118,6 +195,7 @@ export function BulkApproveDialogBody({
   totalDollars,
   cap,
   isSubmitting,
+  progress,
   note,
   onNoteChange,
   submitDisabled,
@@ -189,6 +267,12 @@ export function BulkApproveDialogBody({
           transaction (server-side batches of 10). One bad group will
           not poison the rest.
         </p>
+        {isSubmitting && (
+          <BulkApproveProgressBar
+            progress={progress ?? null}
+            eligibleCount={eligible.length}
+          />
+        )}
       </div>
       <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
         <Button
@@ -197,6 +281,8 @@ export function BulkApproveDialogBody({
           onClick={onCancel}
           disabled={isSubmitting}
           data-testid="bulk-approve-dialog-cancel"
+          aria-disabled={isSubmitting || undefined}
+          title={isSubmitting ? "Bulk approve is running — please wait until it finishes" : undefined}
         >
           Cancel
         </Button>

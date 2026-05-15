@@ -23,4 +23,13 @@ export type BulkApproveInvoiceGroupsBody = {
    * @minLength 1
    */
   note: string;
+  /** Optional client-supplied UUID for the run. When provided,
+the server keys its in-memory progress tracker off this
+id so the client can poll
+`GET /invoice-groups/bulk-approve/{bulkApproveRunId}/progress`
+while the request is in flight. If omitted, the server
+generates one and returns it in the response (no polling
+is possible in that case).
+ */
+  bulkApproveRunId?: string;
 };

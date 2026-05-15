@@ -1039,6 +1039,16 @@ paths:
                   type: string
                   description: Required short note recorded once and applied to every group's audit trail.
                   minLength: 1
+                bulkApproveRunId:
+                  type: string
+                  description: |
+                    Optional client-supplied UUID for the run. When provided,
+                    the server keys its in-memory progress tracker off this
+                    id so the client can poll
+                    `GET /invoice-groups/bulk-approve/{bulkApproveRunId}/progress`
+                    while the request is in flight. If omitted, the server
+                    generates one and returns it in the response (no polling
+                    is possible in that case).
       responses:
         "200":
           description: Bulk approve result
@@ -1056,6 +1066,45 @@ paths:
                   error: { type: string }
                   code: { type: string }
                   cap: { type: integer }
+
+  /invoice-groups/bulk-approve/{bulkApproveRunId}/progress:
+    get:
+      operationId: getBulkApproveProgress
+      tags: [invoice-groups]
+      summary: Poll the progress of an in-flight bulk-approve run
+      description: |
+        Returns the live progress of a bulk-approve run, keyed off the
+        `bulkApproveRunId` the client supplied with `POST /invoice-groups/bulk-approve`.
+        Backed by an in-memory tracker the POST handler updates after
+        each per-group transaction commits or skips.
+
+        Useful for showing a "X of N approved, Y skipped, Z failed"
+        progress bar in the confirmation dialog while the POST request
+        is still streaming through its server-side batches.
+
+        Returns 404 if the run id is unknown (it was never registered,
+        or the tracker has aged out of the in-memory cache).
+      parameters:
+        - name: bulkApproveRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Progress snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkApproveProgress"
+        "404":
+          description: Unknown run id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
 
   /invoice-groups/bulk-approve/preflight:
     post:
@@ -10623,6 +10672,38 @@ components:
         cap:
           type: integer
           description: Server-enforced maximum portal_response ids per request.
+
+    BulkApproveProgress:
+      type: object
+      required: [bulkApproveRunId, total, processed, approved, skipped, failed, status]
+      description: |
+        Live snapshot of an in-flight bulk-approve run, served by
+        `GET /invoice-groups/bulk-approve/{bulkApproveRunId}/progress`.
+      properties:
+        bulkApproveRunId:
+          type: string
+        total:
+          type: integer
+          description: Total portal_response ids the run is processing.
+        processed:
+          type: integer
+          description: Count of ids the run has finished (approved + skipped + failed).
+        approved:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+        status:
+          type: string
+          enum: [running, complete]
+          description: '`running` while the POST handler is still processing; `complete` once it has returned.'
+        startedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     BulkGenerateAndReviewResult:
       type: object
