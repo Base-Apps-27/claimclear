@@ -21,6 +21,7 @@ import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupRespo
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
 import type { InvoiceGroupResponseOutcome } from "./invoiceGroupResponseOutcome";
 import type { InvoiceGroupResponsePhase } from "./invoiceGroupResponsePhase";
+import type { InvoiceGroupResponsePrimaryLeg } from "./invoiceGroupResponsePrimaryLeg";
 import type { InvoiceGroupResponseServiceDateReason } from "./invoiceGroupResponseServiceDateReason";
 import type { InvoiceGroupResponseStatus } from "./invoiceGroupResponseStatus";
 import type { PayorDenialReasonCode } from "./payorDenialReasonCode";
@@ -271,4 +272,26 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    */
   legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
   eligibility?: InvoiceGroupEligibility;
+  /**
+   * Task #753. Total number of legs (`claims`) attached to this
+group. Only populated by the list endpoint; equals the row
+count in the per-row leg fetch the handler already runs to
+compute `legSubStatusCounts`. Null on payload shapes that
+don't compute it (PATCH echoes, detail endpoint).
+
+   * @nullable
+   */
+  legCount?: number | null;
+  /**
+   * Task #753. The leg the latest reviewable payor response
+references when known (via `portal_responses.claim_id`),
+otherwise the earliest leg by id as a stable fallback. Used
+by the Responses Awaiting Review row meta line and the
+"Read the Reply" middle-column header to pair the invoice
+number with a single leg-of-record. Only populated by the
+list endpoint; null when the group has no legs.
+
+   * @nullable
+   */
+  primaryLeg?: InvoiceGroupResponsePrimaryLeg;
 }

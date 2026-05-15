@@ -332,9 +332,23 @@ export function QueueResponseReviewPanel({ group, onCompleted }: QueueResponseRe
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1 min-w-0">
-            <CardTitle className="text-lg flex items-center gap-2">
+            <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
               <span>Review payor response</span>
               <span className="font-mono text-sm text-muted-foreground inline-flex items-center gap-1">#<RefNumber value={group.invoiceNumber} variant="inline" /></span>
+              {/* Task #753 — Surface the leg the latest reviewable response
+                  belongs to so the operator knows which ride the AI hint
+                  + verdict actions are about. Server picks the leg in
+                  `primaryLeg`; we fall back silently if absent. */}
+              {group.primaryLeg && (
+                <span
+                  className="font-mono text-xs text-muted-foreground inline-flex items-center gap-1"
+                  data-testid="review-panel-leg-pair"
+                >
+                  {group.primaryLeg.confNumber
+                    ? <>· Leg #<RefNumber value={group.primaryLeg.confNumber} variant="inline" /></>
+                    : <>· Leg #{group.primaryLeg.id}</>}
+                </span>
+              )}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               The AI hint is just a suggestion — you decide the verdict.

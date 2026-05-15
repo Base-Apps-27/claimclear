@@ -75,7 +75,7 @@ import { buildBulkApproveSuccessSummary, runBulkApproveSuccessSideEffects } from
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatDateCompact } from "@/lib/format";
 import {
   CheckCircle,
   AlertTriangle,
@@ -86,7 +86,32 @@ import {
   ArrowDownWideNarrow,
   Loader2,
   HelpCircle,
+  Activity,
+  CalendarDays,
+  MailOpen,
+  Tag,
+  Building2,
+  Search,
 } from "lucide-react";
+import {
+  FacetedFilter,
+  FacetSearchableCheckboxList,
+  FacetCheckboxList,
+  FacetDateRange,
+  type FacetedFilterCategory,
+  type FacetOption,
+} from "@/components/list-table/faceted-filter";
+import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
+import { Input } from "@/components/ui/input";
+import { useUrlParams } from "@/lib/use-url-params";
+import {
+  buildVerdictPendingQuery,
+  hasActiveVerdictPendingFilters,
+  CLEAR_ALL_VERDICT_PENDING_FILTERS_PAYLOAD,
+  VERDICT_PENDING_STATUS_FILTER_VALUES,
+  VERDICT_PENDING_RESPONSE_TYPE_FILTER_VALUES,
+  type VerdictPendingFilterState,
+} from "./responses-awaiting-review-filters";
 import {
   Select,
   SelectContent,
@@ -197,12 +222,44 @@ function VerdictPendingTabContent() {
   // pick verdicts off response signals, not the clock).
   // `errorTypeAssigned: true` restricts to classified groups so the
   // server total reflects exactly what this list renders.
-  const verdictPendingQuery = {
-    macroPhase: "response-pending",
-    limit: 500,
-    includeExpired: true,
-    errorTypeAssigned: true,
-  } as const;
+  // Task #753 — URL-state filter bar. The seven facets (date of service,
+  // response received, status, response type, error type, payor/client,
+  // free-text) live in the URL via `useUrlParams` so deep links + back/
+  // forward preserve the operator's view exactly. The filtered query
+  // hits the new server-side params added under Task #753; the cohort
+  // is still pinned to `macroPhase=response-pending` + classified +
+  // includeExpired so this remains a verdict-pending workspace.
+  const url = useUrlParams();
+  const filterQ = url.get("q");
+  const filterStatuses = url.getAll("status");
+  const filterResponseTypes = url.getAll("responseType");
+  const filterErrorTypeIds = url.getAll("errorTypeId");
+  const filterClientNumbers = url.getAll("clientNumber");
+  const filterServiceDateFrom = url.get("serviceDateFrom");
+  const filterServiceDateTo = url.get("serviceDateTo");
+  const filterResponseReceivedFrom = url.get("responseReceivedFrom");
+  const filterResponseReceivedTo = url.get("responseReceivedTo");
+
+  const filterState: VerdictPendingFilterState = {
+    q: filterQ,
+    statuses: filterStatuses,
+    responseTypes: filterResponseTypes,
+    errorTypeIds: filterErrorTypeIds,
+    clientNumbers: filterClientNumbers,
+    serviceDateFrom: filterServiceDateFrom,
+    serviceDateTo: filterServiceDateTo,
+    responseReceivedFrom: filterResponseReceivedFrom,
+    responseReceivedTo: filterResponseReceivedTo,
+  };
+  const verdictPendingQuery = useMemo(
+    () => buildVerdictPendingQuery(filterState),
+    [
+      filterQ, filterStatuses.join(","), filterResponseTypes.join(","),
+      filterErrorTypeIds.join(","), filterClientNumbers.join(","),
+      filterServiceDateFrom, filterServiceDateTo,
+      filterResponseReceivedFrom, filterResponseReceivedTo,
+    ],
+  );
   const { data, isLoading, isError, refetch } = useListInvoiceGroups(
     verdictPendingQuery,
     {
@@ -211,6 +268,35 @@ function VerdictPendingTabContent() {
       },
     },
   );
+
+  const hasActiveFilters = hasActiveVerdictPendingFilters(filterState);
+
+  const setMultiParam = (key: string, values: string[]) => {
+    url.set({ [key]: values.length > 0 ? values.join(",") : null }, false);
+  };
+  const toggleMulti = (current: string[], id: string, next: boolean) => {
+    if (next) return current.includes(id) ? current : [...current, id];
+    return current.filter(v => v !== id);
+  };
+  const clearAllFilters = () => {
+    url.set(CLEAR_ALL_VERDICT_PENDING_FILTERS_PAYLOAD, false);
+  };
+
+  const { data: errorTypesForFilter } = useListErrorTypes();
+  const errorTypesList = errorTypesForFilter ?? [];
+  const clientOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    const rows = (data?.groups ?? []) as Array<{ clientNumber?: string | null }>;
+    for (const g of rows) {
+      const cn = g.clientNumber;
+      if (cn && !seen.has(cn)) seen.set(cn, cn);
+    }
+    for (const cn of filterClientNumbers) {
+      if (!seen.has(cn)) seen.set(cn, cn);
+    }
+    return Array.from(seen.values()).sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.groups, filterClientNumbers.join(",")]);
 
   // This page is single-purpose: pick verdicts on payor responses.
   // Re-attestation work lives on the standalone /attestation-queue
@@ -773,6 +859,30 @@ function VerdictPendingTabContent() {
 
       <HiddenItemsStrip />
 
+      <FilterBar
+        filterQ={filterQ}
+        filterStatuses={filterStatuses}
+        filterResponseTypes={filterResponseTypes}
+        filterErrorTypeIds={filterErrorTypeIds}
+        filterClientNumbers={filterClientNumbers}
+        filterServiceDateFrom={filterServiceDateFrom}
+        filterServiceDateTo={filterServiceDateTo}
+        filterResponseReceivedFrom={filterResponseReceivedFrom}
+        filterResponseReceivedTo={filterResponseReceivedTo}
+        errorTypes={errorTypesList}
+        clientOptions={clientOptions}
+        onSetQ={(q) => url.set({ q: q || null }, false)}
+        setMultiParam={setMultiParam}
+        toggleMulti={toggleMulti}
+        onSetServiceDateRange={(v) =>
+          url.set({ serviceDateFrom: v.from || null, serviceDateTo: v.to || null }, false)
+        }
+        onSetResponseReceivedRange={(v) =>
+          url.set({ responseReceivedFrom: v.from || null, responseReceivedTo: v.to || null }, false)
+        }
+        clearAllFilters={clearAllFilters}
+      />
+
 
       {groups.length > 0 && (
         <div className="flex items-center justify-end gap-2">
@@ -842,6 +952,8 @@ function VerdictPendingTabContent() {
         onToggleSelected={toggleGroupSelected}
         onSelectAllEligible={selectAllEligible}
         onClearSelection={clearSelection}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearAllFilters}
       />
       <BulkApproveDialog
         open={bulkConfirmOpen}
@@ -1238,6 +1350,11 @@ interface WorkspaceProps {
   onToggleSelected: (id: number, checked: boolean) => void;
   onSelectAllEligible: () => void;
   onClearSelection: () => void;
+  /** Task #753 — switches the empty state copy + adds a "Clear filters"
+   *  affordance when the zero-row state is the result of an active
+   *  filter rather than a genuinely empty inbox. */
+  hasActiveFilters?: boolean;
+  onClearFilters?: () => void;
 }
 
 function Workspace({
@@ -1253,6 +1370,8 @@ function Workspace({
   onToggleSelected,
   onSelectAllEligible,
   onClearSelection,
+  hasActiveFilters = false,
+  onClearFilters,
 }: WorkspaceProps) {
   // Per-group scroll position cache. Each row click captures the
   // current scroll position under the *previous* selection, so when the
@@ -1297,15 +1416,37 @@ function Workspace({
       }
     >
       {groups.length === 0 ? (
-        <Card data-testid="empty-state">
-          <CardContent className="py-6">
-            <EmptyState
-              icon={CheckCircle}
-              title="All caught up — no payor responses awaiting a verdict"
-              description="When a payor reply needs a human decision, it'll show up here so you can act on it."
-            />
-          </CardContent>
-        </Card>
+        hasActiveFilters ? (
+          <Card data-testid="empty-state-filtered">
+            <CardContent className="py-6 text-center space-y-3">
+              <EmptyState
+                icon={Inbox}
+                title="No matches for the active filters"
+                description="Try widening a date range, dropping a status, or clearing the search to see more responses."
+              />
+              {onClearFilters && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onClearFilters}
+                  data-testid="empty-state-clear-filters"
+                >
+                  Clear filters
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card data-testid="empty-state">
+            <CardContent className="py-6">
+              <EmptyState
+                icon={CheckCircle}
+                title="All caught up — no payor responses awaiting a verdict"
+                description="When a payor reply needs a human decision, it'll show up here so you can act on it."
+              />
+            </CardContent>
+          </Card>
+        )
       ) : (
     <div
       className="grid grid-cols-1 lg:grid-cols-[320px_1fr_360px] gap-4 items-start"
@@ -1498,6 +1639,40 @@ function ListRow({
           </span>
         </div>
 
+        {/* Task #753 — service-date + leg-of-record context line. Pairs
+            the row with the leg the latest reviewable response belongs
+            to (server-resolved `primaryLeg`), and surfaces "+N more" so
+            the operator knows when the group spans multiple legs. */}
+        {(group.earliestDate || group.primaryLeg) && (
+          <div
+            className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap"
+            data-testid={`row-leg-meta-${group.id}`}
+          >
+            {group.earliestDate && (
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays className="h-3 w-3" />
+                {formatDateCompact(group.earliestDate)}
+              </span>
+            )}
+            {group.primaryLeg && (
+              <>
+                {group.earliestDate && <span aria-hidden>·</span>}
+                <span className="font-mono inline-flex items-center gap-1">
+                  {group.primaryLeg.confNumber
+                    ? <>Leg #<RefNumber value={group.primaryLeg.confNumber} variant="inline" /></>
+                    : <>Leg #{group.primaryLeg.id}</>}
+                </span>
+              </>
+            )}
+            {typeof group.legCount === "number" && group.legCount > 1 && (
+              <>
+                <span aria-hidden>·</span>
+                <span>+{group.legCount - 1} more</span>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           <StateBadge variant="status" value={group.status} />
           {latestResponse ? (
@@ -1654,6 +1829,26 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
           testId="step-pill-2"
           help="Read the payor's words in full. The AI summary is a hint — never the verdict. Reply in-thread if you need clarification."
         />
+
+        {/* Task #753 — invoice + leg pair header for the middle column.
+            Mirrors the leg-of-record line on the list row so the operator
+            can confirm at a glance which invoice + leg the thread + AI
+            hint + verdict actions all refer to. Falls back to
+            primaryLeg.id when confNumber is null. */}
+        <div
+          className="text-xs text-muted-foreground font-mono inline-flex items-center gap-1.5 flex-wrap"
+          data-testid="middle-column-invoice-leg-pair"
+        >
+          <span>#<RefNumber value={group.invoiceNumber || `${group.id}`} variant="inline" /></span>
+          {group.primaryLeg && (
+            <>
+              <span aria-hidden>·</span>
+              {group.primaryLeg.confNumber
+                ? <span>Leg #<RefNumber value={group.primaryLeg.confNumber} variant="inline" /></span>
+                : <span>Leg #{group.primaryLeg.id}</span>}
+            </>
+          )}
+        </div>
 
         {detailPending || (hasReviewableResponse && emailThreadPending) ? (
           <Card data-testid="thread-loading-state">
@@ -2594,3 +2789,337 @@ function InlineResponseFallback({
   );
 }
 
+
+// =====================================================================
+// Task #753 — Filter bar
+// =====================================================================
+// Faceted filter rail above the verdict-pending list. The seven facets
+// (free-text q, status, response type, error type, payor/client number,
+// service-date range, response-received range) live in URL params via
+// `useUrlParams` so back/forward and deep links restore the operator's
+// view. Selections are echoed below the rail as a row of removable
+// chips with a "Clear all" affordance — same pattern as the Invoice
+// Groups list page.
+
+const RESPONSE_TYPE_LABELS: Record<string, string> = {
+  approval: "Approval",
+  denial: "Denial",
+  partial_approval: "Partial approval",
+  info_request: "Info request",
+  acknowledgment: "Acknowledgment",
+  other: "Other",
+};
+
+const RESPONSE_TYPE_FILTER_OPTIONS: FacetOption[] =
+  VERDICT_PENDING_RESPONSE_TYPE_FILTER_VALUES.map((id) => ({
+    id,
+    label: RESPONSE_TYPE_LABELS[id] ?? id,
+  }));
+
+// Response-pending phase statuses, narrowed to values from the canonical
+// `claim_status` pgEnum (lib/db/src/schema/claims.ts) that can actually
+// appear on a verdict-pending row (`macroPhase=response-pending` +
+// `errorTypeAssigned`). The exact set lives in the filters helper so a
+// frontend test can pin it against the canonical enum.
+const STATUS_FILTER_OPTIONS: FacetOption[] =
+  VERDICT_PENDING_STATUS_FILTER_VALUES.map((id) => ({ id, label: id }));
+
+interface ErrorTypeLite {
+  id: number;
+  name: string;
+}
+
+interface FilterBarProps {
+  filterQ: string | null;
+  filterStatuses: string[];
+  filterResponseTypes: string[];
+  filterErrorTypeIds: string[];
+  filterClientNumbers: string[];
+  filterServiceDateFrom: string | null;
+  filterServiceDateTo: string | null;
+  filterResponseReceivedFrom: string | null;
+  filterResponseReceivedTo: string | null;
+  errorTypes: ErrorTypeLite[];
+  clientOptions: string[];
+  onSetQ: (q: string) => void;
+  setMultiParam: (key: string, values: string[]) => void;
+  toggleMulti: (current: string[], id: string, next: boolean) => string[];
+  onSetServiceDateRange: (v: { from?: string; to?: string }) => void;
+  onSetResponseReceivedRange: (v: { from?: string; to?: string }) => void;
+  clearAllFilters: () => void;
+}
+
+function FilterBar({
+  filterQ,
+  filterStatuses,
+  filterResponseTypes,
+  filterErrorTypeIds,
+  filterClientNumbers,
+  filterServiceDateFrom,
+  filterServiceDateTo,
+  filterResponseReceivedFrom,
+  filterResponseReceivedTo,
+  errorTypes,
+  clientOptions,
+  onSetQ,
+  setMultiParam,
+  toggleMulti,
+  onSetServiceDateRange,
+  onSetResponseReceivedRange,
+  clearAllFilters,
+}: FilterBarProps) {
+  const [open, setOpen] = useState(false);
+  // Local-shadow the free-text input so the operator can type without
+  // an effect cycle reflowing the value back into the input on every
+  // keystroke. Pushed to the URL on blur or Enter.
+  const [qDraft, setQDraft] = useState(filterQ ?? "");
+  useEffect(() => {
+    setQDraft(filterQ ?? "");
+  }, [filterQ]);
+
+  const errorTypeOptions: FacetOption[] = useMemo(
+    () => errorTypes.map((et) => ({ id: String(et.id), label: et.name })),
+    [errorTypes],
+  );
+  const clientOptionsFacet: FacetOption[] = useMemo(
+    () => clientOptions.map((c) => ({ id: c, label: c })),
+    [clientOptions],
+  );
+  const errorTypeNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const et of errorTypes) m.set(String(et.id), et.name);
+    return m;
+  }, [errorTypes]);
+
+  const serviceDateCount = filterServiceDateFrom || filterServiceDateTo ? 1 : 0;
+  const responseReceivedCount = filterResponseReceivedFrom || filterResponseReceivedTo ? 1 : 0;
+  const totalApplied =
+    filterStatuses.length +
+    filterResponseTypes.length +
+    filterErrorTypeIds.length +
+    filterClientNumbers.length +
+    serviceDateCount +
+    responseReceivedCount +
+    (filterQ ? 1 : 0);
+
+  const categories: FacetedFilterCategory[] = useMemo(() => [
+    {
+      id: "serviceDate",
+      label: "Date of service",
+      icon: CalendarDays,
+      appliedCount: serviceDateCount,
+      render: () => (
+        <FacetDateRange
+          value={{ from: filterServiceDateFrom ?? undefined, to: filterServiceDateTo ?? undefined }}
+          onChange={onSetServiceDateRange}
+          fromLabel="On or after"
+          toLabel="On or before"
+          testIdPrefix="facet-serviceDate"
+        />
+      ),
+    },
+    {
+      id: "responseReceived",
+      label: "Response received",
+      icon: MailOpen,
+      appliedCount: responseReceivedCount,
+      render: () => (
+        <FacetDateRange
+          value={{ from: filterResponseReceivedFrom ?? undefined, to: filterResponseReceivedTo ?? undefined }}
+          onChange={onSetResponseReceivedRange}
+          fromLabel="Received on or after"
+          toLabel="Received on or before"
+          testIdPrefix="facet-responseReceived"
+        />
+      ),
+    },
+    {
+      id: "status",
+      label: "Status",
+      icon: Activity,
+      appliedCount: filterStatuses.length,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={STATUS_FILTER_OPTIONS}
+          selected={filterStatuses}
+          onToggle={(id, next) =>
+            setMultiParam("status", toggleMulti(filterStatuses, id, next))
+          }
+          placeholder="Filter statuses..."
+          pinSelected
+          testIdPrefix="facet-status"
+        />
+      ),
+    },
+    {
+      id: "responseType",
+      label: "Response type",
+      icon: Tag,
+      appliedCount: filterResponseTypes.length,
+      render: () => (
+        <FacetCheckboxList
+          heading="Response type"
+          options={RESPONSE_TYPE_FILTER_OPTIONS}
+          selected={filterResponseTypes}
+          onToggle={(id, next) =>
+            setMultiParam(
+              "responseType",
+              toggleMulti(filterResponseTypes, id, next),
+            )
+          }
+          testIdPrefix="facet-responseType"
+        />
+      ),
+    },
+    {
+      id: "errorType",
+      label: "Error type",
+      icon: AlertTriangle,
+      appliedCount: filterErrorTypeIds.length,
+      render: () => (
+        <FacetSearchableCheckboxList
+          options={errorTypeOptions}
+          selected={filterErrorTypeIds}
+          onToggle={(id, next) =>
+            setMultiParam(
+              "errorTypeId",
+              toggleMulti(filterErrorTypeIds, id, next),
+            )
+          }
+          placeholder="Filter error types..."
+          pinSelected
+          testIdPrefix="facet-errorType"
+        />
+      ),
+    },
+    {
+      id: "clientNumber",
+      label: "Payor / client",
+      icon: Building2,
+      appliedCount: filterClientNumbers.length,
+      render: () => (
+        clientOptionsFacet.length > 0 ? (
+          <FacetSearchableCheckboxList
+            options={clientOptionsFacet}
+            selected={filterClientNumbers}
+            onToggle={(id, next) =>
+              setMultiParam(
+                "clientNumber",
+                toggleMulti(filterClientNumbers, id, next),
+              )
+            }
+            placeholder="Filter clients..."
+            pinSelected
+            testIdPrefix="facet-clientNumber"
+          />
+        ) : (
+          <div className="p-4 text-xs text-muted-foreground">
+            No payor/client numbers in the current cohort yet.
+          </div>
+        )
+      ),
+    },
+  ], [
+    serviceDateCount, responseReceivedCount,
+    filterServiceDateFrom, filterServiceDateTo,
+    filterResponseReceivedFrom, filterResponseReceivedTo,
+    filterStatuses, filterResponseTypes, filterErrorTypeIds, filterClientNumbers,
+    errorTypeOptions, clientOptionsFacet,
+    onSetServiceDateRange, onSetResponseReceivedRange, setMultiParam, toggleMulti,
+  ]);
+
+  const chips: FilterChip[] = [];
+  if (filterQ) {
+    chips.push({
+      key: "q",
+      label: `Search: "${filterQ}"`,
+      onRemove: () => onSetQ(""),
+    });
+  }
+  if (filterServiceDateFrom || filterServiceDateTo) {
+    const lbl = `Service date ${filterServiceDateFrom || "…"}${filterServiceDateTo ? ` → ${filterServiceDateTo}` : filterServiceDateFrom ? "+" : ""}`;
+    chips.push({
+      key: "serviceDate",
+      label: lbl,
+      onRemove: () => onSetServiceDateRange({ from: undefined, to: undefined }),
+    });
+  }
+  if (filterResponseReceivedFrom || filterResponseReceivedTo) {
+    const lbl = `Received ${filterResponseReceivedFrom || "…"}${filterResponseReceivedTo ? ` → ${filterResponseReceivedTo}` : filterResponseReceivedFrom ? "+" : ""}`;
+    chips.push({
+      key: "responseReceived",
+      label: lbl,
+      onRemove: () => onSetResponseReceivedRange({ from: undefined, to: undefined }),
+    });
+  }
+  for (const s of filterStatuses) {
+    chips.push({
+      key: `status:${s}`,
+      label: `Status: ${s}`,
+      onRemove: () => setMultiParam("status", filterStatuses.filter(v => v !== s)),
+    });
+  }
+  for (const rt of filterResponseTypes) {
+    const found = RESPONSE_TYPE_FILTER_OPTIONS.find(o => o.id === rt);
+    chips.push({
+      key: `responseType:${rt}`,
+      label: `Response: ${found?.label ?? rt}`,
+      onRemove: () => setMultiParam("responseType", filterResponseTypes.filter(v => v !== rt)),
+    });
+  }
+  for (const id of filterErrorTypeIds) {
+    chips.push({
+      key: `errorType:${id}`,
+      label: `Error: ${errorTypeNameById.get(id) ?? id}`,
+      onRemove: () => setMultiParam("errorTypeId", filterErrorTypeIds.filter(v => v !== id)),
+    });
+  }
+  for (const c of filterClientNumbers) {
+    chips.push({
+      key: `client:${c}`,
+      label: `Client: ${c}`,
+      onRemove: () => setMultiParam("clientNumber", filterClientNumbers.filter(v => v !== c)),
+    });
+  }
+
+  return (
+    <div data-testid="responses-awaiting-review-filter-bar">
+      <div className="flex items-center gap-2 flex-wrap">
+        <FacetedFilter
+          open={open}
+          onOpenChange={setOpen}
+          categories={categories}
+          totalApplied={totalApplied - (filterQ ? 1 : 0)}
+          onClearAll={clearAllFilters}
+          triggerTestId="responses-awaiting-review-filter-trigger"
+        />
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            value={qDraft}
+            onChange={(e) => setQDraft(e.target.value)}
+            onBlur={() => {
+              if ((qDraft || "") !== (filterQ ?? "")) onSetQ(qDraft);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onSetQ(qDraft);
+              }
+            }}
+            placeholder="Search invoice #, client, error description…"
+            className="pl-7 h-8 text-xs"
+            data-testid="responses-awaiting-review-search-input"
+          />
+        </div>
+      </div>
+      {/* Task #753 — "Clear all" appears only when 2+ chips are
+          active; with a single chip the per-chip × is enough. */}
+      <FilterChipStrip
+        chips={chips}
+        onClearAll={clearAllFilters}
+        minChipsForClearAll={2}
+      />
+    </div>
+  );
+}

@@ -169,11 +169,27 @@ function buildHideExpiredGroupConditions(opts: { includePastDeadline: boolean })
 }
 
 function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined {
-  const { status, outcome, search, errorDetails: errorDetailsFilter, errorTypeId } = query;
+  const { status, outcome, errorDetails: errorDetailsFilter, errorTypeId } = query;
+  // Task #753 — `q` is the canonical free-text param surfaced by the new
+  // Responses Awaiting Review filter bar; `search` is the pre-existing
+  // alias kept for back-compat. `q` wins when both are sent so the
+  // filter bar's URL state is the source of truth.
+  const search = (typeof query.q === "string" && query.q.length > 0)
+    ? query.q
+    : query.search;
   const createdFrom = query.createdFrom as string | undefined;
   const createdTo = query.createdTo as string | undefined;
   const amountMin = query.amountMin as string | undefined;
   const amountMax = query.amountMax as string | undefined;
+  // Task #753 — service-date and response-received range facets exposed
+  // on the Responses Awaiting Review filter bar.
+  const serviceDateFrom = query.serviceDateFrom as string | undefined;
+  const serviceDateTo = query.serviceDateTo as string | undefined;
+  const responseReceivedFrom = query.responseReceivedFrom as string | undefined;
+  const responseReceivedTo = query.responseReceivedTo as string | undefined;
+  // Task #753 — comma-separated facets for response type and payor/client.
+  const responseTypeRaw = query.responseType as string | undefined;
+  const clientNumberRaw = query.clientNumber as string | undefined;
   // Post-upload triage bridge filter: scope the listing to a single
   // import batch so the bridge UI can show ONLY the groups created by
   // the just-completed import. The batch tag is a free-form text
@@ -273,11 +289,26 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
 
   if (search && typeof search === "string") {
     const searchPattern = `%${search}%`;
+    // Task #753 — extend free-text search to leg identifiers so the
+    // Responses Awaiting Review filter bar can find a group by either
+    // its invoice number or any of its legs' confirmation/ref numbers
+    // (or by raw claim id). The leg lookup is an EXISTS subquery on
+    // claims so we don't multiply rows.
+    const legMatchExists = sql`EXISTS (
+      SELECT 1 FROM ${claimsTable}
+      WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+        AND (
+          ${claimsTable.confNumber} ILIKE ${searchPattern}
+          OR ${claimsTable.refNumber} ILIKE ${searchPattern}
+          OR CAST(${claimsTable.id} AS TEXT) = ${search}
+        )
+    )`;
     const searchOr = or(
       ilike(invoiceGroupsTable.invoiceNumber, searchPattern),
       ilike(invoiceGroupsTable.clientNumber, searchPattern),
       ilike(invoiceGroupsTable.errorDetails, searchPattern),
       ilike(invoiceGroupsTable.errorTypeName, searchPattern),
+      legMatchExists,
     );
     if (searchOr) conditions.push(searchOr);
   }
@@ -303,6 +334,89 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   }
   if (amountMax) {
     conditions.push(lte(sql`${invoiceGroupsTable.totalAmount}::numeric`, sql`${amountMax}::numeric`));
+  }
+
+  // Task #753 — Service date range. `service_date` is a typed DATE
+  // column already populated as the group's earliest leg date by the
+  // import / writeback path, so the predicate is a direct range with
+  // no per-row cost.
+  if (serviceDateFrom) {
+    conditions.push(sql`${invoiceGroupsTable.serviceDate} >= ${serviceDateFrom}::date`);
+  }
+  if (serviceDateTo) {
+    conditions.push(sql`${invoiceGroupsTable.serviceDate} <= ${serviceDateTo}::date`);
+  }
+
+  // Task #753 — Response-received range filters on the **latest payor
+  // reply** per group (any responseType, including acknowledgment —
+  // not just the reviewable subset). The operator's mental model is
+  // "the group's most recent payor response landed in this window"
+  // and acknowledgment-only threads must honour that, otherwise an
+  // auto-acked thread received yesterday would be filtered out by a
+  // "received yesterday" window.
+  if (responseReceivedFrom || responseReceivedTo) {
+    const fromCond = responseReceivedFrom
+      ? sql`AND latest_pr.received_at >= ${responseReceivedFrom}::date`
+      : sql``;
+    const toCond = responseReceivedTo
+      ? sql`AND latest_pr.received_at < (${responseReceivedTo}::date + interval '1 day')`
+      : sql``;
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM (
+        SELECT pr.received_at
+        FROM portal_responses pr
+        WHERE pr.invoice_group_id = ${invoiceGroupsTable.id}
+        ORDER BY pr.received_at DESC NULLS LAST, pr.id DESC
+        LIMIT 1
+      ) AS latest_pr
+      WHERE TRUE
+        ${fromCond}
+        ${toCond}
+    )`);
+  }
+
+  // Task #753 — Response type facet. Anchored on the LATEST payor reply
+  // per group (any responseType — same row that drives primaryLeg and
+  // the responseReceived range filter), so the filter chip in the UI
+  // and the rows it surfaces always agree. Acknowledgment is a real
+  // value the operator can pick from the facet, so it must NOT be
+  // excluded from the latest-row pick.
+  if (responseTypeRaw && typeof responseTypeRaw === "string") {
+    const types = responseTypeRaw.split(",").map(t => t.trim()).filter(Boolean);
+    if (types.length > 0) {
+      // NB: the column on portal_responses is the camelCase identifier
+      // `"responseType"` (drizzle defaults the SQL column name to the
+      // JS field name when no explicit `name` is passed to the column
+      // constructor — see lib/db/src/schema/portal-responses.ts where
+      // `responseType: responseTypeEnum().notNull()` declares it
+      // without a `name` arg). The enum *type* is `response_type`, but
+      // the *column* is `"responseType"`. Existing call sites in this
+      // file (e.g. ~L732, ~L2833, ~L2914) use the same quoted form;
+      // see also the responseType-anchored test which exercises this
+      // path end-to-end. Do not "normalize" to `response_type` —
+      // that column does not exist and will 500 the endpoint.
+      conditions.push(sql`EXISTS (
+        SELECT 1 FROM (
+          SELECT pr."responseType" AS rt
+          FROM portal_responses pr
+          WHERE pr.invoice_group_id = ${invoiceGroupsTable.id}
+          ORDER BY pr.received_at DESC NULLS LAST, pr.id DESC
+          LIMIT 1
+        ) AS latest_pr
+        WHERE latest_pr.rt IN (${sql.join(types.map(t => sql`${t}`), sql`, `)})
+      )`);
+    }
+  }
+
+  // Task #753 — Payor / client facet. Exact match against the group's
+  // `client_number` column.
+  if (clientNumberRaw && typeof clientNumberRaw === "string") {
+    const clients = clientNumberRaw.split(",").map(c => c.trim()).filter(Boolean);
+    if (clients.length === 1) {
+      conditions.push(eq(invoiceGroupsTable.clientNumber, clients[0]));
+    } else if (clients.length > 1) {
+      conditions.push(inArray(invoiceGroupsTable.clientNumber, clients));
+    }
   }
 
   const expiringMode = parseExpiringMode(query.expiring);
@@ -698,6 +812,13 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
   // derivations — keeps the list endpoint at the same round-trip count.
   const legSubStatusByGroup = new Map<number, Record<string, number>>();
   const reasonLegsByGroup = new Map<number, ServiceDateReasonLeg[]>();
+  // Task #753 — per-row `legCount` (total leg tally) and `primaryLeg`
+  // (the leg the latest payor reply references when known,
+  // else the earliest leg by id) so the Responses Awaiting Review row
+  // meta line and the "Read the Reply" middle-column header can render
+  // an invoice + leg pair without a follow-up round trip per row.
+  const legCountByGroup = new Map<number, number>();
+  const earliestLegByGroup = new Map<number, { id: number; confNumber: string | null }>();
   // Task #702: collect the per-leg shape required by `computeGroupEligibility`
   // so we can surface bulk-action eligibility on every row of the list
   // response without an N+1 round trip per group.
@@ -709,6 +830,9 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       .select({
         id: claimsTable.id,
         invoiceGroupId: claimsTable.invoiceGroupId,
+        // Task #753 — confNumber feeds the per-row `primaryLeg` payload
+        // and the responses-awaiting-review row meta line.
+        confNumber: claimsTable.confNumber,
         date: claimsTable.date,
         includedInDispute: claimsTable.includedInDispute,
         errorTypeId: claimsTable.errorTypeId,
@@ -735,6 +859,15 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
       const bucket = legSubStatusByGroup.get(leg.invoiceGroupId) ?? {};
       bucket[sub] = (bucket[sub] ?? 0) + 1;
       legSubStatusByGroup.set(leg.invoiceGroupId, bucket);
+
+      // Task #753 — per-group leg tally + earliest-leg-by-id fallback
+      // for `primaryLeg`. The latest-response override is computed
+      // below in a separate batch query against portal_responses.
+      legCountByGroup.set(leg.invoiceGroupId, (legCountByGroup.get(leg.invoiceGroupId) ?? 0) + 1);
+      const prevEarliest = earliestLegByGroup.get(leg.invoiceGroupId);
+      if (!prevEarliest || leg.id < prevEarliest.id) {
+        earliestLegByGroup.set(leg.invoiceGroupId, { id: leg.id, confNumber: leg.confNumber ?? null });
+      }
 
       const reasonBucket = reasonLegsByGroup.get(leg.invoiceGroupId) ?? [];
       reasonBucket.push({
@@ -794,6 +927,41 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
           verdictConfirmedLegIds.add(v.claimId);
         }
       }
+    }
+
+    // Task #753 — for each group, find the leg referenced by the latest
+    // reviewable portal_response (when `claim_id` is set on it). This
+    // override beats the earliest-leg-by-id fallback for `primaryLeg`,
+    // so the Responses Awaiting Review row meta line and the "Read the
+    // Reply" middle column header agree on the leg the operator is
+    // actually reading. Single round trip via DISTINCT ON (group, ordered
+    // by received_at desc).
+    // Anchor on the TRUE latest payor reply per group (any
+    // responseType, no claim_id filter), then LEFT JOIN claims so a
+    // null claim_id surfaces as null. The application layer below
+    // ignores null-claimId rows so the earliest-leg fallback stands —
+    // we MUST NOT walk back to an older claim-linked reply, otherwise
+    // the row meta line and the middle column header would label the
+    // group with a leg the operator isn't actually reading.
+    const responsePrimaryLegRows = await db.execute(sql`
+      SELECT DISTINCT ON (pr.invoice_group_id)
+        pr.invoice_group_id AS "invoiceGroupId",
+        pr.claim_id          AS "claimId",
+        c.conf_number        AS "confNumber"
+      FROM portal_responses pr
+      LEFT JOIN ${claimsTable} c ON c.id = pr.claim_id
+      WHERE pr.invoice_group_id IN (${sql.join(groupIds.map(id => sql`${id}`), sql`, `)})
+      ORDER BY pr.invoice_group_id, pr.received_at DESC NULLS LAST, pr.id DESC
+    `);
+    for (const row of responsePrimaryLegRows.rows as Array<{ invoiceGroupId: number; claimId: number | null; confNumber: string | null }>) {
+      if (row.invoiceGroupId == null) continue;
+      // Latest payor reply has no claim_id → keep earliest-leg fallback.
+      if (row.claimId == null) continue;
+      // Override the earliest-leg fallback. Only override when the leg
+      // referenced still belongs to this group (the JOIN guarantees the
+      // leg row exists; we rely on the existing FK to keep group ↔ leg
+      // consistent).
+      earliestLegByGroup.set(row.invoiceGroupId, { id: row.claimId, confNumber: row.confNumber ?? null });
     }
 
     // Task #702: bulk submit-to-portal refuses any group with an active
@@ -860,6 +1028,13 @@ router.get("/invoice-groups", asyncHandler(async (req, res): Promise<void> => {
         activeSubmissionGroupIds.has(row.id),
         verdictConfirmedLegIds,
       ),
+      // Task #753 — invoice + leg pairing for the Responses Awaiting
+      // Review row meta line and the "Read the Reply" middle column
+      // header. `legCount` is the total leg tally; `primaryLeg` is the
+      // leg the latest payor reply references when known, else
+      // the earliest leg by id (null when the group has no legs).
+      legCount: legCountByGroup.get(row.id) ?? 0,
+      primaryLeg: earliestLegByGroup.get(row.id) ?? null,
     };
   });
 

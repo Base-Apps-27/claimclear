@@ -121,6 +121,29 @@ export function formatDate(input: string | null | undefined): string {
 }
 
 /**
+ * Compact, year-less date for tight row chrome (e.g. the Responses
+ * Awaiting Review row leg-meta line). Renders as `APR 24` for a bare
+ * `YYYY-MM-DD` input or as `APR 24` (display-TZ wall day) for an ISO
+ * timestamp. Falls back to the raw input on parse failure.
+ */
+export function formatDateCompact(input: string | null | undefined): string {
+  if (!input) return "N/A";
+  try {
+    const tz = getDisplayTimezone();
+    const fmt = isCalendarOnly(input)
+      ? getFmt({ month: "short", day: "numeric" }, "UTC")
+          .format(parseCalendarDayUtc(input))
+      : getFmt({ month: "short", day: "numeric" }, tz)
+          .format(parseISO(input));
+    // "Apr 24" -> "APR 24"; locale separators (e.g. "24 avr.") are
+    // upper-cased verbatim.
+    return fmt.toUpperCase();
+  } catch {
+    return input;
+  }
+}
+
+/**
  * Render a date+time for human display. Calendar-only inputs render
  * "Apr 6, 2026 12:00 AM" in UTC (preserving the day). ISO timestamps
  * render in the display TZ.

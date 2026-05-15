@@ -654,6 +654,23 @@ export type InvoiceGroupResponseLegSubStatusCounts = {
 } | null;
 
 /**
+ * Task #753. The leg the latest reviewable payor response
+references when known (via `portal_responses.claim_id`),
+otherwise the earliest leg by id as a stable fallback. Used
+by the Responses Awaiting Review row meta line and the
+"Read the Reply" middle-column header to pair the invoice
+number with a single leg-of-record. Only populated by the
+list endpoint; null when the group has no legs.
+
+ * @nullable
+ */
+export type InvoiceGroupResponsePrimaryLeg = {
+  id: number;
+  /** @nullable */
+  confNumber?: string | null;
+} | null;
+
+/**
  * Stable machine code for the lightweight payor-denial-reason signal
 captured on the Responses Awaiting Review page (Task #321). Mirrored
 in the `@workspace/payor-denial-reasons` package — kept in lockstep
@@ -980,6 +997,28 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    */
   legSubStatusCounts?: InvoiceGroupResponseLegSubStatusCounts;
   eligibility?: InvoiceGroupEligibility;
+  /**
+   * Task #753. Total number of legs (`claims`) attached to this
+group. Only populated by the list endpoint; equals the row
+count in the per-row leg fetch the handler already runs to
+compute `legSubStatusCounts`. Null on payload shapes that
+don't compute it (PATCH echoes, detail endpoint).
+
+   * @nullable
+   */
+  legCount?: number | null;
+  /**
+   * Task #753. The leg the latest reviewable payor response
+references when known (via `portal_responses.claim_id`),
+otherwise the earliest leg by id as a stable fallback. Used
+by the Responses Awaiting Review row meta line and the
+"Read the Reply" middle-column header to pair the invoice
+number with a single leg-of-record. Only populated by the
+list endpoint; null when the group has no legs.
+
+   * @nullable
+   */
+  primaryLeg?: InvoiceGroupResponsePrimaryLeg;
 }
 
 export interface NeedsClassificationInboxClaim {
@@ -5315,6 +5354,57 @@ the filter stays in lockstep with the Gauntlet's gate.
 
  */
   readyToGenerate?: boolean;
+  /**
+ * Task #753. Restrict to groups whose earliest service date is on
+or after this ISO `YYYY-MM-DD`. Pairs with `serviceDateTo` to
+form a closed range. Used by the Responses Awaiting Review
+filter bar's "Date of service" facet.
+
+ */
+  serviceDateFrom?: string;
+  /**
+ * Task #753. Restrict to groups whose earliest service date is on
+or before this ISO `YYYY-MM-DD`. Pairs with `serviceDateFrom`.
+
+ */
+  serviceDateTo?: string;
+  /**
+ * Task #753. Restrict to groups whose latest reviewable
+portal_response was received on or after this ISO
+`YYYY-MM-DD`. Drives the "Response received" facet on the
+Responses Awaiting Review page.
+
+ */
+  responseReceivedFrom?: string;
+  /**
+ * Task #753. Restrict to groups whose latest reviewable
+portal_response was received on or before this ISO
+`YYYY-MM-DD`. Pairs with `responseReceivedFrom`.
+
+ */
+  responseReceivedTo?: string;
+  /**
+ * Task #753. Comma-separated list of `responseType` values
+(`approval`, `denial`, `partial_approval`, `info_request`,
+`acknowledgment`, `other`). Restricts to groups whose latest
+reviewable portal_response matches one of the values.
+
+ */
+  responseType?: string;
+  /**
+ * Task #753. Comma-separated list of payor/client numbers. Exact
+match against `invoice_groups.client_number`. Drives the
+"Payor / client" facet on the Responses Awaiting Review page.
+
+ */
+  clientNumber?: string;
+  /**
+ * Task #753. Free-text search; alias of `search`. When both are
+sent, `q` wins. Matches invoice number, client number, error
+details, and error type name (case-insensitive substring).
+
+ */
+  q?: string;
   /**
  * Sub-facet for `missingServiceDate=true`. Filters to groups in
 the named empty-state branch:

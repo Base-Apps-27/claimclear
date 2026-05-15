@@ -280,6 +280,7 @@ export * from "./invoiceGroupResponseLegSubStatusCounts";
 export * from "./invoiceGroupResponseMacroPhase";
 export * from "./invoiceGroupResponseOutcome";
 export * from "./invoiceGroupResponsePhase";
+export * from "./invoiceGroupResponsePrimaryLeg";
 export * from "./invoiceGroupResponseServiceDateReason";
 export * from "./invoiceGroupResponseStatus";
 export * from "./invoiceGroupsListResponse";

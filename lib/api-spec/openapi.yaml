@@ -347,6 +347,65 @@ paths:
             the filter stays in lockstep with the Gauntlet's gate.
           schema:
             type: boolean
+        - name: serviceDateFrom
+          in: query
+          description: |
+            Task #753. Restrict to groups whose earliest service date is on
+            or after this ISO `YYYY-MM-DD`. Pairs with `serviceDateTo` to
+            form a closed range. Used by the Responses Awaiting Review
+            filter bar's "Date of service" facet.
+          schema:
+            type: string
+        - name: serviceDateTo
+          in: query
+          description: |
+            Task #753. Restrict to groups whose earliest service date is on
+            or before this ISO `YYYY-MM-DD`. Pairs with `serviceDateFrom`.
+          schema:
+            type: string
+        - name: responseReceivedFrom
+          in: query
+          description: |
+            Task #753. Restrict to groups whose latest payor reply
+            portal_response was received on or after this ISO
+            `YYYY-MM-DD`. Drives the "Response received" facet on the
+            Responses Awaiting Review page.
+          schema:
+            type: string
+        - name: responseReceivedTo
+          in: query
+          description: |
+            Task #753. Restrict to groups whose latest payor reply
+            portal_response was received on or before this ISO
+            `YYYY-MM-DD`. Pairs with `responseReceivedFrom`.
+          schema:
+            type: string
+        - name: responseType
+          in: query
+          description: |
+            Task #753. Comma-separated list of `responseType` values
+            (`approval`, `denial`, `partial_approval`, `info_request`,
+            `acknowledgment`, `other`). Restricts to groups whose latest
+            payor reply (any responseType, including acknowledgment)
+            matches one of the values.
+          schema:
+            type: string
+        - name: clientNumber
+          in: query
+          description: |
+            Task #753. Comma-separated list of payor/client numbers. Exact
+            match against `invoice_groups.client_number`. Drives the
+            "Payor / client" facet on the Responses Awaiting Review page.
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: |
+            Task #753. Free-text search; alias of `search`. When both are
+            sent, `q` wins. Matches invoice number, client number, error
+            details, and error type name (case-insensitive substring).
+          schema:
+            type: string
         - name: missingServiceDateReason
           in: query
           description: |
@@ -6261,6 +6320,31 @@ components:
               description: "Sibling Duplicate count — legs whose dispute rolls up to a primary leg in the same invoice (trip-overriding error)."
         eligibility:
           $ref: "#/components/schemas/InvoiceGroupEligibility"
+        legCount:
+          type: ["integer", "null"]
+          description: |
+            Task #753. Total number of legs (`claims`) attached to this
+            group. Only populated by the list endpoint; equals the row
+            count in the per-row leg fetch the handler already runs to
+            compute `legSubStatusCounts`. Null on payload shapes that
+            don't compute it (PATCH echoes, detail endpoint).
+        primaryLeg:
+          type: ["object", "null"]
+          description: |
+            Task #753. The leg the latest payor reply
+            references when known (via `portal_responses.claim_id`),
+            otherwise the earliest leg by id as a stable fallback. Used
+            by the Responses Awaiting Review row meta line and the
+            "Read the Reply" middle-column header to pair the invoice
+            number with a single leg-of-record. Only populated by the
+            list endpoint; null when the group has no legs.
+          properties:
+            id:
+              type: integer
+            confNumber:
+              type: ["string", "null"]
+          required:
+            - id
       required:
         - id
         - invoiceNumber

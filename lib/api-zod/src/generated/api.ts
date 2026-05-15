@@ -191,6 +191,48 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       "When `true`, restricts the result set to groups whose legs are\nall in a resolved\/packageable state (every non-held, non-duplicate\nleg has a terminal disposition, at least one contested leg, status\nin {New, Needs Evidence}) AND whose AI writeup has not yet been\ngenerated or has been generated but not yet marked reviewed.\nMirrors `computeGroupReadiness` from `group-packaging.ts` so\nthe filter stays in lockstep with the Gauntlet's gate.\n",
     ),
+  serviceDateFrom: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'Task #753. Restrict to groups whose earliest service date is on\nor after this ISO `YYYY-MM-DD`. Pairs with `serviceDateTo` to\nform a closed range. Used by the Responses Awaiting Review\nfilter bar\'s \"Date of service\" facet.\n',
+    ),
+  serviceDateTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Task #753. Restrict to groups whose earliest service date is on\nor before this ISO `YYYY-MM-DD`. Pairs with `serviceDateFrom`.\n",
+    ),
+  responseReceivedFrom: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'Task #753. Restrict to groups whose latest reviewable\nportal_response was received on or after this ISO\n`YYYY-MM-DD`. Drives the \"Response received\" facet on the\nResponses Awaiting Review page.\n',
+    ),
+  responseReceivedTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Task #753. Restrict to groups whose latest reviewable\nportal_response was received on or before this ISO\n`YYYY-MM-DD`. Pairs with `responseReceivedFrom`.\n",
+    ),
+  responseType: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Task #753. Comma-separated list of `responseType` values\n(`approval`, `denial`, `partial_approval`, `info_request`,\n`acknowledgment`, `other`). Restricts to groups whose latest\nreviewable portal_response matches one of the values.\n",
+    ),
+  clientNumber: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'Task #753. Comma-separated list of payor\/client numbers. Exact\nmatch against `invoice_groups.client_number`. Drives the\n\"Payor \/ client\" facet on the Responses Awaiting Review page.\n',
+    ),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Task #753. Free-text search; alias of `search`. When both are\nsent, `q` wins. Matches invoice number, client number, error\ndetails, and error type name (case-insensitive substring).\n",
+    ),
   missingServiceDateReason: zod
     .enum([
       "no_claims",
@@ -742,6 +784,21 @@ export const ListInvoiceGroupsResponse = zod.object({
         .optional()
         .describe(
           'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+        ),
+      legCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+        ),
+      primaryLeg: zod
+        .object({
+          id: zod.number(),
+          confNumber: zod.string().nullish(),
+        })
+        .nullish()
+        .describe(
+          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
         ),
     }),
   ),
@@ -1508,6 +1565,21 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             .optional()
             .describe(
               'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+            ),
+          legCount: zod
+            .number()
+            .nullish()
+            .describe(
+              "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+            ),
+          primaryLeg: zod
+            .object({
+              id: zod.number(),
+              confNumber: zod.string().nullish(),
+            })
+            .nullish()
+            .describe(
+              'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
             ),
         }),
         legs: zod.array(
@@ -2472,6 +2544,21 @@ export const GetInvoiceGroupResponse = zod
       .optional()
       .describe(
         'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+      ),
+    legCount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+      ),
+    primaryLeg: zod
+      .object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+      })
+      .nullish()
+      .describe(
+        'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
       ),
   })
   .and(
@@ -3873,6 +3960,21 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -4402,6 +4504,21 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -4995,6 +5112,21 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -5531,6 +5663,21 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       .optional()
       .describe(
         'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+      ),
+    legCount: zod
+      .number()
+      .nullish()
+      .describe(
+        "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+      ),
+    primaryLeg: zod
+      .object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+      })
+      .nullish()
+      .describe(
+        'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
       ),
   })
   .and(
@@ -6074,6 +6221,21 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -6603,6 +6765,21 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -7127,6 +7304,21 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -8153,6 +8345,21 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -8701,6 +8908,21 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -9831,6 +10053,21 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -10372,6 +10609,21 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -10910,6 +11162,21 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -11441,6 +11708,21 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
     ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+    ),
 });
 
 /**
@@ -11968,6 +12250,21 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -12498,6 +12795,21 @@ export const StampPreviewGeneratedResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -13058,6 +13370,21 @@ export const CompleteGroupReattestResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 
@@ -13623,6 +13950,21 @@ export const BulkQueueGroupReattestResponse = zod
         .optional()
         .describe(
           'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+        ),
+      legCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+        ),
+      primaryLeg: zod
+        .object({
+          id: zod.number(),
+          confNumber: zod.string().nullish(),
+        })
+        .nullish()
+        .describe(
+          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
         ),
     }),
     queuedLegIds: zod
@@ -30403,6 +30745,21 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
         ),
+      legCount: zod
+        .number()
+        .nullish()
+        .describe(
+          "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+        ),
+      primaryLeg: zod
+        .object({
+          id: zod.number(),
+          confNumber: zod.string().nullish(),
+        })
+        .nullish()
+        .describe(
+          'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
+        ),
     }),
   ),
   portalStats: zod.object({
@@ -34055,6 +34412,21 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .optional()
     .describe(
       'Task #702 — server-enforced eligibility for the 5 bulk actions\nthe invoice-group list rail exposes. Surfaced on every list row\nso the UI can show \"Queue 5 of 100 selected\" labels and grey\nout ineligible-selected rows BEFORE the operator clicks. Every\nbulk-\* endpoint still re-checks server-side; this object is a\nUX hint, not the gate.\n',
+    ),
+  legCount: zod
+    .number()
+    .nullish()
+    .describe(
+      "Task #753. Total number of legs (`claims`) attached to this\ngroup. Only populated by the list endpoint; equals the row\ncount in the per-row leg fetch the handler already runs to\ncompute `legSubStatusCounts`. Null on payload shapes that\ndon't compute it (PATCH echoes, detail endpoint).\n",
+    ),
+  primaryLeg: zod
+    .object({
+      id: zod.number(),
+      confNumber: zod.string().nullish(),
+    })
+    .nullish()
+    .describe(
+      'Task #753. The leg the latest reviewable payor response\nreferences when known (via `portal_responses.claim_id`),\notherwise the earliest leg by id as a stable fallback. Used\nby the Responses Awaiting Review row meta line and the\n\"Read the Reply\" middle-column header to pair the invoice\nnumber with a single leg-of-record. Only populated by the\nlist endpoint; null when the group has no legs.\n',
     ),
 });
 

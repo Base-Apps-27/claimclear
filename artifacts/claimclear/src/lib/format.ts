@@ -5,7 +5,7 @@
 // sites and continues to own the money formatter (which is not a
 // timezone concern).
 
-export { formatDate, formatDateTime } from "@/lib/time";
+export { formatDate, formatDateTime, formatDateCompact } from "@/lib/time";
 
 // Returns "—" for null/undefined so server-nulled money fields (clerks)
 // render cleanly. Also distinguishes "no amount on this row" from a real
