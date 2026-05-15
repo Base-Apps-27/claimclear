@@ -1189,24 +1189,33 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
   const POSITIVE_RESPONSE_TYPES_INSIGHTS = sql`('approval','partial_approval')`;
   const FINAL_RESPONSE_TYPES_INSIGHTS = sql`('approval','partial_approval','denial')`;
 
-  // Win-date predicates — anchor money on when the payor's verdict
-  // landed (portal_responses.received_at), not on when the dispute
-  // later closed. Without this, a 7d window that catches 50 freshly-
-  // approved invoices reads $0 because none have hit phase=closed
-  // yet. See the same rationale in /dashboard/summary above.
-  const wonInWindowSql = sql`EXISTS (
-    SELECT 1 FROM ${portalResponsesTable}
-    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES_INSIGHTS}
-      AND ${portalResponsesTable.receivedAt} >= ${start}
+  // Win-date anchor — the moment we count the recovery against. Was
+  // formerly an `EXISTS portal_responses` gate (Task #648 follow-up,
+  // 2026-05-15) which silently excluded offline-recorded approvals
+  // (the "recorded offline" branch of the MAS re-attest endpoint, plus
+  // any operator-set Approved outcome with no inbound portal_response
+  // ever) — production scan found 12 such groups summing to $983.12
+  // invisible to the Insights money tile while the Dashboard counted
+  // them, producing the "two greens disagree" bug.
+  //
+  // New definition: anchor on `COALESCE(latest_positive_response.
+  // received_at, reattest_completed_at)`. For groups that received a
+  // positive payor message, that message's timestamp drives the
+  // window (preserves the original "freshly-approved-not-yet-closed"
+  // velocity behavior). For groups recorded offline, the operator's
+  // re-attest stamp drives it. Either way, every Approved /
+  // Partially-Approved row that landed in the window is counted
+  // exactly once, matching the Dashboard's all-time definition.
+  // The `MAX()` guards against multiple positive responses on a single
+  // group (partial then full) — we anchor on the most recent.
+  const winAnchorSql = sql`COALESCE(
+    (SELECT MAX(pr.received_at) FROM ${portalResponsesTable} pr
+      WHERE pr.invoice_group_id = ${invoiceGroupsTable.id}
+        AND pr."responseType"::text IN ${POSITIVE_RESPONSE_TYPES_INSIGHTS}),
+    ${invoiceGroupsTable.reattestCompletedAt}
   )`;
-  const wonInPriorSql = sql`EXISTS (
-    SELECT 1 FROM ${portalResponsesTable}
-    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES_INSIGHTS}
-      AND ${portalResponsesTable.receivedAt} >= ${priorStart}
-      AND ${portalResponsesTable.receivedAt} < ${start}
-  )`;
+  const wonInWindowSql = sql`(${winAnchorSql} >= ${start})`;
+  const wonInPriorSql = sql`(${winAnchorSql} >= ${priorStart} AND ${winAnchorSql} < ${start})`;
   const respondedInWindowSql = sql`EXISTS (
     SELECT 1 FROM ${portalResponsesTable}
     WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}

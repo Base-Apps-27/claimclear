@@ -1,0 +1,1 @@
+CREATE INDEX "portal_responses_invoice_group_anchor_idx" ON "portal_responses" USING btree ("invoice_group_id","responseType","received_at");

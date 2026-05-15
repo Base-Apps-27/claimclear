@@ -56,6 +56,21 @@ export const portalResponsesTable = pgTable("portal_responses", {
   index("portal_responses_external_message_id_idx").on(table.externalMessageId),
   index("portal_responses_conversation_id_idx").on(table.conversationId),
   index("portal_responses_processed_idx").on(table.processed),
+  // Task #648 follow-up (2026-05-15) — backs the Insights win-anchor
+  // correlated subquery in `routes/dashboard.ts` (`winAnchorSql`):
+  //   SELECT MAX(received_at) FROM portal_responses
+  //    WHERE invoice_group_id = ? AND response_type IN ('approval','partial_approval')
+  // The new anchor is evaluated once per invoice_groups row across two
+  // windows on every Insights / dashboard money fetch, so without an
+  // index covering (invoice_group_id, response_type, received_at) this
+  // becomes a seq-scan-per-row pattern that degrades linearly with
+  // tenant size. Composite ordering is column-then-filter-then-sort to
+  // serve the MAX() probe directly off the index.
+  index("portal_responses_invoice_group_anchor_idx").on(
+    table.invoiceGroupId,
+    table.responseType,
+    table.receivedAt,
+  ),
 ]);
 
 export const insertPortalResponseSchema = createInsertSchema(portalResponsesTable).omit({ id: true, createdAt: true, updatedAt: true });
