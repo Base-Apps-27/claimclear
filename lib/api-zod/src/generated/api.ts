@@ -7307,6 +7307,162 @@ export const BulkCloseInvoiceGroupsResponse = zod.object({
 });
 
 /**
+ * Bulk-approve a multi-selection of high-confidence AI-classified
+Approval responses on the Responses Awaiting Review page. For each
+portal_response id passed in, the server re-validates the
+AI/approval/high-confidence gate, then for the parent invoice
+group: writes Approved operator-confirmed verdicts on every
+disputed leg, queues each eligible leg for re-attestation, and
+stamps the group's `awaiting_payor_again_at` so it falls off the
+Responses Awaiting Review card.
+
+A single `bulkApproveRunId` UUID is generated per request and
+stamped on every audit row written by the run, plus tagged on a
+per-group `notes` row carrying the reviewer's required note.
+
+Hard cap: 200 portal_response ids per request. Server processes
+the eligible set in batches of 10. Each group is wrapped in its
+own transaction — one bad group never poisons the batch.
+
+Per-row gates (rows failing any are surfaced in `skipped` with
+reason; idempotent re-runs land here as no-ops, not failures):
+  * `not_found` — portal_response id no longer exists
+  * `not_ai` — `classifier_source` is not `ai`
+  * `partial_approval` — response_type is `partial_approval`
+  * `not_approval` — response_type is not `approval`
+  * `low_confidence` — `classifier_confidence` is not `high`
+  * `no_group` — response is not linked to an invoice group
+  * `group_not_found` — linked invoice group has been deleted
+  * `tour_sample` — group is the tour sample row
+  * `presence_locked` — another reviewer is currently viewing the group
+  * `active_submission` — a portal submission is in flight
+  * `no_disputed_legs` — group has no disputable legs to approve
+  * `already_queued` — every disputed leg is already queued or
+    completed for re-attestation (idempotent re-run)
+Rows that error mid-transaction land in `failed` with reason.
+
+Use the companion endpoint
+`POST /invoice-groups/bulk-approve/preflight` to evaluate
+eligibility without writing anything (the dialog calls this
+on open to surface presence_locked / active_submission /
+already_queued / no_disputed_legs ahead of commit).
+
+ * @summary Bulk-approve high-confidence AI Approval responses
+ */
+export const bulkApproveInvoiceGroupsBodyPortalResponseIdsMax = 200;
+
+export const BulkApproveInvoiceGroupsBody = zod.object({
+  portalResponseIds: zod
+    .array(zod.number())
+    .max(bulkApproveInvoiceGroupsBodyPortalResponseIdsMax)
+    .describe("Portal-response ids to bulk-approve. Cap 200."),
+  note: zod
+    .string()
+    .min(1)
+    .describe(
+      "Required short note recorded once and applied to every group's audit trail.",
+    ),
+});
+
+export const BulkApproveInvoiceGroupsResponse = zod.object({
+  success: zod.boolean(),
+  bulkApproveRunId: zod
+    .string()
+    .uuid()
+    .describe(
+      "UUID generated once per bulk-approve request, stamped on every audit row + per-group note row written by the run.",
+    ),
+  approved: zod.number(),
+  approvedItems: zod.array(
+    zod.object({
+      portalResponseId: zod.number(),
+      id: zod.number().describe("Invoice group id."),
+      refNumber: zod.string().nullish(),
+      queuedLegCount: zod
+        .number()
+        .optional()
+        .describe("Number of legs queued for re-attestation on this group."),
+      warnings: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Non-fatal post-commit warnings for this row. Surfaced\nwhen the per-leg `refreshClaimDenormalizedCache` or\nper-group `refreshGroupDerivedFields` call fails\nAFTER the per-group transaction has committed: the\napproval IS in the database but the denormalized\ncaches are stale, so the operator should refresh.\n",
+        ),
+    }),
+  ),
+  skipped: zod.array(
+    zod.object({
+      portalResponseId: zod.number(),
+      id: zod.number().nullish(),
+      refNumber: zod.string().nullish(),
+      reason: zod.string(),
+    }),
+  ),
+  failed: zod.array(
+    zod.object({
+      portalResponseId: zod.number(),
+      id: zod.number().nullish(),
+      refNumber: zod.string().nullish(),
+      reason: zod.string(),
+    }),
+  ),
+  cap: zod
+    .number()
+    .describe("Server-enforced maximum portal_response ids per request."),
+});
+
+/**
+ * Read-only companion to `POST /invoice-groups/bulk-approve`.
+Runs the exact same eligibility evaluation per portal_response
+id but writes nothing; returns the would-be eligible set and
+skip taxonomy so the confirmation dialog can preview
+server-derived skips before the operator commits.
+
+ * @summary Preflight (read-only) the bulk-approve eligibility set
+ */
+export const bulkApproveInvoiceGroupsPreflightBodyPortalResponseIdsMax = 200;
+
+export const BulkApproveInvoiceGroupsPreflightBody = zod.object({
+  portalResponseIds: zod
+    .array(zod.number())
+    .max(bulkApproveInvoiceGroupsPreflightBodyPortalResponseIdsMax)
+    .describe("Portal-response ids to evaluate. Cap 200."),
+});
+
+export const BulkApproveInvoiceGroupsPreflightResponse = zod.object({
+  success: zod.boolean(),
+  eligible: zod
+    .number()
+    .describe(
+      "Number of portal_response ids that would be written if the operator commits.",
+    ),
+  eligibleItems: zod.array(
+    zod.object({
+      portalResponseId: zod.number(),
+      groupId: zod.number(),
+      refNumber: zod.string().nullish(),
+      legCount: zod
+        .number()
+        .describe("Disputed legs that would receive an Approved verdict."),
+      queuedLegCount: zod
+        .number()
+        .describe("Legs that would be queued for re-attestation."),
+    }),
+  ),
+  skipped: zod.array(
+    zod.object({
+      portalResponseId: zod.number(),
+      id: zod.number().nullish(),
+      refNumber: zod.string().nullish(),
+      reason: zod.string(),
+    }),
+  ),
+  cap: zod
+    .number()
+    .describe("Server-enforced maximum portal_response ids per request."),
+});
+
+/**
  * Bulk equivalent of the single-group Gauntlet flow. For each group
 in `groupIds`, runs the AI preview generation (populating
 `draftSubject` / `draftDescriptionHtml` and the AI baseline fields),

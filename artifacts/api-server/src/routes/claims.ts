@@ -25,6 +25,7 @@ import { autoCloseGroupIfAllNonIssue } from "../lib/auto-close-non-issue";
 import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { getGroupMacroPhase } from "../lib/macro-phase";
 import { computeAttestationDelta } from "../lib/attestation";
+import { insertOperatorVerdictRowTx } from "../lib/leg-verdict-writes";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-filter";
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline } from "../lib/dates";
@@ -3537,19 +3538,16 @@ router.post("/claims/:id/verdict", asyncHandler(async (req, res): Promise<void> 
     return;
   }
 
-  const [verdictRow] = await db.insert(claimVerdictTable).values({
+  const verdictRow = await insertOperatorVerdictRowTx(db, {
     claimId: id,
     source,
-    // Drafts deliberately drop note/confidence/reasoning/inspection fields
-    // — the picker no longer collects them and they're calibration-only
-    // signals that don't apply to a non-terminal selection.
     outcome,
-    note: isDraft ? null : note,
-    confidence: !isDraft && confidence != null ? String(confidence) : null,
-    reasoning: isDraft ? null : reasoning,
-    createdBy: req.user?.email ?? null,
-    inspectionTimeMs: !isDraft && inspectionTimeMs != null ? Number(inspectionTimeMs) : null,
-  }).returning();
+    note,
+    confidence: confidence != null ? String(confidence) : null,
+    reasoning,
+    inspectionTimeMs,
+    actor: { userEmail: req.user?.email ?? null, userName: req.user?.displayName ?? null },
+  });
 
   // Audit + state-event metadata carries `reason: "legacy_reconciliation"`
   // when the reconcile bypass was used so the row is traceable in audit

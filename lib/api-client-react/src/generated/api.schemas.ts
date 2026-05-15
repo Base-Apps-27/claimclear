@@ -4340,6 +4340,76 @@ export interface BulkCloseResult {
   success?: boolean;
 }
 
+export type BulkApproveResultApprovedItemsItem = {
+  portalResponseId: number;
+  /** Invoice group id. */
+  id: number;
+  refNumber?: string | null;
+  /** Number of legs queued for re-attestation on this group. */
+  queuedLegCount?: number;
+  /** Non-fatal post-commit warnings for this row. Surfaced
+when the per-leg `refreshClaimDenormalizedCache` or
+per-group `refreshGroupDerivedFields` call fails
+AFTER the per-group transaction has committed: the
+approval IS in the database but the denormalized
+caches are stale, so the operator should refresh.
+ */
+  warnings?: string[];
+};
+
+export type BulkApproveResultSkippedItem = {
+  portalResponseId: number;
+  id?: number | null;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export type BulkApproveResultFailedItem = {
+  portalResponseId: number;
+  id?: number | null;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export interface BulkApproveResult {
+  success: boolean;
+  /** UUID generated once per bulk-approve request, stamped on every audit row + per-group note row written by the run. */
+  bulkApproveRunId: string;
+  approved: number;
+  approvedItems: BulkApproveResultApprovedItemsItem[];
+  skipped: BulkApproveResultSkippedItem[];
+  failed: BulkApproveResultFailedItem[];
+  /** Server-enforced maximum portal_response ids per request. */
+  cap: number;
+}
+
+export type BulkApprovePreflightResultEligibleItemsItem = {
+  portalResponseId: number;
+  groupId: number;
+  refNumber?: string | null;
+  /** Disputed legs that would receive an Approved verdict. */
+  legCount: number;
+  /** Legs that would be queued for re-attestation. */
+  queuedLegCount: number;
+};
+
+export type BulkApprovePreflightResultSkippedItem = {
+  portalResponseId: number;
+  id?: number | null;
+  refNumber?: string | null;
+  reason: string;
+};
+
+export interface BulkApprovePreflightResult {
+  success: boolean;
+  /** Number of portal_response ids that would be written if the operator commits. */
+  eligible: number;
+  eligibleItems: BulkApprovePreflightResultEligibleItemsItem[];
+  skipped: BulkApprovePreflightResultSkippedItem[];
+  /** Server-enforced maximum portal_response ids per request. */
+  cap: number;
+}
+
 export type BulkGenerateAndReviewResultGeneratedItemsItem = {
   id: number;
   refNumber?: string | null;
@@ -5435,6 +5505,39 @@ export type BulkReattestInvoiceGroupsBody = {
 
 export type BulkCloseInvoiceGroupsBody = {
   groupIds: number[];
+};
+
+export type BulkApproveInvoiceGroupsBody = {
+  /**
+   * Portal-response ids to bulk-approve. Cap 200.
+   * @maxItems 200
+   */
+  portalResponseIds: number[];
+  /**
+   * Required short note recorded once and applied to every group's audit trail.
+   * @minLength 1
+   */
+  note: string;
+};
+
+export type BulkApproveInvoiceGroups400 = {
+  error?: string;
+  code?: string;
+  cap?: number;
+};
+
+export type BulkApproveInvoiceGroupsPreflightBody = {
+  /**
+   * Portal-response ids to evaluate. Cap 200.
+   * @maxItems 200
+   */
+  portalResponseIds: number[];
+};
+
+export type BulkApproveInvoiceGroupsPreflight400 = {
+  error?: string;
+  code?: string;
+  cap?: number;
 };
 
 export type BulkGenerateAndReviewInvoiceGroupsBody = {

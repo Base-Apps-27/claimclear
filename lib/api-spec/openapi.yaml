@@ -976,6 +976,130 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkCloseResult"
 
+  /invoice-groups/bulk-approve:
+    post:
+      operationId: bulkApproveInvoiceGroups
+      tags: [invoice-groups]
+      summary: Bulk-approve high-confidence AI Approval responses
+      description: |
+        Bulk-approve a multi-selection of high-confidence AI-classified
+        Approval responses on the Responses Awaiting Review page. For each
+        portal_response id passed in, the server re-validates the
+        AI/approval/high-confidence gate, then for the parent invoice
+        group: writes Approved operator-confirmed verdicts on every
+        disputed leg, queues each eligible leg for re-attestation, and
+        stamps the group's `awaiting_payor_again_at` so it falls off the
+        Responses Awaiting Review card.
+
+        A single `bulkApproveRunId` UUID is generated per request and
+        stamped on every audit row written by the run, plus tagged on a
+        per-group `notes` row carrying the reviewer's required note.
+
+        Hard cap: 200 portal_response ids per request. Server processes
+        the eligible set in batches of 10. Each group is wrapped in its
+        own transaction — one bad group never poisons the batch.
+
+        Per-row gates (rows failing any are surfaced in `skipped` with
+        reason; idempotent re-runs land here as no-ops, not failures):
+          * `not_found` — portal_response id no longer exists
+          * `not_ai` — `classifier_source` is not `ai`
+          * `partial_approval` — response_type is `partial_approval`
+          * `not_approval` — response_type is not `approval`
+          * `low_confidence` — `classifier_confidence` is not `high`
+          * `no_group` — response is not linked to an invoice group
+          * `group_not_found` — linked invoice group has been deleted
+          * `tour_sample` — group is the tour sample row
+          * `presence_locked` — another reviewer is currently viewing the group
+          * `active_submission` — a portal submission is in flight
+          * `no_disputed_legs` — group has no disputable legs to approve
+          * `already_queued` — every disputed leg is already queued or
+            completed for re-attestation (idempotent re-run)
+        Rows that error mid-transaction land in `failed` with reason.
+
+        Use the companion endpoint
+        `POST /invoice-groups/bulk-approve/preflight` to evaluate
+        eligibility without writing anything (the dialog calls this
+        on open to surface presence_locked / active_submission /
+        already_queued / no_disputed_legs ahead of commit).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [portalResponseIds, note]
+              properties:
+                portalResponseIds:
+                  type: array
+                  description: Portal-response ids to bulk-approve. Cap 200.
+                  maxItems: 200
+                  items:
+                    type: integer
+                note:
+                  type: string
+                  description: Required short note recorded once and applied to every group's audit trail.
+                  minLength: 1
+      responses:
+        "200":
+          description: Bulk approve result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkApproveResult"
+        "400":
+          description: Validation error (missing fields, empty array, cap exceeded, missing note)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string }
+                  cap: { type: integer }
+
+  /invoice-groups/bulk-approve/preflight:
+    post:
+      operationId: bulkApproveInvoiceGroupsPreflight
+      tags: [invoice-groups]
+      summary: Preflight (read-only) the bulk-approve eligibility set
+      description: |
+        Read-only companion to `POST /invoice-groups/bulk-approve`.
+        Runs the exact same eligibility evaluation per portal_response
+        id but writes nothing; returns the would-be eligible set and
+        skip taxonomy so the confirmation dialog can preview
+        server-derived skips before the operator commits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [portalResponseIds]
+              properties:
+                portalResponseIds:
+                  type: array
+                  description: Portal-response ids to evaluate. Cap 200.
+                  maxItems: 200
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: Preflight evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkApprovePreflightResult"
+        "400":
+          description: Validation error (missing fields, empty array, cap exceeded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string }
+                  cap: { type: integer }
+
   /invoice-groups/bulk-generate-and-review:
     post:
       operationId: bulkGenerateAndReviewInvoiceGroups
@@ -10375,6 +10499,130 @@ components:
           type: boolean
       required:
         - closed
+
+    BulkApproveResult:
+      type: object
+      required: [success, bulkApproveRunId, approved, approvedItems, skipped, failed, cap]
+      properties:
+        success:
+          type: boolean
+        bulkApproveRunId:
+          type: string
+          format: uuid
+          description: UUID generated once per bulk-approve request, stamped on every audit row + per-group note row written by the run.
+        approved:
+          type: integer
+        approvedItems:
+          type: array
+          items:
+            type: object
+            required: [portalResponseId, id]
+            properties:
+              portalResponseId:
+                type: integer
+              id:
+                type: integer
+                description: Invoice group id.
+              refNumber:
+                type: string
+                nullable: true
+              queuedLegCount:
+                type: integer
+                description: Number of legs queued for re-attestation on this group.
+              warnings:
+                type: array
+                description: |
+                  Non-fatal post-commit warnings for this row. Surfaced
+                  when the per-leg `refreshClaimDenormalizedCache` or
+                  per-group `refreshGroupDerivedFields` call fails
+                  AFTER the per-group transaction has committed: the
+                  approval IS in the database but the denormalized
+                  caches are stale, so the operator should refresh.
+                items:
+                  type: string
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [portalResponseId, reason]
+            properties:
+              portalResponseId:
+                type: integer
+              id:
+                type: integer
+                nullable: true
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        failed:
+          type: array
+          items:
+            type: object
+            required: [portalResponseId, reason]
+            properties:
+              portalResponseId:
+                type: integer
+              id:
+                type: integer
+                nullable: true
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        cap:
+          type: integer
+          description: Server-enforced maximum portal_response ids per request.
+
+    BulkApprovePreflightResult:
+      type: object
+      required: [success, eligible, eligibleItems, skipped, cap]
+      properties:
+        success:
+          type: boolean
+        eligible:
+          type: integer
+          description: Number of portal_response ids that would be written if the operator commits.
+        eligibleItems:
+          type: array
+          items:
+            type: object
+            required: [portalResponseId, groupId, legCount, queuedLegCount]
+            properties:
+              portalResponseId:
+                type: integer
+              groupId:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              legCount:
+                type: integer
+                description: Disputed legs that would receive an Approved verdict.
+              queuedLegCount:
+                type: integer
+                description: Legs that would be queued for re-attestation.
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [portalResponseId, reason]
+            properties:
+              portalResponseId:
+                type: integer
+              id:
+                type: integer
+                nullable: true
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+        cap:
+          type: integer
+          description: Server-enforced maximum portal_response ids per request.
 
     BulkGenerateAndReviewResult:
       type: object

@@ -43,6 +43,12 @@ import type {
   BotActivityLogResponse,
   BulkAddressBody,
   BulkAddressResponse,
+  BulkApproveInvoiceGroups400,
+  BulkApproveInvoiceGroupsBody,
+  BulkApproveInvoiceGroupsPreflight400,
+  BulkApproveInvoiceGroupsPreflightBody,
+  BulkApprovePreflightResult,
+  BulkApproveResult,
   BulkAssignErrorType409,
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
@@ -2253,6 +2259,233 @@ export const useBulkCloseInvoiceGroups = <
   TContext
 > => {
   return useMutation(getBulkCloseInvoiceGroupsMutationOptions(options));
+};
+
+/**
+ * Bulk-approve a multi-selection of high-confidence AI-classified
+Approval responses on the Responses Awaiting Review page. For each
+portal_response id passed in, the server re-validates the
+AI/approval/high-confidence gate, then for the parent invoice
+group: writes Approved operator-confirmed verdicts on every
+disputed leg, queues each eligible leg for re-attestation, and
+stamps the group's `awaiting_payor_again_at` so it falls off the
+Responses Awaiting Review card.
+
+A single `bulkApproveRunId` UUID is generated per request and
+stamped on every audit row written by the run, plus tagged on a
+per-group `notes` row carrying the reviewer's required note.
+
+Hard cap: 200 portal_response ids per request. Server processes
+the eligible set in batches of 10. Each group is wrapped in its
+own transaction — one bad group never poisons the batch.
+
+Per-row gates (rows failing any are surfaced in `skipped` with
+reason; idempotent re-runs land here as no-ops, not failures):
+  * `not_found` — portal_response id no longer exists
+  * `not_ai` — `classifier_source` is not `ai`
+  * `partial_approval` — response_type is `partial_approval`
+  * `not_approval` — response_type is not `approval`
+  * `low_confidence` — `classifier_confidence` is not `high`
+  * `no_group` — response is not linked to an invoice group
+  * `group_not_found` — linked invoice group has been deleted
+  * `tour_sample` — group is the tour sample row
+  * `presence_locked` — another reviewer is currently viewing the group
+  * `active_submission` — a portal submission is in flight
+  * `no_disputed_legs` — group has no disputable legs to approve
+  * `already_queued` — every disputed leg is already queued or
+    completed for re-attestation (idempotent re-run)
+Rows that error mid-transaction land in `failed` with reason.
+
+Use the companion endpoint
+`POST /invoice-groups/bulk-approve/preflight` to evaluate
+eligibility without writing anything (the dialog calls this
+on open to surface presence_locked / active_submission /
+already_queued / no_disputed_legs ahead of commit).
+
+ * @summary Bulk-approve high-confidence AI Approval responses
+ */
+export const getBulkApproveInvoiceGroupsUrl = () => {
+  return `/api/invoice-groups/bulk-approve`;
+};
+
+export const bulkApproveInvoiceGroups = async (
+  bulkApproveInvoiceGroupsBody: BulkApproveInvoiceGroupsBody,
+  options?: RequestInit,
+): Promise<BulkApproveResult> => {
+  return customFetch<BulkApproveResult>(getBulkApproveInvoiceGroupsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkApproveInvoiceGroupsBody),
+  });
+};
+
+export const getBulkApproveInvoiceGroupsMutationOptions = <
+  TError = ErrorType<BulkApproveInvoiceGroups400>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkApproveInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkApproveInvoiceGroupsBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkApproveInvoiceGroups"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>,
+    { data: BodyType<BulkApproveInvoiceGroupsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkApproveInvoiceGroups(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkApproveInvoiceGroupsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>
+>;
+export type BulkApproveInvoiceGroupsMutationBody =
+  BodyType<BulkApproveInvoiceGroupsBody>;
+export type BulkApproveInvoiceGroupsMutationError =
+  ErrorType<BulkApproveInvoiceGroups400>;
+
+/**
+ * @summary Bulk-approve high-confidence AI Approval responses
+ */
+export const useBulkApproveInvoiceGroups = <
+  TError = ErrorType<BulkApproveInvoiceGroups400>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>,
+    TError,
+    { data: BodyType<BulkApproveInvoiceGroupsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroups>>,
+  TError,
+  { data: BodyType<BulkApproveInvoiceGroupsBody> },
+  TContext
+> => {
+  return useMutation(getBulkApproveInvoiceGroupsMutationOptions(options));
+};
+
+/**
+ * Read-only companion to `POST /invoice-groups/bulk-approve`.
+Runs the exact same eligibility evaluation per portal_response
+id but writes nothing; returns the would-be eligible set and
+skip taxonomy so the confirmation dialog can preview
+server-derived skips before the operator commits.
+
+ * @summary Preflight (read-only) the bulk-approve eligibility set
+ */
+export const getBulkApproveInvoiceGroupsPreflightUrl = () => {
+  return `/api/invoice-groups/bulk-approve/preflight`;
+};
+
+export const bulkApproveInvoiceGroupsPreflight = async (
+  bulkApproveInvoiceGroupsPreflightBody: BulkApproveInvoiceGroupsPreflightBody,
+  options?: RequestInit,
+): Promise<BulkApprovePreflightResult> => {
+  return customFetch<BulkApprovePreflightResult>(
+    getBulkApproveInvoiceGroupsPreflightUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkApproveInvoiceGroupsPreflightBody),
+    },
+  );
+};
+
+export const getBulkApproveInvoiceGroupsPreflightMutationOptions = <
+  TError = ErrorType<BulkApproveInvoiceGroupsPreflight400>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>,
+    TError,
+    { data: BodyType<BulkApproveInvoiceGroupsPreflightBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>,
+  TError,
+  { data: BodyType<BulkApproveInvoiceGroupsPreflightBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkApproveInvoiceGroupsPreflight"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>,
+    { data: BodyType<BulkApproveInvoiceGroupsPreflightBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkApproveInvoiceGroupsPreflight(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkApproveInvoiceGroupsPreflightMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>
+>;
+export type BulkApproveInvoiceGroupsPreflightMutationBody =
+  BodyType<BulkApproveInvoiceGroupsPreflightBody>;
+export type BulkApproveInvoiceGroupsPreflightMutationError =
+  ErrorType<BulkApproveInvoiceGroupsPreflight400>;
+
+/**
+ * @summary Preflight (read-only) the bulk-approve eligibility set
+ */
+export const useBulkApproveInvoiceGroupsPreflight = <
+  TError = ErrorType<BulkApproveInvoiceGroupsPreflight400>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>,
+    TError,
+    { data: BodyType<BulkApproveInvoiceGroupsPreflightBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkApproveInvoiceGroupsPreflight>>,
+  TError,
+  { data: BodyType<BulkApproveInvoiceGroupsPreflightBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkApproveInvoiceGroupsPreflightMutationOptions(options),
+  );
 };
 
 /**

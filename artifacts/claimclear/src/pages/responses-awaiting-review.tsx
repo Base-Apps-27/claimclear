@@ -20,6 +20,8 @@ import {
   getGetInvoiceGroupEmailThreadQueryKey,
   useListErrorTypes,
   useBulkAssignInvoiceGroupErrorType,
+  useBulkApproveInvoiceGroups,
+  bulkApproveInvoiceGroupsPreflight,
 } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
@@ -45,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -66,6 +69,7 @@ import {
   htmlBodyToPlainText,
 } from "@/components/communication/group-thread-adapter";
 import { useToast, successToast } from "@/hooks/use-toast";
+import { buildBulkApproveSuccessSummary, runBulkApproveSuccessSideEffects } from "./responses-awaiting-review-bulk-approve-flow";
 import { useInvoiceGroupsListEvents, useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { usePresence } from "@/hooks/use-presence";
 import { HumanPresenceBanner } from "@/components/presence-banners";
@@ -126,6 +130,15 @@ const SORT_OPTIONS: ReadonlyArray<{ value: SortMode; label: string; help: string
 ];
 
 const SORT_STORAGE_KEY = "claimclear:responses-awaiting-review:sort";
+
+// Task #750 — bulk-approve dialog + skip-reason labels live in their own
+// module so unit tests can render the dialog without dragging the full
+// page (and its api-client/SSE/auth surface) into a node:test harness.
+import {
+  BulkApproveDialog,
+  bulkApproveSkipLabel,
+  BULK_APPROVE_MAX_ROWS,
+} from "@/components/bulk-approve-dialog";
 
 function readStoredSort(): SortMode {
   if (typeof window === "undefined") return "oldest_response";
@@ -237,6 +250,40 @@ function VerdictPendingTabContent() {
       }
       const latest = pickLatestReviewableResponse(q.data.responses);
       map.set(g.id, !!latest);
+    });
+    return map;
+  }, [baseGroups, detailQueries]);
+
+  // Task #750 — per-group bulk-approve eligibility. The latest reviewable
+  // response must be ai-classified, response_type=approval (not partial),
+  // and high-confidence. Also expose the latest response id so the bulk
+  // mutation (which keys off portal_response ids) and the dollar total
+  // can be derived without re-fetching anything.
+  const bulkApproveByGroupId = useMemo(() => {
+    const map = new Map<number, {
+      portalResponseId: number | null;
+      eligible: boolean;
+      reason: string | null;
+      totalAmount: number;
+      refNumber: string | null;
+    }>();
+    baseGroups.forEach((g, idx) => {
+      const detail = detailQueries[idx]?.data;
+      const latest = pickLatestReviewableResponse(detail?.responses);
+      const totalAmount = parseFloat(g.totalAmount ?? "") || 0;
+      let reason: string | null = null;
+      if (!latest) reason = "no_response";
+      else if (latest.classifierSource !== "ai") reason = "not_ai";
+      else if (latest.responseType === "partial_approval") reason = "partial_approval";
+      else if (latest.responseType !== "approval") reason = "not_approval";
+      else if (latest.classifierConfidence !== "high") reason = "low_confidence";
+      map.set(g.id, {
+        portalResponseId: latest?.id ?? null,
+        eligible: reason === null,
+        reason,
+        totalAmount,
+        refNumber: g.invoiceNumber ?? null,
+      });
     });
     return map;
   }, [baseGroups, detailQueries]);
@@ -377,6 +424,167 @@ function VerdictPendingTabContent() {
     });
   };
 
+  // Task #750 — bulk-approve selection state. Lives at the page level so
+  // the bar above the workspace and the row checkboxes share one source
+  // of truth, and the selection survives DetailPane re-renders. Stored
+  // as a Set of group ids (not portal_response ids) so the row UI stays
+  // simple — we resolve to portal_response ids at submit time.
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(() => new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+
+  // Drop selections that have left the visible list (verdict applied,
+  // SSE pushed the row off, sort filter changed) so the bar's count
+  // never lies.
+  useEffect(() => {
+    const visible = new Set(groups.map((g) => g.id));
+    setSelectedGroupIds((prev) => {
+      let dirty = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+        else dirty = true;
+      }
+      return dirty ? next : prev;
+    });
+  }, [groups]);
+
+  const toggleGroupSelected = (id: number, checked: boolean) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const selectAllEligible = () => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      for (const g of groups) {
+        if (bulkApproveByGroupId.get(g.id)?.eligible) next.add(g.id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedGroupIds(new Set());
+
+  // Pre-flight skip preview shown in the confirm dialog. Re-validated
+  // server-side; this is purely for the operator's visibility.
+  const selectionPreview = useMemo(() => {
+    const eligible: Array<{ groupId: number; portalResponseId: number; refNumber: string | null; totalAmount: number }> = [];
+    const skipped: Array<{ groupId: number; refNumber: string | null; reason: string }> = [];
+    for (const id of selectedGroupIds) {
+      const meta = bulkApproveByGroupId.get(id);
+      if (!meta || meta.portalResponseId == null) {
+        skipped.push({ groupId: id, refNumber: meta?.refNumber ?? null, reason: "no_response" });
+        continue;
+      }
+      if (!meta.eligible) {
+        skipped.push({ groupId: id, refNumber: meta.refNumber, reason: meta.reason ?? "ineligible" });
+        continue;
+      }
+      eligible.push({ groupId: id, portalResponseId: meta.portalResponseId, refNumber: meta.refNumber, totalAmount: meta.totalAmount });
+    }
+    const totalDollars = eligible.reduce((acc, r) => acc + r.totalAmount, 0);
+    const eligibleAll: number[] = [];
+    for (const g of groups) {
+      if (bulkApproveByGroupId.get(g.id)?.eligible) eligibleAll.push(g.id);
+    }
+    return { eligible, skipped, totalDollars, eligibleAll };
+  }, [selectedGroupIds, bulkApproveByGroupId, groups]);
+
+  const allSelectionsEligible = selectionPreview.skipped.length === 0 && selectionPreview.eligible.length > 0;
+  const overCap = selectionPreview.eligible.length > BULK_APPROVE_MAX_ROWS;
+
+  const bulkApproveMutation = useBulkApproveInvoiceGroups();
+
+  // Preflight: when the dialog opens, call the dedicated preflight
+  // endpoint to evaluate the selection server-side and merge the
+  // resulting skips (presence_locked, active_submission,
+  // already_queued, no_disputed_legs, …) into the dialog so the
+  // operator sees them before committing. Tracked by an opaque request
+  // key so a stale response from a previous open doesn't overwrite a
+  // fresh one. The preflight endpoint has its own typed response
+  // shape (BulkApprovePreflightResult), so no unsafe cast is needed.
+  const [serverPreflightSkipped, setServerPreflightSkipped] = useState<
+    Array<{ groupId: number; refNumber: string | null; reason: string }>
+  >([]);
+  const preflightReqId = useRef(0);
+  useEffect(() => {
+    if (!bulkConfirmOpen) {
+      setServerPreflightSkipped([]);
+      return;
+    }
+    const portalResponseIds = selectionPreview.eligible.map((e) => e.portalResponseId);
+    if (portalResponseIds.length === 0) {
+      setServerPreflightSkipped([]);
+      return;
+    }
+    const reqId = ++preflightReqId.current;
+    void bulkApproveInvoiceGroupsPreflight({ portalResponseIds })
+      .then((resp) => {
+        if (preflightReqId.current !== reqId) return;
+        setServerPreflightSkipped(
+          resp.skipped
+            .filter((r) => r.id != null)
+            .map((r) => ({ groupId: r.id as number, refNumber: r.refNumber ?? null, reason: r.reason })),
+        );
+      })
+      .catch(() => {
+        // Preflight is best-effort — if it fails, the dialog still
+        // shows the client-derived skipped list and the real run will
+        // surface the same skips on commit.
+      });
+  }, [bulkConfirmOpen, selectionPreview.eligible]);
+
+  // Merge client + server skip rows for the dialog. Dedup by groupId;
+  // server reason wins (it's authoritative).
+  const dialogSkipped = useMemo(() => {
+    const merged = new Map<number, { groupId: number; refNumber: string | null; reason: string }>();
+    for (const s of selectionPreview.skipped) merged.set(s.groupId, s);
+    for (const s of serverPreflightSkipped) merged.set(s.groupId, s);
+    return Array.from(merged.values());
+  }, [selectionPreview.skipped, serverPreflightSkipped]);
+
+  // Eligible list for the dialog excludes anything the server says
+  // would be skipped (e.g. another reviewer just opened it).
+  const dialogEligible = useMemo(() => {
+    const skipIds = new Set(serverPreflightSkipped.map((s) => s.groupId));
+    return selectionPreview.eligible.filter((e) => !skipIds.has(e.groupId));
+  }, [selectionPreview.eligible, serverPreflightSkipped]);
+  const dialogTotalDollars = useMemo(
+    () => dialogEligible.reduce((acc, e) => acc + e.totalAmount, 0),
+    [dialogEligible],
+  );
+
+  const submitBulkApprove = async (note: string) => {
+    const portalResponseIds = dialogEligible.map((e) => e.portalResponseId);
+    if (portalResponseIds.length === 0) return;
+    try {
+      const result = await bulkApproveMutation.mutateAsync({
+        data: { portalResponseIds, note },
+      });
+      successToast({
+        title: `Approved ${result.approved} response${result.approved === 1 ? "" : "s"}`,
+        description: buildBulkApproveSuccessSummary(result),
+        duration: 5000,
+      });
+      await runBulkApproveSuccessSideEffects({
+        result,
+        queryClient,
+        verdictPendingQuery,
+        setSelectedGroupIds,
+        setBulkConfirmOpen,
+      });
+    } catch (err) {
+      toast({
+        title: "Bulk approve failed",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-5" data-testid="verdict-pending-tab-content">
       <div className="space-y-1">
@@ -402,6 +610,21 @@ function VerdictPendingTabContent() {
 
       {groups.length > 0 && (
         <div className="flex items-center justify-end gap-2">
+          {selectionPreview.eligibleAll.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={selectAllEligible}
+              data-testid="bulk-approve-header-select-all-eligible"
+            >
+              Select all High-confidence Approvals
+              <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold">
+                {selectionPreview.eligibleAll.length}
+              </span>
+            </Button>
+          )}
           <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
           <Select value={sortMode} onValueChange={handleSortChange}>
             <SelectTrigger
@@ -426,6 +649,20 @@ function VerdictPendingTabContent() {
           </Select>
         </div>
       )}
+      {selectedGroupIds.size > 0 && (
+        <BulkApproveBar
+          selectedCount={selectedGroupIds.size}
+          eligibleCount={selectionPreview.eligible.length}
+          skippedCount={selectionPreview.skipped.length}
+          totalDollars={selectionPreview.totalDollars}
+          allEligible={allSelectionsEligible}
+          overCap={overCap}
+          cap={BULK_APPROVE_MAX_ROWS}
+          onSelectAllEligible={selectAllEligible}
+          onClear={clearSelection}
+          onOpenConfirm={() => setBulkConfirmOpen(true)}
+        />
+      )}
       <Workspace
         isLoading={isLoading}
         isError={isError}
@@ -434,10 +671,121 @@ function VerdictPendingTabContent() {
         selectedGroup={selectedGroup}
         onSelect={selectGroup}
         onAfterVerdict={onAfterVerdict}
+        selectedGroupIds={selectedGroupIds}
+        bulkApproveByGroupId={bulkApproveByGroupId}
+        onToggleSelected={toggleGroupSelected}
+        onSelectAllEligible={selectAllEligible}
+        onClearSelection={clearSelection}
+      />
+      <BulkApproveDialog
+        open={bulkConfirmOpen}
+        onOpenChange={(open) => {
+          if (!bulkApproveMutation.isPending) setBulkConfirmOpen(open);
+        }}
+        eligible={dialogEligible}
+        skipped={dialogSkipped}
+        totalDollars={dialogTotalDollars}
+        cap={BULK_APPROVE_MAX_ROWS}
+        isSubmitting={bulkApproveMutation.isPending}
+        onConfirm={submitBulkApprove}
       />
     </div>
   );
 }
+
+interface BulkApproveBarProps {
+  selectedCount: number;
+  eligibleCount: number;
+  skippedCount: number;
+  totalDollars: number;
+  allEligible: boolean;
+  overCap: boolean;
+  cap: number;
+  onSelectAllEligible: () => void;
+  onClear: () => void;
+  onOpenConfirm: () => void;
+}
+
+function BulkApproveBar({
+  selectedCount,
+  eligibleCount,
+  skippedCount,
+  totalDollars,
+  allEligible,
+  overCap,
+  cap,
+  onSelectAllEligible,
+  onClear,
+  onOpenConfirm,
+}: BulkApproveBarProps) {
+  const disabledReason = overCap
+    ? `Selection exceeds the ${cap}-row cap. Narrow the selection.`
+    : eligibleCount === 0
+      ? "No eligible high-confidence Approval responses in the selection."
+      : !allEligible
+        ? `${skippedCount} selected row(s) fail the AI/approval/high-confidence gate.`
+        : null;
+  return (
+    <div
+      className="sticky top-0 z-10 flex items-center gap-3 flex-wrap rounded-md border bg-background/95 backdrop-blur px-3 py-2 shadow-sm"
+      data-testid="bulk-approve-bar"
+    >
+      <span className="text-sm font-semibold" data-testid="bulk-approve-bar-count">
+        {selectedCount} selected
+      </span>
+      <span className="text-xs text-muted-foreground">
+        {eligibleCount} eligible · {skippedCount} would be skipped · total {formatCurrency(String(totalDollars))}
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onSelectAllEligible}
+          data-testid="bulk-approve-select-all-eligible"
+        >
+          Select all High-confidence Approvals
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onClear}
+          data-testid="bulk-approve-clear"
+        >
+          Clear
+        </Button>
+        {disabledReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled
+                  data-testid="bulk-approve-button"
+                >
+                  Bulk Approve
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{disabledReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            onClick={onOpenConfirm}
+            data-testid="bulk-approve-button"
+          >
+            Bulk Approve
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 /**
  * Inline workflow for the "unclassified responses" hidden bucket.
@@ -702,6 +1050,14 @@ function HiddenItemsStrip() {
   );
 }
 
+interface BulkApproveRowMeta {
+  portalResponseId: number | null;
+  eligible: boolean;
+  reason: string | null;
+  totalAmount: number;
+  refNumber: string | null;
+}
+
 interface WorkspaceProps {
   isLoading: boolean;
   isError: boolean;
@@ -710,6 +1066,11 @@ interface WorkspaceProps {
   selectedGroup: InvoiceGroupResponse | null;
   onSelect: (id: number) => void;
   onAfterVerdict: (message: string) => void;
+  selectedGroupIds: Set<number>;
+  bulkApproveByGroupId: Map<number, BulkApproveRowMeta>;
+  onToggleSelected: (id: number, checked: boolean) => void;
+  onSelectAllEligible: () => void;
+  onClearSelection: () => void;
 }
 
 function Workspace({
@@ -720,6 +1081,11 @@ function Workspace({
   selectedGroup,
   onSelect,
   onAfterVerdict,
+  selectedGroupIds,
+  bulkApproveByGroupId,
+  onToggleSelected,
+  onSelectAllEligible,
+  onClearSelection,
 }: WorkspaceProps) {
   // Per-group scroll position cache. Each row click captures the
   // current scroll position under the *previous* selection, so when the
@@ -787,6 +1153,11 @@ function Workspace({
         groups={groups}
         selectedGroup={selectedGroup}
         onSelect={onSelect}
+        selectedGroupIds={selectedGroupIds}
+        bulkApproveByGroupId={bulkApproveByGroupId}
+        onToggleSelected={onToggleSelected}
+        onSelectAllEligible={onSelectAllEligible}
+        onClearSelection={onClearSelection}
       />
 
       {selectedGroup && (
@@ -807,9 +1178,21 @@ interface ListColumnProps {
   groups: InvoiceGroupResponse[];
   selectedGroup: InvoiceGroupResponse | null;
   onSelect: (id: number) => void;
+  selectedGroupIds: Set<number>;
+  bulkApproveByGroupId: Map<number, BulkApproveRowMeta>;
+  onToggleSelected: (id: number, checked: boolean) => void;
+  onSelectAllEligible: () => void;
+  onClearSelection: () => void;
 }
 
-function ListColumn({ groups, selectedGroup, onSelect }: ListColumnProps) {
+function ListColumn({
+  groups,
+  selectedGroup,
+  onSelect,
+  selectedGroupIds,
+  bulkApproveByGroupId,
+  onToggleSelected,
+}: ListColumnProps) {
   // Task #490 — soften row removal. When the operator records a verdict
   // the previously-selected row holds its slot for ~360ms while the
   // success-tint settle plays, then unmounts; the auto-advanced row
@@ -827,16 +1210,23 @@ function ListColumn({ groups, selectedGroup, onSelect }: ListColumnProps) {
       <Card>
         <ScrollArea className="h-[calc(100vh-260px)] max-h-[720px]">
           <ul className="divide-y" data-testid="awaiting-review-list">
-            {settle.slots.map((slot) => (
-              <ListRow
-                key={slot.item.id}
-                group={slot.item}
-                isSelected={selectedGroup?.id === slot.item.id}
-                onSelect={() => onSelect(slot.item.id)}
-                isSettling={slot.isSettling}
-                isJustSelected={settle.isJustSelected(slot.item.id)}
-              />
-            ))}
+            {settle.slots.map((slot) => {
+              const meta = bulkApproveByGroupId.get(slot.item.id);
+              return (
+                <ListRow
+                  key={slot.item.id}
+                  group={slot.item}
+                  isSelected={selectedGroup?.id === slot.item.id}
+                  onSelect={() => onSelect(slot.item.id)}
+                  isSettling={slot.isSettling}
+                  isJustSelected={settle.isJustSelected(slot.item.id)}
+                  bulkEligible={meta?.eligible ?? false}
+                  bulkSkipReason={meta?.reason ?? null}
+                  bulkSelected={selectedGroupIds.has(slot.item.id)}
+                  onBulkToggle={(checked) => onToggleSelected(slot.item.id, checked)}
+                />
+              );
+            })}
           </ul>
         </ScrollArea>
       </Card>
@@ -852,9 +1242,26 @@ interface ListRowProps {
   isSettling?: boolean;
   /** Task #490 — brief highlight ring after auto-advance. */
   isJustSelected?: boolean;
+  /** Task #750 — does this row pass the AI/approval/high-confidence
+   *  client-side gate? Drives whether the bulk-approve checkbox is
+   *  enabled and which tooltip the operator sees. */
+  bulkEligible?: boolean;
+  bulkSkipReason?: string | null;
+  bulkSelected?: boolean;
+  onBulkToggle?: (checked: boolean) => void;
 }
 
-function ListRow({ group, isSelected, onSelect, isSettling = false, isJustSelected = false }: ListRowProps) {
+function ListRow({
+  group,
+  isSelected,
+  onSelect,
+  isSettling = false,
+  isJustSelected = false,
+  bulkEligible = false,
+  bulkSkipReason = null,
+  bulkSelected = false,
+  onBulkToggle,
+}: ListRowProps) {
   // Lightweight per-row enrichment: pull the group's latest reviewable
   // response so the row can show the response-type pill + AI summary one-
   // liner. Same data the Queue card surfaces — kept in sync deliberately.
@@ -869,18 +1276,43 @@ function ListRow({ group, isSelected, onSelect, isSettling = false, isJustSelect
   }, [detail?.rides]);
   const totalCount = group.rideCount;
 
+  const checkboxTooltip = bulkEligible
+    ? "Select for Bulk Approve (high-confidence AI Approval)"
+    : bulkSkipReason
+      ? `Not eligible for Bulk Approve — ${bulkApproveSkipLabel(bulkSkipReason)}`
+      : "Not eligible for Bulk Approve";
+
   return (
     <li
-      className={`${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""}`}
+      className={`${isSettling ? "cc-row-settling" : ""} ${isJustSelected ? "cc-row-just-selected" : ""} flex items-stretch ${isSelected ? "bg-muted" : ""}`}
       data-settling={isSettling ? "true" : undefined}
     >
+      {onBulkToggle && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex items-center pl-3 pr-1">
+              <Checkbox
+                checked={bulkSelected}
+                disabled={isSettling}
+                onCheckedChange={(checked) => onBulkToggle(checked === true)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={checkboxTooltip}
+                data-testid={`bulk-approve-row-checkbox-${group.id}`}
+                data-bulk-eligible={bulkEligible ? "true" : "false"}
+                {...(bulkSkipReason ? { "data-bulk-skip-reason": bulkSkipReason } : {})}
+              />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{checkboxTooltip}</TooltipContent>
+        </Tooltip>
+      )}
       <button
         type="button"
         onClick={onSelect}
         disabled={isSettling}
         aria-pressed={isSelected}
         data-testid={`awaiting-review-row-${group.id}`}
-        className={`w-full text-left px-4 py-3 transition-colors ${
+        className={`flex-1 text-left px-4 py-3 transition-colors ${
           isSelected ? "bg-muted" : "hover:bg-muted/50"
         }`}
       >

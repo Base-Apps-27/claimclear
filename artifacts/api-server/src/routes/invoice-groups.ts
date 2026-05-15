@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request } from "express";
 import crypto from "node:crypto";
-import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gte, lte, sql, type SQL } from "drizzle-orm";
+import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gt, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable, presenceLogsTable } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
@@ -43,6 +43,15 @@ import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline, 
 import { recomputeGroupServiceDate } from "../lib/group-service-date";
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
 import { denyClerk } from "../middlewares/denyClerk";
+import {
+  insertOperatorVerdictRowTx,
+  writeLegVerdictAuditTx,
+  queueLegForReattestTx,
+} from "../lib/leg-verdict-writes";
+import {
+  runPromoteLegToConfirmedSideEffects,
+  insertLegDraftAndConfirmedVerdictTx,
+} from "../lib/leg-promote";
 import { requireAuth } from "../middlewares/requireAuth";
 import {
   generatePortalDraftForGroup,
@@ -3620,58 +3629,27 @@ router.post("/invoice-groups/:id/promote-verdict-drafts", asyncHandler(async (re
   // outside the txn matches the pattern already used by
   // `/claims/:id/verdict`.
   const promotedClaimIds: number[] = [];
+  const promoteActor = actorFromReq(req);
   await db.transaction(async (tx) => {
     for (const d of draftsToPromote) {
-      await tx.insert(claimVerdictTable).values({
+      await insertOperatorVerdictRowTx(tx, {
         claimId: d.claimId,
         source: "operator_confirmed",
         outcome: d.outcome,
-        note: null,
-        confidence: null,
-        reasoning: null,
-        createdBy: req.user?.email ?? null,
-        inspectionTimeMs: null,
+        actor: promoteActor,
       });
       promotedClaimIds.push(d.claimId);
     }
   });
 
-  // Per-leg side effects mirror the `operator_confirmed` arm of
-  // `/claims/:id/verdict`. Re-load the leg between cache-refresh and
-  // attestation-delta so the gate sees the post-refresh outcome.
   for (const d of draftsToPromote) {
-    const [legBefore] = await db.select().from(claimsTable).where(eq(claimsTable.id, d.claimId));
-    if (!legBefore) continue;
-    await refreshClaimDenormalizedCache(d.claimId);
-    await applyMasDerivationsForLeg(d.claimId, d.outcome);
-    const [legAfter] = await db.select().from(claimsTable).where(eq(claimsTable.id, d.claimId));
-    if (legAfter) {
-      const attDelta = computeAttestationDelta(legBefore.outcome, legAfter.outcome, group);
-      if (Object.keys(attDelta).length > 0) {
-        await db.update(claimsTable).set(attDelta).where(eq(claimsTable.id, d.claimId));
-      }
-    }
-
-    await createAuditLog(
-      d.claimId,
-      "leg_verdict_confirmed",
-      `Verdict ${d.outcome} (operator_confirmed, promoted_from_draft)`,
-      req,
-      { source: "operator_confirmed", outcome: d.outcome, reason: "promoted_from_draft" },
-    );
-    await emitStateEvent({
-      eventKey: "leg.verdict_confirmed",
+    await runPromoteLegToConfirmedSideEffects({
       claimId: d.claimId,
+      outcome: d.outcome,
       invoiceGroupId: id,
-      actorUserId: req.user?.email ?? null,
-      metadata: { source: "operator_confirmed", outcome: d.outcome, reason: "promoted_from_draft" },
-    });
-    broadcastClaimEvent({
-      type: "verdict_recorded",
-      claimId: d.claimId,
-      userName: req.user?.displayName ?? null,
-      userEmail: req.user?.email ?? null,
-      timestamp: new Date().toISOString(),
+      group,
+      actor: promoteActor,
+      reason: "promoted_from_draft",
     });
   }
 
@@ -4858,31 +4836,18 @@ router.post("/invoice-groups/:id/reattest/queue", asyncHandler(async (req, res):
       return renameLine;
     })();
     for (const leg of eligibleLegs) {
-      await tx.update(claimsTable)
-        .set({
-          attestationState: "queued",
-          attestationQueuedAt: now,
-          attestationQueuedBy: actorIdentity,
-          attestationNote: perLegAttestationNote,
-        })
-        .where(eq(claimsTable.id, leg.id));
-
-      await tx.insert(auditLogsTable).values({
-        claimId: leg.id,
-        action: "attestation_queued",
+      await queueLegForReattestTx(tx, {
+        leg,
+        invoiceGroupId: id,
+        actor,
+        actorIdentity,
+        now,
+        attestationNote: perLegAttestationNote,
+        sourceTag: "group_reattest_queue",
         details: noteForDb
           ? `Queued for re-attestation by ${actorIdentity} (bulk via group #${id}) — ${noteForDb}`
           : `Queued for re-attestation by ${actorIdentity} (bulk via group #${id})`,
-        metadata: {
-          from: leg.attestationState,
-          to: "queued",
-          note: noteForDb,
-          bulk: true,
-          source: "group_reattest_queue",
-          invoiceGroupId: id,
-        },
-        userEmail: actor.userEmail,
-        userName: actor.userName,
+        extraMetadata: { note: noteForDb },
       });
 
       await emitStateEvent({
@@ -5311,6 +5276,363 @@ router.post("/invoice-groups/bulk-close", denyClerk, asyncHandler(async (req, re
     closed: closedItems.length,
     closedItems,
     skipped,
+  });
+}));
+
+// POST /invoice-groups/bulk-approve — Task #750. Multi-select bulk
+// approve of high-confidence AI Approval responses. Per portal_response:
+// re-validate gate (ai + approval + high), then per parent group in its
+// own transaction: write Approved drafts + operator_confirmed verdicts
+// on every disputed leg, queue eligible legs for re-attestation, stamp
+// `awaiting_payor_again_at`, write a tagged note row, and stamp every
+// audit row with the single `bulk_approve_run_id` UUID generated for
+// this request.
+//
+// Cap: 200 ids per request; processed in batches of 10.
+const BULK_APPROVE_MAX_ROWS = 200;
+const BULK_APPROVE_BATCH_SIZE = 10;
+const BULK_APPROVE_PRESENCE_WINDOW_MS = 45 * 1000;
+
+type BulkApproveSkipped = { portalResponseId: number; id: number | null; refNumber: string | null; reason: string };
+type BulkApproveApproved = {
+  portalResponseId: number;
+  id: number;
+  refNumber: string | null;
+  queuedLegCount: number;
+  // Post-commit refresh failures surfaced per-row so the operator
+  // sees "approved but cache stale" instead of silent swallowing.
+  warnings?: string[];
+};
+type BulkApproveFailed = { portalResponseId: number; id: number | null; refNumber: string | null; reason: string };
+
+// Per-id eligibility evaluation. Pure read-side: returns either a
+// skip reason or an eligible payload. Shared by the preflight
+// endpoint and the real run so skip taxonomy is identical.
+async function evaluateBulkApproveCandidate(
+  prId: number,
+  actorEmailLower: string,
+): Promise<
+  | { kind: "skip"; row: BulkApproveSkipped }
+  | {
+      kind: "eligible";
+      groupId: number;
+      group: typeof invoiceGroupsTable.$inferSelect;
+      disputedLegs: Array<typeof claimsTable.$inferSelect>;
+      legsNeedingQueue: Array<typeof claimsTable.$inferSelect>;
+    }
+> {
+  const [pr] = await db.select().from(portalResponsesTable)
+    .where(eq(portalResponsesTable.id, prId));
+  if (!pr) return { kind: "skip", row: { portalResponseId: prId, id: null, refNumber: null, reason: "not_found" } };
+  if (pr.classifierSource !== "ai")
+    return { kind: "skip", row: { portalResponseId: prId, id: pr.invoiceGroupId, refNumber: null, reason: "not_ai" } };
+  if (pr.responseType === "partial_approval")
+    return { kind: "skip", row: { portalResponseId: prId, id: pr.invoiceGroupId, refNumber: null, reason: "partial_approval" } };
+  if (pr.responseType !== "approval")
+    return { kind: "skip", row: { portalResponseId: prId, id: pr.invoiceGroupId, refNumber: null, reason: "not_approval" } };
+  if (pr.classifierConfidence !== "high")
+    return { kind: "skip", row: { portalResponseId: prId, id: pr.invoiceGroupId, refNumber: null, reason: "low_confidence" } };
+
+  const groupId = pr.invoiceGroupId;
+  if (groupId == null)
+    return { kind: "skip", row: { portalResponseId: prId, id: null, refNumber: null, reason: "no_group" } };
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
+  if (!group) return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: null, reason: "group_not_found" } };
+  if (group.isTourSample)
+    return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "tour_sample" } };
+
+  // Presence guard: skip groups currently held open by another
+  // operator. 45s window matches /presence/heartbeat cadence.
+  const presenceCutoff = new Date(Date.now() - BULK_APPROVE_PRESENCE_WINDOW_MS);
+  const otherViewers = await db.select({ email: presenceLogsTable.userEmail })
+    .from(presenceLogsTable)
+    .where(and(
+      eq(presenceLogsTable.resourceType, "invoice_group"),
+      eq(presenceLogsTable.resourceId, groupId),
+      gt(presenceLogsTable.lastHeartbeat, presenceCutoff),
+      sql`LOWER(${presenceLogsTable.userEmail}) <> ${actorEmailLower}`,
+    ));
+  if (otherViewers.length > 0)
+    return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "presence_locked" } };
+
+  const activeSubs = await db.select({ id: portalSubmissionsTable.id })
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.invoiceGroupId, groupId),
+      inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
+    ));
+  if (activeSubs.length > 0)
+    return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "active_submission" } };
+
+  const allLegs = await db.select().from(claimsTable).where(eq(claimsTable.invoiceGroupId, groupId));
+  const disputedLegs = allLegs.filter((l) =>
+    l.includedInDispute !== false
+    && !!l.errorTypeId
+    && (l.sopOutcome === "portal_dispute" || l.sopOutcome === "dispute"),
+  );
+  if (disputedLegs.length === 0)
+    return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "no_disputed_legs" } };
+
+  const legsNeedingQueue = disputedLegs.filter(
+    (l) => l.attestationState !== "queued" && l.attestationState !== "completed",
+  );
+  if (legsNeedingQueue.length === 0)
+    return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "already_queued" } };
+
+  return { kind: "eligible", groupId, group, disputedLegs, legsNeedingQueue };
+}
+
+// POST /invoice-groups/bulk-approve/preflight — read-only preflight.
+//
+// Split from the main bulk-approve endpoint so the OpenAPI contract
+// is honest: the response shape here (`eligible` / `eligibleItems` /
+// `skipped`) is fundamentally different from the commit response
+// (`approved` / `approvedItems` / `failed`), and the previous
+// `dryRun: true` overload forced the UI into an unsafe response cast.
+// Each endpoint now has its own schema and its own generated client.
+router.post("/invoice-groups/bulk-approve/preflight", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { portalResponseIds } = (req.body ?? {}) as { portalResponseIds?: unknown };
+  if (!Array.isArray(portalResponseIds) || portalResponseIds.length === 0) {
+    res.status(400).json({ error: "portalResponseIds array is required" });
+    return;
+  }
+  if (portalResponseIds.length > BULK_APPROVE_MAX_ROWS) {
+    res.status(400).json({
+      error: `Too many rows: cap is ${BULK_APPROVE_MAX_ROWS} per bulk-approve run.`,
+      code: "cap_exceeded",
+      cap: BULK_APPROVE_MAX_ROWS,
+    });
+    return;
+  }
+  const requestedIds = (portalResponseIds as Array<string | number>)
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const actor = actorFromReq(req);
+  const actorEmailLower = (actor.userEmail ?? "").toLowerCase();
+
+  const eligibleSummaries: Array<{
+    portalResponseId: number;
+    groupId: number;
+    refNumber: string | null;
+    legCount: number;
+    queuedLegCount: number;
+  }> = [];
+  const skipped: BulkApproveSkipped[] = [];
+  for (const prId of requestedIds) {
+    const evalResult = await evaluateBulkApproveCandidate(prId, actorEmailLower);
+    if (evalResult.kind === "skip") {
+      skipped.push(evalResult.row);
+    } else {
+      eligibleSummaries.push({
+        portalResponseId: prId,
+        groupId: evalResult.groupId,
+        refNumber: evalResult.group.invoiceNumber,
+        legCount: evalResult.disputedLegs.length,
+        queuedLegCount: evalResult.legsNeedingQueue.length,
+      });
+    }
+  }
+  res.json({
+    success: true,
+    eligible: eligibleSummaries.length,
+    eligibleItems: eligibleSummaries,
+    skipped,
+    cap: BULK_APPROVE_MAX_ROWS,
+  });
+}));
+
+router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { portalResponseIds, note } = (req.body ?? {}) as {
+    portalResponseIds?: unknown;
+    note?: unknown;
+  };
+
+  if (!Array.isArray(portalResponseIds) || portalResponseIds.length === 0) {
+    res.status(400).json({ error: "portalResponseIds array is required" });
+    return;
+  }
+  if (typeof note !== "string" || note.trim().length === 0) {
+    res.status(400).json({ error: "note is required" });
+    return;
+  }
+  if (portalResponseIds.length > BULK_APPROVE_MAX_ROWS) {
+    res.status(400).json({
+      error: `Too many rows: cap is ${BULK_APPROVE_MAX_ROWS} per bulk-approve run.`,
+      code: "cap_exceeded",
+      cap: BULK_APPROVE_MAX_ROWS,
+    });
+    return;
+  }
+
+  const trimmedNote = note.trim();
+  const requestedIds = (portalResponseIds as Array<string | number>)
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  const bulkApproveRunId = crypto.randomUUID();
+  const actor = actorFromReq(req);
+  const actorIdentity = actor.userEmail || actor.userName || "unknown";
+  const actorEmailLower = (actor.userEmail ?? "").toLowerCase();
+
+  const approved: BulkApproveApproved[] = [];
+  const skipped: BulkApproveSkipped[] = [];
+  const failed: BulkApproveFailed[] = [];
+
+  for (let batchStart = 0; batchStart < requestedIds.length; batchStart += BULK_APPROVE_BATCH_SIZE) {
+    const batch = requestedIds.slice(batchStart, batchStart + BULK_APPROVE_BATCH_SIZE);
+    for (const prId of batch) {
+      const evalResult = await evaluateBulkApproveCandidate(prId, actorEmailLower);
+      if (evalResult.kind === "skip") {
+        skipped.push(evalResult.row);
+        continue;
+      }
+      const { groupId, group, disputedLegs, legsNeedingQueue } = evalResult;
+      const now = new Date();
+      try {
+        await db.transaction(async (tx) => {
+          const verdictExtra = { bulkApproveRunId, portalResponseId: prId };
+          for (const leg of disputedLegs) {
+            await insertLegDraftAndConfirmedVerdictTx({
+              tx,
+              claimId: leg.id,
+              outcome: "Approved",
+              invoiceGroupId: groupId,
+              group,
+              actor,
+              reason: "bulk_approve",
+              extraMetadata: verdictExtra,
+            });
+            await tx.insert(auditLogsTable).values({
+              claimId: leg.id,
+              invoiceGroupId: groupId,
+              action: "claim_status_changed",
+              details: `Outcome → Approved (bulk_approve)`,
+              metadata: {
+                from: leg.outcome, to: "Approved",
+                source: "bulk_approve", bulkApproveRunId, portalResponseId: prId,
+              },
+              userEmail: actor.userEmail, userName: actor.userName,
+            });
+          }
+
+          for (const leg of legsNeedingQueue) {
+            await queueLegForReattestTx(tx, {
+              leg,
+              invoiceGroupId: groupId,
+              actor,
+              actorIdentity,
+              now,
+              sourceTag: "bulk_approve",
+              details: `Queued for re-attestation by ${actorIdentity} (bulk_approve via portal_response #${prId})`,
+              extraMetadata: { bulkApproveRunId, portalResponseId: prId },
+            });
+          }
+
+          // Group-level stamp + standard `group_status_changed` audit
+          // (mirroring the row the single-item path writes when
+          // `awaiting_payor_again_at` is set). Both carry the
+          // `bulkApproveRunId`.
+          await tx.update(invoiceGroupsTable)
+            .set({ awaitingPayorAgainAt: now })
+            .where(eq(invoiceGroupsTable.id, groupId));
+
+          await tx.update(portalResponsesTable)
+            .set({ processed: true })
+            .where(eq(portalResponsesTable.id, prId));
+
+          await tx.insert(auditLogsTable).values({
+            invoiceGroupId: groupId,
+            action: "group_status_changed",
+            details: `Group dropped off Responses Awaiting Review (bulk_approve)`,
+            metadata: {
+              field: "awaitingPayorAgainAt",
+              from: group.awaitingPayorAgainAt ? group.awaitingPayorAgainAt.toISOString() : null,
+              to: now.toISOString(),
+              source: "bulk_approve", bulkApproveRunId, portalResponseId: prId,
+            },
+            userEmail: actor.userEmail, userName: actor.userName,
+          });
+
+          // Umbrella audit row for the activity feed + tagged note
+          // carrying the operator's single bulk note.
+          await tx.insert(auditLogsTable).values({
+            invoiceGroupId: groupId,
+            action: "group_bulk_approved",
+            details: `Bulk-approved ${disputedLegs.length} leg(s); queued ${legsNeedingQueue.length} for re-attestation.`,
+            metadata: {
+              source: "bulk_approve", bulkApproveRunId, portalResponseId: prId,
+              legCount: disputedLegs.length, queuedLegCount: legsNeedingQueue.length,
+              note: trimmedNote,
+            },
+            userEmail: actor.userEmail, userName: actor.userName,
+          });
+
+          await tx.insert(notesTable).values({
+            invoiceGroupId: groupId,
+            type: "manual",
+            content: `[bulk-approve] ${trimmedNote}`,
+            author: actorIdentity,
+          });
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "transaction_error";
+        logger.warn({ err, prId, groupId, bulkApproveRunId }, "bulk-approve: per-group txn failed; isolated to this id");
+        failed.push({ portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: msg });
+        continue;
+      }
+
+      // Post-commit side effects mirror the single-item path
+      // (`/promote-verdict-drafts` runs `refreshClaimDenormalizedCache`
+      // per leg + `refreshGroupDerivedFields` for the group, both
+      // outside the transaction). When one of these refreshes fails
+      // the row IS approved — the DB writes already committed — so we
+      // surface the failure as a per-row warning rather than swallow
+      // it. That way the operator can see "approved but cache is
+      // stale, please refresh" without us pretending nothing happened.
+      const warnings: string[] = [];
+      for (const leg of disputedLegs) {
+        const sideEffectResult = await runPromoteLegToConfirmedSideEffects({
+          claimId: leg.id,
+          outcome: "Approved",
+          invoiceGroupId: groupId,
+          group,
+          actor,
+          reason: "bulk_approve",
+          extraMetadata: { bulkApproveRunId, portalResponseId: prId },
+        });
+        if (sideEffectResult.refreshError) {
+          logger.warn({ err: sideEffectResult.refreshError, claimId: leg.id }, "bulk-approve: refreshClaimDenormalizedCache failed");
+          warnings.push(`refreshClaimDenormalizedCache(${leg.id}) failed: ${sideEffectResult.refreshError.message}`);
+        }
+      }
+      try {
+        await refreshGroupDerivedFields(groupId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "refresh_error";
+        logger.warn({ err: e, groupId }, "bulk-approve: refreshGroupDerivedFields failed");
+        warnings.push(`refreshGroupDerivedFields(${groupId}) failed: ${msg}`);
+      }
+      emitGroupEvent(groupId, "group_bulk_approved", req);
+
+      approved.push({
+        portalResponseId: prId,
+        id: groupId,
+        refNumber: group.invoiceNumber,
+        queuedLegCount: legsNeedingQueue.length,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    bulkApproveRunId,
+    approved: approved.length,
+    approvedItems: approved,
+    skipped,
+    failed,
+    cap: BULK_APPROVE_MAX_ROWS,
   });
 }));
 
