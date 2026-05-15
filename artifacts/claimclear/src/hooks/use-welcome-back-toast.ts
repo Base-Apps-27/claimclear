@@ -1,13 +1,21 @@
 // Welcome-back wins toast (Task #780, F).
 //
 // Once per browser session per calendar day, on the first time the
-// dashboard summary loads with non-zero approvals in the resolution-
-// anchored window, fire a quiet toast that names what the team has
-// already won today. No confetti — the wins-hero on the dashboard is
-// the visual celebration; this is the audible acknowledgment that
-// fires the moment the operator opens the app, even if every other
-// celebration source (SSE, session milestones, day-complete) stays
-// quiet for the rest of the session.
+// dashboard summary loads with a strictly positive 7d recovered
+// figure (`amounts.netChangeRecovered > 0`), fire a quiet toast that
+// names what the team has won this week. No confetti — the wins-hero
+// on the dashboard is the visual celebration; this is the audible
+// acknowledgment that fires the moment the operator opens the app,
+// even if every other celebration source (SSE, session milestones,
+// day-complete) stays quiet for the rest of the session.
+//
+// Why the 7d trigger and not the lifetime closedOutcomes count:
+// closedOutcomes is now ALL-TIME (the dashboard-metrics realignment
+// dropped its 7d gate), so a tenant with a busy past but a quiet
+// week would otherwise get the toast every session forever. The 7d
+// netChangeRecovered signal is the only place on the wire that
+// still expresses "what changed recently" — exactly what the
+// welcome-back is supposed to celebrate.
 //
 // Dedup is sessionStorage-keyed by ISO date so:
 //   • the same browser tab won't fire the toast twice in a session,
@@ -16,10 +24,10 @@
 //   • crossing midnight produces a fresh date key, so tomorrow's
 //     first wins toast fires cleanly.
 //
-// Silent path: if the summary endpoint returns zero approvals
-// (closedOutcomes.approved + .partiallyApproved) the toast does not
-// fire and the session-storage flag is NOT set, so a later refetch
-// that surfaces the day's first approval can still trigger the toast.
+// Silent path: if `netChangeRecovered` is null / zero / negative the
+// toast does not fire and the session-storage flag is NOT set, so a
+// later refetch in the same session that surfaces the week's first
+// win can still trigger the toast.
 
 import { useEffect, useRef } from "react";
 import {
