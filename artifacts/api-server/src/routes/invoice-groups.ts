@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import crypto from "node:crypto";
 import { eq, or, ilike, desc, asc, and, count, inArray, isNull, isNotNull, ne, gt, gte, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable, presenceLogsTable } from "@workspace/db";
+import { invoiceGroupsTable, claimsTable, auditLogsTable, notesTable, portalSubmissionsTable, portalResponsesTable, claimEvidenceTable, claimVerdictTable, claimStatusEnum, errorTypesTable, stateEventsTable, presenceLogsTable, bulkApproveProgressTable } from "@workspace/db";
 import { deriveLegSubStatus } from "@workspace/leg-state";
 import { emitStateEvent } from "../lib/state-events";
 import { allDisputedLegsResolved, RESOLVED_LEG_SUB_STATUSES } from "../lib/group-readiness";
@@ -5293,40 +5293,31 @@ const BULK_APPROVE_MAX_ROWS = 200;
 const BULK_APPROVE_BATCH_SIZE = 10;
 const BULK_APPROVE_PRESENCE_WINDOW_MS = 45 * 1000;
 
-// Task #751 — in-memory progress tracker for in-flight bulk-approve runs.
-// The POST handler updates one of these per request as each per-group
+// Task #755 — durable progress tracker for in-flight bulk-approve runs.
+// The POST handler upserts one row per request as each per-group
 // transaction commits or skips, and the
 // `GET /invoice-groups/bulk-approve/:bulkApproveRunId/progress` endpoint
 // reads it so the client dialog can render a live progress bar instead
 // of staring at a spinner for ~30s on a 150-row run.
 //
-// Trackers are kept around for a short window after the run completes
-// so a slow last poll still gets the final numbers, then garbage-
-// collected on next access. Process-local — no need to survive
-// restarts; if the API server restarts mid-run the client just falls
-// back to "no progress data" and waits for the POST to return.
+// Persisted in `bulk_approve_progress` (migration 0046) so the poll
+// keeps working across page reloads, API restarts, and multiple API
+// instances behind a load balancer (Task #751 originally used a
+// per-process Map, which dropped the bar in any of those cases).
+//
+// Rows linger for a short window after `completed_at` so a slow last
+// poll still sees terminal counts, then get pruned on the next POST.
 type BulkApproveRunStatus = "running" | "complete";
-interface BulkApproveProgressEntry {
-  bulkApproveRunId: string;
-  total: number;
-  processed: number;
-  approved: number;
-  skipped: number;
-  failed: number;
-  status: BulkApproveRunStatus;
-  startedAt: Date;
-  updatedAt: Date;
-  completedAt: Date | null;
-}
 const BULK_APPROVE_PROGRESS_TTL_MS = 5 * 60 * 1000;
-const bulkApproveProgress = new Map<string, BulkApproveProgressEntry>();
 
-function pruneBulkApproveProgress(now: number): void {
-  for (const [id, entry] of bulkApproveProgress) {
-    if (entry.completedAt && now - entry.completedAt.getTime() > BULK_APPROVE_PROGRESS_TTL_MS) {
-      bulkApproveProgress.delete(id);
-    }
-  }
+async function pruneBulkApproveProgress(now: number): Promise<void> {
+  const cutoff = new Date(now - BULK_APPROVE_PROGRESS_TTL_MS);
+  await db.delete(bulkApproveProgressTable).where(
+    and(
+      isNotNull(bulkApproveProgressTable.completedAt),
+      lte(bulkApproveProgressTable.completedAt, cutoff),
+    ),
+  );
 }
 
 type BulkApproveSkipped = { portalResponseId: number; id: number | null; refNumber: string | null; reason: string };
@@ -5488,8 +5479,12 @@ router.get(
   denyClerk,
   asyncHandler(async (req, res): Promise<void> => {
     const { bulkApproveRunId } = req.params as { bulkApproveRunId?: string };
-    pruneBulkApproveProgress(Date.now());
-    const entry = bulkApproveRunId ? bulkApproveProgress.get(bulkApproveRunId) : undefined;
+    await pruneBulkApproveProgress(Date.now());
+    const [entry] = bulkApproveRunId
+      ? await db.select().from(bulkApproveProgressTable)
+          .where(eq(bulkApproveProgressTable.bulkApproveRunId, bulkApproveRunId))
+          .limit(1)
+      : [];
     if (!entry) {
       res.status(404).json({ error: "unknown_bulk_approve_run_id" });
       return;
@@ -5501,7 +5496,7 @@ router.get(
       approved: entry.approved,
       skipped: entry.skipped,
       failed: entry.failed,
-      status: entry.status,
+      status: entry.status as BulkApproveRunStatus,
       startedAt: entry.startedAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString(),
     });
@@ -5553,12 +5548,15 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
   const skipped: BulkApproveSkipped[] = [];
   const failed: BulkApproveFailed[] = [];
 
-  // Task #751 — register the in-memory progress tracker before we
+  // Task #755 — register the durable progress tracker row before we
   // start writing. Each per-row outcome (approved/skipped/failed)
-  // bumps `processed` so the dialog's poll sees the bar advance.
+  // bumps `processed` via an UPDATE so a poll on any API instance
+  // (or after a page reload) sees the bar advance. ON CONFLICT
+  // refreshes a stale row left behind from a prior identical
+  // client-supplied runId — rare, but cheaper than 409ing the caller.
   const startedAt = new Date();
-  pruneBulkApproveProgress(startedAt.getTime());
-  const progressEntry: BulkApproveProgressEntry = {
+  await pruneBulkApproveProgress(startedAt.getTime());
+  await db.insert(bulkApproveProgressTable).values({
     bulkApproveRunId,
     total: requestedIds.length,
     processed: 0,
@@ -5569,12 +5567,29 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
     startedAt,
     updatedAt: startedAt,
     completedAt: null,
-  };
-  bulkApproveProgress.set(bulkApproveRunId, progressEntry);
-  const bumpProgress = (kind: "approved" | "skipped" | "failed"): void => {
-    progressEntry.processed += 1;
-    progressEntry[kind] += 1;
-    progressEntry.updatedAt = new Date();
+  }).onConflictDoUpdate({
+    target: bulkApproveProgressTable.bulkApproveRunId,
+    set: {
+      total: requestedIds.length,
+      processed: 0,
+      approved: 0,
+      skipped: 0,
+      failed: 0,
+      status: "running",
+      startedAt,
+      updatedAt: startedAt,
+      completedAt: null,
+    },
+  });
+  const bumpProgress = async (kind: "approved" | "skipped" | "failed"): Promise<void> => {
+    const kindCol = bulkApproveProgressTable[kind];
+    await db.update(bulkApproveProgressTable)
+      .set({
+        processed: sql`${bulkApproveProgressTable.processed} + 1`,
+        [kind]: sql`${kindCol} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(bulkApproveProgressTable.bulkApproveRunId, bulkApproveRunId));
   };
 
   for (let batchStart = 0; batchStart < requestedIds.length; batchStart += BULK_APPROVE_BATCH_SIZE) {
@@ -5583,7 +5598,7 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
       const evalResult = await evaluateBulkApproveCandidate(prId, actorEmailLower);
       if (evalResult.kind === "skip") {
         skipped.push(evalResult.row);
-        bumpProgress("skipped");
+        await bumpProgress("skipped");
         continue;
       }
       const { groupId, group, disputedLegs, legsNeedingQueue } = evalResult;
@@ -5678,7 +5693,7 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
         const msg = err instanceof Error ? err.message : "transaction_error";
         logger.warn({ err, prId, groupId, bulkApproveRunId }, "bulk-approve: per-group txn failed; isolated to this id");
         failed.push({ portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: msg });
-        bumpProgress("failed");
+        await bumpProgress("failed");
         continue;
       }
 
@@ -5722,16 +5737,18 @@ router.post("/invoice-groups/bulk-approve", denyClerk, asyncHandler(async (req, 
         queuedLegCount: legsNeedingQueue.length,
         ...(warnings.length > 0 ? { warnings } : {}),
       });
-      bumpProgress("approved");
+      await bumpProgress("approved");
     }
   }
 
-  // Task #751 — mark the tracker complete so a final progress poll
+  // Task #755 — mark the tracker complete so a final progress poll
   // (and the dialog's "done" branch) can read terminal counts even
-  // after the POST returns. Tracker is GC'd after the TTL window.
-  progressEntry.status = "complete";
-  progressEntry.completedAt = new Date();
-  progressEntry.updatedAt = progressEntry.completedAt;
+  // after the POST returns. Row is pruned after the TTL window by
+  // the next POST's `pruneBulkApproveProgress` call.
+  const completedAt = new Date();
+  await db.update(bulkApproveProgressTable)
+    .set({ status: "complete", completedAt, updatedAt: completedAt })
+    .where(eq(bulkApproveProgressTable.bulkApproveRunId, bulkApproveRunId));
 
   res.json({
     success: true,

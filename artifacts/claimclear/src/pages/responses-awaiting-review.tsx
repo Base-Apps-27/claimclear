@@ -24,7 +24,7 @@ import {
   bulkApproveInvoiceGroupsPreflight,
   getBulkApproveProgress,
 } from "@workspace/api-client-react";
-import type { BulkApproveProgress } from "@workspace/api-client-react";
+import { ApiError, type BulkApproveProgress } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
@@ -132,6 +132,17 @@ const SORT_OPTIONS: ReadonlyArray<{ value: SortMode; label: string; help: string
 ];
 
 const SORT_STORAGE_KEY = "claimclear:responses-awaiting-review:sort";
+
+// Task #755 — survives a hard reload mid-bulk-approve. Mirrors the
+// runId we generate at submit so a refresh / new tab can reattach to
+// the in-flight (or just-finished) run by polling the durable
+// progress row server-side.
+const BULK_APPROVE_RUN_STORAGE_KEY = "claimclear:bulk-approve:run-id";
+
+function clearStoredBulkApproveRunId(): void {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.removeItem(BULK_APPROVE_RUN_STORAGE_KEY); } catch { /* ignore */ }
+}
 
 // Task #750 — bulk-approve dialog + skip-reason labels live in their own
 // module so unit tests can render the dialog without dragging the full
@@ -559,33 +570,129 @@ function VerdictPendingTabContent() {
     [dialogEligible],
   );
 
-  // Task #751 — live progress for the in-flight bulk-approve. We
+  // Task #755 — live progress for the in-flight bulk-approve. We
   // generate the runId on the client and ship it in the POST body so
-  // the server keys its in-memory tracker off it. While the POST
-  // request is in flight we poll
+  // the server keys its durable progress row off it. While the POST
+  // request is in flight (or after a page reload that lands while a
+  // previous run is still going) we poll
   // `GET /invoice-groups/bulk-approve/:runId/progress` every 750ms and
-  // hand the snapshot to the dialog. On success/failure we clear the
-  // poll. Reset on dialog close so a re-open starts fresh.
+  // hand the snapshot to the dialog.
+  //
+  // To survive a hard reload / new tab we mirror the active runId into
+  // `localStorage` at submit start and clear it on terminal status
+  // (`complete`) or after the row ages out (poll returns 404). On
+  // mount, if a stored runId exists we reopen the dialog and resume
+  // polling — the server-side progress row, persisted in Postgres
+  // (Task #755), is what makes that reattach actually show counts.
   const [bulkProgress, setBulkProgress] = useState<BulkApproveProgress | null>(null);
   const bulkRunIdRef = useRef<string | null>(null);
+  // Drives the polling effect: any non-null runId here means "keep
+  // polling progress for this id until it completes or 404s". Driving
+  // polling off a state value (instead of `mutation.isPending`) is
+  // what lets a resumed run keep ticking without needing the original
+  // POST promise.
+  const [pollingRunId, setPollingRunId] = useState<string | null>(null);
+
+  // Restore an in-flight runId from localStorage on mount. If the
+  // stored row is already complete we clear immediately; otherwise
+  // we open the dialog and let the polling effect take over.
   useEffect(() => {
-    if (!bulkConfirmOpen) {
+    if (typeof window === "undefined") return;
+    let storedId: string | null = null;
+    try {
+      storedId = window.localStorage.getItem(BULK_APPROVE_RUN_STORAGE_KEY);
+    } catch {
+      storedId = null;
+    }
+    if (!storedId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getBulkApproveProgress(storedId);
+        if (cancelled) return;
+        bulkRunIdRef.current = storedId;
+        setBulkProgress(snap);
+        if (snap.status === "complete") {
+          // Run finished while we were away — drop the stale id; the
+          // operator will see fresh data after the normal refetch.
+          clearStoredBulkApproveRunId();
+        } else {
+          setBulkConfirmOpen(true);
+          setPollingRunId(storedId);
+        }
+      } catch (err) {
+        // Only treat a definitive 404 as "row aged out, nothing to
+        // reattach" and clear the stored id. A transient network /
+        // 5xx error keeps the id around so we can retry: optimistic
+        // reattach by opening the dialog and letting the polling
+        // loop catch up when the API comes back.
+        if (err instanceof ApiError && err.status === 404) {
+          clearStoredBulkApproveRunId();
+          return;
+        }
+        if (cancelled) return;
+        bulkRunIdRef.current = storedId;
+        setBulkConfirmOpen(true);
+        setPollingRunId(storedId);
+      }
+    })();
+    return () => { cancelled = true; };
+    // Mount-only restore — intentionally empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reset transient progress UI when the dialog closes after a
+  // completed run. The runId itself is cleared on terminal status by
+  // the polling effect / submitBulkApprove finally branch, so closing
+  // a still-running dialog does NOT abandon the run.
+  useEffect(() => {
+    if (!bulkConfirmOpen && pollingRunId == null) {
       setBulkProgress(null);
       bulkRunIdRef.current = null;
     }
-  }, [bulkConfirmOpen]);
+  }, [bulkConfirmOpen, pollingRunId]);
+
+  // Polling driver. Active whenever `pollingRunId` is set. Stops on
+  // terminal status (`complete`) — at that point the POST promise (if
+  // we own it) handles success-side-effects, and a resumed run just
+  // shows the final snapshot until the dialog is closed.
   useEffect(() => {
-    if (!bulkApproveMutation.isPending) return;
-    const runId = bulkRunIdRef.current;
-    if (!runId) return;
+    if (!pollingRunId) return;
     let cancelled = false;
+    const startedAt = Date.now();
+    // Tolerate 404s during a startup grace window so we don't drop
+    // tracking when the very first poll races ahead of the POST that
+    // INSERTs the progress row, OR while the API restarts mid-run
+    // before the row is rehydrated. Once we've ever seen the row we
+    // exit the grace state for good — any later 404 means the row
+    // truly aged out (>5 min after completion).
+    const STARTUP_GRACE_MS = 20_000;
+    let everSeen = false;
     const tick = async () => {
       try {
-        const snap = await getBulkApproveProgress(runId);
-        if (!cancelled) setBulkProgress(snap);
-      } catch {
-        // 404 just means the tracker hasn't registered yet (or has
-        // aged out). Either way: nothing to render, keep waiting.
+        const snap = await getBulkApproveProgress(pollingRunId);
+        if (cancelled) return;
+        everSeen = true;
+        setBulkProgress(snap);
+        if (snap.status === "complete") {
+          clearStoredBulkApproveRunId();
+          setPollingRunId(null);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          // Within the startup grace window AND we've never seen the
+          // row → assume the POST hasn't INSERTed yet; keep polling.
+          if (!everSeen && Date.now() - startedAt < STARTUP_GRACE_MS) {
+            return;
+          }
+          // Otherwise the row aged out (>5 min after completion).
+          // Stop polling and clear so we don't loop forever.
+          clearStoredBulkApproveRunId();
+          setPollingRunId(null);
+        }
+        // Transient network / 5xx errors keep the id around so the
+        // next tick (or a future mount) retries.
       }
     };
     void tick();
@@ -594,7 +701,7 @@ function VerdictPendingTabContent() {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [bulkApproveMutation.isPending]);
+  }, [pollingRunId]);
 
   const submitBulkApprove = async (note: string) => {
     const portalResponseIds = dialogEligible.map((e) => e.portalResponseId);
@@ -605,6 +712,11 @@ function VerdictPendingTabContent() {
         : `bulk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     bulkRunIdRef.current = runId;
     setBulkProgress(null);
+    // Persist BEFORE awaiting the POST so a reload mid-flight reattaches.
+    if (typeof window !== "undefined") {
+      try { window.localStorage.setItem(BULK_APPROVE_RUN_STORAGE_KEY, runId); } catch { /* ignore */ }
+    }
+    setPollingRunId(runId);
     try {
       const result = await bulkApproveMutation.mutateAsync({
         data: { portalResponseIds, note, bulkApproveRunId: runId },
@@ -627,7 +739,16 @@ function VerdictPendingTabContent() {
         description: err instanceof Error ? err.message : "Please try again.",
         variant: "destructive",
       });
+      // Don't unconditionally clear the stored id here: a network /
+      // 5xx failure on the client doesn't tell us whether the server
+      // accepted any work, and the durable progress row may still be
+      // ticking. Leave the polling loop attached — it will clear the
+      // id itself on either a definitive 404 or terminal `complete`.
     }
+    // Success path: the polling loop will see `status === "complete"`
+    // on its next tick and clear both the stored id and pollingRunId.
+    // No `finally` clear, so an in-flight or just-finished run stays
+    // reattachable across an unexpected reload.
   };
 
   return (
@@ -731,7 +852,7 @@ function VerdictPendingTabContent() {
         skipped={dialogSkipped}
         totalDollars={dialogTotalDollars}
         cap={BULK_APPROVE_MAX_ROWS}
-        isSubmitting={bulkApproveMutation.isPending}
+        isSubmitting={bulkApproveMutation.isPending || pollingRunId != null}
         progress={bulkProgress}
         onConfirm={submitBulkApprove}
       />

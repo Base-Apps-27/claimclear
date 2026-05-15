@@ -22,3 +22,4 @@ export * from "./notification-preferences";
 export * from "./portal-batch-runs";
 export * from "./claim-verdict";
 export * from "./state-events";
+export * from "./bulk-approve-progress";
