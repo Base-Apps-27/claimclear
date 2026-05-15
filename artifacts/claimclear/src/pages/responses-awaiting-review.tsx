@@ -609,14 +609,35 @@ function VerdictPendingTabContent() {
     Array<{ groupId: number; refNumber: string | null; reason: string }>
   >([]);
   const preflightReqId = useRef(0);
+  // Stable primitive key for the effect dep. `selectionPreview.eligible`
+  // is a fresh array on every render (its upstream `bulkApproveByGroupId`
+  // memo depends on `useQueries`'s detailQueries, which returns a new
+  // array each render). Depending on the array ref directly made the
+  // effect fire on every render and call `setServerPreflightSkipped([])`
+  // with a fresh `[]` ref — React's Object.is bail-out doesn't apply to
+  // distinct empty arrays, so each call scheduled another render and the
+  // page crashed with "Maximum update depth exceeded" (React #185). The
+  // sorted, joined id list is a primitive — React compares deps by
+  // Object.is, which compares strings by value, so the effect now only
+  // re-runs when the actual selection changes.
+  const eligibleIdsKey = useMemo(
+    () =>
+      selectionPreview.eligible
+        .map((e) => e.portalResponseId)
+        .sort((a, b) => a - b)
+        .join(","),
+    [selectionPreview.eligible],
+  );
   useEffect(() => {
     if (!bulkConfirmOpen) {
-      setServerPreflightSkipped([]);
+      setServerPreflightSkipped((prev) => (prev.length === 0 ? prev : []));
       return;
     }
-    const portalResponseIds = selectionPreview.eligible.map((e) => e.portalResponseId);
+    const portalResponseIds = eligibleIdsKey
+      ? eligibleIdsKey.split(",").map((s) => parseInt(s, 10))
+      : [];
     if (portalResponseIds.length === 0) {
-      setServerPreflightSkipped([]);
+      setServerPreflightSkipped((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const reqId = ++preflightReqId.current;
@@ -634,7 +655,7 @@ function VerdictPendingTabContent() {
         // shows the client-derived skipped list and the real run will
         // surface the same skips on commit.
       });
-  }, [bulkConfirmOpen, selectionPreview.eligible]);
+  }, [bulkConfirmOpen, eligibleIdsKey]);
 
   // Merge client + server skip rows for the dialog. Dedup by groupId;
   // server reason wins (it's authoritative).
