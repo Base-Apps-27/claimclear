@@ -24,6 +24,7 @@ const summary: CanonicalSummary = {
     atRiskExposure: "12345.67",
     atRiskGroups: 3,
     recoveredAmount: "5000.00",
+    confirmedRecoveredAmount: "3500.00",
     priorRecoveredAmount: "4000.00",
     recoveryRate: 42,
     netChangeRecovered: "1000.00",

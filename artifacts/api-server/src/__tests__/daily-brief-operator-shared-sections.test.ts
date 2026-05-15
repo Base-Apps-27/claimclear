@@ -20,6 +20,7 @@ const summary: CanonicalSummary = {
     atRiskExposure: "12345.67",
     atRiskGroups: 3,
     recoveredAmount: "5000.00",
+    confirmedRecoveredAmount: "3500.00",
     priorRecoveredAmount: "4000.00",
     recoveryRate: 42,
     netChangeRecovered: "1000.00",
@@ -66,9 +67,11 @@ const needs: NeedsYouToday = {
 test("operator daily body renders shared head sections (KPI / yesterday / attention) before worklist", () => {
   const html = renderOperatorDailyBody(needs, "alice@example.com", summary, yesterday, attention);
 
-  // KPI strip — at minimum the "Open invoices" and "At-risk $" tiles.
-  assert.match(html, /Open invoices/);
-  assert.match(html, /At-risk \$/);
+  // KPI strip — at minimum the "At-risk invoices" and "Outstanding $"
+  // tiles (renamed from "Open invoices" / "At-risk $" to match the
+  // Dashboard amber tiles for cross-surface reconciliation).
+  assert.match(html, /At-risk invoices/);
+  assert.match(html, /Outstanding \$/);
   assert.match(html, /Due today/);
 
   // Yesterday row.

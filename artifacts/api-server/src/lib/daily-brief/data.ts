@@ -71,6 +71,7 @@ export interface CanonicalSummary {
     openInvoices: number;
     disputedAmount: string | null;
     recoveredAmount: string | null;
+    confirmedRecoveredAmount: string | null;
     priorRecoveredAmount: string | null;
     recoveryRate: number | null;
     netChangeRecovered: string | null;

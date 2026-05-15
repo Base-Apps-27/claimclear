@@ -16,6 +16,7 @@ const summary: CanonicalSummary = {
     atRiskExposure: "12345.67",
     atRiskGroups: 3,
     recoveredAmount: "5000.00",
+    confirmedRecoveredAmount: "3500.00",
     priorRecoveredAmount: "4000.00",
     recoveryRate: 42,
     netChangeRecovered: "1000.00",
@@ -63,8 +64,8 @@ test("weekly exec body renders every required section", () => {
   assert.match(html, /Net change vs prior/);
   assert.match(html, /Disputed \(7d\)/);
   assert.match(html, /Recovery rate/);
-  assert.match(html, /At-risk \$/);
-  assert.match(html, /Open invoices/);
+  assert.match(html, /At-risk invoices/);
+  assert.match(html, /Outstanding \$/);
 
   // Recovery vs prior week recap block.
   assert.match(html, /Recovery vs prior week/);

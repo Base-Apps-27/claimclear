@@ -16,13 +16,14 @@ export type DashboardInsightsPayorConcentrationByGroupItem = {
   payorEmail: string;
   /** Number of currently open invoices touching this payor. */
   openCount: number;
-  /** Number of invoices CREATED in the active window touching this payor. */
+  /** Number of invoices RESOLVED in the active window touching this payor (denominator + numerator universe for `winRate`). */
   invoiceCountInWindow: number;
   /** Σ open at-risk $ for this payor's currently open invoices. */
   openAtRiskAmount: string | null;
   /** (Approved + Partially Approved) / (Approved +
 Partially Approved + Denied), counted over invoices
-CREATED in the active window. `null` when no decided
+RESOLVED in the active window (`phase=closed AND
+phaseEnteredAt IN window`). `null` when no decided
 invoices fall in the window.
  */
   winRate: number | null;

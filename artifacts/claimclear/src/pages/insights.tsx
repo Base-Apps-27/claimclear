@@ -172,11 +172,18 @@ export default function Insights() {
   // confused operators on Insights). Denied $ is windowed claim total
   // for outcome=Denied. Net change tile compares recovered $ against
   // the equal-length prior window.
+  // All money/outcome figures are RESOLVED-IN-WINDOW (`phase=closed AND
+  // phaseEnteredAt IN window`) per the new contract — the page now
+  // answers "how did the disputes we closed this period turn out"
+  // instead of "what arrived this period". `closedInWindowCount` is
+  // the sample size driving every tile in the scorecard.
   const totalRecovered = parseFloat(insights?.totalRecoveredAmount ?? "0") || 0;
+  const confirmedRecovered = parseFloat(insights?.confirmedRecoveredAmount ?? "0") || 0;
   const totalDisputed = parseFloat(insights?.totalClaimedAmount ?? "0") || 0;
   const priorRecovered = parseFloat(insights?.priorPeriodRecoveredAmount ?? "0") || 0;
   const atRiskAmount = parseFloat(insights?.atRiskAmount ?? "0") || 0;
   const atRiskGroupCount = insights?.atRiskGroupCount ?? 0;
+  const closedInWindowCount = insights?.closedInWindowCount ?? 0;
   // Driver-prepay exposure tile (Task #729). Task #720 stripped the
   // ×1.7 multiplier off the Dashboard so its at-risk tile matches
   // Insights/daily-brief one-for-one. Operators still need to see the
@@ -189,7 +196,16 @@ export default function Insights() {
   const vendorPrepayPct = Math.round(vendorPrepayRate * 100);
   const recoveryRate = totalDisputed > 0 ? Math.round((totalRecovered / totalDisputed) * 100) : null;
   const netChange = totalRecovered - priorRecovered;
-  const netChangePct = priorRecovered > 0 ? Math.round((netChange / priorRecovered) * 100) : null;
+  // Cap displayed % delta at ±999% so prior=$1 → +$10k doesn't render
+  // as "+1,000,000%" and dominate the row visually. The raw signed
+  // dollar value still tells the real story; the % is just a sanity
+  // cue. Null when prior is 0 (delta is undefined, not infinite).
+  const netChangePctRaw = priorRecovered > 0 ? Math.round((netChange / priorRecovered) * 100) : null;
+  const netChangePct =
+    netChangePctRaw === null
+      ? null
+      : Math.max(-999, Math.min(999, netChangePctRaw));
+  const netChangePctCapped = netChangePctRaw !== null && netChangePctRaw !== netChangePct;
   const netChangeTone: "green" | "red" | "muted" = netChange > 0 ? "green" : netChange < 0 ? "red" : "muted";
   const netChangeSign = netChange > 0 ? "+" : "";
 
@@ -293,10 +309,16 @@ export default function Insights() {
     }));
     const entries = rows.sort((a, b) => b.denied - a.denied).slice(0, 6);
     const maxDenied = entries.reduce((m, e) => Math.max(m, e.denied), 0) || 1;
-    const totalForPct = (insights?.totalClaims ?? 0) || rows.reduce((s, e) => s + e.count, 0) || 1;
+    // % is "share of $ DENIED" — the same axis the ranking is on. The
+    // old denominator was `totalClaims` (all claims, including
+    // approvals and pending) so a denial cause that owned 100% of the
+    // dollar bleed could still read "3%" because most legs weren't
+    // denials. Using denied $ as the denominator makes the row read
+    // "this cause is responsible for X% of the bleed".
+    const totalDeniedForPct = rows.reduce((s, e) => s + e.denied, 0) || 1;
     return entries.map(e => ({
       ...e,
-      pct: Math.round((e.count / totalForPct) * 100),
+      pct: Math.round((e.denied / totalDeniedForPct) * 100),
       barPct: Math.round((e.denied / maxDenied) * 100),
     }));
   }, [insights?.errorTypeBreakdown, insights?.totalClaims]);
@@ -424,22 +446,26 @@ export default function Insights() {
       >
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="money-scorecard">
           <MetricTile
-            label="Disputed (window)"
+            label="Disputed (resolved window)"
             value={clerk ? "—" : formatCurrency(String(totalDisputed))}
-            sub={`Σ claim $ · last ${days}d`}
+            sub={`Σ invoice $ on ${closedInWindowCount} resolved · last ${days}d`}
             tone="muted"
           />
           <MetricTile
-            label="Recovered (window)"
+            label="Recovered (resolved window)"
             value={clerk ? "—" : formatCurrency(String(totalRecovered))}
-            sub={`Settled-positive · last ${days}d`}
+            sub={
+              clerk
+                ? undefined
+                : `Confirmed: ${formatCompactCurrency(confirmedRecovered)} · last ${days}d`
+            }
             tone="green"
           />
           <MetricTile
-            label="At risk (now)"
+            label="Outstanding (now)"
             value={clerk ? "—" : formatCurrency(String(atRiskAmount))}
-            sub={`${atRiskGroupCount} open invoice${atRiskGroupCount === 1 ? "" : "s"}`}
-            tone="red"
+            sub={`${atRiskGroupCount} open invoice${atRiskGroupCount === 1 ? "" : "s"} · snapshot`}
+            tone="amber"
           />
           {!clerk && (
             <div data-testid="tile-driver-prepay-exposure">
@@ -461,8 +487,8 @@ export default function Insights() {
           <MetricTile
             label="Recovery rate"
             value={clerk ? "—" : recoveryRate === null ? "—" : `${recoveryRate}%`}
-            sub={clerk ? undefined : "Recovered ÷ Disputed"}
-            tone={recoveryRate === null ? "muted" : recoveryRate >= 70 ? "green" : recoveryRate >= 40 ? "amber" : "red"}
+            sub={clerk ? undefined : `Recovered ÷ Disputed · ${closedInWindowCount} resolved`}
+            tone={recoveryRate === null ? "muted" : recoveryRate >= 75 ? "green" : recoveryRate >= 50 ? "amber" : "red"}
           />
           <MetricTile
             label="Net change vs prior window"
@@ -478,14 +504,14 @@ export default function Insights() {
                 ? undefined
                 : netChangePct === null
                   ? "No prior-window recovery"
-                  : `${netChangeSign}${netChangePct}% vs prior ${days}d`
+                  : `${netChangeSign}${netChangePct}%${netChangePctCapped ? "+" : ""} vs prior ${days}d`
             }
             tone={netChangeTone}
           />
         </div>
         <div className="mt-3 text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <InfoTooltip content="Recovered = settled-positive approved $ created in the window. At risk = current open invoice exposure (snapshot, not windowed). These match the Dashboard tiles by definition." />
-          <span>Definitions match the Dashboard and the daily brief.</span>
+          <InfoTooltip content="Every money/outcome figure on this page is anchored on resolution time — i.e. invoices that entered phase=closed inside the window. The Dashboard top strip uses the same definitions for the same window length, so the two surfaces always reconcile. Confirmed = the slice of Recovered where re-attestation has actually completed." />
+          <span>Resolved-in-window. Definitions match the Dashboard and the daily brief.</span>
         </div>
       </Section>
 
@@ -504,11 +530,19 @@ export default function Insights() {
         }
       >
         {(() => {
-          const totalForBar = PIPELINE_PHASE_META.reduce((s, p) => s + (pipelineByKey.get(p.key)?.count ?? 0), 0) || 1;
+          // Snapshot bar shows ONLY currently-open phases. The `closed`
+          // bucket is windowed (resolved-in-window), not a snapshot —
+          // mixing it into the segmented bar made the funnel read as
+          // "open + ancient closed forever" and visually drowned the
+          // open phases. Closed-in-window is surfaced beside the bar
+          // as its own stat instead.
+          const openPhases = PIPELINE_PHASE_META.filter(p => p.key !== "closed");
+          const totalForBar = openPhases.reduce((s, p) => s + (pipelineByKey.get(p.key)?.count ?? 0), 0) || 1;
+          const closedRow = pipelineByKey.get("closed");
           return (
             <div data-testid="pipeline-snapshot">
-              <div className="flex h-7 w-full rounded-md overflow-hidden border border-border" role="img" aria-label="Pipeline funnel by macro phase">
-                {PIPELINE_PHASE_META.map(p => {
+              <div className="flex h-7 w-full rounded-md overflow-hidden border border-border" role="img" aria-label="Pipeline funnel by macro phase (currently open)">
+                {openPhases.map(p => {
                   const row = pipelineByKey.get(p.key);
                   const count = row?.count ?? 0;
                   if (count === 0) return null;
@@ -527,6 +561,16 @@ export default function Insights() {
                     </Link>
                   );
                 })}
+              </div>
+              <div className="mt-2 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="pipeline-closed-in-window">
+                <span>
+                  Closed in last {days}d:{" "}
+                  <strong className="text-foreground tabular-nums">{closedRow?.count ?? 0}</strong> invoice{closedRow?.count === 1 ? "" : "s"}
+                  {!clerk && (closedRow?.openAmount ?? 0) > 0 && (
+                    <> · <strong className="text-foreground tabular-nums">{formatCompactCurrency(closedRow?.openAmount ?? 0)}</strong></>
+                  )}
+                </span>
+                <InfoTooltip content="Snapshot bar shows currently-open invoices by macro phase. The 'Closed in last Nd' line is window-scoped (resolved-in-window) — i.e. the throughput of the funnel over the selected period. Together they read as 'open now → closed in window'." />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3" data-testid="pipeline-legend">
                 {PIPELINE_PHASE_META.map(p => {
@@ -828,7 +872,7 @@ export default function Insights() {
                       textAlign: "right",
                       color: winRate === null ? "hsl(var(--muted-foreground))" : winRate >= 0.6 ? "hsl(var(--cc-success))" : "hsl(var(--destructive))",
                     }}
-                    title="Approved + Partially Approved / decided invoices created in window"
+                    title="Approved + Partially Approved / all decided invoices RESOLVED in window"
                   >
                     {winRate === null ? "—" : `${Math.round(winRate * 100)}%`}
                   </span>

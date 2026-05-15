@@ -30,6 +30,7 @@ const baseSummary: CanonicalSummary = {
     atRiskExposure: "0.00",
     atRiskGroups: 0,
     recoveredAmount: "0.00",
+    confirmedRecoveredAmount: "0.00",
     priorRecoveredAmount: "0.00",
     recoveryRate: 0,
     netChangeRecovered: "0.00",

@@ -12,6 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { DashboardSummaryAmounts } from "./dashboardSummaryAmounts";
+import type { DashboardSummaryClosedOutcomes } from "./dashboardSummaryClosedOutcomes";
 import type { DashboardSummaryPipeline } from "./dashboardSummaryPipeline";
 import type { DashboardSummaryPortalStats } from "./dashboardSummaryPortalStats";
 import type { DashboardSummaryPortalWorker } from "./dashboardSummaryPortalWorker";
@@ -23,6 +24,15 @@ export interface DashboardSummary {
   pipeline: DashboardSummaryPipeline;
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
+  /** Counts of invoice groups that ENTERED `phase=closed` inside
+the canonical Dashboard window (`amounts.windowDays`),
+broken out by outcome bucket. Backs the Dashboard
+"Closed-out outcomes (last Nd)" panel so the operator can
+see the recovery-rate denominator decomposed in the same
+place the rate is shown. `total` = sum of all buckets =
+count of groups whose phase entered `closed` in window.
+ */
+  closedOutcomes?: DashboardSummaryClosedOutcomes;
   expiringGroups: ExpiringInvoiceGroup[];
   /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). Pre-submit only — i.e. the group's status is in the on-clock actionable set (`New`, `Needs Evidence`, `On Hold`, `Generating Email`). Submitted-but-stuck groups are partitioned into `submittedStuckCount` instead so the dashboard's two tiers add up cleanly. */
   urgentCount: number;

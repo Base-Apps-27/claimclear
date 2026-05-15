@@ -29458,47 +29458,60 @@ export const GetDashboardSummaryResponse = zod.object({
       ),
   }),
   amounts: zod.object({
-    totalClaimed: zod.string(),
-    totalApproved: zod.string(),
-    totalExposure: zod
-      .string()
+    totalClaimed: zod
+      .union([zod.string(), zod.null()])
+      .optional()
       .describe(
-        "Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment)",
+        "`null` for clerk-role users (money scrubbed via `scrubDashboardAmounts`).",
+      ),
+    totalApproved: zod
+      .union([zod.string(), zod.null()])
+      .optional()
+      .describe("`null` for clerk-role users."),
+    totalExposure: zod
+      .union([zod.string(), zod.null()])
+      .optional()
+      .describe(
+        "Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment). `null` for clerk-role users.",
       ),
     totalLost: zod
-      .string()
+      .union([zod.string(), zod.null()])
+      .optional()
       .describe(
-        "Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover.",
+        "Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. `null` for clerk-role users.",
       ),
     vendorPrepayRate: zod
       .number()
+      .optional()
       .describe("Vendor prepayment rate (0.70 = 70%)"),
     atRiskClaim: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn \/ non-issue and any deadline-missed rows.",
+        "Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn \/ non-issue and any deadline-missed rows. `null` for clerk-role users.",
       ),
     atRiskExposure: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line).",
+        "atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). `null` for clerk-role users.",
       ),
     atRiskGroups: zod
       .number()
       .optional()
       .describe("Count of invoice groups in the at-risk bucket."),
     lostExpiredClaim: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file.",
+        "Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. `null` for clerk-role users.",
       ),
     lostExpiredExposure: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
-      .describe("lostExpiredClaim × (1 + vendorPrepayRate)."),
+      .describe(
+        "lostExpiredClaim × (1 + vendorPrepayRate). `null` for clerk-role users.",
+      ),
     lostExpiredGroups: zod
       .number()
       .optional()
@@ -29506,74 +29519,94 @@ export const GetDashboardSummaryResponse = zod.object({
         "Count of invoice groups in the expired\/aged-out lost bucket.",
       ),
     lostDeniedClaim: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "Sum of (totalAmount − approvedAmount) on rows with outcome Denied \/ Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome.",
+        "Sum of (totalAmount − approvedAmount) on rows with outcome Denied \/ Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. `null` for clerk-role users.",
       ),
     lostDeniedExposure: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
-      .describe("lostDeniedClaim × (1 + vendorPrepayRate)."),
+      .describe(
+        "lostDeniedClaim × (1 + vendorPrepayRate). `null` for clerk-role users.",
+      ),
     lostDeniedGroups: zod
       .number()
       .optional()
       .describe("Count of invoice groups in the denied lost bucket."),
     lostExposureTotal: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display.",
+        "lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. `null` for clerk-role users.",
       ),
     reclaimedApproved: zod
-      .string()
+      .union([zod.string(), zod.null()])
       .optional()
       .describe(
-        "Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved \/ Partially Approved) AND no leg is still in pending\/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss.",
+        "Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved \/ Partially Approved) AND no leg is still in pending\/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. `null` for clerk-role users.",
       ),
     windowDays: zod
       .number()
-      .optional()
       .describe(
         "Task #720. Length in days of the canonical trailing window the Dashboard top strip uses (currently 7). Declared on the wire so the client can render the tile sub-label (`last 7d` \/ `vs prior 7d`) without hard-coding the window length and so the value reconciles with `\/dashboard\/insights?days=N` and the daily brief.",
       ),
     openInvoices: zod
       .number()
-      .optional()
       .describe(
         "Task #720. Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time.",
       ),
     disputedAmount: zod
-      .string()
-      .optional()
+      .union([zod.string(), zod.null()])
       .describe(
-        "Task #720. Σ invoice_groups.totalAmount over groups created in the trailing `windowDays` (default 7). Mirrors the Insights `totalClaimedAmount` definition for the same window so the Dashboard recovery-rate denominator matches Insights exactly.",
+        "Σ invoice_groups.totalAmount over groups RESOLVED in the trailing `windowDays` (`phase = 'closed' AND phaseEnteredAt IN window`) AND outcome ∈ {Approved, Partially Approved, Denied, Withdrawn} — i.e. real disputes, excluding Pending \/ Non-Issue \/ No Action Needed. Recovery-rate denominator. Mirrors the Insights `totalClaimedAmount` for the same window. `null` for clerk-role users (money is scrubbed for low-trust roles via `scrubDashboardAmounts`).",
       ),
     recoveredAmount: zod
-      .string()
-      .optional()
+      .union([zod.string(), zod.null()])
       .describe(
-        "Task #720. Σ invoice_groups.approvedAmount over groups created in the trailing `windowDays`. Mirrors the Insights `totalRecoveredAmount` definition for the same window so the Dashboard 'Recovered $' tile reconciles with the Insights money scorecard.",
+        "Σ invoice_groups.approvedAmount over groups RESOLVED in the trailing `windowDays` AND outcome ∈ {Approved, Partially Approved}. Mirrors the Insights `totalRecoveredAmount`. Recovery is recorded at resolution-time so an Approved invoice immediately moves dollars from Outstanding into Recovered (morale + reporting); the `confirmedRecoveredAmount` sub-line carries the attestation-confirmed slice. `null` for clerk-role users.",
+      ),
+    confirmedRecoveredAmount: zod
+      .union([zod.string(), zod.null()])
+      .describe(
+        "Σ approvedAmount on resolved-in-window approvals whose payor re-attestation has actually completed (`reattestCompletedAt IS NOT NULL`). Sub-line under the Recovered tile so the operator can distinguish 'won on paper' from 'paid back in the portal'. `null` for clerk-role users.",
       ),
     priorRecoveredAmount: zod
-      .string()
-      .optional()
+      .union([zod.string(), zod.null()])
       .describe(
-        "Task #720. Same as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`). Drives the Dashboard 'Net change vs prior 7d' tile.",
+        "Same definition as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`, anchored on `phaseEnteredAt`). Drives the 'Net change vs prior' tile. `null` for clerk-role users.",
       ),
     recoveryRate: zod
       .union([zod.number(), zod.null()])
-      .optional()
       .describe(
-        "Task #720. recoveredAmount \/ disputedAmount × 100, rounded to the nearest integer percent. `null` when `disputedAmount` is zero — the rate is undefined for an empty window, not zero.",
+        "recoveredAmount \/ disputedAmount × 100, rounded to the nearest integer percent server-side. `null` when no disputes resolved in the window — the rate is undefined for an empty window, not zero. Also `null` for clerk-role users (no denominator visible → rate is meaningless).",
       ),
     netChangeRecovered: zod
-      .string()
-      .optional()
+      .union([zod.string(), zod.null()])
       .describe(
-        "Task #720. recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length.",
+        "recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. `null` for clerk-role users.",
       ),
   }),
+  closedOutcomes: zod
+    .object({
+      approved: zod.number(),
+      partiallyApproved: zod.number(),
+      denied: zod.number(),
+      withdrawn: zod.number(),
+      expired: zod
+        .number()
+        .describe(
+          "Resolved-in-window groups whose status is `Expired` (deadline-sweep closure). Surfaced explicitly so the deadline-loss path is visible alongside the outcome buckets.",
+        ),
+      nonIssue: zod.number(),
+      noActionNeeded: zod.number(),
+      total: zod.number(),
+      windowDays: zod.number(),
+    })
+    .optional()
+    .describe(
+      'Counts of invoice groups that ENTERED `phase=closed` inside\nthe canonical Dashboard window (`amounts.windowDays`),\nbroken out by outcome bucket. Backs the Dashboard\n\"Closed-out outcomes (last Nd)\" panel so the operator can\nsee the recovery-rate denominator decomposed in the same\nplace the rate is shown. `total` = sum of all buckets =\ncount of groups whose phase entered `closed` in window.\n',
+    ),
   expiringGroups: zod.array(
     zod.object({
       id: zod.number(),
@@ -30359,21 +30392,37 @@ export const GetDashboardInsightsResponse = zod
     days: zod.number(),
     totalClaims: zod
       .number()
-      .describe("Exact count of claims with `created_at` inside the window."),
-    totalClaimedAmount: zod
-      .string()
-      .nullable()
-      .describe("Σ `claim_amount` across all claims in the window."),
-    totalRecoveredAmount: zod
-      .string()
-      .nullable()
       .describe(
-        "Σ `approved_amount` across claims whose outcome is Approved\nor Partially Approved AND whose re-attestation has settled\n(`attestation_state IN ('completed','not_required')`).\nMirrors the dashboard \"Reclaimed\" KPI definition exactly.\n",
+        "Exact count of claims with `created_at` inside the window (workload arrival, not resolution).",
       ),
+    totalClaimedAmount: zod
+      .union([zod.string(), zod.null()])
+      .describe(
+        "Σ invoice_groups.totalAmount over groups RESOLVED in the\nwindow AND outcome ∈ {Approved, Partially Approved, Denied,\nWithdrawn} — i.e. real disputes, excluding Pending \/\nNon-Issue \/ No Action Needed. This is the recovery-rate\ndenominator and mirrors `\/dashboard\/summary.amounts.disputedAmount`.\n",
+      ),
+    totalRecoveredAmount: zod
+      .union([zod.string(), zod.null()])
+      .describe(
+        "Σ invoice_groups.approvedAmount over groups RESOLVED in the\nwindow AND outcome ∈ {Approved, Partially Approved}.\nMirrors `\/dashboard\/summary.amounts.recoveredAmount`. Sub-line\nfield `confirmedRecoveredAmount` carries the slice that has\nalso completed re-attestation.\n",
+      ),
+    confirmedRecoveredAmount: zod
+      .union([zod.string(), zod.null()])
+      .describe(
+        'Σ approvedAmount on resolved-in-window approvals whose\npayor re-attestation has actually completed\n(`reattestCompletedAt IS NOT NULL`). Mirrors the Dashboard\n\"Confirmed\" sub-line.\n',
+      ),
+    closedInWindowCount: zod
+      .number()
+      .describe(
+        "Count of invoice groups that entered phase=closed inside\nthe window — the universe behind every money\/outcome\nnumber on this page. Surfaced so the operator knows the\nsample size driving the recovery-rate \/ outcome-mix tiles.\n",
+      ),
+    closedInWindowAmount: zod
+      .union([zod.string(), zod.null()])
+      .describe("Σ totalAmount of `closedInWindowCount` groups."),
     totalDeniedAmount: zod
-      .string()
-      .nullable()
-      .describe("Σ `claim_amount` across claims with outcome=Denied."),
+      .union([zod.string(), zod.null()])
+      .describe(
+        "Σ `claim_amount` across claims belonging to invoice groups\nRESOLVED in the active window (`phase=closed AND\nphaseEnteredAt IN window`) whose `outcome='Denied'`.\nResolution-anchored so it lines up with `totalRecoveredAmount`\nand the closed-in-window outcome panel.\n",
+      ),
     statusBreakdown: zod.array(
       zod.object({
         status: zod.string(),
@@ -30387,14 +30436,12 @@ export const GetDashboardInsightsResponse = zod
       }),
     ),
     priorPeriodRecoveredAmount: zod
-      .string()
-      .nullable()
+      .union([zod.string(), zod.null()])
       .describe(
-        'Settled-positive Σ approved across claims created in the\nequal-length window immediately preceding the active one.\nPowers the \"Net change vs prior window\" tile on the CFO\nMoney scorecard.\n',
+        'Σ invoice_groups.approvedAmount over groups RESOLVED in\nthe equal-length window IMMEDIATELY PRECEDING the active\none (`phase=closed AND phaseEnteredAt IN prior window`)\nwith outcome ∈ {Approved, Partially Approved}. Powers the\n\"Net change vs prior window\" tile on the CFO Money\nscorecard. Resolution-anchored to mirror `totalRecoveredAmount`.\n',
       ),
     atRiskAmount: zod
-      .string()
-      .nullable()
+      .union([zod.string(), zod.null()])
       .describe(
         "Snapshot (NOT windowed) of currently open invoice exposure:\nΣ (`invoice_groups.totalAmount` − `approvedAmount`) over\ninvoice groups still in flight (outcome not Withdrawn \/\nNon-Issue, deadline not missed, phase not closed OR a\nre-attestation is still pending). Mirrors the open-exposure\npredicate used by `\/dashboard\/summary.amounts.atRiskClaim`\nbut at INVOICE grain.\n",
       ),
@@ -30412,15 +30459,14 @@ export const GetDashboardInsightsResponse = zod
           ]),
           count: zod.number(),
           openAmount: zod
-            .string()
-            .nullable()
+            .union([zod.string(), zod.null()])
             .describe(
               "Σ `totalAmount` for invoices in this phase, or null for clerks.",
             ),
         }),
       )
       .describe(
-        "Snapshot rollup of currently open invoices by macro phase.\nAlways returns the same four entries in pipeline order:\n`pre-submit`, `in-flight`, `response-pending`, `closed`.\n`pre-submit` folds in On-Hold groups; `response-pending`\nfolds in MAS-required and awaiting-payout. `closed`\nrepresents in-window resolved invoices for funnel context.\n",
+        'Pipeline funnel — three SNAPSHOT phases of currently-open\ninvoices (`pre-submit`, `in-flight`, `response-pending`)\nplus a fourth WINDOWED `closed` phase for funnel context.\n`pre-submit` folds in On-Hold groups; `response-pending`\nfolds in MAS-required and awaiting-payout. `closed.count`\nand `closed.openAmount` equal `closedInWindowCount` \/\n`closedInWindowAmount` respectively — surfaced inside the\nfunnel so the operator can read \"open now → closed in\nwindow\" without leaving the chart, and surfaced as\ntop-level fields so callers can render the windowed\nsummary independently of the snapshot bars.\n',
       ),
     payorConcentrationByGroup: zod
       .array(
@@ -30432,11 +30478,10 @@ export const GetDashboardInsightsResponse = zod
           invoiceCountInWindow: zod
             .number()
             .describe(
-              "Number of invoices CREATED in the active window touching this payor.",
+              "Number of invoices RESOLVED in the active window touching this payor (denominator + numerator universe for `winRate`).",
             ),
           openAtRiskAmount: zod
-            .string()
-            .nullable()
+            .union([zod.string(), zod.null()])
             .describe(
               "Σ open at-risk $ for this payor's currently open invoices.",
             ),
@@ -30444,12 +30489,12 @@ export const GetDashboardInsightsResponse = zod
             .number()
             .nullable()
             .describe(
-              "(Approved + Partially Approved) \/ (Approved +\nPartially Approved + Denied), counted over invoices\nCREATED in the active window. `null` when no decided\ninvoices fall in the window.\n",
+              "(Approved + Partially Approved) \/ (Approved +\nPartially Approved + Denied), counted over invoices\nRESOLVED in the active window (`phase=closed AND\nphaseEnteredAt IN window`). `null` when no decided\ninvoices fall in the window.\n",
             ),
         }),
       )
       .describe(
-        "Top 5 payors by open at-risk $ at INVOICE grain. Each row\ncounts distinct invoice groups (not legs) and a\nwindow-scoped win-rate over invoices created in the active\nwindow.\n",
+        "Top 5 payors by open at-risk $ at INVOICE grain. Each row\ncounts distinct invoice groups (not legs). The win-rate is\nscoped to invoices RESOLVED in the active window\n(`phase=closed AND phaseEnteredAt IN window`) so it tracks\nthe decisions the payor handed back this period rather\nthan the inbox of freshly arrived disputes.\n",
       ),
     groupOutcomeBreakdown: zod
       .array(
@@ -30467,7 +30512,7 @@ export const GetDashboardInsightsResponse = zod
         }),
       )
       .describe(
-        'Invoice-level (not claim-level) outcome rollup, computed\nfrom `invoice_groups.outcome` over groups whose\n`created_at` is in the window. Always returns the same\nseven buckets in this order: `Approved`, `Partially\nApproved`, `Denied`, `Withdrawn`, `Pending`, `Non-Issue`,\n`No Action Needed`. Counts sum to total invoice groups in\nthe window. Task #712 split out the legacy \"Mixed\"\npseudo-bucket; Task #714 added \"No Action Needed\".\n',
+        'Invoice-level (not claim-level) outcome rollup, computed\nfrom `invoice_groups.outcome` over groups RESOLVED in the\nwindow (`phase=closed AND phaseEnteredAt IN window`) so it\nanswers \"how did the disputes we closed this period turn\nout\". Always returns the same seven buckets in this order:\n`Approved`, `Partially Approved`, `Denied`, `Withdrawn`,\n`Pending`, `Non-Issue`, `No Action Needed`. In practice the\n`Pending` bucket is empty because Pending groups have not\nyet hit phase=closed; it stays in the contract for shape\nstability.\n',
       ),
     errorTypeBreakdown: zod.array(
       zod.object({
@@ -30478,14 +30523,12 @@ export const GetDashboardInsightsResponse = zod
           ),
         count: zod.number(),
         recoveredAmount: zod
-          .string()
-          .nullable()
+          .union([zod.string(), zod.null()])
           .describe("Settled-positive Σ approved for this error type."),
         deniedAmount: zod
-          .string()
-          .nullable()
+          .union([zod.string(), zod.null()])
           .describe(
-            "Σ claim_amount for outcome=Denied claims of this error type.",
+            "Σ claim_amount for outcome=Denied claims of this error type, scoped to claims belonging to invoice groups RESOLVED in the active window.",
           ),
       }),
     ),
@@ -30498,14 +30541,13 @@ export const GetDashboardInsightsResponse = zod
           ),
         count: zod.number(),
         atRiskAmount: zod
-          .string()
-          .nullable()
+          .union([zod.string(), zod.null()])
           .describe("Σ claim_amount for outcome=Denied claims at this payor."),
       }),
     ),
   })
   .describe(
-    "Server-side aggregations for the Insights page. All numeric\nbreakdowns (`statusBreakdown`, `outcomeBreakdown`,\n`errorTypeBreakdown`, `payorBreakdown`) are exact counts over\nevery claim in the window — no sample cap. Money string fields\nare decimal-formatted with 2 decimal places, or `null` for\nclerks who don't see amounts.\n",
+    'Server-side aggregations for the Insights page. Money totals\nand outcome rollups are anchored on the resolution moment\n(`phase = \'closed\' AND phaseEnteredAt IN window`) so they\nanswer \"how did the disputes we closed this period turn out\".\nWorkload counts (`totalClaims`, `statusBreakdown`,\n`errorTypeBreakdown.count`, `payorBreakdown`) stay anchored on\n`created_at` because they answer the \"what arrived this period\"\nquestion. Money string fields are decimal-formatted with 2\ndecimal places, or `null` for clerks who don\'t see amounts.\n',
   );
 
 /**

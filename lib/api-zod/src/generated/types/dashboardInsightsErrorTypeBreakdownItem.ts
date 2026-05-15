@@ -18,6 +18,6 @@ export type DashboardInsightsErrorTypeBreakdownItem = {
   count: number;
   /** Settled-positive Σ approved for this error type. */
   recoveredAmount: string | null;
-  /** Σ claim_amount for outcome=Denied claims of this error type. */
+  /** Σ claim_amount for outcome=Denied claims of this error type, scoped to claims belonging to invoice groups RESOLVED in the active window. */
   deniedAmount: string | null;
 };

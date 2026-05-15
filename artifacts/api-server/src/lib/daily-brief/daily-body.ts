@@ -83,9 +83,22 @@ function renderKpiStrip(
   // substitute an unrelated pipeline number.
   const reviewValue = reviewCount ? String(reviewCount.count) : "—";
   const tiles: KpiTile[] = [
-    { label: "Open invoices", value: String(summary.amounts.openInvoices) },
     {
-      label: "At-risk $",
+      // Renamed from "Open invoices" to match the Dashboard hero
+      // tile, which now reads "At-risk invoices" (amber) so the
+      // operator can reconcile the brief with what they see on
+      // screen. Same underlying field (`amounts.openInvoices` =
+      // `amounts.atRiskGroups` count) — only the label changed.
+      label: "At-risk invoices",
+      value: String(summary.amounts.openInvoices),
+      emphasis: summary.amounts.openInvoices > 0 ? "warn" : "default",
+    },
+    {
+      // Renamed from "At-risk $" to "Outstanding $" to match the
+      // Dashboard amber tile that now sits next to "At-risk
+      // invoices". Same field underneath (`atRiskExposure` =
+      // claim + vendor-prepay still on the line).
+      label: "Outstanding $",
       value: money(summary.amounts.atRiskExposure),
       hint: `${summary.amounts.atRiskGroups} groups`,
       emphasis: summary.amounts.atRiskGroups > 0 ? "warn" : "default",

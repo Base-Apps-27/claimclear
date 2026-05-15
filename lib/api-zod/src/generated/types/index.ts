@@ -165,6 +165,7 @@ export * from "./dashboardInsightsStatusBreakdownItem";
 export * from "./dashboardRepeatOffenders";
 export * from "./dashboardSummary";
 export * from "./dashboardSummaryAmounts";
+export * from "./dashboardSummaryClosedOutcomes";
 export * from "./dashboardSummaryPipeline";
 export * from "./dashboardSummaryPortalStats";
 export * from "./dashboardSummaryPortalWorker";

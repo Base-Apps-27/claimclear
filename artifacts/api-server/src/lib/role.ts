@@ -94,6 +94,7 @@ const DASHBOARD_AMOUNT_FIELDS = [
   // it for clerks alongside the dollar fields.
   "disputedAmount",
   "recoveredAmount",
+  "confirmedRecoveredAmount",
   "priorRecoveredAmount",
   "netChangeRecovered",
   "recoveryRate",

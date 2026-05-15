@@ -13,48 +13,52 @@ understanding readback / preview generation) instead.
  */
 
 export type DashboardSummaryAmounts = {
-  totalClaimed: string;
-  totalApproved: string;
-  /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment) */
-  totalExposure: string;
-  /** Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. */
-  totalLost: string;
+  /** `null` for clerk-role users (money scrubbed via `scrubDashboardAmounts`). */
+  totalClaimed?: string | null;
+  /** `null` for clerk-role users. */
+  totalApproved?: string | null;
+  /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment). `null` for clerk-role users. */
+  totalExposure?: string | null;
+  /** Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. `null` for clerk-role users. */
+  totalLost?: string | null;
   /** Vendor prepayment rate (0.70 = 70%) */
-  vendorPrepayRate: number;
-  /** Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn / non-issue and any deadline-missed rows. */
-  atRiskClaim?: string;
-  /** atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). */
-  atRiskExposure?: string;
+  vendorPrepayRate?: number;
+  /** Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn / non-issue and any deadline-missed rows. `null` for clerk-role users. */
+  atRiskClaim?: string | null;
+  /** atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). `null` for clerk-role users. */
+  atRiskExposure?: string | null;
   /** Count of invoice groups in the at-risk bucket. */
   atRiskGroups?: number;
-  /** Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. */
-  lostExpiredClaim?: string;
-  /** lostExpiredClaim × (1 + vendorPrepayRate). */
-  lostExpiredExposure?: string;
+  /** Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. `null` for clerk-role users. */
+  lostExpiredClaim?: string | null;
+  /** lostExpiredClaim × (1 + vendorPrepayRate). `null` for clerk-role users. */
+  lostExpiredExposure?: string | null;
   /** Count of invoice groups in the expired/aged-out lost bucket. */
   lostExpiredGroups?: number;
-  /** Sum of (totalAmount − approvedAmount) on rows with outcome Denied / Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. */
-  lostDeniedClaim?: string;
-  /** lostDeniedClaim × (1 + vendorPrepayRate). */
-  lostDeniedExposure?: string;
+  /** Sum of (totalAmount − approvedAmount) on rows with outcome Denied / Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. `null` for clerk-role users. */
+  lostDeniedClaim?: string | null;
+  /** lostDeniedClaim × (1 + vendorPrepayRate). `null` for clerk-role users. */
+  lostDeniedExposure?: string | null;
   /** Count of invoice groups in the denied lost bucket. */
   lostDeniedGroups?: number;
-  /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. */
-  lostExposureTotal?: string;
-  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
-  reclaimedApproved?: string;
+  /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. `null` for clerk-role users. */
+  lostExposureTotal?: string | null;
+  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. `null` for clerk-role users. */
+  reclaimedApproved?: string | null;
   /** Task #720. Length in days of the canonical trailing window the Dashboard top strip uses (currently 7). Declared on the wire so the client can render the tile sub-label (`last 7d` / `vs prior 7d`) without hard-coding the window length and so the value reconciles with `/dashboard/insights?days=N` and the daily brief. */
-  windowDays?: number;
+  windowDays: number;
   /** Task #720. Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time. */
-  openInvoices?: number;
-  /** Task #720. Σ invoice_groups.totalAmount over groups created in the trailing `windowDays` (default 7). Mirrors the Insights `totalClaimedAmount` definition for the same window so the Dashboard recovery-rate denominator matches Insights exactly. */
-  disputedAmount?: string;
-  /** Task #720. Σ invoice_groups.approvedAmount over groups created in the trailing `windowDays`. Mirrors the Insights `totalRecoveredAmount` definition for the same window so the Dashboard 'Recovered $' tile reconciles with the Insights money scorecard. */
-  recoveredAmount?: string;
-  /** Task #720. Same as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`). Drives the Dashboard 'Net change vs prior 7d' tile. */
-  priorRecoveredAmount?: string;
-  /** Task #720. recoveredAmount / disputedAmount × 100, rounded to the nearest integer percent. `null` when `disputedAmount` is zero — the rate is undefined for an empty window, not zero. */
-  recoveryRate?: number | null;
-  /** Task #720. recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. */
-  netChangeRecovered?: string;
+  openInvoices: number;
+  /** Σ invoice_groups.totalAmount over groups RESOLVED in the trailing `windowDays` (`phase = 'closed' AND phaseEnteredAt IN window`) AND outcome ∈ {Approved, Partially Approved, Denied, Withdrawn} — i.e. real disputes, excluding Pending / Non-Issue / No Action Needed. Recovery-rate denominator. Mirrors the Insights `totalClaimedAmount` for the same window. `null` for clerk-role users (money is scrubbed for low-trust roles via `scrubDashboardAmounts`). */
+  disputedAmount: string | null;
+  /** Σ invoice_groups.approvedAmount over groups RESOLVED in the trailing `windowDays` AND outcome ∈ {Approved, Partially Approved}. Mirrors the Insights `totalRecoveredAmount`. Recovery is recorded at resolution-time so an Approved invoice immediately moves dollars from Outstanding into Recovered (morale + reporting); the `confirmedRecoveredAmount` sub-line carries the attestation-confirmed slice. `null` for clerk-role users. */
+  recoveredAmount: string | null;
+  /** Σ approvedAmount on resolved-in-window approvals whose payor re-attestation has actually completed (`reattestCompletedAt IS NOT NULL`). Sub-line under the Recovered tile so the operator can distinguish 'won on paper' from 'paid back in the portal'. `null` for clerk-role users. */
+  confirmedRecoveredAmount: string | null;
+  /** Same definition as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`, anchored on `phaseEnteredAt`). Drives the 'Net change vs prior' tile. `null` for clerk-role users. */
+  priorRecoveredAmount: string | null;
+  /** recoveredAmount / disputedAmount × 100, rounded to the nearest integer percent server-side. `null` when no disputes resolved in the window — the rate is undefined for an empty window, not zero. Also `null` for clerk-role users (no denominator visible → rate is meaningless). */
+  recoveryRate: number | null;
+  /** recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. `null` for clerk-role users. */
+  netChangeRecovered: string | null;
 };

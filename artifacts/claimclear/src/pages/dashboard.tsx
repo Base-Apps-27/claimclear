@@ -155,7 +155,7 @@ function toFiniteNumber(v: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-type KpiTone = "neutral" | "danger" | "good";
+type KpiTone = "neutral" | "danger" | "good" | "warning";
 
 function KpiTile({
   label,
@@ -177,7 +177,9 @@ function KpiTile({
       ? "hsl(var(--cc-success))"
       : tone === "danger"
         ? "hsl(var(--destructive))"
-        : "hsl(var(--foreground))";
+        : tone === "warning"
+          ? "hsl(var(--cc-amber-fg))"
+          : "hsl(var(--foreground))";
   return (
     <div className="rounded-md border border-border bg-card p-4" data-testid={testid}>
       <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5 text-muted-foreground flex items-center gap-1">
@@ -665,19 +667,20 @@ export default function Dashboard() {
           vocabulary block at the top of this file. */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3" data-tour="dashboard-kpis">
         <KpiTile
-          label="Open invoices"
+          label="At-risk invoices"
           value={<TickerInt value={amounts.openInvoices ?? amounts.atRiskGroups ?? 0} />}
           sub="invoices · snapshot now"
-          tooltip="Invoice groups currently in the at-risk bucket — same predicate Insights uses for its 'At risk (now)' group count."
+          tone="warning"
+          tooltip="How many invoices are still on the books with money to recover. Snapshot of the at-risk bucket right now — same predicate Insights uses for its 'At risk (now)' group count. This number ticks DOWN as approvals land, not just when invoices age out."
           testid="kpi-open-invoices"
         />
         <HideForClerk>
           <KpiTile
-            label="At risk $"
+            label="Outstanding $"
             value={<TickerCurrency value={amounts.atRiskClaim ?? amounts.totalClaimed} format={formatCurrency} />}
             sub="open invoices · snapshot now"
-            tone="danger"
-            tooltip="Raw open-claim dollars still in flight. Includes in-workflow rows and final-state rows whose re-attestation hasn't settled. Shown raw on this page (no ×1.7 prepay multiplier) so it matches Insights' 'At risk (now)' figure exactly. Driver prepay exposure is reported separately on the Insights / risk pages."
+            tone="warning"
+            tooltip="Dollars still in flight on at-risk invoices right now (snapshot, not windowed). Drops the moment a dispute is approved, withdrawn, or expires. Shown raw on this page — driver prepay exposure is reported separately on Insights."
             testid="kpi-at-risk"
           />
         </HideForClerk>
@@ -686,13 +689,21 @@ export default function Dashboard() {
             label="Recovered $"
             value={<TickerCurrency value={amounts.recoveredAmount ?? "0"} format={formatCurrency} />}
             sub={
-              <span className="inline-flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                last {amounts.windowDays ?? 7}d
-              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="inline-flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3" />
+                  last {amounts.windowDays ?? 7}d
+                </span>
+                <span className="text-[10px] text-muted-foreground" data-testid="kpi-recovered-confirmed">
+                  Confirmed: <TickerCurrency
+                    value={amounts.confirmedRecoveredAmount ?? "0"}
+                    format={formatCurrency}
+                  />
+                </span>
+              </div>
             }
             tone="good"
-            tooltip="Σ approvedAmount over invoice groups created in the trailing window. Mirrors the Insights 'Recovered' definition for the same window so the two surfaces never disagree."
+            tooltip="Σ approvedAmount over invoice groups RESOLVED in the trailing window (Approved or Partially Approved). Recorded at resolution-time so a win moves dollars here immediately. The 'Confirmed' sub-line is the slice where the payor's re-attestation has actually completed — i.e. paid back in the portal, not just won on paper."
             testid="kpi-recovered"
           />
         </HideForClerk>
@@ -705,7 +716,16 @@ export default function Dashboard() {
                 : <><TickerInt value={amounts.recoveryRate} />%</>
             }
             sub={`% · last ${amounts.windowDays ?? 7}d`}
-            tooltip="Recovered $ ÷ Disputed $ over the trailing window, server-rounded to the nearest percent. Shown as '—' when no disputed work arrived in the window (rate is undefined, not zero)."
+            tone={
+              amounts.recoveryRate === null || amounts.recoveryRate === undefined
+                ? "neutral"
+                : amounts.recoveryRate >= 75
+                  ? "good"
+                  : amounts.recoveryRate >= 50
+                    ? "warning"
+                    : "danger"
+            }
+            tooltip="Of the dollars we resolved this window, what fraction came back as Approved / Partially Approved. Server-rounded to the nearest whole percent. Pending / Non-Issue / No-Action invoices are excluded from both sides — only real disputes count. Shown as '—' when nothing closed in the window."
             testid="kpi-recovery-rate"
           />
         </HideForClerk>
@@ -737,41 +757,65 @@ export default function Dashboard() {
         </HideForClerk>
       </div>
 
-      {/* Outcome breakdown — replaces the old single "Already lost" tile.
-          Splits closed-out invoices into the canonical Insights buckets
-          (Denied / Withdrawn / Expired) so operators see WHY money is
-          gone rather than a single conflated dollar figure. Counts come
-          straight from `summary.stats.{denied,withdrawn,expired}`. */}
+      {/* Closed-out outcomes — windowed to summary.amounts.windowDays so
+          this panel decomposes the SAME population that the Recovery
+          Rate tile is computed over. Lifetime counts hid the fact that
+          recoveries this week were drowning in years-old denials. The
+          left three cells (Approved / Partially / Denied) are the
+          recovery-rate denominator (real disputes); Withdrawn /
+          Expired round out closure paths; Pending / Non-Issue /
+          No-Action are intentionally omitted from this panel because
+          they don't move the recovery-rate needle (they're excluded
+          server-side from disputedAmount). `total` matches the count
+          of invoices that entered phase=closed in the window. */}
       <HideForClerk>
-        <div
-          className="rounded-md border border-border bg-card px-4 py-3"
-          data-testid="kpi-outcome-breakdown"
-        >
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-            Closed-out outcomes
-            <InfoTooltip content="Lifetime counts of invoice groups that ended in each canonical bucket Insights uses. Denied = payor said no. Withdrawn = we pulled the dispute. Expired = filing deadline slipped." />
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <div data-testid="outcome-denied">
-              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--destructive))" }}>
-                <TickerInt value={stats.denied ?? 0} />
+        {(() => {
+          const co = summary.closedOutcomes;
+          const wd = co?.windowDays ?? amounts.windowDays ?? 7;
+          return (
+            <div
+              className="rounded-md border border-border bg-card px-4 py-3"
+              data-testid="kpi-outcome-breakdown"
+            >
+              <div className="text-[11px] uppercase tracking-wide font-semibold mb-2 text-muted-foreground flex items-center gap-1">
+                Closed-out outcomes (last {wd}d)
+                <InfoTooltip content={`How the ${co?.total ?? 0} invoice${co?.total === 1 ? "" : "s"} that closed in the last ${wd} days broke down. Approved + Partially Approved = wins on the Recovery rate tile. Denied + Withdrawn + Expired = the dollar bleed. Non-Issue / No-Action are excluded from the Recovery rate calc and not shown here — see Insights for the full mix.`} />
               </div>
-              <div className="text-xs text-muted-foreground">Denied · invoices</div>
-            </div>
-            <div data-testid="outcome-withdrawn">
-              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-amber-fg))" }}>
-                <TickerInt value={stats.withdrawn ?? 0} />
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
+                <div data-testid="outcome-approved">
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-success))" }}>
+                    <TickerInt value={co?.approved ?? 0} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Approved · invoices</div>
+                </div>
+                <div data-testid="outcome-partially-approved">
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-success))" }}>
+                    <TickerInt value={co?.partiallyApproved ?? 0} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Partially · invoices</div>
+                </div>
+                <div data-testid="outcome-denied">
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--destructive))" }}>
+                    <TickerInt value={co?.denied ?? 0} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Denied · invoices</div>
+                </div>
+                <div data-testid="outcome-withdrawn">
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--cc-amber-fg))" }}>
+                    <TickerInt value={co?.withdrawn ?? 0} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Withdrawn · invoices</div>
+                </div>
+                <div data-testid="outcome-expired">
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
+                    <TickerInt value={co?.expired ?? 0} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">Expired · invoices</div>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">Withdrawn · invoices</div>
             </div>
-            <div data-testid="outcome-expired">
-              <div className="text-2xl font-bold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
-                <TickerInt value={stats.expired ?? 0} />
-              </div>
-              <div className="text-xs text-muted-foreground">Expired · invoices</div>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
       </HideForClerk>
 
       {/* TODAY'S WORK — three hero columns: file today / stuck / respond */}

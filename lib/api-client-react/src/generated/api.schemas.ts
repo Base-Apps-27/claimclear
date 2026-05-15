@@ -3419,50 +3419,77 @@ export type DashboardSummaryStats = {
 };
 
 export type DashboardSummaryAmounts = {
-  totalClaimed: string;
-  totalApproved: string;
-  /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment) */
-  totalExposure: string;
-  /** Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. */
-  totalLost: string;
+  /** `null` for clerk-role users (money scrubbed via `scrubDashboardAmounts`). */
+  totalClaimed?: string | null;
+  /** `null` for clerk-role users. */
+  totalApproved?: string | null;
+  /** Total financial exposure per unrecovered claim (claim + ~70% vendor prepayment). `null` for clerk-role users. */
+  totalExposure?: string | null;
+  /** Total claimed dollar amount on invoice groups closed as Denied — money the practice will not recover. `null` for clerk-role users. */
+  totalLost?: string | null;
   /** Vendor prepayment rate (0.70 = 70%) */
-  vendorPrepayRate: number;
-  /** Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn / non-issue and any deadline-missed rows. */
-  atRiskClaim?: string;
-  /** atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). */
-  atRiskExposure?: string;
+  vendorPrepayRate?: number;
+  /** Raw open-claim dollars still in flight (in-workflow rows + final-state rows whose re-attestation hasn't settled). Excludes withdrawn / non-issue and any deadline-missed rows. `null` for clerk-role users. */
+  atRiskClaim?: string | null;
+  /** atRiskClaim × (1 + vendorPrepayRate). The full at-risk exposure (claim + driver prepay both still on the line). `null` for clerk-role users. */
+  atRiskExposure?: string | null;
   /** Count of invoice groups in the at-risk bucket. */
   atRiskGroups?: number;
-  /** Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. */
-  lostExpiredClaim?: string;
-  /** lostExpiredClaim × (1 + vendorPrepayRate). */
-  lostExpiredExposure?: string;
+  /** Total claim dollars on rows whose deadline slipped — literal Expired, On Hold past the 30-day filing deadline, or any row with re-attestation still pending past that same 30-day window from service date. Per the MAS rule, those trips are cancelled regardless of any verdict already on file. `null` for clerk-role users. */
+  lostExpiredClaim?: string | null;
+  /** lostExpiredClaim × (1 + vendorPrepayRate). `null` for clerk-role users. */
+  lostExpiredExposure?: string | null;
   /** Count of invoice groups in the expired/aged-out lost bucket. */
   lostExpiredGroups?: number;
-  /** Sum of (totalAmount − approvedAmount) on rows with outcome Denied / Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. */
-  lostDeniedClaim?: string;
-  /** lostDeniedClaim × (1 + vendorPrepayRate). */
-  lostDeniedExposure?: string;
+  /** Sum of (totalAmount − approvedAmount) on rows with outcome Denied / Partially Approved AND re-attestation already settled. Until re-attest is settled the dollars stay in atRisk — re-attestation can still flip the outcome. `null` for clerk-role users. */
+  lostDeniedClaim?: string | null;
+  /** lostDeniedClaim × (1 + vendorPrepayRate). `null` for clerk-role users. */
+  lostDeniedExposure?: string | null;
   /** Count of invoice groups in the denied lost bucket. */
   lostDeniedGroups?: number;
-  /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. */
-  lostExposureTotal?: string;
-  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. */
-  reclaimedApproved?: string;
+  /** lostExpiredExposure + lostDeniedExposure. Total Already-lost figure for tile display. `null` for clerk-role users. */
+  lostExposureTotal?: string | null;
+  /** Σ approvedAmount on rows that have reached their 'true end' — outcome is a positive verdict (Approved / Partially Approved) AND no leg is still in pending/queued attestation. Until re-attestation settles, the dollars stay in atRisk because the verdict can still flip. Denials contribute $0 by construction. RAW (no prepay multiplier — once approved AND attested, the payor remit washes the prepay through). Approved dollars on rows whose filing deadline slipped are EXCLUDED — they roll into lostExpired above as a full claim loss. `null` for clerk-role users. */
+  reclaimedApproved?: string | null;
   /** Task #720. Length in days of the canonical trailing window the Dashboard top strip uses (currently 7). Declared on the wire so the client can render the tile sub-label (`last 7d` / `vs prior 7d`) without hard-coding the window length and so the value reconciles with `/dashboard/insights?days=N` and the daily brief. */
-  windowDays?: number;
+  windowDays: number;
   /** Task #720. Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time. */
-  openInvoices?: number;
-  /** Task #720. Σ invoice_groups.totalAmount over groups created in the trailing `windowDays` (default 7). Mirrors the Insights `totalClaimedAmount` definition for the same window so the Dashboard recovery-rate denominator matches Insights exactly. */
-  disputedAmount?: string;
-  /** Task #720. Σ invoice_groups.approvedAmount over groups created in the trailing `windowDays`. Mirrors the Insights `totalRecoveredAmount` definition for the same window so the Dashboard 'Recovered $' tile reconciles with the Insights money scorecard. */
-  recoveredAmount?: string;
-  /** Task #720. Same as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`). Drives the Dashboard 'Net change vs prior 7d' tile. */
-  priorRecoveredAmount?: string;
-  /** Task #720. recoveredAmount / disputedAmount × 100, rounded to the nearest integer percent. `null` when `disputedAmount` is zero — the rate is undefined for an empty window, not zero. */
-  recoveryRate?: number | null;
-  /** Task #720. recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. */
-  netChangeRecovered?: string;
+  openInvoices: number;
+  /** Σ invoice_groups.totalAmount over groups RESOLVED in the trailing `windowDays` (`phase = 'closed' AND phaseEnteredAt IN window`) AND outcome ∈ {Approved, Partially Approved, Denied, Withdrawn} — i.e. real disputes, excluding Pending / Non-Issue / No Action Needed. Recovery-rate denominator. Mirrors the Insights `totalClaimedAmount` for the same window. `null` for clerk-role users (money is scrubbed for low-trust roles via `scrubDashboardAmounts`). */
+  disputedAmount: string | null;
+  /** Σ invoice_groups.approvedAmount over groups RESOLVED in the trailing `windowDays` AND outcome ∈ {Approved, Partially Approved}. Mirrors the Insights `totalRecoveredAmount`. Recovery is recorded at resolution-time so an Approved invoice immediately moves dollars from Outstanding into Recovered (morale + reporting); the `confirmedRecoveredAmount` sub-line carries the attestation-confirmed slice. `null` for clerk-role users. */
+  recoveredAmount: string | null;
+  /** Σ approvedAmount on resolved-in-window approvals whose payor re-attestation has actually completed (`reattestCompletedAt IS NOT NULL`). Sub-line under the Recovered tile so the operator can distinguish 'won on paper' from 'paid back in the portal'. `null` for clerk-role users. */
+  confirmedRecoveredAmount: string | null;
+  /** Same definition as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`, anchored on `phaseEnteredAt`). Drives the 'Net change vs prior' tile. `null` for clerk-role users. */
+  priorRecoveredAmount: string | null;
+  /** recoveredAmount / disputedAmount × 100, rounded to the nearest integer percent server-side. `null` when no disputes resolved in the window — the rate is undefined for an empty window, not zero. Also `null` for clerk-role users (no denominator visible → rate is meaningless). */
+  recoveryRate: number | null;
+  /** recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. `null` for clerk-role users. */
+  netChangeRecovered: string | null;
+};
+
+/**
+ * Counts of invoice groups that ENTERED `phase=closed` inside
+the canonical Dashboard window (`amounts.windowDays`),
+broken out by outcome bucket. Backs the Dashboard
+"Closed-out outcomes (last Nd)" panel so the operator can
+see the recovery-rate denominator decomposed in the same
+place the rate is shown. `total` = sum of all buckets =
+count of groups whose phase entered `closed` in window.
+
+ */
+export type DashboardSummaryClosedOutcomes = {
+  approved: number;
+  partiallyApproved: number;
+  denied: number;
+  withdrawn: number;
+  /** Resolved-in-window groups whose status is `Expired` (deadline-sweep closure). Surfaced explicitly so the deadline-loss path is visible alongside the outcome buckets. */
+  expired: number;
+  nonIssue: number;
+  noActionNeeded: number;
+  total: number;
+  windowDays: number;
 };
 
 export type DashboardSummaryPortalStats = {
@@ -3522,6 +3549,15 @@ export interface DashboardSummary {
   pipeline: DashboardSummaryPipeline;
   stats: DashboardSummaryStats;
   amounts: DashboardSummaryAmounts;
+  /** Counts of invoice groups that ENTERED `phase=closed` inside
+the canonical Dashboard window (`amounts.windowDays`),
+broken out by outcome bucket. Backs the Dashboard
+"Closed-out outcomes (last Nd)" panel so the operator can
+see the recovery-rate denominator decomposed in the same
+place the rate is shown. `total` = sum of all buckets =
+count of groups whose phase entered `closed` in window.
+ */
+  closedOutcomes?: DashboardSummaryClosedOutcomes;
   expiringGroups: ExpiringInvoiceGroup[];
   /** Number of expiring invoice groups whose deadline lands today or on the next business day (with weekend deadlines shifted back to Friday). Pre-submit only — i.e. the group's status is in the on-clock actionable set (`New`, `Needs Evidence`, `On Hold`, `Generating Email`). Submitted-but-stuck groups are partitioned into `submittedStuckCount` instead so the dashboard's two tiers add up cleanly. */
   urgentCount: number;
@@ -3709,13 +3745,14 @@ export type DashboardInsightsPayorConcentrationByGroupItem = {
   payorEmail: string;
   /** Number of currently open invoices touching this payor. */
   openCount: number;
-  /** Number of invoices CREATED in the active window touching this payor. */
+  /** Number of invoices RESOLVED in the active window touching this payor (denominator + numerator universe for `winRate`). */
   invoiceCountInWindow: number;
   /** Σ open at-risk $ for this payor's currently open invoices. */
   openAtRiskAmount: string | null;
   /** (Approved + Partially Approved) / (Approved +
 Partially Approved + Denied), counted over invoices
-CREATED in the active window. `null` when no decided
+RESOLVED in the active window (`phase=closed AND
+phaseEnteredAt IN window`). `null` when no decided
 invoices fall in the window.
  */
   winRate: number | null;
@@ -3745,7 +3782,7 @@ export type DashboardInsightsErrorTypeBreakdownItem = {
   count: number;
   /** Settled-positive Σ approved for this error type. */
   recoveredAmount: string | null;
-  /** Σ claim_amount for outcome=Denied claims of this error type. */
+  /** Σ claim_amount for outcome=Denied claims of this error type, scoped to claims belonging to invoice groups RESOLVED in the active window. */
   deniedAmount: string | null;
 };
 
@@ -3758,34 +3795,64 @@ export type DashboardInsightsPayorBreakdownItem = {
 };
 
 /**
- * Server-side aggregations for the Insights page. All numeric
-breakdowns (`statusBreakdown`, `outcomeBreakdown`,
-`errorTypeBreakdown`, `payorBreakdown`) are exact counts over
-every claim in the window — no sample cap. Money string fields
-are decimal-formatted with 2 decimal places, or `null` for
-clerks who don't see amounts.
+ * Server-side aggregations for the Insights page. Money totals
+and outcome rollups are anchored on the resolution moment
+(`phase = 'closed' AND phaseEnteredAt IN window`) so they
+answer "how did the disputes we closed this period turn out".
+Workload counts (`totalClaims`, `statusBreakdown`,
+`errorTypeBreakdown.count`, `payorBreakdown`) stay anchored on
+`created_at` because they answer the "what arrived this period"
+question. Money string fields are decimal-formatted with 2
+decimal places, or `null` for clerks who don't see amounts.
 
  */
 export interface DashboardInsights {
   days: number;
-  /** Exact count of claims with `created_at` inside the window. */
+  /** Exact count of claims with `created_at` inside the window (workload arrival, not resolution). */
   totalClaims: number;
-  /** Σ `claim_amount` across all claims in the window. */
+  /** Σ invoice_groups.totalAmount over groups RESOLVED in the
+window AND outcome ∈ {Approved, Partially Approved, Denied,
+Withdrawn} — i.e. real disputes, excluding Pending /
+Non-Issue / No Action Needed. This is the recovery-rate
+denominator and mirrors `/dashboard/summary.amounts.disputedAmount`.
+ */
   totalClaimedAmount: string | null;
-  /** Σ `approved_amount` across claims whose outcome is Approved
-or Partially Approved AND whose re-attestation has settled
-(`attestation_state IN ('completed','not_required')`).
-Mirrors the dashboard "Reclaimed" KPI definition exactly.
+  /** Σ invoice_groups.approvedAmount over groups RESOLVED in the
+window AND outcome ∈ {Approved, Partially Approved}.
+Mirrors `/dashboard/summary.amounts.recoveredAmount`. Sub-line
+field `confirmedRecoveredAmount` carries the slice that has
+also completed re-attestation.
  */
   totalRecoveredAmount: string | null;
-  /** Σ `claim_amount` across claims with outcome=Denied. */
+  /** Σ approvedAmount on resolved-in-window approvals whose
+payor re-attestation has actually completed
+(`reattestCompletedAt IS NOT NULL`). Mirrors the Dashboard
+"Confirmed" sub-line.
+ */
+  confirmedRecoveredAmount: string | null;
+  /** Count of invoice groups that entered phase=closed inside
+the window — the universe behind every money/outcome
+number on this page. Surfaced so the operator knows the
+sample size driving the recovery-rate / outcome-mix tiles.
+ */
+  closedInWindowCount: number;
+  /** Σ totalAmount of `closedInWindowCount` groups. */
+  closedInWindowAmount: string | null;
+  /** Σ `claim_amount` across claims belonging to invoice groups
+RESOLVED in the active window (`phase=closed AND
+phaseEnteredAt IN window`) whose `outcome='Denied'`.
+Resolution-anchored so it lines up with `totalRecoveredAmount`
+and the closed-in-window outcome panel.
+ */
   totalDeniedAmount: string | null;
   statusBreakdown: DashboardInsightsStatusBreakdownItem[];
   outcomeBreakdown: DashboardInsightsOutcomeBreakdownItem[];
-  /** Settled-positive Σ approved across claims created in the
-equal-length window immediately preceding the active one.
-Powers the "Net change vs prior window" tile on the CFO
-Money scorecard.
+  /** Σ invoice_groups.approvedAmount over groups RESOLVED in
+the equal-length window IMMEDIATELY PRECEDING the active
+one (`phase=closed AND phaseEnteredAt IN prior window`)
+with outcome ∈ {Approved, Partially Approved}. Powers the
+"Net change vs prior window" tile on the CFO Money
+scorecard. Resolution-anchored to mirror `totalRecoveredAmount`.
  */
   priorPeriodRecoveredAmount: string | null;
   /** Snapshot (NOT windowed) of currently open invoice exposure:
@@ -3799,28 +3866,37 @@ but at INVOICE grain.
   atRiskAmount: string | null;
   /** Count of invoice groups contributing to `atRiskAmount`. */
   atRiskGroupCount: number;
-  /** Snapshot rollup of currently open invoices by macro phase.
-Always returns the same four entries in pipeline order:
-`pre-submit`, `in-flight`, `response-pending`, `closed`.
+  /** Pipeline funnel — three SNAPSHOT phases of currently-open
+invoices (`pre-submit`, `in-flight`, `response-pending`)
+plus a fourth WINDOWED `closed` phase for funnel context.
 `pre-submit` folds in On-Hold groups; `response-pending`
-folds in MAS-required and awaiting-payout. `closed`
-represents in-window resolved invoices for funnel context.
+folds in MAS-required and awaiting-payout. `closed.count`
+and `closed.openAmount` equal `closedInWindowCount` /
+`closedInWindowAmount` respectively — surfaced inside the
+funnel so the operator can read "open now → closed in
+window" without leaving the chart, and surfaced as
+top-level fields so callers can render the windowed
+summary independently of the snapshot bars.
  */
   pipelineByPhase: DashboardInsightsPipelineByPhaseItem[];
   /** Top 5 payors by open at-risk $ at INVOICE grain. Each row
-counts distinct invoice groups (not legs) and a
-window-scoped win-rate over invoices created in the active
-window.
+counts distinct invoice groups (not legs). The win-rate is
+scoped to invoices RESOLVED in the active window
+(`phase=closed AND phaseEnteredAt IN window`) so it tracks
+the decisions the payor handed back this period rather
+than the inbox of freshly arrived disputes.
  */
   payorConcentrationByGroup: DashboardInsightsPayorConcentrationByGroupItem[];
   /** Invoice-level (not claim-level) outcome rollup, computed
-from `invoice_groups.outcome` over groups whose
-`created_at` is in the window. Always returns the same
-seven buckets in this order: `Approved`, `Partially
-Approved`, `Denied`, `Withdrawn`, `Pending`, `Non-Issue`,
-`No Action Needed`. Counts sum to total invoice groups in
-the window. Task #712 split out the legacy "Mixed"
-pseudo-bucket; Task #714 added "No Action Needed".
+from `invoice_groups.outcome` over groups RESOLVED in the
+window (`phase=closed AND phaseEnteredAt IN window`) so it
+answers "how did the disputes we closed this period turn
+out". Always returns the same seven buckets in this order:
+`Approved`, `Partially Approved`, `Denied`, `Withdrawn`,
+`Pending`, `Non-Issue`, `No Action Needed`. In practice the
+`Pending` bucket is empty because Pending groups have not
+yet hit phase=closed; it stays in the contract for shape
+stability.
  */
   groupOutcomeBreakdown: DashboardInsightsGroupOutcomeBreakdownItem[];
   errorTypeBreakdown: DashboardInsightsErrorTypeBreakdownItem[];

@@ -84,14 +84,20 @@ export function renderWeeklyExecBody(
       hint: "Recovered ÷ Disputed",
     },
     {
-      label: "At-risk $",
+      // Renamed "At-risk $" → "Outstanding $" to match the Dashboard
+      // amber tile. Same field (`atRiskExposure`).
+      label: "Outstanding $",
       value: money(summary?.amounts.atRiskExposure ?? insights?.atRiskAmount ?? null),
       hint: `${summary?.amounts.atRiskGroups ?? insights?.atRiskGroupCount ?? 0} groups`,
       emphasis: "warn",
     },
     {
-      label: "Open invoices",
+      // Renamed "Open invoices" → "At-risk invoices" to match the
+      // Dashboard amber tile. Same field (`amounts.openInvoices` =
+      // `amounts.atRiskGroups` count).
+      label: "At-risk invoices",
       value: String(summary?.amounts.openInvoices ?? "—"),
+      emphasis: "warn",
     },
   ];
 
