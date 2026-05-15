@@ -221,15 +221,21 @@ function renderRecoveryBlock(summary: CanonicalSummary): string {
   const recovered = parseFloat(summary.amounts.recoveredAmount ?? "0") || 0;
   const priorRecovered = parseFloat(summary.amounts.priorRecoveredAmount ?? "0") || 0;
   const trend = deltaArrow(recovered, priorRecovered);
+  // Window label tracks the canonical aggregator's `windowDays` so the
+  // header never lies about what cohort the dollar figure is summing —
+  // same fix as renderWinsBlock above. The previous hard-coded "Last 7
+  // days" header was the daily-body twin of the "LAST 7D" mislabel
+  // already patched in the wins hero (Task #648, 2026-05-15).
+  const window = summary.amounts.windowDays ?? 7;
   return `
     <div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:12px 0;background:#fafafa;">
-      <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;">Last 7 days · recovery</div>
+      <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;">Last ${window}d · recovery</div>
       <div style="font-size:22px;font-weight:600;color:#1a1a1a;margin-top:4px;">
         ${escapeHtml(money(summary.amounts.recoveredAmount))}
         <span style="font-size:13px;color:${trend.color};font-weight:500;margin-left:8px;">${trend.arrow} ${escapeHtml(trend.label)}</span>
       </div>
       <div style="font-size:12px;color:#666;margin-top:4px;">
-        Prior 7d: ${escapeHtml(money(summary.amounts.priorRecoveredAmount))} ·
+        Prior ${window}d: ${escapeHtml(money(summary.amounts.priorRecoveredAmount))} ·
         Recovery rate: ${escapeHtml(pct(summary.amounts.recoveryRate))} ·
         Net change: ${escapeHtml(money(summary.amounts.netChangeRecovered))}
       </div>
