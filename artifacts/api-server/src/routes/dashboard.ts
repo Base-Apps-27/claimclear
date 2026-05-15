@@ -522,14 +522,22 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // both `denied` AND `expired`. Partition is `CASE WHEN status =
   // 'Expired' THEN '__expired__' ELSE outcome END` so a single GROUP
   // BY pass yields disjoint counts and `total = Σ buckets` is honest.
+  // Cast both branches to text so the CASE result type is `text`, not
+  // `claim_outcome`. Without the cast, Postgres types the whole CASE
+  // by the ELSE branch (`outcome`, an enum) and rejects the
+  // `'__expired__'` sentinel literal as `invalid input value for enum
+  // claim_outcome` at runtime — production-only because dev DBs
+  // historically had a permissive outcome enum. Casting keeps the
+  // partition disjoint and the enum check honest.
+  const bucketSql = sql<string>`CASE WHEN ${invoiceGroupsTable.status} = 'Expired' THEN '__expired__' ELSE ${invoiceGroupsTable.outcome}::text END`;
   const closedOutcomeRows = await db
     .select({
-      bucket: sql<string>`CASE WHEN ${invoiceGroupsTable.status} = 'Expired' THEN '__expired__' ELSE ${invoiceGroupsTable.outcome} END`,
+      bucket: bucketSql,
       count: count(),
     })
     .from(invoiceGroupsTable)
     .where(resolvedInWindowSql)
-    .groupBy(sql`CASE WHEN ${invoiceGroupsTable.status} = 'Expired' THEN '__expired__' ELSE ${invoiceGroupsTable.outcome} END`);
+    .groupBy(bucketSql);
   const closedOutcomes = {
     approved: 0,
     partiallyApproved: 0,
