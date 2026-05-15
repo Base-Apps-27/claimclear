@@ -311,6 +311,7 @@ export function ClosureIntakeDialog({
   // earlier `validOutcomes.length > 0` shortcut was wrong for
   // empty-outcome statuses where the policy lane depends on whether
   // the source is system-controlled.
+  // vocab-allow-next-line
   const targetOutcomeName: "Non-Issue" | "Denied" | "Withdrawn" =
     // vocab-allow-next-line
     reason === "non_issue" ? "Non-Issue" : reason === "denied_by_payor" ? "Denied" : "Withdrawn";
