@@ -11,6 +11,7 @@ import {
 import { SessionCountdown } from "@/components/session-countdown";
 import { useSystemEvents } from "@/hooks/use-system-events";
 import { useSessionMilestonesLifecycle, useSessionProcessedCount } from "@/hooks/use-session-milestones";
+import { useWelcomeBackWinsToast } from "@/hooks/use-welcome-back-toast";
 import {
   Sidebar,
   SidebarContent,
@@ -113,6 +114,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // sign-out so milestone badges don't carry over between operators
   // sharing the same browser.
   useSessionMilestonesLifecycle({
+    enabled: isAuthenticated && user?.status === "approved",
+  });
+
+  // Task #780 (F) — quiet "welcome back" toast that fires once per
+  // browser session per calendar day if there have been any approvals
+  // in the resolution-anchored window. Acknowledges the team's
+  // progress on the spot, even if every other celebration source
+  // stays quiet for the rest of the session. No confetti — the
+  // wins-hero on the dashboard is the visual celebration; this is
+  // the toast that says "we see you."
+  useWelcomeBackWinsToast({
     enabled: isAuthenticated && user?.status === "approved",
   });
 

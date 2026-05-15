@@ -16,6 +16,7 @@ import { getGroupMacroPhase } from "../lib/macro-phase";
 import { allDisputedLegsResolved, resolveSubmissionActor } from "../lib/group-readiness";
 import { emitStateEvent } from "../lib/state-events";
 import { broadcastGroupEvent } from "../lib/sse";
+import { tryEmitSubmissionStreak } from "../lib/streak-pulses";
 import { loadGroupReadiness, readyToGenerateSqlConditions } from "../lib/group-packaging";
 import { buildPromptLegInputs, loadDecisionTreesForLegs, promptLegAuditCounters, type PromptLegInputsResult, type PromptLegRowInput } from "../lib/prompt-leg-inputs";
 
@@ -1942,6 +1943,12 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     submittedVia: "portal",
   });
 
+  // Task #780 (D) — fire a `submission_streak` SSE pulse if today's
+  // confirmed submission count just crossed a multiple-of-5 threshold.
+  // Non-fatal: a celebration miss must never 500 the submit click,
+  // and the helper swallows its own errors.
+  await tryEmitSubmissionStreak();
+
   res.status(201).json(await enrichOne(submission));
 }));
 
@@ -2306,6 +2313,17 @@ router.post("/invoice-groups/bulk-submit-to-portal", denyClerk, asyncHandler(asy
     });
 
     queuedItems.push({ id: gid, refNumber, submissionId: submission.id });
+  }
+
+  // Task #780 (D) — bulk-submit also creates real `portal_submissions`
+  // rows past `draft`, so it must feed the same streak counter the
+  // single-submission path feeds. Without this hook, a team that
+  // crosses 5 / 10 / 15 via bulk-submit would never hear the
+  // celebration the count line below would tell us they earned. One
+  // call after the loop is enough — the count is a "today" total, so
+  // we only need to evaluate once per request.
+  if (queuedItems.length > 0) {
+    await tryEmitSubmissionStreak();
   }
 
   res.json({

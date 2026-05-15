@@ -20,6 +20,7 @@ import type {
   LintResult,
 } from "@workspace/api-client-react";
 import { LintGateDialog, type LintGateMode } from "@/components/lint-gate-dialog";
+import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -511,6 +512,26 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
           // tags are missing or replay-suppressed.
           setLintGateOpen(false);
           markLocalAction(`group:${groupId}`);
+          // Task #780 (A) — bulk submission flow now feeds the session
+          // milestone counter the same way the per-leg conclude flow
+          // already does. One notify per leg ACTUALLY DISPUTED in the
+          // submission, so a 4-disputed-leg group counts as 4 toward
+          // the 10/25/50 thresholds; excluded / non-contestable legs
+          // (e.g. duplicates flagged out, included=false) don't pad
+          // the count for work the operator didn't actually ship.
+          // Mirrors the `disputedRides` filter the rest of this
+          // component uses to scope the dispute body itself.
+          // Generation token is the moment of submit (epoch ms) so a
+          // re-submit after a revert counts cleanly. Idempotent: dupe
+          // taps from sibling views collapse on the seen-Set inside
+          // notifyClaimProcessedThisSession.
+          const submitGen = `submit:${Date.now()}`;
+          const disputedRidesForCount = (group?.rides ?? []).filter(
+            (r) => r.includedInDispute !== false,
+          );
+          for (const ride of disputedRidesForCount) {
+            notifyClaimProcessedThisSession(ride.id, submitGen);
+          }
           successToast({
             title: "__VERB__",
             description: isDirectEmail ? "Email sent" : "Submitted to portal",

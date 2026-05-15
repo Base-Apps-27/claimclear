@@ -22,6 +22,7 @@ import { resolveReplyAttachments, markStagedAttachmentsConsumed } from "../lib/r
 import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor, MATCHER_CLASSIFIED_TARGET_STATUS } from "../lib/response-matcher";
 import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
+import { tryEmitApprovalStreak } from "../lib/streak-pulses";
 import { transitionClaimStatus } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
@@ -199,6 +200,16 @@ router.patch("/responses/:id/process", asyncHandler(async (req, res): Promise<vo
       // reset so `claims.disposition` matches the new outcome.
       await refreshClaimDenormalizedCache(response.claimId);
     }
+  }
+
+  // Task #780 (D) — fire an `approval_streak` SSE pulse if today's
+  // tagged-approval count just crossed a multiple-of-3 threshold.
+  // Only relevant when the response was actually tagged approval /
+  // partial_approval; the helper short-circuits cheaply otherwise so
+  // we can call it unconditionally without a routing branch. Non-
+  // fatal: a celebration miss must never 500 the tagging click.
+  if (responseType === "approval" || responseType === "partial_approval") {
+    await tryEmitApprovalStreak();
   }
 
   res.json(response);

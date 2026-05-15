@@ -47,6 +47,7 @@ import {
   type ReattestInstructionItem,
 } from "./reattest-instruction-template";
 import { useToast } from "@/hooks/use-toast";
+import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
 
 interface Props {
   open: boolean;
@@ -268,6 +269,14 @@ export function ReattestModal({
           ...(renamePayload ?? {}),
         },
       });
+      // Task #780 (A) — feed the session-milestone counter once per
+      // approved leg the operator just re-attested. Generation is the
+      // moment of completion so a re-attest after a revert counts
+      // cleanly; sibling-view replays collapse on the seen-Set.
+      const reattestGen = `reattest-now:${Date.now()}`;
+      for (const leg of approvedLegs) {
+        notifyClaimProcessedThisSession(leg.id, reattestGen);
+      }
       // No follow-up markWaiting call: complete-reattest already
       // closes the group (Resolved/Approved → macro phase
       // awaiting-payout/closed), so the row is off Responses Awaiting
@@ -320,6 +329,13 @@ export function ReattestModal({
         data: { note: fullNote, ...(renamePayload ?? {}) },
       });
       const queuedCount = result.queuedLegIds.length;
+      // Task #780 (A) — queueing for re-attestation IS the operator's
+      // moment of "done with my plate" for these legs. Notify once per
+      // queued leg id; dedup is handled inside notifyClaimProcessed.
+      const queueGen = `reattest-queue:${Date.now()}`;
+      for (const legId of result.queuedLegIds) {
+        notifyClaimProcessedThisSession(legId, queueGen);
+      }
       onAfterAction(
         renamePayload
           ? `Queued ${queuedCount} leg${queuedCount === 1 ? "" : "s"} for re-attestation — invoice renamed to #${renamePayload.renameInvoiceNumberTo}.`
@@ -368,6 +384,12 @@ export function ReattestModal({
         id: group.id,
         data: { ...buildOfflineReattestPayload(offlineNote), ...(renamePayload ?? {}) },
       });
+      // Task #780 (A) — same notify pattern as the "now" path; the
+      // offline branch records the same closure on the same legs.
+      const offlineGen = `reattest-offline:${Date.now()}`;
+      for (const leg of approvedLegs) {
+        notifyClaimProcessedThisSession(leg.id, offlineGen);
+      }
       // No follow-up markWaiting call — see the "now" path comment
       // above. complete-reattest closes the group, so awaiting-payor-
       // again would 409 on its source-state guard.

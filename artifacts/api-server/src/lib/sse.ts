@@ -297,12 +297,31 @@ export function broadcastBatchEvent(event: BatchEvent): void {
 // group dated for that day reaches a concluded state. The client uses
 // the connection-open timestamp to ignore replays after reconnect, so
 // missed celebrations do NOT fire retroactively.
-export type SystemEvent = {
-  type: "day_completed";
-  date: string;        // ISO YYYY-MM-DD
-  dateLabel: string;   // "April 15, 2026"
-  timestamp: string;   // ISO timestamp of the broadcast
-};
+export type SystemEvent =
+  | {
+      type: "day_completed";
+      date: string;        // ISO YYYY-MM-DD
+      dateLabel: string;   // "April 15, 2026"
+      timestamp: string;   // ISO timestamp of the broadcast
+    }
+  | {
+      // Task #780 (D) — every multiple-of-5 portal submissions
+      // confirmed today fires a small celebration on every connected
+      // tab. Server-counted so a tab that opened mid-day still hears
+      // the next pulse the moment the team crosses the threshold; no
+      // need to be present for the prior submission.
+      type: "submission_streak";
+      count: number;       // total submissions confirmed today (multiple of 5)
+      timestamp: string;   // ISO timestamp of the broadcast
+    }
+  | {
+      // Task #780 (D) — every multiple-of-3 payor responses tagged
+      // Approved / Partially Approved today fires the same small
+      // celebration. Same server-counted rationale as submission_streak.
+      type: "approval_streak";
+      count: number;       // total approvals tagged today (multiple of 3)
+      timestamp: string;   // ISO timestamp of the broadcast
+    };
 
 export function addGlobalSystemClient(res: Response, userEmail: string | null): () => void {
   initSSE(res);
