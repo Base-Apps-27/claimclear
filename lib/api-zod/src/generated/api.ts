@@ -29549,42 +29549,42 @@ export const GetDashboardSummaryResponse = zod.object({
     windowDays: zod
       .number()
       .describe(
-        "Task #720. Length in days of the canonical trailing window the Dashboard top strip uses (currently 7). Declared on the wire so the client can render the tile sub-label (`last 7d` \/ `vs prior 7d`) without hard-coding the window length and so the value reconciles with `\/dashboard\/insights?days=N` and the daily brief.",
+        "Length in days of the trailing window used by `netChangeRecovered` only (currently 7). The other money fields below are now ALL-TIME — they no longer use this value. Kept on the wire so the client can keep rendering the 'vs prior 7d' sub-label on the Net change tile without hard-coding.",
       ),
     openInvoices: zod
       .number()
       .describe(
-        "Task #720. Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time.",
+        "Snapshot count of invoice groups currently in the at-risk bucket — same predicate as `atRiskGroups`. Exposed under the canonical name the Dashboard 'Open invoices' tile reads, and matches Insights' `atRiskGroupCount` for the same point in time.",
       ),
     disputedAmount: zod
       .union([zod.string(), zod.null()])
       .describe(
-        "Σ invoice_groups.totalAmount over groups RESOLVED in the trailing `windowDays` (`phase = 'closed' AND phaseEnteredAt IN window`) AND outcome ∈ {Approved, Partially Approved, Denied, Withdrawn} — i.e. real disputes, excluding Pending \/ Non-Issue \/ No Action Needed. Recovery-rate denominator. Mirrors the Insights `totalClaimedAmount` for the same window. `null` for clerk-role users (money is scrubbed for low-trust roles via `scrubDashboardAmounts`).",
+        "ALL-TIME Σ invoice_groups.totalAmount over groups with outcome ∈ {Approved, Partially Approved, Denied, Withdrawn} (real disputes; excludes Pending \/ Non-Issue \/ No Action Needed). Recovery-rate denominator. No window. `null` for clerk-role users (money is scrubbed for low-trust roles via `scrubDashboardAmounts`).",
       ),
     recoveredAmount: zod
       .union([zod.string(), zod.null()])
       .describe(
-        "Σ invoice_groups.approvedAmount over groups RESOLVED in the trailing `windowDays` AND outcome ∈ {Approved, Partially Approved}. Mirrors the Insights `totalRecoveredAmount`. Recovery is recorded at resolution-time so an Approved invoice immediately moves dollars from Outstanding into Recovered (morale + reporting); the `confirmedRecoveredAmount` sub-line carries the attestation-confirmed slice. `null` for clerk-role users.",
+        "ALL-TIME Σ invoice_groups.approvedAmount over groups with outcome ∈ {Approved, Partially Approved}. No phase or date gate — a win counts the moment the payor rules. The `confirmedRecoveredAmount` sub-line carries the slice where the payor's reattest has actually completed. `null` for clerk-role users.",
       ),
     confirmedRecoveredAmount: zod
       .union([zod.string(), zod.null()])
       .describe(
-        "Σ approvedAmount on resolved-in-window approvals whose payor re-attestation has actually completed (`reattestCompletedAt IS NOT NULL`). Sub-line under the Recovered tile so the operator can distinguish 'won on paper' from 'paid back in the portal'. `null` for clerk-role users.",
+        "ALL-TIME Σ approvedAmount on positive-outcome groups whose payor re-attestation has actually completed (`reattestCompletedAt IS NOT NULL`). Sub-line under the Recovered tile so the operator can distinguish 'won on paper' from 'paid back in the portal'. `null` for clerk-role users.",
       ),
     priorRecoveredAmount: zod
       .union([zod.string(), zod.null()])
       .describe(
-        "Same definition as `recoveredAmount` but for the equal-length window immediately preceding the current one (`[now − 2·windowDays, now − windowDays)`, anchored on `phaseEnteredAt`). Drives the 'Net change vs prior' tile. `null` for clerk-role users.",
+        "Σ approvedAmount over positive-outcome groups whose latest positive `portal_responses.received_at` falls in the prior `windowDays` slot (`[now − 2·windowDays, now − windowDays)`). Drives `netChangeRecovered`. `null` for clerk-role users.",
       ),
     recoveryRate: zod
       .union([zod.number(), zod.null()])
       .describe(
-        "recoveredAmount \/ disputedAmount × 100, rounded to the nearest integer percent server-side. `null` when no disputes resolved in the window — the rate is undefined for an empty window, not zero. Also `null` for clerk-role users (no denominator visible → rate is meaningless).",
+        "ALL-TIME recoveredAmount \/ disputedAmount × 100, rounded to the nearest integer percent server-side. `null` when nothing has been disputed yet. Also `null` for clerk-role users.",
       ),
     netChangeRecovered: zod
       .union([zod.string(), zod.null()])
       .describe(
-        "recoveredAmount − priorRecoveredAmount as a signed dollar string. Positive means the trailing window recovered more than the prior window of the same length. `null` for clerk-role users.",
+        "Δ recovered $ this `windowDays` vs prior `windowDays`. Anchored on `portal_responses.received_at` (the day the payor's positive verdict landed) so a win counts the moment it's recorded. Signed dollar string. `null` for clerk-role users.",
       ),
   }),
   closedOutcomes: zod
@@ -29605,7 +29605,7 @@ export const GetDashboardSummaryResponse = zod.object({
     })
     .optional()
     .describe(
-      'Counts of invoice groups that ENTERED `phase=closed` inside\nthe canonical Dashboard window (`amounts.windowDays`),\nbroken out by outcome bucket. Backs the Dashboard\n\"Closed-out outcomes (last Nd)\" panel so the operator can\nsee the recovery-rate denominator decomposed in the same\nplace the rate is shown. `total` = sum of all buckets =\ncount of groups whose phase entered `closed` in window.\n',
+      "ALL-TIME counts of invoice groups by terminal outcome\n(`outcome != 'Pending'` OR `status = 'Expired'`). Backs the\nDashboard \"Outcomes\" panel — decomposes the recovery-rate\ndenominator across the entire history, not a 7d slice\n(which used to read 0\/0\/0\/0\/0 most weeks). `windowDays` is\nkept in the response for backward compat but is no longer\nmeaningful for this panel; treat it as advisory only.\n",
     ),
   expiringGroups: zod.array(
     zod.object({
@@ -30350,12 +30350,27 @@ export const GetDashboardTimeseriesResponse = zod.object({
         .describe(
           "Distinct invoice groups whose `group_resolved` \/ `group_denied` audit log was emitted on this day.",
         ),
-      dollarsRecovered: zod.number().nullable(),
+      invoicesReattested: zod
+        .number()
+        .describe(
+          'Distinct invoice groups whose `reattest_completed_at` falls on this day. \"Our work\" series on the Insights data-flow chart — the moment we close the loop with the payor after a win.',
+        ),
+      responsesReceived: zod
+        .number()
+        .describe(
+          'Distinct invoice groups for which a `portal_responses.received_at` falls on this day. \"Payor work\" series — every received_at counts, not just positive verdicts.',
+        ),
+      dollarsRecovered: zod
+        .number()
+        .nullable()
+        .describe(
+          "Σ approvedAmount for groups whose POSITIVE portal response landed on this day. Anchored on `portal_responses.received_at`, not invoice_groups.updatedAt, so unrelated row touches don't smear the trend.",
+        ),
       priorDollarsRecovered: zod
         .number()
         .nullable()
         .describe(
-          "Recovered $ from the equivalent calendar slot in the prior equal-length window. Powers the prior-period overlay on the Outcomes recovered-$ trend.",
+          "Recovered $ from the equivalent calendar slot in the prior equal-length window. Same `portal_responses.received_at` anchor as `dollarsRecovered`.",
         ),
     }),
   ),

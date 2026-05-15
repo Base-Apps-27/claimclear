@@ -224,20 +224,31 @@ export default function Insights() {
   const pipelineMaxCount = Math.max(1, ...PIPELINE_PHASE_META.map(p => pipelineByKey.get(p.key)?.count ?? 0));
 
   // ─── Daily flow ─────────────────────────────────────────────────────
+  // Three-series chart on the invoices unit: what we filed, what we
+  // re-attested (closing the loop on a win), and what the payor sent
+  // back. Splits "our work" from "payor work" so the operator can
+  // see whether a stalled day is on us or on them. The "legs" toggle
+  // keeps the older claims-grain flow for diagnostics.
   const dailyFlow = useMemo(() => {
     const points = timeseries?.points ?? [];
     return points.map(p => {
       const created = flowUnit === "invoices" ? p.invoicesCreated : p.claimsCreated;
       const submitted = flowUnit === "invoices" ? p.invoicesSubmitted : 0;
+      const reattested = flowUnit === "invoices" ? p.invoicesReattested : 0;
+      const responses = flowUnit === "invoices" ? p.responsesReceived : 0;
       const resolved = flowUnit === "invoices" ? p.invoicesResolved : p.claimsResolved;
       return {
         label: formatShortDate(p.date),
         created,
         submitted,
+        reattested,
+        responses,
         resolved,
         // Net pipeline change per day = inflow − outflow. Positive = backlog
-        // grew that day; negative = backlog drained.
-        netChange: created - resolved,
+        // grew that day; negative = backlog drained. "Outflow" here is
+        // payor responses (what actually closes the loop), not our own
+        // resolved-state writes.
+        netChange: created - responses,
       };
     });
   }, [timeseries, flowUnit]);
@@ -245,16 +256,21 @@ export default function Insights() {
     const denom = Math.max(1, dailyFlow.length);
     const created = dailyFlow.reduce((s, p) => s + p.created, 0);
     const submitted = dailyFlow.reduce((s, p) => s + p.submitted, 0);
+    const reattested = dailyFlow.reduce((s, p) => s + p.reattested, 0);
+    const responses = dailyFlow.reduce((s, p) => s + p.responses, 0);
     const resolved = dailyFlow.reduce((s, p) => s + p.resolved, 0);
     return {
       created,
       submitted,
+      reattested,
+      responses,
       resolved,
-      avgCreatedPerDay: created / denom,
+      avgSubmittedPerDay: submitted / denom,
+      avgReattestedPerDay: reattested / denom,
+      avgResponsesPerDay: responses / denom,
       avgResolvedPerDay: resolved / denom,
-      // Backlog delta over window = total in − total out. Equivalent to
-      // Σ netChange but expressed in CFO terms (units accumulated/drained).
-      backlogDelta: created - resolved,
+      // Backlog delta over window = invoices in − payor responses out.
+      backlogDelta: created - responses,
     };
   }, [dailyFlow]);
 
@@ -648,13 +664,21 @@ export default function Insights() {
         <div className="flex items-stretch gap-6 flex-wrap">
           <div className="min-w-[180px] text-xs space-y-2.5">
             <div>
-              <div className="text-muted-foreground">Avg created / day</div>
-              <div className="text-xl font-bold tabular-nums">{flowTotals.avgCreatedPerDay.toFixed(1)}</div>
+              <div className="text-muted-foreground">Avg submitted / day</div>
+              <div className="text-xl font-bold tabular-nums">{flowTotals.avgSubmittedPerDay.toFixed(1)}</div>
             </div>
-            <div>
-              <div className="text-muted-foreground">Avg resolved / day</div>
-              <div className="text-xl font-bold tabular-nums">{flowTotals.avgResolvedPerDay.toFixed(1)}</div>
-            </div>
+            {flowUnit === "invoices" && (
+              <>
+                <div>
+                  <div className="text-muted-foreground">Avg re-attested / day</div>
+                  <div className="text-xl font-bold tabular-nums">{flowTotals.avgReattestedPerDay.toFixed(1)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Avg responses / day</div>
+                  <div className="text-xl font-bold tabular-nums">{flowTotals.avgResponsesPerDay.toFixed(1)}</div>
+                </div>
+              </>
+            )}
             <div>
               <div className="text-muted-foreground">Backlog delta</div>
               <div
@@ -667,11 +691,11 @@ export default function Insights() {
                         ? "hsl(var(--cc-success))"
                         : "hsl(var(--foreground))",
                 }}
-                title="Created − Resolved across the window. Positive = backlog grew."
+                title="Created − Responses received across the window. Positive = backlog grew."
               >
                 {flowTotals.backlogDelta > 0 ? "+" : ""}{flowTotals.backlogDelta}
               </div>
-              <div className="text-[10px] text-muted-foreground">created − resolved</div>
+              <div className="text-[10px] text-muted-foreground">created − responses</div>
             </div>
           </div>
           <div className="flex-1 min-w-[280px] h-52" data-testid="daily-flow-chart">
@@ -689,11 +713,16 @@ export default function Insights() {
                     <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="created" name="Created" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                    {flowUnit === "invoices" && (
-                      <Line type="monotone" dataKey="submitted" name="Submitted" stroke="hsl(var(--cc-warning))" strokeWidth={2} dot={false} />
+                    {flowUnit === "invoices" ? (
+                      <>
+                        <Line type="monotone" dataKey="submitted" name="Submitted (us)" stroke="hsl(var(--cc-warning))" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="reattested" name="Re-attested (us)" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="responses" name="Responses received (payor)" stroke="hsl(var(--cc-info, var(--primary)))" strokeWidth={2} strokeDasharray="2 2" dot={false} />
+                      </>
+                    ) : (
+                      <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
                     )}
-                    <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="netChange" name="Net change (in − out)" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                    <Line type="monotone" dataKey="netChange" name="Net change (created − responses)" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               )}

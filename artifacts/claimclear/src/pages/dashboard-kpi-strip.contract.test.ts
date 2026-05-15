@@ -100,9 +100,9 @@ test("Dashboard KPI strip declares units on every tile", () => {
   for (const unitToken of [
     /invoices\s*·\s*snapshot now/i,         // Open invoices
     /open invoices\s*·\s*snapshot now/i,    // At risk $
-    /last\s*\$\{?amounts\.windowDays/i,     // Recovered $ (template uses windowDays)
-    /%\s*·\s*last\s*\$\{?amounts\.windowDays/i, // Recovery rate
-    /\$\s*·\s*vs prior/i,                   // Net change
+    /\$\s*·\s*all time/i,                   // Recovered $ (now all-time, not windowed)
+    /%\s*·\s*all time/i,                    // Recovery rate (now all-time)
+    /\$\s*·\s*vs prior/i,                   // Net change (still 7d windowed)
   ]) {
     assert.match(
       dashboardSrc,

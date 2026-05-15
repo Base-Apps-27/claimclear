@@ -23,7 +23,12 @@ export type DashboardTimeseriesPointsItem = {
   invoicesSubmitted: number;
   /** Distinct invoice groups whose `group_resolved` / `group_denied` audit log was emitted on this day. */
   invoicesResolved: number;
+  /** Distinct invoice groups whose `reattest_completed_at` falls on this day. "Our work" series on the Insights data-flow chart — the moment we close the loop with the payor after a win. */
+  invoicesReattested: number;
+  /** Distinct invoice groups for which a `portal_responses.received_at` falls on this day. "Payor work" series — every received_at counts, not just positive verdicts. */
+  responsesReceived: number;
+  /** Σ approvedAmount for groups whose POSITIVE portal response landed on this day. Anchored on `portal_responses.received_at`, not invoice_groups.updatedAt, so unrelated row touches don't smear the trend. */
   dollarsRecovered: number | null;
-  /** Recovered $ from the equivalent calendar slot in the prior equal-length window. Powers the prior-period overlay on the Outcomes recovered-$ trend. */
+  /** Recovered $ from the equivalent calendar slot in the prior equal-length window. Same `portal_responses.received_at` anchor as `dollarsRecovered`. */
   priorDollarsRecovered: number | null;
 };

@@ -13,13 +13,13 @@ understanding readback / preview generation) instead.
  */
 
 /**
- * Counts of invoice groups that ENTERED `phase=closed` inside
-the canonical Dashboard window (`amounts.windowDays`),
-broken out by outcome bucket. Backs the Dashboard
-"Closed-out outcomes (last Nd)" panel so the operator can
-see the recovery-rate denominator decomposed in the same
-place the rate is shown. `total` = sum of all buckets =
-count of groups whose phase entered `closed` in window.
+ * ALL-TIME counts of invoice groups by terminal outcome
+(`outcome != 'Pending'` OR `status = 'Expired'`). Backs the
+Dashboard "Outcomes" panel — decomposes the recovery-rate
+denominator across the entire history, not a 7d slice
+(which used to read 0/0/0/0/0 most weeks). `windowDays` is
+kept in the response for backward compat but is no longer
+meaningful for this panel; treat it as advisory only.
 
  */
 export type DashboardSummaryClosedOutcomes = {

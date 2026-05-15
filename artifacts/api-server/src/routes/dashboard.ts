@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, ne, sql, and, or, count, sum, desc, isNull, lte, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, auditLogsTable, stateEventsTable } from "@workspace/db";
+import { claimsTable, invoiceGroupsTable, portalSubmissionsTable, portalResponsesTable, auditLogsTable, stateEventsTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { addDaysToYMD, daysRemaining, effectiveDaysRemaining, isUrgentDeadline, serverTodayKey } from "../lib/dates";
 import { SOON_DAYS, VENDOR_PREPAY_RATE } from "../lib/risk-config";
@@ -423,45 +423,54 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const deniedLostGroups = parseInt(bucketRow?.deniedLostGroups || "0", 10);
 
   // ────────────────────────────────────────────────────────────────────
-  // Resolution-anchored money window. Every windowed money number
-  // (recoveredAmount, disputedAmount, recoveryRate, netChangeRecovered,
-  // priorRecoveredAmount, confirmedRecoveredAmount, closedOutcomes) is
-  // bound to `phase = 'closed' AND phaseEnteredAt IN window`.
+  // Money model — Task #788 ("celebrations realignment" follow-up).
   //
-  // Why resolution date and not creation date:
-  //   The typical dispute cycle is 30+ days. A 7-day "Recovered $"
-  //   tile windowed on `createdAt` will look near-zero forever — the
-  //   approvals it's trying to count haven't happened yet for the
-  //   freshly-created invoices in the window. Anchoring on
-  //   `phaseEnteredAt` (set to NOW() when the group transitions to
-  //   `closed` in `group-transitions.ts`) makes the window count the
-  //   resolutions that actually landed in this period, which is what
-  //   the operator means when they read "Recovered last 7 days".
+  // Decision history: the prior shape gated every money number on
+  // `phase = 'closed' AND phaseEnteredAt IN [last 7d]`. That hid all
+  // wins still sitting in awaiting_reattestation/response_received and
+  // produced $0 dashboards for teams who'd just won 50 disputes that
+  // week. The user's verdict: separate "what the team did" (approved
+  // dollars are credited the moment the payor rules) from "what the
+  // payor did" (confirmed recovery requires the reattest landing too),
+  // and stop windowing the headline figures.
   //
-  // Cohort definitions:
-  //   recoveredAmount       — Σ approvedAmount over {phase=closed,
-  //                           phaseEnteredAt IN window,
-  //                           outcome ∈ Approved/Partially Approved}.
-  //   confirmedRecoveredAmount — same + reattestCompletedAt IS NOT NULL.
-  //                              Sub-line under Recovered $; counts only
-  //                              the dollars the payor has actually
-  //                              re-attested in their portal.
-  //   disputedAmount        — Σ totalAmount over groups resolved in
-  //                           window with a real outcome (excludes
-  //                           Non-Issue / No Action Needed / Pending
-  //                           — those weren't disputes from the
-  //                           recovery-rate POV, so including them
-  //                           would dilute the denominator).
+  // Cohort definitions (current contract):
+  //   recoveredAmount       — Σ approvedAmount over ALL groups with
+  //                           outcome ∈ Approved/Partially Approved.
+  //                           ALL-TIME, no phase gate. Renders as
+  //                           "Recovered $" on the dashboard.
+  //   confirmedRecoveredAmount — same + reattestCompletedAt IS NOT
+  //                              NULL. ALL-TIME. Sub-line under
+  //                              Recovered $; counts only the dollars
+  //                              the payor has actually re-attested in
+  //                              their portal.
+  //   disputedAmount        — Σ totalAmount over ALL groups with a
+  //                           real outcome (excludes Pending / Non-
+  //                           Issue / No Action Needed). ALL-TIME.
+  //                           Drives the recovery-rate denominator.
   //   recoveryRate          — recoveredAmount / disputedAmount × 100,
-  //                           rounded server-side. NULL when no
-  //                           disputes resolved in the window.
-  //   priorRecoveredAmount  — recoveredAmount for the equal-length
-  //                           window immediately preceding the
-  //                           current one.
-  //   netChangeRecovered    — recoveredAmount − priorRecoveredAmount.
-  //   closedOutcomes        — count of resolved-in-window groups by
-  //                           outcome bucket. Backs the Dashboard
-  //                           "Closed-out outcomes" panel.
+  //                           rounded server-side. ALL-TIME. NULL
+  //                           when nothing has been disputed.
+  //   netChangeRecovered    — Δ approved $ in last 7d vs prior 7d.
+  //                           Anchored on `portal_responses.received_at`
+  //                           (the day the payor's positive verdict
+  //                           landed) so a win counts the moment it's
+  //                           recorded — not the day the dispute later
+  //                           closes. The 7d window is intentional
+  //                           ("what changed this week" momentum).
+  //   priorRecoveredAmount  — recoveredAmount for the prior 7d slot
+  //                           (used to compute netChangeRecovered).
+  //   windowDays            — 7. Only meaningful for netChange now;
+  //                           kept on the response so the client can
+  //                           keep rendering "vs prior 7d" copy.
+  //   closedOutcomes        — count of ALL groups by terminal outcome
+  //                           (no window). Status=Expired pre-empts
+  //                           outcome to keep the buckets disjoint.
+  //                           Backs the Dashboard "Outcomes" panel.
+  //
+  // Insights (`/dashboard/insights`) honors the page's days selector
+  // for the same metrics by anchoring on
+  // `portal_responses.received_at IN window` — see that handler.
   // ────────────────────────────────────────────────────────────────────
   const CANONICAL_WINDOW_DAYS = 7;
   const recentStart = new Date();
@@ -470,17 +479,6 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const priorWindowStart = new Date(recentStart);
   priorWindowStart.setUTCDate(priorWindowStart.getUTCDate() - CANONICAL_WINDOW_DAYS);
 
-  const resolvedInWindowSql = and(
-    HIDE_TOUR_SAMPLE_GROUP,
-    eq(invoiceGroupsTable.phase, "closed"),
-    gte(invoiceGroupsTable.phaseEnteredAt, recentStart),
-  );
-  const resolvedInPriorSql = and(
-    HIDE_TOUR_SAMPLE_GROUP,
-    eq(invoiceGroupsTable.phase, "closed"),
-    gte(invoiceGroupsTable.phaseEnteredAt, priorWindowStart),
-    sql`${invoiceGroupsTable.phaseEnteredAt} < ${recentStart}`,
-  );
   // Outcomes that count as "real disputes" (have a denominator-
   // worthy claim/loss). Excludes Pending (not yet decided),
   // Non-Issue (was never a dispute), and No Action Needed (closed
@@ -488,7 +486,10 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // numerator; Denied/Withdrawn/Expired feed losses.
   const RECOVERY_RATE_OUTCOMES = sql`${invoiceGroupsTable.outcome} NOT IN ('Pending','Non-Issue','No Action Needed')`;
   const POSITIVE_OUTCOMES = sql`${invoiceGroupsTable.outcome} IN ('Approved','Partially Approved')`;
+  const POSITIVE_RESPONSE_TYPES = sql`('approval','partial_approval')`;
 
+  // All-time money block. No phase gate — Approved counts the moment
+  // the payor rules; Confirmed adds the reattest. Hide tour samples.
   const [recentMoneyRow] = await db
     .select({
       disputed: sql<string>`COALESCE(SUM(CASE WHEN ${RECOVERY_RATE_OUTCOMES}
@@ -500,14 +501,40 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
         THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
     })
     .from(invoiceGroupsTable)
-    .where(resolvedInWindowSql);
-  const [priorRecoveredRow] = await db
+    .where(HIDE_TOUR_SAMPLE_GROUP);
+
+  // Net change: Σ approvedAmount over groups whose latest positive
+  // portal_response landed in the window. Computed in one round-trip
+  // by SUM(CASE) over EXISTS subqueries against portal_responses.
+  // EXISTS keeps each group counted once even if it received
+  // multiple positive responses (e.g., partial then full).
+  const recentResponseExists = sql`EXISTS (
+    SELECT 1 FROM ${portalResponsesTable}
+    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES}
+      AND ${portalResponsesTable.receivedAt} >= ${recentStart}
+  )`;
+  const priorResponseExists = sql`EXISTS (
+    SELECT 1 FROM ${portalResponsesTable}
+    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES}
+      AND ${portalResponsesTable.receivedAt} >= ${priorWindowStart}
+      AND ${portalResponsesTable.receivedAt} < ${recentStart}
+  )`;
+  const [netChangeRow] = await db
     .select({
-      recovered: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES}
+      recent: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES} AND ${recentResponseExists}
+        THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
+      prior: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES} AND ${priorResponseExists}
         THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
     })
     .from(invoiceGroupsTable)
-    .where(resolvedInPriorSql);
+    .where(HIDE_TOUR_SAMPLE_GROUP);
+  const priorRecoveredRow = { recovered: netChangeRow?.prior ?? "0" };
+  // Used downstream for `recentMoneyRow.recovered`-equivalent override
+  // when computing netChangeRecovered: we want the "current 7d wins"
+  // delta against prior 7d, not (all-time) − (prior 7d).
+  const recentWinsThisWeek = parseFloat(netChangeRow?.recent ?? "0") || 0;
 
   // Closed-out outcomes panel: counts of resolved-in-window groups by
   // outcome. Drives the Dashboard "Closed-out outcomes (last 7d)" panel
@@ -530,13 +557,25 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   // historically had a permissive outcome enum. Casting keeps the
   // partition disjoint and the enum check honest.
   const bucketSql = sql<string>`CASE WHEN ${invoiceGroupsTable.status} = 'Expired' THEN '__expired__' ELSE ${invoiceGroupsTable.outcome}::text END`;
+  // ALL-TIME outcome buckets — no phase/date gate. We count any group
+  // that has reached a terminal verdict: a real outcome (not Pending)
+  // OR an Expired status (closure path that doesn't always set
+  // outcome). A group sitting in awaiting_reattestation with
+  // outcome=Approved counts as a win the moment the payor rules,
+  // matching the Recovered $ tile semantics.
   const closedOutcomeRows = await db
     .select({
       bucket: bucketSql,
       count: count(),
     })
     .from(invoiceGroupsTable)
-    .where(resolvedInWindowSql)
+    .where(and(
+      HIDE_TOUR_SAMPLE_GROUP,
+      or(
+        ne(invoiceGroupsTable.outcome, "Pending"),
+        eq(invoiceGroupsTable.status, "Expired"),
+      ),
+    ))
     .groupBy(bucketSql);
   const closedOutcomes = {
     approved: 0,
@@ -572,7 +611,10 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const recoveryRate = disputedAmount > 0
     ? Math.round((recoveredAmount / disputedAmount) * 100)
     : null;
-  const netChangeRecovered = recoveredAmount - priorRecoveredAmount;
+  // Net change is "this week's wins − last week's wins", anchored on
+  // portal_responses.received_at. NOT (all-time recovered − prior 7d),
+  // which would balloon to a giant positive number forever.
+  const netChangeRecovered = recentWinsThisWeek - priorRecoveredAmount;
   // "Open invoices" count for the Dashboard — same predicate as the
   // at-risk bucket above so the count and the at-risk dollars line up.
   const openInvoices = atRiskGroups;
@@ -885,50 +927,100 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
     ))
     .groupBy(sql`1`);
 
-  // Invoice-submitted counts distinct invoice groups whose status moved
-  // to Portal Queued on a given day (one submission per invoice).
+  // Invoice-submitted: distinct invoice groups whose first portal
+  // submission was created on a given day. Sourced from the canonical
+  // portal_submissions.createdAt timestamp (the audit-log path was
+  // brittle — `group_status_changed` rows aren't always written for
+  // bulk submits and undercount by ~30%). One row per (invoice, day).
   const invoicesSubmittedRows = await db
     .select({
-      bucket: sql<string>`to_char((${auditLogsTable.timestamp}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
-      count: sql<number>`COUNT(DISTINCT ${auditLogsTable.invoiceGroupId})::int`,
+      bucket: sql<string>`to_char((${portalSubmissionsTable.createdAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: sql<number>`COUNT(DISTINCT ${portalSubmissionsTable.invoiceGroupId})::int`,
     })
-    .from(auditLogsTable)
+    .from(portalSubmissionsTable)
     .where(and(
-      gte(auditLogsTable.timestamp, start),
-      eq(auditLogsTable.action, "group_status_changed"),
-      sql`${auditLogsTable.metadata} ->> 'to' = 'Portal Queued'`,
-      isNotNull(auditLogsTable.invoiceGroupId),
+      gte(portalSubmissionsTable.createdAt, start),
+      isNotNull(portalSubmissionsTable.invoiceGroupId),
     ))
     .groupBy(sql`1`);
 
-  const recoveredRows = await db
+  // Re-attest completions per day — distinct invoice groups whose
+  // reattest_completed_at falls in the bucket. "Our work" series on
+  // the Insights data-flow chart (the moment we close the loop with
+  // the payor after the win).
+  const invoicesReattestedRows = await db
     .select({
-      bucket: sql<string>`to_char((${invoiceGroupsTable.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
-      total: sum(invoiceGroupsTable.approvedAmount),
+      bucket: sql<string>`to_char((${invoiceGroupsTable.reattestCompletedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: count(),
     })
     .from(invoiceGroupsTable)
     .where(and(
-      gte(invoiceGroupsTable.updatedAt, start),
-      isNotNull(invoiceGroupsTable.approvedAmount),
-      inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
+      HIDE_TOUR_SAMPLE_GROUP,
+      isNotNull(invoiceGroupsTable.reattestCompletedAt),
+      gte(invoiceGroupsTable.reattestCompletedAt, start),
     ))
     .groupBy(sql`1`);
 
-  // Prior-window recovered-$ per day, used as the overlay on the
-  // current window's recovered-$ trend.
-  const priorRecoveredRows = await db
+  // Portal responses received per day — "payor work". One row per
+  // distinct invoice group per day (a group with multiple responses
+  // on the same day — e.g. partial then full — counts once).
+  const responsesReceivedRows = await db
     .select({
-      bucket: sql<string>`to_char((${invoiceGroupsTable.updatedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
-      total: sum(invoiceGroupsTable.approvedAmount),
+      bucket: sql<string>`to_char((${portalResponsesTable.receivedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      count: sql<number>`COUNT(DISTINCT ${portalResponsesTable.invoiceGroupId})::int`,
     })
-    .from(invoiceGroupsTable)
-    .where(and(
-      gte(invoiceGroupsTable.updatedAt, priorStart),
-      sql`${invoiceGroupsTable.updatedAt} < ${priorEnd}`,
-      isNotNull(invoiceGroupsTable.approvedAmount),
-      inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
-    ))
+    .from(portalResponsesTable)
+    .where(gte(portalResponsesTable.receivedAt, start))
     .groupBy(sql`1`);
+
+  // Recovered $ per day — bucketed on portal_responses.received_at
+  // (the day the payor's positive verdict landed) joined to the
+  // group's approvedAmount. Switched off invoice_groups.updatedAt
+  // because that timestamp moves on every unrelated row touch and
+  // smeared the trend.
+  //
+  // Dedup happens in the inner SELECT DISTINCT (bucket, group_id) so a
+  // group with multiple positive response rows on the same day still
+  // contributes its approvedAmount exactly once. NEVER use
+  // `SUM(DISTINCT approved_amount)` — that collapses two different
+  // groups with identical amounts (e.g. $100 + $100) into one.
+  const recoveredRows = await db.execute<{ bucket: string; total: string }>(sql`
+    SELECT bucket, COALESCE(SUM(approved_amount), 0)::text AS total
+    FROM (
+      SELECT DISTINCT
+        to_char((${portalResponsesTable.receivedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS bucket,
+        ${invoiceGroupsTable.id} AS group_id,
+        COALESCE(${invoiceGroupsTable.approvedAmount}, 0) AS approved_amount
+      FROM ${portalResponsesTable}
+      INNER JOIN ${invoiceGroupsTable}
+        ON ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      WHERE ${portalResponsesTable.receivedAt} >= ${start}
+        AND ${portalResponsesTable.responseType}::text IN ('approval','partial_approval')
+        AND ${invoiceGroupsTable.outcome} IN ('Approved','Partially Approved')
+        AND ${HIDE_TOUR_SAMPLE_GROUP}
+    ) t
+    GROUP BY bucket
+  `).then(r => (r as unknown as { rows: Array<{ bucket: string; total: string }> }).rows ?? []);
+
+  // Prior-window recovered-$ per day, same anchor + dedup as current.
+  const priorRecoveredRows = await db.execute<{ bucket: string; total: string }>(sql`
+    SELECT bucket, COALESCE(SUM(approved_amount), 0)::text AS total
+    FROM (
+      SELECT DISTINCT
+        to_char((${portalResponsesTable.receivedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS bucket,
+        ${invoiceGroupsTable.id} AS group_id,
+        COALESCE(${invoiceGroupsTable.approvedAmount}, 0) AS approved_amount
+      FROM ${portalResponsesTable}
+      INNER JOIN ${invoiceGroupsTable}
+        ON ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      WHERE ${portalResponsesTable.receivedAt} >= ${priorStart}
+        AND ${portalResponsesTable.receivedAt} < ${priorEnd}
+        AND ${portalResponsesTable.responseType}::text IN ('approval','partial_approval')
+        AND ${invoiceGroupsTable.outcome} IN ('Approved','Partially Approved')
+        AND ${HIDE_TOUR_SAMPLE_GROUP}
+    ) t
+    GROUP BY bucket
+  `).then(r => (r as unknown as { rows: Array<{ bucket: string; total: string }> }).rows ?? []);
 
   const createdMap = new Map(createdRows.map(r => [r.bucket, r.count]));
   const resolvedMap = new Map(resolvedRows.map(r => [r.bucket, r.count]));
@@ -936,6 +1028,8 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
   const invoicesCreatedMap = new Map(invoicesCreatedRows.map(r => [r.bucket, Number(r.count)]));
   const invoicesResolvedMap = new Map(invoicesResolvedRows.map(r => [r.bucket, Number(r.count)]));
   const invoicesSubmittedMap = new Map(invoicesSubmittedRows.map(r => [r.bucket, Number(r.count)]));
+  const invoicesReattestedMap = new Map(invoicesReattestedRows.map(r => [r.bucket, Number(r.count)]));
+  const responsesReceivedMap = new Map(responsesReceivedRows.map(r => [r.bucket, Number(r.count)]));
   const priorRecoveredMap = new Map(priorRecoveredRows.map(r => [r.bucket, parseFloat(r.total || "0")]));
 
   // Clerks don't see money — null out the dollarsRecovered series so the
@@ -956,6 +1050,8 @@ router.get("/dashboard/timeseries", asyncHandler(async (req, res): Promise<void>
       invoicesCreated: invoicesCreatedMap.get(date) ?? 0,
       invoicesSubmitted: invoicesSubmittedMap.get(date) ?? 0,
       invoicesResolved: invoicesResolvedMap.get(date) ?? 0,
+      invoicesReattested: invoicesReattestedMap.get(date) ?? 0,
+      responsesReceived: responsesReceivedMap.get(date) ?? 0,
       dollarsRecovered: showAmounts
         ? Number((recoveredMap.get(date) ?? 0).toFixed(2))
         : null,
@@ -1090,24 +1186,53 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
   );
   const POSITIVE_OUTCOMES_INSIGHTS = sql`${invoiceGroupsTable.outcome} IN ('Approved','Partially Approved')`;
   const RECOVERY_RATE_OUTCOMES_INSIGHTS = sql`${invoiceGroupsTable.outcome} NOT IN ('Pending','Non-Issue','No Action Needed')`;
+  const POSITIVE_RESPONSE_TYPES_INSIGHTS = sql`('approval','partial_approval')`;
+  const FINAL_RESPONSE_TYPES_INSIGHTS = sql`('approval','partial_approval','denial')`;
 
-  // Money totals — invoice-grain, resolved-in-window. Mirrors the
-  // /dashboard/summary cohort exactly so the two surfaces always
-  // reconcile for the same window length.
+  // Win-date predicates — anchor money on when the payor's verdict
+  // landed (portal_responses.received_at), not on when the dispute
+  // later closed. Without this, a 7d window that catches 50 freshly-
+  // approved invoices reads $0 because none have hit phase=closed
+  // yet. See the same rationale in /dashboard/summary above.
+  const wonInWindowSql = sql`EXISTS (
+    SELECT 1 FROM ${portalResponsesTable}
+    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES_INSIGHTS}
+      AND ${portalResponsesTable.receivedAt} >= ${start}
+  )`;
+  const wonInPriorSql = sql`EXISTS (
+    SELECT 1 FROM ${portalResponsesTable}
+    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${portalResponsesTable.responseType}::text IN ${POSITIVE_RESPONSE_TYPES_INSIGHTS}
+      AND ${portalResponsesTable.receivedAt} >= ${priorStart}
+      AND ${portalResponsesTable.receivedAt} < ${start}
+  )`;
+  const respondedInWindowSql = sql`EXISTS (
+    SELECT 1 FROM ${portalResponsesTable}
+    WHERE ${portalResponsesTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+      AND ${portalResponsesTable.responseType}::text IN ${FINAL_RESPONSE_TYPES_INSIGHTS}
+      AND ${portalResponsesTable.receivedAt} >= ${start}
+  )`;
+
+  // Money totals — invoice-grain, anchored on the payor's verdict
+  // date. `closedInWindowCount` switches to "groups with any final
+  // response in window" so the sample-size sub-label below the tiles
+  // matches the cohort the dollars describe.
   const [invoiceMoneyRow] = await db
     .select({
-      totalClaimedAmount: sql<string>`COALESCE(SUM(CASE WHEN ${RECOVERY_RATE_OUTCOMES_INSIGHTS}
+      totalClaimedAmount: sql<string>`COALESCE(SUM(CASE WHEN ${RECOVERY_RATE_OUTCOMES_INSIGHTS} AND ${respondedInWindowSql}
         THEN COALESCE(${invoiceGroupsTable.totalAmount}, 0) ELSE 0 END), 0)`,
-      totalRecoveredAmount: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS}
+      totalRecoveredAmount: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS} AND ${wonInWindowSql}
         THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
-      confirmedRecoveredAmount: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS}
+      confirmedRecoveredAmount: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS} AND ${wonInWindowSql}
         AND ${invoiceGroupsTable.reattestCompletedAt} IS NOT NULL
         THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
-      closedInWindowCount: sql<number>`COUNT(*)::int`,
-      closedInWindowAmount: sql<string>`COALESCE(SUM(COALESCE(${invoiceGroupsTable.totalAmount}, 0)), 0)`,
+      closedInWindowCount: sql<number>`SUM(CASE WHEN ${respondedInWindowSql} THEN 1 ELSE 0 END)::int`,
+      closedInWindowAmount: sql<string>`COALESCE(SUM(CASE WHEN ${respondedInWindowSql}
+        THEN COALESCE(${invoiceGroupsTable.totalAmount}, 0) ELSE 0 END), 0)`,
     })
     .from(invoiceGroupsTable)
-    .where(groupResolvedInWindow);
+    .where(HIDE_TOUR_SAMPLE_GROUP);
 
   const openExposurePredicate = and(
     HIDE_TOUR_SAMPLE_GROUP,
@@ -1208,11 +1333,11 @@ router.get("/dashboard/insights", asyncHandler(async (req, res): Promise<void> =
     // bars are apples-to-apples.
     db
       .select({
-        priorRecovered: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS}
+        priorRecovered: sql<string>`COALESCE(SUM(CASE WHEN ${POSITIVE_OUTCOMES_INSIGHTS} AND ${wonInPriorSql}
           THEN COALESCE(${invoiceGroupsTable.approvedAmount}, 0) ELSE 0 END), 0)`,
       })
       .from(invoiceGroupsTable)
-      .where(groupResolvedInPrior),
+      .where(HIDE_TOUR_SAMPLE_GROUP),
     // Pipeline snapshot — currently open invoices grouped by macro
     // phase (pre-submit, in-flight, response-pending). `phase` collapses
     // MAS-required and awaiting-payout into response-pending so the

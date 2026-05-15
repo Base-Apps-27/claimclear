@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TonePill, TONE_STYLE } from "@/components/cohesion";
 import { useToast, successToast } from "@/hooks/use-toast";
+import { notifyClaimProcessedThisSession } from "@/hooks/use-session-milestones";
 import { formatDateTime } from "@/lib/format";
 import { formatRelative } from "@/lib/time";
 import { formatServiceDateShort } from "./utils";
@@ -211,6 +212,18 @@ export function AttestationWizard({
       });
       await invalidateAfterMutation();
       const total = survivedLegs.length;
+      // Session-milestone counter (Task #780, A) — every leg that just
+      // graduated through the bulk reattest path is "work the team
+      // actually did". Without this, an operator clearing 10+ legs via
+      // the wizard never crosses the 10/25/50 thresholds because only
+      // the older one-leg-at-a-time `reattest-modal.tsx` and the
+      // submission gauntlet were notifying. Generation-keyed on the
+      // group id + completion timestamp so a re-render of the same
+      // success can't double-count.
+      const reattestGen = `wizard-reattest:${bucket.invoiceGroupId}:${Date.now()}`;
+      for (const leg of survivedLegs) {
+        notifyClaimProcessedThisSession(leg.id, reattestGen);
+      }
       successToast({
         title: "__VERB__",
         description: `Confirmed re-attestation for invoice ${invoiceNumber || `#${bucket.invoiceGroupId}`} — ${total} leg${total === 1 ? "" : "s"} graduated.`,

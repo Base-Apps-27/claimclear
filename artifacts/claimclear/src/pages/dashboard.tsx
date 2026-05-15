@@ -688,7 +688,7 @@ export default function Dashboard() {
                 className="text-[11px] uppercase tracking-wide font-semibold"
                 style={{ color: "hsl(var(--cc-success))" }}
               >
-                Last {wd}d · wins
+                Wins · all time
               </div>
               {isEmpty ? (
                 <div className="text-sm mt-1.5" style={{ color: "hsl(var(--cc-success))" }}>
@@ -775,7 +775,7 @@ export default function Dashboard() {
               <div className="flex flex-col gap-0.5">
                 <span className="inline-flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  last {amounts.windowDays ?? 7}d
+                  $ · all time
                 </span>
                 <span className="text-[10px] text-muted-foreground" data-testid="kpi-recovered-confirmed">
                   Confirmed: <TickerCurrency
@@ -786,7 +786,7 @@ export default function Dashboard() {
               </div>
             }
             tone="good"
-            tooltip="Σ approvedAmount over invoice groups RESOLVED in the trailing window (Approved or Partially Approved). Recorded at resolution-time so a win moves dollars here immediately. The 'Confirmed' sub-line is the slice where the payor's re-attestation has actually completed — i.e. paid back in the portal, not just won on paper."
+            tooltip="All-time Σ approvedAmount over invoice groups with outcome Approved or Partially Approved. A win counts the moment the payor rules — no phase or date gate. The 'Confirmed' sub-line is the slice where the payor's re-attestation has actually completed (paid back in the portal, not just won on paper). For 'what changed this week' see Net change to the right."
             testid="kpi-recovered"
           />
         </HideForClerk>
@@ -798,7 +798,7 @@ export default function Dashboard() {
                 ? <span className="text-muted-foreground">—</span>
                 : <><TickerInt value={amounts.recoveryRate} />%</>
             }
-            sub={`% · last ${amounts.windowDays ?? 7}d`}
+            sub={`% · all time`}
             tone={
               amounts.recoveryRate === null || amounts.recoveryRate === undefined
                 ? "neutral"
@@ -808,7 +808,7 @@ export default function Dashboard() {
                     ? "warning"
                     : "danger"
             }
-            tooltip="Of the dollars we resolved this window, what fraction came back as Approved / Partially Approved. Server-rounded to the nearest whole percent. Pending / Non-Issue / No-Action invoices are excluded from both sides — only real disputes count. Shown as '—' when nothing closed in the window."
+            tooltip="All-time recovery rate — of every disputed dollar, what fraction came back as Approved or Partially Approved. Server-rounded to the nearest whole percent. Pending / Non-Issue / No-Action invoices are excluded from both sides. Shown as '—' until you've disputed your first invoice."
             testid="kpi-recovery-rate"
           />
         </HideForClerk>
@@ -834,35 +834,31 @@ export default function Dashboard() {
                   ? "danger"
                   : "neutral"
             }
-            tooltip="Recovered $ this window minus Recovered $ in the equal-length window immediately before it. Positive means we recovered more this period than last."
+            tooltip="Approved $ for wins that landed in the last 7 days minus the same for the prior 7 days. Anchored on the day the payor's positive verdict landed in the portal, so this is the only field on the strip that's still windowed (it's the 'what changed this week' momentum signal — the others are now all-time)."
             testid="kpi-net-change"
           />
         </HideForClerk>
       </div>
 
-      {/* Closed-out outcomes — windowed to summary.amounts.windowDays so
-          this panel decomposes the SAME population that the Recovery
-          Rate tile is computed over. Lifetime counts hid the fact that
-          recoveries this week were drowning in years-old denials. The
-          left three cells (Approved / Partially / Denied) are the
-          recovery-rate denominator (real disputes); Withdrawn /
-          Expired round out closure paths; Pending / Non-Issue /
-          No-Action are intentionally omitted from this panel because
-          they don't move the recovery-rate needle (they're excluded
-          server-side from disputedAmount). `total` matches the count
-          of invoices that entered phase=closed in the window. */}
+      {/* Outcomes — ALL-TIME breakdown of every invoice that has reached
+          a terminal verdict. Decomposes the recovery-rate denominator
+          across the entire history rather than the prior 7d slice
+          (which routinely read 0/0/0/0/0 and made the panel feel like
+          dead space). Approved / Partially / Denied are the recovery-
+          rate denominator; Withdrawn / Expired round out closure
+          paths; Pending / Non-Issue / No-Action stay off this panel
+          (excluded server-side from disputedAmount). */}
       <HideForClerk>
         {(() => {
           const co = summary.closedOutcomes;
-          const wd = co?.windowDays ?? amounts.windowDays ?? 7;
           return (
             <div
               className="rounded-md border border-border bg-card px-4 py-3"
               data-testid="kpi-outcome-breakdown"
             >
               <div className="text-[11px] uppercase tracking-wide font-semibold mb-2 text-muted-foreground flex items-center gap-1">
-                Closed-out outcomes (last {wd}d)
-                <InfoTooltip content={`How the ${co?.total ?? 0} invoice${co?.total === 1 ? "" : "s"} that closed in the last ${wd} days broke down. Approved + Partially Approved = wins on the Recovery rate tile. Denied + Withdrawn + Expired = the dollar bleed. Non-Issue / No-Action are excluded from the Recovery rate calc and not shown here — see Insights for the full mix.`} />
+                Outcomes · all time
+                <InfoTooltip content={`How every one of the ${co?.total ?? 0} invoice${co?.total === 1 ? "" : "s"} that has reached a final verdict broke down. Approved + Partially Approved = wins on the Recovery rate tile. Denied + Withdrawn + Expired = the dollar bleed. Non-Issue / No-Action are excluded from the Recovery rate calc and not shown here — see Insights for the full mix and a windowed view.`} />
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
                 <div data-testid="outcome-approved">

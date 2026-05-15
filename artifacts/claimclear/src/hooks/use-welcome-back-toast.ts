@@ -107,21 +107,26 @@ export function useWelcomeBackWinsToast(opts: { enabled: boolean }): void {
       firedRef.current = true;
       return;
     }
+    // closedOutcomes is now ALL-TIME (no 7d gate), so use the
+    // 7d-windowed netChangeRecovered as the SOLE trigger signal.
+    // Strict 7d gate by design: the welcome-back toast is supposed
+    // to celebrate momentum, not the lifetime tally. A tenant with
+    // a busy past but a quiet week shouldn't get the toast every
+    // session. Quiet path: if recent recovery is zero/negative we
+    // return WITHOUT marking shown, so a later refetch in the same
+    // session that surfaces today's first win can still trigger.
+    const recentRecoveredUsd = summary.amounts?.netChangeRecovered ?? null;
+    const recentRecoveredNum = recentRecoveredUsd != null
+      ? Number(recentRecoveredUsd)
+      : 0;
+    if (!Number.isFinite(recentRecoveredNum) || recentRecoveredNum <= 0) return;
     const closed = summary.closedOutcomes;
-    const approvals =
+    const totalApprovals =
       (closed?.approved ?? 0) + (closed?.partiallyApproved ?? 0);
-    if (approvals <= 0) return;
-    // recoveredAmount lives under summary.amounts for admins (string-
-    // serialized decimal); clerk payloads scrub it to null. Either
-    // way the toast still fires; the dollar suffix is appended only
-    // when a positive value is present. windowDays also lives on
-    // amounts (it's the window the recovered total is computed over).
-    const recoveredUsd = summary.amounts?.recoveredAmount ?? null;
-    const dollars = formatCurrencyShort(recoveredUsd);
-    const windowDays = summary.amounts?.windowDays ?? 7;
-    const description = dollars
-      ? `${approvals} approval${approvals === 1 ? "" : "s"} landed in the last ${windowDays}d — ${dollars} recovered. Let's add to it.`
-      : `${approvals} approval${approvals === 1 ? "" : "s"} landed in the last ${windowDays}d. Let's add to it.`;
+    const dollars = formatCurrencyShort(recentRecoveredNum);
+    const description = totalApprovals > 0
+      ? `${dollars} of fresh wins landed in the last 7 days — ${totalApprovals} approval${totalApprovals === 1 ? "" : "s"} on the all-time board. Let's add to it.`
+      : `${dollars} of fresh wins landed in the last 7 days. Let's add to it.`;
     toast({
       title: "Welcome back",
       description,
