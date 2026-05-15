@@ -28,6 +28,7 @@ import {
   deltaArrow,
   escapeHtml,
   paragraph,
+  winsHero,
   type KpiTile,
 } from "./partials";
 import type { CanonicalSummary, CanonicalInsights } from "./data";
@@ -167,7 +168,23 @@ export function renderWeeklyExecBody(
     ${simpleTable(["Error type", "Count", "Denied", "Recovered"], denialRows)}
   `;
 
+  // Wins celebration — green hero at the very top of the digest. Reads
+  // the canonical 7d outcome counts straight off the summary so the
+  // exec opens the email on the week's wins, not the week's losses.
+  const winsBlock = summary
+    ? winsHero({
+        cadenceLabel: "This week",
+        approvedCount: summary.closedOutcomes?.approved ?? 0,
+        partiallyApprovedCount: summary.closedOutcomes?.partiallyApproved ?? 0,
+        recoveredAmount: summary.amounts.recoveredAmount,
+        confirmedAmount: summary.amounts.confirmedRecoveredAmount,
+        netChange: summary.amounts.netChangeRecovered,
+        recoveryRate: summary.amounts.recoveryRate,
+      })
+    : "";
+
   return `
+    ${winsBlock}
     ${kpiStrip(tiles)}
     ${recoveryBlock}
     ${pipelineSection}

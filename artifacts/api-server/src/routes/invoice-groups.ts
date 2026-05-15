@@ -2640,6 +2640,13 @@ router.get("/macro-phase/rollup", asyncHandler(async (_req, res): Promise<void> 
 
 router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): Promise<void> => {
   const responsePendingPredicate = buildMacroPhaseCondition("response-pending");
+  // Mirror the awaitingPayorAgain suppression that the inbox view
+  // applies (see invoice-groups list query and `buildInboxHiddenBucketCondition`'s
+  // acknowledgmentOnly bucket): once we re-pinged the payor, the group
+  // drops off the visible inbox until the payor sends a NEW response.
+  // Without this filter the dashboard / daily-brief "Responses
+  // awaiting review" tile count includes those ghost rows and the
+  // operator clicks through to an empty inbox.
   const [row] = await db
     .select({ value: count() })
     .from(invoiceGroupsTable)
@@ -2654,6 +2661,14 @@ router.get("/responses/awaiting-review/count", asyncHandler(async (_req, res): P
             'approval', 'denial', 'partial_approval', 'info_request', 'other'
           )
       )`,
+      or(
+        isNull(invoiceGroupsTable.awaitingPayorAgainAt),
+        sql`exists (
+          select 1 from portal_responses pr
+          where pr.invoice_group_id = ${invoiceGroupsTable.id}
+            and pr.received_at > ${invoiceGroupsTable.awaitingPayorAgainAt}
+        )`,
+      ),
     ));
 
   const masResult = await db.execute(sql`

@@ -423,37 +423,6 @@ router.get("/dashboard/summary", asyncHandler(async (req, res): Promise<void> =>
   const deniedLostGroups = parseInt(bucketRow?.deniedLostGroups || "0", 10);
 
   // ────────────────────────────────────────────────────────────────────
-  // Task #720 — Canonical 7-day money block. The Dashboard top strip
-  // post-#720 reads these fields directly so its five tiles match the
-  // /dashboard/insights?days=7 numbers (and the daily brief KPI tiles
-  // for the same window) by construction. Definitions intentionally
-  // mirror /dashboard/insights:
-  //
-  //   disputedAmount   = Σ invoice_groups.totalAmount where the group
-  //                      was created in [now − 7d, now] (invoice grain).
-  //   recoveredAmount  = Σ invoice_groups.approvedAmount over the same
-  //                      window. Includes Partially Approved / Approved
-  //                      that have settled via the row-level approved
-  //                      column; matches Insights' totalRecoveredAmount.
-  //   priorRecoveredAmount
-  //                    = same as recoveredAmount but on the equal-length
-  //                      window immediately before the current one
-  //                      (`[now − 14d, now − 7d)`).
-  //   recoveryRate     = recoveredAmount / disputedAmount * 100, or
-  //                      null when disputedAmount is zero (no work
-  //                      arrived in the window — rate is undefined,
-  //                      not 0).
-  //   netChangeRecovered = recoveredAmount − priorRecoveredAmount.
-  //   windowDays       = 7 (declared on the wire so the Dashboard can
-  //                      render the tile sub-label without hard-coding
-  //                      the window length).
-  //
-  // The "Open invoices" count uses the snapshot atRiskGroups bucket
-  // above — same predicate Insights uses for atRiskGroupCount, so the
-  // Dashboard "Open invoices" tile and the Insights "At risk (now)"
-  // group count can never disagree.
-  // ────────────────────────────────────────────────────────────────────
-  // ────────────────────────────────────────────────────────────────────
   // Resolution-anchored money window. Every windowed money number
   // (recoveredAmount, disputedAmount, recoveryRate, netChangeRecovered,
   // priorRecoveredAmount, confirmedRecoveredAmount, closedOutcomes) is

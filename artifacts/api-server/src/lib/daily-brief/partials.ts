@@ -122,6 +122,97 @@ export function simpleTable(headers: string[], rows: SimpleRow[]): string {
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;margin:8px 0;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
+// Wins hero — green celebratory block placed at the very top of the
+// daily brief and weekly digest so the operator opens the email on a
+// success summary instead of a problem list. All values come verbatim
+// from the canonical aggregator — no additional math, no multiplier.
+// `cadenceLabel` distinguishes "Yesterday" (daily brief) from
+// "This week" (weekly digest); the rest of the copy is identical so
+// the two surfaces feel like one celebration system.
+export interface WinsHeroInput {
+  cadenceLabel: string; // e.g. "This week so far" or "Yesterday"
+  approvedCount: number;
+  partiallyApprovedCount: number;
+  recoveredAmount: string | number | null | undefined;
+  confirmedAmount?: string | number | null | undefined;
+  netChange?: string | number | null | undefined;
+  recoveryRate?: number | null | undefined;
+}
+
+export function winsHero(input: WinsHeroInput): string {
+  const wins = input.approvedCount + input.partiallyApprovedCount;
+  const recoveredNum =
+    input.recoveredAmount == null
+      ? 0
+      : typeof input.recoveredAmount === "number"
+      ? input.recoveredAmount
+      : parseFloat(input.recoveredAmount) || 0;
+  const netChangeNum =
+    input.netChange == null
+      ? null
+      : typeof input.netChange === "number"
+      ? input.netChange
+      : parseFloat(input.netChange);
+  // No wins AND no recovered $ → render a friendly "still hunting"
+  // line instead of an empty green block, so the celebration is honest.
+  if (wins === 0 && recoveredNum <= 0) {
+    return `
+      <div style="border:1px solid #d1fae5;background:#ecfdf5;border-radius:8px;padding:14px 16px;margin:16px 0;">
+        <div style="font-size:11px;color:#047857;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">${escapeHtml(input.cadenceLabel)} · wins</div>
+        <div style="font-size:15px;color:#065f46;margin-top:6px;line-height:1.5;">
+          No new approvals to celebrate yet — let's go land some today.
+        </div>
+      </div>
+    `;
+  }
+  const headlineParts: string[] = [];
+  if (wins > 0) {
+    const winsLabel = wins === 1 ? "invoice approved" : "invoices approved";
+    headlineParts.push(`<strong>${wins}</strong> ${winsLabel}`);
+  }
+  if (recoveredNum > 0) {
+    headlineParts.push(`<strong>${escapeHtml(money(recoveredNum))}</strong> recovered`);
+  }
+  if (
+    input.recoveryRate != null &&
+    Number.isFinite(input.recoveryRate) &&
+    (wins > 0 || recoveredNum > 0)
+  ) {
+    headlineParts.push(`<strong>${escapeHtml(pct(input.recoveryRate))}</strong> recovery rate`);
+  }
+  const subParts: string[] = [];
+  if (input.partiallyApprovedCount > 0 && input.approvedCount > 0) {
+    subParts.push(
+      `${input.approvedCount} fully approved · ${input.partiallyApprovedCount} partially`,
+    );
+  }
+  if (input.confirmedAmount != null) {
+    const confirmedNum =
+      typeof input.confirmedAmount === "number"
+        ? input.confirmedAmount
+        : parseFloat(input.confirmedAmount) || 0;
+    if (confirmedNum > 0) {
+      subParts.push(`${money(confirmedNum)} re-attested by payor`);
+    }
+  }
+  if (netChangeNum != null && Number.isFinite(netChangeNum) && netChangeNum !== 0) {
+    const sign = netChangeNum > 0 ? "▲" : "▼";
+    const color = netChangeNum > 0 ? "#047857" : "#a16207";
+    subParts.push(
+      `<span style="color:${color};font-weight:600;">${sign} ${escapeHtml(money(Math.abs(netChangeNum)))}</span> vs prior period`,
+    );
+  }
+  return `
+    <div style="border:1px solid #a7f3d0;background:linear-gradient(180deg,#ecfdf5 0%,#f0fdf4 100%);border-radius:8px;padding:16px 18px;margin:16px 0;">
+      <div style="font-size:11px;color:#047857;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">${escapeHtml(input.cadenceLabel)} · wins</div>
+      <div style="font-size:18px;color:#065f46;margin-top:6px;line-height:1.5;">
+        ${headlineParts.join(' <span style="color:#10b981;">·</span> ')}
+      </div>
+      ${subParts.length > 0 ? `<div style="font-size:12px;color:#047857;margin-top:6px;line-height:1.5;">${subParts.join(' · ')}</div>` : ""}
+    </div>
+  `;
+}
+
 export function paragraph(text: string): string {
   return `<p style="font-size:13px;color:#444;margin:8px 0;line-height:1.5;">${escapeHtml(text)}</p>`;
 }

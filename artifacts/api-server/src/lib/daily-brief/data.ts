@@ -95,6 +95,22 @@ export interface CanonicalSummary {
   urgentCount: number;
   submittedStuckCount: number;
   today: string;
+  // Closed-out outcomes panel — counts of invoice groups whose phase
+  // entered `closed` inside the canonical window. Backs the "wins"
+  // celebration block at the top of the daily brief and weekly digest.
+  // Optional only because the `safeFetchCanonicalSummary` wrapper can
+  // hand back partial degraded payloads.
+  closedOutcomes?: {
+    approved: number;
+    partiallyApproved: number;
+    denied: number;
+    withdrawn: number;
+    expired: number;
+    nonIssue: number;
+    noActionNeeded: number;
+    total: number;
+    windowDays: number;
+  };
 }
 
 // Canonical /api/responses/awaiting-review/count contract. Same value

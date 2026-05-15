@@ -25,6 +25,7 @@ import {
   paragraph,
   escapeHtml,
   deltaArrow,
+  winsHero,
   type KpiTile,
 } from "./partials";
 import type { CanonicalSummary, CanonicalReviewCount } from "./data";
@@ -82,6 +83,10 @@ function renderKpiStrip(
   // Falls back to "—" when the count fetch failed so we don't silently
   // substitute an unrelated pipeline number.
   const reviewValue = reviewCount ? String(reviewCount.count) : "—";
+  // Empty-state framing: when the at-risk bucket is genuinely empty
+  // (or the inbox is at zero), drop the warn tone and show a friendly
+  // "All clear" hint instead of a red-zero. The numbers don't change —
+  // only the affect does, so a calm morning reads calm.
   const tiles: KpiTile[] = [
     {
       // Renamed from "Open invoices" to match the Dashboard hero
@@ -91,7 +96,13 @@ function renderKpiStrip(
       // `amounts.atRiskGroups` count) — only the label changed.
       label: "At-risk invoices",
       value: String(summary.amounts.openInvoices),
-      emphasis: summary.amounts.openInvoices > 0 ? "warn" : "default",
+      hint: summary.amounts.openInvoices === 0 ? "All clear" : undefined,
+      emphasis:
+        summary.amounts.openInvoices > 0
+          ? "warn"
+          : summary.amounts.openInvoices === 0
+          ? "good"
+          : "default",
     },
     {
       // Renamed from "At-risk $" to "Outstanding $" to match the
@@ -100,19 +111,34 @@ function renderKpiStrip(
       // claim + vendor-prepay still on the line).
       label: "Outstanding $",
       value: money(summary.amounts.atRiskExposure),
-      hint: `${summary.amounts.atRiskGroups} groups`,
-      emphasis: summary.amounts.atRiskGroups > 0 ? "warn" : "default",
+      hint:
+        summary.amounts.atRiskGroups === 0
+          ? "Nothing in flight"
+          : `${summary.amounts.atRiskGroups} groups`,
+      emphasis:
+        summary.amounts.atRiskGroups > 0
+          ? "warn"
+          : summary.amounts.atRiskGroups === 0
+          ? "good"
+          : "default",
     },
     {
       label: "Due today",
       value: String(dueToday),
-      emphasis: dueToday > 0 ? "warn" : "default",
+      hint: dueToday === 0 ? "Inbox zero" : undefined,
+      emphasis: dueToday > 0 ? "warn" : "good",
     },
     { label: "Due tomorrow", value: String(dueTomorrow) },
     {
       label: "Responses awaiting review",
       value: reviewValue,
-      emphasis: reviewCount && reviewCount.count > 0 ? "warn" : "default",
+      hint: reviewCount && reviewCount.count === 0 ? "Caught up" : undefined,
+      emphasis:
+        reviewCount && reviewCount.count > 0
+          ? "warn"
+          : reviewCount && reviewCount.count === 0
+          ? "good"
+          : "default",
     },
   ];
   return kpiStrip(tiles);
@@ -171,6 +197,24 @@ function renderAttentionBlock(attention: PortalAttentionBundle): string {
     ${requeueNote}
     ${attention.needsAttention.length > 0 ? simpleTable(["Conf #", "Reason", "Attempts", "Next retry", "Last error"], attentionRows) : ""}
   </div>`;
+}
+
+// Wins celebration — green hero block placed at the very top of the
+// brief so the operator opens the morning email on a success summary
+// instead of a problem list. Reads the canonical 7d outcome counts and
+// money fields verbatim from /dashboard/summary; no extra fetches.
+function renderWinsBlock(summary: CanonicalSummary): string {
+  const co = summary.closedOutcomes;
+  const window = co?.windowDays ?? summary.amounts.windowDays ?? 7;
+  return winsHero({
+    cadenceLabel: `Last ${window}d`,
+    approvedCount: co?.approved ?? 0,
+    partiallyApprovedCount: co?.partiallyApproved ?? 0,
+    recoveredAmount: summary.amounts.recoveredAmount,
+    confirmedAmount: summary.amounts.confirmedRecoveredAmount,
+    netChange: summary.amounts.netChangeRecovered,
+    recoveryRate: summary.amounts.recoveryRate,
+  });
 }
 
 function renderRecoveryBlock(summary: CanonicalSummary): string {
@@ -254,6 +298,7 @@ export function renderAdminDailyBody(
   `;
 
   return `
+    ${renderWinsBlock(summary)}
     ${renderKpiStrip(summary, reviewCount)}
     ${renderRecoveryBlock(summary)}
     ${renderYesterdayRow(yesterday)}
@@ -306,6 +351,7 @@ export function renderOperatorDailyBody(
 
   return `
     ${intro}
+    ${summary ? renderWinsBlock(summary) : ""}
     ${renderKpiStrip(summary, reviewCount)}
     ${renderYesterdayRow(yesterday)}
     ${renderAttentionBlock(attention)}

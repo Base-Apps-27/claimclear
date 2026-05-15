@@ -657,6 +657,89 @@ export default function Dashboard() {
       {/* SYSTEM HEALTH BANNER — only renders when degraded/failed */}
       <WorkerHealthBanner />
 
+      {/* WINS HERO — celebrates the wins of the canonical window before
+          the operator scans the at-risk strip. Reads `closedOutcomes`
+          and the recovered/confirmed money fields straight off
+          /dashboard/summary; same source as the daily brief and weekly
+          digest "wins" blocks so the three surfaces tell one story.
+          Hidden for clerks (no money visibility). When the window has
+          neither approvals nor recovered $ we still render a friendly
+          "let's go land some today" line instead of a depressing zero,
+          so the page never opens on negativity. */}
+      <HideForClerk>
+        {(() => {
+          const co = summary.closedOutcomes;
+          const wins = (co?.approved ?? 0) + (co?.partiallyApproved ?? 0);
+          const recoveredNum = parseFloat(amounts.recoveredAmount ?? "0") || 0;
+          const confirmedNum = parseFloat(amounts.confirmedRecoveredAmount ?? "0") || 0;
+          const netChangeNum = parseFloat(amounts.netChangeRecovered ?? "0") || 0;
+          const wd = co?.windowDays ?? amounts.windowDays ?? 7;
+          const isEmpty = wins === 0 && recoveredNum <= 0;
+          return (
+            <div
+              className="rounded-md border px-4 py-3"
+              style={{
+                borderColor: "hsl(var(--cc-success) / 0.35)",
+                background: "hsl(var(--cc-success) / 0.08)",
+              }}
+              data-testid="dashboard-wins-hero"
+            >
+              <div
+                className="text-[11px] uppercase tracking-wide font-semibold"
+                style={{ color: "hsl(var(--cc-success))" }}
+              >
+                Last {wd}d · wins
+              </div>
+              {isEmpty ? (
+                <div className="text-sm mt-1.5" style={{ color: "hsl(var(--cc-success))" }}>
+                  No new approvals to celebrate yet — let's go land some today.
+                </div>
+              ) : (
+                <>
+                  <div className="text-lg font-semibold mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1" style={{ color: "hsl(var(--cc-success))" }}>
+                    {wins > 0 && (
+                      <span data-testid="wins-hero-count">
+                        <TickerInt value={wins} />{" "}
+                        <span className="text-sm font-normal opacity-80">{wins === 1 ? "invoice approved" : "invoices approved"}</span>
+                      </span>
+                    )}
+                    {recoveredNum > 0 && (
+                      <span data-testid="wins-hero-recovered">
+                        <TickerCurrency value={recoveredNum} format={formatCurrency} />{" "}
+                        <span className="text-sm font-normal opacity-80">recovered</span>
+                      </span>
+                    )}
+                    {amounts.recoveryRate != null && (wins > 0 || recoveredNum > 0) && (
+                      <span data-testid="wins-hero-rate">
+                        <TickerInt value={amounts.recoveryRate} />%{" "}
+                        <span className="text-sm font-normal opacity-80">recovery rate</span>
+                      </span>
+                    )}
+                  </div>
+                  {(co && co.approved > 0 && co.partiallyApproved > 0) || confirmedNum > 0 || netChangeNum !== 0 ? (
+                    <div className="text-xs mt-1.5 flex flex-wrap gap-x-3 gap-y-1 opacity-90" style={{ color: "hsl(var(--cc-success))" }}>
+                      {co && co.approved > 0 && co.partiallyApproved > 0 && (
+                        <span>{co.approved} fully · {co.partiallyApproved} partially</span>
+                      )}
+                      {confirmedNum > 0 && (
+                        <span>
+                          <TickerCurrency value={confirmedNum} format={formatCurrency} /> re-attested by payor
+                        </span>
+                      )}
+                      {netChangeNum !== 0 && (
+                        <span style={{ color: netChangeNum > 0 ? "hsl(var(--cc-success))" : "hsl(var(--cc-amber-fg))", fontWeight: 600 }}>
+                          {netChangeNum > 0 ? "▲" : "▼"} {formatCurrency(Math.abs(netChangeNum))} vs prior {wd}d
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          );
+        })()}
+      </HideForClerk>
+
       {/* UNIVERSAL KPIs — Task #720 canonical 5-tile strip. Every tile
           reads a single field from `/dashboard/summary.amounts` and
           declares its unit in the sub-label. The numbers reconcile
