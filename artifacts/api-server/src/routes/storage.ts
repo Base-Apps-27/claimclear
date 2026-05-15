@@ -45,7 +45,7 @@ router.put("/storage/uploads", async (req: Request, res: Response) => {
   const rawContentType = (req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
   if (!ALLOWED_UPLOAD_CONTENT_TYPES_SET.has(rawContentType)) {
     res.status(415).json({
-      error: "Unsupported media type. Allowed types: image/png, image/jpeg, image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp, application/pdf",
+      error: "Unsupported media type. Allowed types: image/png, image/jpeg, image/gif, image/webp, image/heic, image/heif, image/tiff, image/bmp, application/pdf, text/csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     return;
   }
@@ -179,8 +179,9 @@ router.get("/storage/objects/*path", serveObjectEntity);
  *
  * Differs from `PUT /storage/uploads` (the SOP-evidence path) in two
  * important ways:
- *   1. Tighter MIME allowlist — only the reply-attachment subset
- *      (PNG/JPG/GIF/WebP + PDF), not arbitrary office docs.
+ *   1. Narrower MIME allowlist — only the reply-attachment subset
+ *      (PNG/JPG/GIF/WebP + PDF + CSV/Excel), not the full evidence
+ *      list (no HEIC/TIFF/BMP — payors can't reliably open those).
  *   2. Returns a `stagedId` token instead of the raw `objectPath`, so
  *      the reply-attachment trust boundary lives entirely server-side.
  *
@@ -198,7 +199,7 @@ router.put(
     if (!REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(rawContentType)) {
       res.status(415).json({
         error:
-          "Unsupported media type. Reply attachments must be PNG, JPG, GIF, WebP, or PDF.",
+          "Unsupported media type. Reply attachments must be PNG, JPG, GIF, WebP, PDF, CSV, or Excel (.xls/.xlsx).",
       });
       return;
     }

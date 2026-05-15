@@ -46,6 +46,10 @@ test("ALLOWED_EVIDENCE_TYPES: every common operator-paste MIME is on the allowli
     "image/png", "image/jpeg", "image/gif", "image/webp",
     "image/heic", "image/heif", "image/tiff", "image/bmp",
     "application/pdf",
+    // Spreadsheets — operators attach CSV / Excel exports as evidence.
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ]) {
     assert.equal(
       ALLOWED_EVIDENCE_TYPES.has(mime),
@@ -96,6 +100,36 @@ test("extractClipboardFiles: PDF is in the allowlist (operators routinely paste 
     { kind: "file", type: "application/pdf", file: pdf },
   ]));
   assert.equal(got.length, 1);
+});
+
+test("extractClipboardFiles: spreadsheets pass the allowlist (operators attach CSV/Excel evidence)", () => {
+  const csv = new File(["a,b"], "rides.csv", { type: "text/csv" });
+  const xlsx = new File(["x"], "report.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const got = extractClipboardFiles(fakeDataTransfer([
+    { kind: "file", type: "text/csv", file: csv },
+    {
+      kind: "file",
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      file: xlsx,
+    },
+  ]));
+  assert.equal(got.length, 2);
+});
+
+test("extractClipboardFiles: { acceptPdf: false } also filters spreadsheets (instruction-image uploader is image-only)", () => {
+  const csv = new File(["a,b"], "rides.csv", { type: "text/csv" });
+  const png = new File(["x"], "shot.png", { type: "image/png" });
+  const got = extractClipboardFiles(
+    fakeDataTransfer([
+      { kind: "file", type: "text/csv", file: csv },
+      { kind: "file", type: "image/png", file: png },
+    ]),
+    { acceptPdf: false },
+  );
+  assert.equal(got.length, 1);
+  assert.equal(got[0].type, "image/png");
 });
 
 test("extractClipboardFiles: { acceptPdf: false } filters PDFs (instruction-image uploader)", () => {

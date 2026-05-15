@@ -37,7 +37,7 @@ export interface EvidencePasteUploadProps {
 const DEFAULT_LABELS = { empty: "Upload image", more: "Add another" };
 
 const ACCEPT_WITH_PDF =
-  ".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf";
+  ".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,.csv,.xls,.xlsx,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const ACCEPT_IMAGE_ONLY =
   ".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif";
 

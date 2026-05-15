@@ -17,11 +17,27 @@ export const ALLOWED_EVIDENCE_TYPES: ReadonlySet<string> = new Set([
   "image/tiff",
   "image/bmp",
   "application/pdf",
+  // Spreadsheets — operators routinely attach CSV / Excel exports as
+  // supporting evidence (ride manifests, payor remittance reports, etc.).
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+/** Subset of ALLOWED_EVIDENCE_TYPES that represents spreadsheet payloads.
+ *  Surfaces that are strictly image-only (e.g. the instruction-image
+ *  editor) use this to filter spreadsheets out the same way they filter
+ *  PDFs out today. */
+export const SPREADSHEET_EVIDENCE_TYPES: ReadonlySet<string> = new Set([
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
 
 /** Extract File items from a ClipboardEvent's DataTransfer, filtered
- *  by the SOP-evidence allowlist. PDFs are excluded when `acceptPdf`
- *  is false. */
+ *  by the SOP-evidence allowlist. PDFs and spreadsheets are excluded
+ *  when `acceptPdf` is false (the image-only instruction-image
+ *  uploader uses this gate for both). */
 export function extractClipboardFiles(
   data: DataTransfer | null | undefined,
   opts?: { acceptPdf?: boolean },
@@ -36,6 +52,7 @@ export function extractClipboardFiles(
     if (!f) continue;
     if (!ALLOWED_EVIDENCE_TYPES.has(f.type)) continue;
     if (!acceptPdf && f.type === "application/pdf") continue;
+    if (!acceptPdf && SPREADSHEET_EVIDENCE_TYPES.has(f.type)) continue;
     out.push(f);
   }
   return out;
@@ -65,6 +82,7 @@ export async function readAllowedFileFromClipboard(
     for (const mime of item.types) {
       if (!ALLOWED_EVIDENCE_TYPES.has(mime)) continue;
       if (!acceptPdf && mime === "application/pdf") continue;
+      if (!acceptPdf && SPREADSHEET_EVIDENCE_TYPES.has(mime)) continue;
       const blob = await item.getType(mime);
       const ext = mime.split("/")[1] || "bin";
       return new File([blob], `pasted.${ext}`, { type: mime });

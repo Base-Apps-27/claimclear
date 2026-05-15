@@ -409,11 +409,14 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
     "image/png", "image/jpeg", "image/gif", "image/webp",
     "image/heic", "image/heif", "image/tiff", "image/bmp",
     "application/pdf",
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ]);
 
   const uploadFile = async (nodeId: string, key: string, file: File) => {
     if (!ALLOWED_EVIDENCE_TYPES.has(file.type)) {
-      toast({ title: "Unsupported file type", description: "Please upload an image (PNG, JPG, GIF, WEBP, HEIC, TIFF, BMP) or PDF.", variant: "destructive" });
+      toast({ title: "Unsupported file type", description: "Please upload an image (PNG, JPG, GIF, WEBP, HEIC, TIFF, BMP), PDF, CSV, or Excel file.", variant: "destructive" });
       return;
     }
     if (file.size > MAX_EVIDENCE_SIZE) {
@@ -747,22 +750,34 @@ function EvidenceUploadTrigger({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Same MIME allowlist that the upload validator uses below — keeps
+  // the file-picker, the explicit Paste button, and the keyboard-paste
+  // handler in agreement (incl. CSV/Excel evidence).
+  const PASTE_ALLOWED = new Set<string>([
+    "image/png", "image/jpeg", "image/gif", "image/webp",
+    "image/heic", "image/heif", "image/tiff", "image/bmp",
+    "application/pdf",
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ]);
+
   const handlePasteImage = useCallback(async () => {
     try {
       const clipboardItems = await navigator.clipboard.read();
       for (const item of clipboardItems) {
-        const imageType = item.types.find((t) => t.startsWith("image/"));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const ext = imageType.split("/")[1] || "png";
-          const file = new File([blob], `pasted-image.${ext}`, { type: imageType });
+        const mime = item.types.find((t) => PASTE_ALLOWED.has(t));
+        if (mime) {
+          const blob = await item.getType(mime);
+          const ext = mime.split("/")[1] || "bin";
+          const file = new File([blob], `pasted.${ext}`, { type: mime });
           onUpload(file);
           return;
         }
       }
-      toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
+      toast({ title: "Nothing to paste", description: "Copy an image, PDF, CSV, or Excel file first, then paste here.", variant: "destructive" });
     } catch {
-      toast({ title: "No image found in clipboard", description: "Copy a screenshot or image first, then paste here.", variant: "destructive" });
+      toast({ title: "Nothing to paste", description: "Copy an image, PDF, CSV, or Excel file first, then paste here.", variant: "destructive" });
     }
   }, [onUpload]);
 
@@ -770,7 +785,7 @@ function EvidenceUploadTrigger({
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of Array.from(items)) {
-      if (item.type.startsWith("image/")) {
+      if (PASTE_ALLOWED.has(item.type)) {
         e.preventDefault();
         const file = item.getAsFile();
         if (file) onUpload(file);
@@ -791,7 +806,7 @@ function EvidenceUploadTrigger({
       <input
         ref={inputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf"
+        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.heic,.heif,.pdf,.csv,.xls,.xlsx,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/heic,image/heif,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

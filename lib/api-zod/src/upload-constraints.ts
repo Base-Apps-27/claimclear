@@ -8,6 +8,11 @@ export const ALLOWED_UPLOAD_CONTENT_TYPES = [
   "image/tiff",
   "image/bmp",
   "application/pdf",
+  // Spreadsheets — operators routinely attach CSV / Excel exports as
+  // supporting evidence (ride manifests, payor remittance reports, etc.).
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
 export type AllowedUploadContentType = (typeof ALLOWED_UPLOAD_CONTENT_TYPES)[number];
@@ -50,6 +55,12 @@ export const REPLY_ATTACHMENT_ALLOWED_MIME = [
   "image/gif",
   "image/webp",
   "application/pdf",
+  // Spreadsheets — payors frequently expect CSV / Excel exports as
+  // supporting documents (e.g. trip-leg manifests). Counted against the
+  // 25 MB total only, never against the per-reply image cap.
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
 export type ReplyAttachmentMime = (typeof REPLY_ATTACHMENT_ALLOWED_MIME)[number];

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ALLOWED_EVIDENCE_TYPES, MAX_EVIDENCE_SIZE, extractClipboardFiles } from "./evidence-paste";
+import { ALLOWED_EVIDENCE_TYPES, MAX_EVIDENCE_SIZE, SPREADSHEET_EVIDENCE_TYPES, extractClipboardFiles } from "./evidence-paste";
 import { EvidencePasteUpload } from "./evidence-paste-upload";
 import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
 import {
@@ -1164,6 +1164,7 @@ export function InstructionImageUploader({
   const MAX_IMG_SIZE = EMAIL_MESSAGE_MAX_BYTES;
   const handleFile = useCallback(async (file: File) => {
     if (!ALLOWED_EVIDENCE_TYPES.has(file.type) || file.type === "application/pdf") return;
+    if (SPREADSHEET_EVIDENCE_TYPES.has(file.type)) return;
     if (file.size > MAX_IMG_SIZE) return;
     setPreview(URL.createObjectURL(file));
     setUploading(true);
