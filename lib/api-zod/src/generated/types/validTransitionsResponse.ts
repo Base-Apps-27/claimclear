@@ -11,10 +11,20 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ValidTransitionsResponseTerminalLane } from "./validTransitionsResponseTerminalLane";
 
 export interface ValidTransitionsResponse {
   validStatuses: string[];
   validOutcomes: string[];
+  /** Task #758 — per-target terminal-outcome lane map. For each
+terminal outcome (Denied, Approved, Partially Approved,
+Non-Issue, Withdrawn, No Action Needed), tells the closure
+dialogs whether the writer accepts that target on the normal
+lane (`"normal"`) or requires `override.reason` ≥20 chars
+(`"override"`). Lets the UI surface the override panel
+without re-implementing the policy on the client.
+ */
+  terminalLane?: ValidTransitionsResponseTerminalLane;
   canQueueForPortal: boolean;
   hasActiveSubmission: boolean;
   /** True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id. */

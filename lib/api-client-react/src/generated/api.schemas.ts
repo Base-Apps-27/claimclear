@@ -482,9 +482,32 @@ export interface ClaimResponse {
   groupMacroPhase?: ClaimResponseGroupMacroPhase;
 }
 
+/**
+ * Task #758 — per-target terminal-outcome lane map. For each
+terminal outcome (Denied, Approved, Partially Approved,
+Non-Issue, Withdrawn, No Action Needed), tells the closure
+dialogs whether the writer accepts that target on the normal
+lane (`"normal"`) or requires `override.reason` ≥20 chars
+(`"override"`). Lets the UI surface the override panel
+without re-implementing the policy on the client.
+
+ */
+export type ValidTransitionsResponseTerminalLane = {
+  [key: string]: "normal" | "override";
+};
+
 export interface ValidTransitionsResponse {
   validStatuses: string[];
   validOutcomes: string[];
+  /** Task #758 — per-target terminal-outcome lane map. For each
+terminal outcome (Denied, Approved, Partially Approved,
+Non-Issue, Withdrawn, No Action Needed), tells the closure
+dialogs whether the writer accepts that target on the normal
+lane (`"normal"`) or requires `override.reason` ≥20 chars
+(`"override"`). Lets the UI surface the override panel
+without re-implementing the policy on the client.
+ */
+  terminalLane?: ValidTransitionsResponseTerminalLane;
   canQueueForPortal: boolean;
   hasActiveSubmission: boolean;
   /** True if at least one portal_submission has ever existed for this entity (active or terminal). For invoice groups, considers submissions linked to the group via portal_submissions.invoice_group_id. */
@@ -1770,6 +1793,24 @@ export const ClosureAccountabilityTag = {
 } as const;
 
 /**
+ * Task #758 — terminal-closure override. Supply when the operator
+is closing a leg or group into a terminal outcome (Denied,
+Approved, Partially Approved, Non-Issue, Withdrawn, No Action
+Needed) from a source status whose normal outcome envelope does
+not permit it (e.g. Ready to Review, Portal Queued, Generating
+Email, On Hold, Awaiting Response → Non-Issue). The reason is
+required (≥20 chars), recorded in the audit-log metadata as
+`override:{applied,sourceStatus,targetOutcome,reason}` and
+appended to the lifecycle note. Omitted on the normal lane.
+
+ * @nullable
+ */
+export type TerminalCloseOverride = {
+  /** @minLength 20 */
+  reason: string;
+} | null;
+
+/**
  * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
 (closureCategory, closureRootCause, closureNarrative,
 closureAccountabilityTags, etc.) are required when the outcome is
@@ -1810,6 +1851,7 @@ export interface UpdateClaimOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  override?: TerminalCloseOverride | null;
 }
 
 /**
@@ -1849,6 +1891,7 @@ export interface UpdateInvoiceGroupOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  override?: TerminalCloseOverride | null;
 }
 
 /**
@@ -5866,11 +5909,32 @@ export const ExportClaimsCsvExpiring = {
   stuck: "stuck",
 } as const;
 
+/**
+ * Task #758 — per-target terminal-outcome lane map. For each
+terminal outcome (Denied, Approved, Partially Approved,
+Non-Issue, Withdrawn, No Action Needed), tells the closure
+dialogs whether the writer accepts that target on the
+normal lane (`"normal"`) or requires `override.reason`
+≥20 chars (`"override"`).
+
+ */
+export type GetClaimValidTransitions200TerminalLane = {
+  [key: string]: "normal" | "override";
+};
+
 export type GetClaimValidTransitions200 = {
   currentStatus?: string;
   currentOutcome?: string;
   validStatuses?: string[];
   validOutcomes?: string[];
+  /** Task #758 — per-target terminal-outcome lane map. For each
+terminal outcome (Denied, Approved, Partially Approved,
+Non-Issue, Withdrawn, No Action Needed), tells the closure
+dialogs whether the writer accepts that target on the
+normal lane (`"normal"`) or requires `override.reason`
+≥20 chars (`"override"`).
+ */
+  terminalLane?: GetClaimValidTransitions200TerminalLane;
   hasActiveSubmission?: boolean;
   canQueueForPortal?: boolean;
   /** True if at least one portal_submission has ever existed for this claim (active or terminal). */

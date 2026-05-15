@@ -887,8 +887,15 @@ test("PATCH /claims/:id/outcome rejects Denied when no portal_response (or email
     );
     assert.equal(res.status, 400,
       `expected 400 (gate must reject Denied without payor response), got ${res.status} (${JSON.stringify(res.json)})`);
-    assert.match(res.json.error, /no portal or email response|Denied by Payor/i,
-      "error must explain that Denied requires a recorded payor/portal response");
+    // Task #758 — under the unified terminal-closure policy, recording
+    // Denied from a source status whose validOutcomes does not include
+    // Denied (e.g. Needs Review) is rejected with the override-required
+    // error before the response-required guard fires. Either rejection
+    // is acceptable: both correctly block the close. Accept the new
+    // override-required error in addition to the original guard
+    // wording.
+    assert.match(res.json.error, /no portal or email response|Denied by Payor|requires an override reason/i,
+      "error must explain that Denied requires either a recorded payor/portal response or an override reason");
     const [row] = await db.select().from(claimsTable).where(eq(claimsTable.id, seed.id));
     assert.equal(row.outcome, "Pending",
       "outcome must NOT have changed when the Denied/no-response gate rejects the request");
@@ -945,8 +952,12 @@ test("PATCH /invoice-groups/:id/outcome rejects Denied when no portal_response (
     );
     assert.equal(res.status, 400,
       `expected 400 (gate must reject group Denied without payor response), got ${res.status} (${JSON.stringify(res.json)})`);
-    assert.match(res.json.error, /no portal or email response|Denied by Payor/i,
-      "error must explain that group Denied requires a recorded payor/portal response");
+    // Task #758 — see the per-claim variant above. Group seed status is
+    // "Needs Review", whose validOutcomes excludes Denied; the unified
+    // policy now rejects with the override-required error before the
+    // response-required guard fires. Either rejection blocks the close.
+    assert.match(res.json.error, /no portal or email response|Denied by Payor|requires an override reason/i,
+      "error must explain that group Denied requires either a recorded payor/portal response or an override reason");
     const [row] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, seed.id));
     assert.equal(row.outcome, "Pending");
     assert.equal(row.closureReason, null);

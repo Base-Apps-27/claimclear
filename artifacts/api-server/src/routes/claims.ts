@@ -12,10 +12,10 @@ import {
   transitionClaimStatusAndOutcome,
   VALID_MANUAL_STATUS_TRANSITIONS,
   VALID_OUTCOME_BY_STATUS,
-  SYSTEM_CONTROLLED_STATUSES,
   excludeLegCore,
 } from "../lib/claim-transitions";
 import { transitionGroupStatus } from "../lib/group-transitions";
+import { getTerminalClosurePolicy, getTerminalClosureLane, destStatusForTerminalOutcome, TERMINAL_OUTCOMES } from "../lib/terminal-closure-policy";
 import { blockMutationOnTourSampleClaim } from "../lib/tour-sample";
 import { emitStateEvent } from "../lib/state-events";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "../lib/denormalized-cache";
@@ -807,6 +807,28 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     }
   }
 
+  // Task #758 — per-target terminal lane map. Lets the closure dialogs
+  // decide whether to surface the override panel without re-implementing
+  // the policy on the client. Mirrors the writers' combined
+  // status+outcome policy: "normal" = the writer accepts this target
+  // outcome without an override (in the source-status's validOutcomes
+  // OR a SYSTEM_CONTROLLED normal-lane source OR the writer's own
+  // status-transition + target-status outcome envelope accepts the
+  // derived destination status); "override" = `override.reason` ≥20
+  // chars required.
+  const terminalLane: Record<string, "normal" | "override"> = {};
+  for (const t of TERMINAL_OUTCOMES) {
+    const dest = destStatusForTerminalOutcome(t);
+    terminalLane[t] = getTerminalClosureLane({
+      currentStatus: claim.status,
+      targetOutcome: t,
+      derivedDestStatus: dest,
+      validOutcomesForCurrentStatus: validOutcomes,
+      validStatusTransitions: VALID_MANUAL_STATUS_TRANSITIONS[claim.status] || [],
+      validOutcomesForDestStatus: VALID_OUTCOME_BY_STATUS[dest] || [],
+    });
+  }
+
   const responses = await db.select({
     id: portalResponsesTable.id,
     responseType: portalResponsesTable.responseType,
@@ -845,6 +867,7 @@ router.get("/claims/valid-transitions/:id", asyncHandler(async (req, res): Promi
     currentOutcome: claim.outcome,
     validStatuses,
     validOutcomes,
+    terminalLane,
     hasActiveSubmission: activeSubmissions.length > 0,
     canQueueForPortal: !activeSubmissions.length && ["Needs Evidence", "Needs Review", "New"].includes(claim.status),
     hasBeenSubmitted,
@@ -884,7 +907,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   if (await blockMutationOnTourSampleClaim(id, res)) return;
 
-  const { outcome, approvedAmount, invoiceNumbers, closureReason } = req.body;
+  const { outcome, approvedAmount, invoiceNumbers, closureReason, override } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
   if (outcome === "Denied" && closureReason !== undefined && closureReason !== "denied_by_payor") {
@@ -947,6 +970,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
           : (invoiceNumbers !== undefined ? { invoiceNumbers } : undefined),
         closureReason: effectiveReason ?? closureReason,
         closure,
+        override,
       });
       res.json(result.claim);
       return;
@@ -962,6 +986,7 @@ router.patch("/claims/:id/outcome", asyncHandler(async (req, res): Promise<void>
       invoiceNumbers,
       closureReason: effectiveReason ?? closureReason,
       closure,
+      override,
     });
     res.json(result.claim);
   } catch (err: any) {

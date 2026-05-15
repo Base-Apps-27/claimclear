@@ -5,6 +5,14 @@ import { CLOSURE_REASON_LABELS, type ClosureReason } from "@workspace/db";
 import { broadcastGroupEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { excludeLegCore, type DbExecutor } from "./claim-transitions";
+import {
+  getTerminalClosurePolicy,
+  resolveTerminalOverride,
+  isTerminalOutcome,
+  isSystemControlledClosureBypass,
+  NORMAL_LANE_SYSTEM_SOURCES,
+  type TerminalOverride,
+} from "./terminal-closure-policy";
 import { computeAttestationDelta, engageMasEligibleAttestationCascade } from "./attestation";
 import { checkAndEmitDayCompleteForGroup, snapshotDayConcludedForGroup } from "./day-complete";
 import { refreshClaimDenormalizedCache, refreshGroupDerivedFields } from "./denormalized-cache";
@@ -587,24 +595,54 @@ export async function transitionGroupOutcome(opts: {
   closureReason?: ClosureReason | null;
   closure?: NormalizedClosure | null;
   systemOverride?: boolean;
+  /** Task #758 — terminal-closure override. See claim-transitions.ts. */
+  override?: TerminalOverride | null;
   executor?: DbExecutor;
 }): Promise<GroupTransitionResult> {
-  const { groupId, newOutcome, source, reason, actor, approvedAmount, systemOverride = false, closure, executor } = opts;
+  const { groupId, newOutcome, source, reason, actor, approvedAmount, systemOverride = false, closure, executor, override } = opts;
   let { closureReason } = opts;
   const ex: DbExecutor = executor ?? db;
 
   const [old] = await ex.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
   if (!old) throw new Error(`Invoice group ${groupId} not found`);
 
-  await checkActiveSubmissions(groupId, ex);
+  // Task #758 — terminal-closure override resolution. Same shape as the
+  // claim-side path: when the operator targets a terminal outcome that
+  // the source status's normal envelope doesn't permit, accept it iff
+  // an override.reason ≥TERMINAL_OVERRIDE_MIN_REASON chars is supplied.
+  // Bypass the source-status outcome guard and the per-outcome
+  // submitted/response guards (they are exactly what the operator is
+  // overruling). systemOverride stays a strictly-internal escape.
+  let overrideReason: string | null = null;
+  if (!systemOverride && isTerminalOutcome(newOutcome)) {
+    const validOutcomes = VALID_GROUP_OUTCOME_BY_STATUS[old.status] || [];
+    const policy = getTerminalClosurePolicy(old.status, newOutcome, validOutcomes);
+    overrideReason = resolveTerminalOverride(policy, old.status, newOutcome, override);
+  }
+  const overrideApplied = overrideReason !== null;
+  const closureBypass =
+    overrideApplied || isSystemControlledClosureBypass(old.status, newOutcome);
+
+  // Task #758 review feedback: an explicit terminal-closure override
+  // (or systemOverride) must be able to bypass the active-submission
+  // lock — otherwise stuck Portal Queued / Generating Email groups
+  // with a pending/in_progress submission row are unclosable, which
+  // defeats the override-lane's purpose.
+  if (!systemOverride && !overrideApplied) {
+    await checkActiveSubmissions(groupId, ex);
+  }
 
   const allowed = VALID_GROUP_OUTCOME_BY_STATUS[old.status] || [];
-  if (!allowed.includes(newOutcome)) {
+  if (!allowed.includes(newOutcome) && !closureBypass) {
     throw new Error(`Cannot set outcome to "${newOutcome}" when group is in "${old.status}" status. ${allowed.length > 0 ? `Valid outcomes: ${allowed.join(", ")}` : "Outcome changes are not allowed in this status."}`);
   }
 
   if (newOutcome === "Denied") {
-    if (!systemOverride) {
+    // Per Task #758 review feedback: Denied response-required guard is
+    // a per-outcome semantic invariant. Only an explicit operator
+    // override (≥20 chars) bypasses it; the system-controlled normal
+    // lane alone is NOT enough.
+    if (!systemOverride && !overrideApplied) {
       const has = await groupHasResponse(groupId, ex);
       if (!has) {
         throw new Error(`Cannot mark this invoice group as Denied by Payor because no portal or email response has been recorded. Use "Withdraw — Cannot Dispute" instead.`);
@@ -615,14 +653,14 @@ export async function transitionGroupOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot close as "Cannot Dispute" once this invoice group has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
       }
     }
   } else if (newOutcome === "Non-Issue") {
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot close as "Non-Issue" once this invoice group has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
@@ -637,7 +675,7 @@ export async function transitionGroupOutcome(opts: {
     if (closureReason !== undefined && closureReason !== "non_issue") {
       throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot land "No Action Needed" once this invoice group has been submitted to the payor.`);
@@ -706,10 +744,16 @@ export async function transitionGroupOutcome(opts: {
   }
 
   const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
+  const overrideAuditFragment = overrideApplied
+    ? { override: { applied: true, sourceStatus: old.status, targetOutcome: newOutcome, reason: overrideReason } }
+    : {};
+  const overrideNoteFragment = overrideApplied
+    ? ` — Override (from ${old.status}): ${overrideReason}`
+    : "";
   await ex.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
     action: "group_outcome_changed",
-    details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}`,
+    details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}${overrideApplied ? ` [override from ${old.status}]` : ""}`,
     metadata: {
       from: old.outcome,
       to: newOutcome,
@@ -719,6 +763,7 @@ export async function transitionGroupOutcome(opts: {
       closureReason: closureReason ?? null,
       closureReasonLabel: closureLabel,
       ...(closure ? { closure: closureAuditPayload(closure) } : {}),
+      ...overrideAuditFragment,
     },
     userEmail: actor.userEmail,
     userName: actor.userName,
@@ -728,7 +773,7 @@ export async function transitionGroupOutcome(opts: {
     claimId: null,
     invoiceGroupId: groupId,
     type: "outcome_recorded",
-    content: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` — ${closureLabel}` : ""}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}`,
+    content: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` — ${closureLabel}` : ""}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}${overrideNoteFragment}`,
     author: actor.userName || actor.userEmail || source,
   });
 
@@ -763,17 +808,49 @@ export async function transitionGroupStatusAndOutcome(opts: {
   childFields?: Partial<typeof claimsTable.$inferInsert>;
   closureReason?: ClosureReason | null;
   closure?: NormalizedClosure | null;
+  /** Task #758 — terminal-closure override. See claim-transitions.ts. */
+  override?: TerminalOverride | null;
   executor?: DbExecutor;
 }): Promise<GroupTransitionResult> {
-  const { groupId, newStatus, newOutcome, source, reason, actor, systemOverride = false, extraFields, childFields, closure, executor } = opts;
+  const { groupId, newStatus, newOutcome, source, reason, actor, systemOverride = false, extraFields, childFields, closure, executor, override } = opts;
   let { closureReason } = opts;
   const ex: DbExecutor = executor ?? db;
 
   const [old] = await ex.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
   if (!old) throw new Error(`Invoice group ${groupId} not found`);
 
+  // Task #758 — terminal-closure override resolution. For combined
+  // status+outcome flips the "normal lane" is whatever the writer's
+  // own status-transition + target-status outcome envelope would
+  // already accept (mirrors the guards on lines ~840 and ~846 below);
+  // otherwise the closure runs on the override lane (≥20-char reason).
+  // Earlier iterations only inspected the source-status envelope, which
+  // wrongly demanded override on legitimate normal flips like
+  // Needs Review → Resolved/Approved or Needs Evidence → Resolved/Non-Issue.
+  let overrideReason: string | null = null;
+  if (!systemOverride && isTerminalOutcome(newOutcome)) {
+    const statusNormallyAllowed =
+      old.status === newStatus ||
+      (VALID_GROUP_STATUS_TRANSITIONS[old.status] || []).includes(newStatus);
+    const outcomeNormallyAllowed =
+      (VALID_GROUP_OUTCOME_BY_STATUS[newStatus] || []).includes(newOutcome);
+    const normalLaneAccepts =
+      NORMAL_LANE_SYSTEM_SOURCES.has(old.status) ||
+      (statusNormallyAllowed && outcomeNormallyAllowed);
+    const policy = normalLaneAccepts ? "allowed-normally" : "allowed-with-override";
+    overrideReason = resolveTerminalOverride(policy, old.status, newOutcome, override);
+  }
+  const overrideApplied = overrideReason !== null;
+  const closureBypass =
+    overrideApplied || isSystemControlledClosureBypass(old.status, newOutcome);
+
   if (!systemOverride) {
-    await checkActiveSubmissions(groupId, ex);
+    // Task #758 review feedback: explicit terminal-closure override
+    // bypasses the active-submission lock so stuck Portal Queued /
+    // Generating Email groups remain closable.
+    if (!overrideApplied) {
+      await checkActiveSubmissions(groupId, ex);
+    }
     await ensureNoHeldLegsBeforeClosure(groupId, newStatus, ex);
 
     if (old.status !== newStatus) {
@@ -781,13 +858,13 @@ export async function transitionGroupStatusAndOutcome(opts: {
         throw new Error(`"${newStatus}" is a system-controlled status and cannot be set manually.`);
       }
       const allowed = VALID_GROUP_STATUS_TRANSITIONS[old.status] || [];
-      if (!allowed.includes(newStatus)) {
+      if (!allowed.includes(newStatus) && !closureBypass) {
         throw new Error(`Cannot transition from "${old.status}" to "${newStatus}". Valid transitions: ${allowed.length > 0 ? allowed.join(", ") : "none (status is system-controlled)"}`);
       }
     }
 
     const allowedOutcomes = VALID_GROUP_OUTCOME_BY_STATUS[newStatus] || [];
-    if (allowedOutcomes.length > 0 && !allowedOutcomes.includes(newOutcome)) {
+    if (allowedOutcomes.length > 0 && !allowedOutcomes.includes(newOutcome) && !closureBypass) {
       throw new Error(`Cannot set outcome to "${newOutcome}" when group is moving to "${newStatus}" status. Valid outcomes: ${allowedOutcomes.join(", ")}`);
     }
   }
@@ -796,7 +873,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot close as "Cannot Dispute" once this invoice group has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
@@ -804,7 +881,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     }
   }
   if (newOutcome === "Denied") {
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const has = await groupHasResponse(groupId, ex);
       if (!has) {
         throw new Error(`Cannot mark this invoice group as Denied by Payor because no portal or email response has been recorded. Use "Withdraw — Cannot Dispute" instead.`);
@@ -813,7 +890,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     if (closureReason === undefined) closureReason = "denied_by_payor";
   }
   if (newOutcome === "Non-Issue") {
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot close as "Non-Issue" once this invoice group has been submitted to the payor. If the payor responded with a denial, mark it Denied by Payor instead.`);
@@ -826,7 +903,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     if (closureReason !== undefined && closureReason !== "non_issue") {
       throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
     }
-    if (!systemOverride) {
+    if (!systemOverride && !overrideApplied) {
       const submitted = await groupHasEverBeenSubmitted(groupId, ex);
       if (submitted) {
         throw new Error(`Cannot land "No Action Needed" once this invoice group has been submitted to the payor.`);
@@ -924,10 +1001,16 @@ export async function transitionGroupStatusAndOutcome(opts: {
   if (closureLabel) changes.push(`closure: ${closureLabel}`);
   const changeDesc = changes.length > 0 ? changes.join(", ") : "no change";
 
+  const overrideAuditFragment2 = overrideApplied
+    ? { override: { applied: true, sourceStatus: old.status, targetOutcome: newOutcome, reason: overrideReason } }
+    : {};
+  const overrideNoteFragment2 = overrideApplied
+    ? ` — Override (from ${old.status}): ${overrideReason}`
+    : "";
   await ex.insert(auditLogsTable).values({
     invoiceGroupId: groupId,
     action: "group_status_and_outcome_changed",
-    details: `${changeDesc} — ${reason}`,
+    details: `${changeDesc} — ${reason}${overrideApplied ? ` [override from ${old.status}]` : ""}`,
     metadata: {
       fromStatus: old.status, toStatus: newStatus,
       fromOutcome: old.outcome, toOutcome: newOutcome,
@@ -935,6 +1018,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
       closureReason: effectiveClosureReason,
       closureReasonLabel: closureLabel,
       ...(closure ? { closure: closureAuditPayload(closure) } : {}),
+      ...overrideAuditFragment2,
     },
     userEmail: actor.userEmail,
     userName: actor.userName,
@@ -944,7 +1028,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     claimId: null,
     invoiceGroupId: groupId,
     type: "status_change",
-    content: `${changeDesc} — ${reason}`,
+    content: `${changeDesc} — ${reason}${overrideNoteFragment2}`,
     author: actor.userName || actor.userEmail || source,
   });
 

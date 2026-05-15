@@ -4529,6 +4529,8 @@ export const UpdateInvoiceGroupOutcomeParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updateInvoiceGroupOutcomeBodyOverrideReasonMin = 20;
+
 export const UpdateInvoiceGroupOutcomeBody = zod
   .object({
     outcome: zod.string(),
@@ -4591,6 +4593,16 @@ export const UpdateInvoiceGroupOutcomeBody = zod
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
     closureReviewNotes: zod.string().nullish(),
+    override: zod
+      .object({
+        reason: zod
+          .string()
+          .min(updateInvoiceGroupOutcomeBodyOverrideReasonMin),
+      })
+      .nullish()
+      .describe(
+        "Task #758 — terminal-closure override. Supply when the operator\nis closing a leg or group into a terminal outcome (Denied,\nApproved, Partially Approved, Non-Issue, Withdrawn, No Action\nNeeded) from a source status whose normal outcome envelope does\nnot permit it (e.g. Ready to Review, Portal Queued, Generating\nEmail, On Hold, Awaiting Response → Non-Issue). The reason is\nrequired (≥20 chars), recorded in the audit-log metadata as\n`override:{applied,sourceStatus,targetOutcome,reason}` and\nappended to the lifecycle note. Omitted on the normal lane.\n",
+      ),
   })
   .describe(
     "Body for `PATCH \/invoice-groups\/{id}\/outcome`. Same closure detail\ncontract as `UpdateClaimOutcomeBody`.\n",
@@ -7759,6 +7771,12 @@ export const GetInvoiceGroupValidTransitionsParams = zod.object({
 export const GetInvoiceGroupValidTransitionsResponse = zod.object({
   validStatuses: zod.array(zod.string()),
   validOutcomes: zod.array(zod.string()),
+  terminalLane: zod
+    .record(zod.string(), zod.enum(["normal", "override"]))
+    .optional()
+    .describe(
+      'Task #758 — per-target terminal-outcome lane map. For each\nterminal outcome (Denied, Approved, Partially Approved,\nNon-Issue, Withdrawn, No Action Needed), tells the closure\ndialogs whether the writer accepts that target on the normal\nlane (`\"normal\"`) or requires `override.reason` ≥20 chars\n(`\"override\"`). Lets the UI surface the override panel\nwithout re-implementing the policy on the client.\n',
+    ),
   canQueueForPortal: zod.boolean(),
   hasActiveSubmission: zod.boolean(),
   hasBeenSubmitted: zod
@@ -15772,6 +15790,12 @@ export const GetClaimValidTransitionsResponse = zod.object({
   currentOutcome: zod.string().optional(),
   validStatuses: zod.array(zod.string()).optional(),
   validOutcomes: zod.array(zod.string()).optional(),
+  terminalLane: zod
+    .record(zod.string(), zod.enum(["normal", "override"]))
+    .optional()
+    .describe(
+      'Task #758 — per-target terminal-outcome lane map. For each\nterminal outcome (Denied, Approved, Partially Approved,\nNon-Issue, Withdrawn, No Action Needed), tells the closure\ndialogs whether the writer accepts that target on the\nnormal lane (`\"normal\"`) or requires `override.reason`\n≥20 chars (`\"override\"`).\n',
+    ),
   hasActiveSubmission: zod.boolean().optional(),
   canQueueForPortal: zod.boolean().optional(),
   hasBeenSubmitted: zod
@@ -16201,6 +16225,8 @@ export const UpdateClaimOutcomeParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const updateClaimOutcomeBodyOverrideReasonMin = 20;
+
 export const UpdateClaimOutcomeBody = zod
   .object({
     outcome: zod.string(),
@@ -16264,6 +16290,14 @@ export const UpdateClaimOutcomeBody = zod
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
     closureReviewNotes: zod.string().nullish(),
+    override: zod
+      .object({
+        reason: zod.string().min(updateClaimOutcomeBodyOverrideReasonMin),
+      })
+      .nullish()
+      .describe(
+        "Task #758 — terminal-closure override. Supply when the operator\nis closing a leg or group into a terminal outcome (Denied,\nApproved, Partially Approved, Non-Issue, Withdrawn, No Action\nNeeded) from a source status whose normal outcome envelope does\nnot permit it (e.g. Ready to Review, Portal Queued, Generating\nEmail, On Hold, Awaiting Response → Non-Issue). The reason is\nrequired (≥20 chars), recorded in the audit-log metadata as\n`override:{applied,sourceStatus,targetOutcome,reason}` and\nappended to the lifecycle note. Omitted on the normal lane.\n",
+      ),
   })
   .describe(
     'Body for `PATCH \/claims\/{id}\/outcome`. The closure detail fields\n(closureCategory, closureRootCause, closureNarrative,\nclosureAccountabilityTags, etc.) are required when the outcome is\n\"Withdrawn\" with reason \"cannot_dispute\" or \"Non-Issue\" and are\nvalidated by the canonical `CreateClosureRequest` payload.\n',

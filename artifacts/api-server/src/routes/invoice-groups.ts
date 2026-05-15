@@ -30,8 +30,8 @@ import {
   groupHasResponse,
   VALID_GROUP_STATUS_TRANSITIONS,
   VALID_GROUP_OUTCOME_BY_STATUS,
-  SYSTEM_CONTROLLED_GROUP_STATUSES,
 } from "../lib/group-transitions";
+import { getTerminalClosurePolicy, getTerminalClosureLane, destStatusForTerminalOutcome, TERMINAL_OUTCOMES } from "../lib/terminal-closure-policy";
 import { parseClosurePayload, ClosureValidationError, type NormalizedClosure, CLOSURE_DETAIL_FIELDS } from "../lib/closure-validation";
 import {
   isPayorDenialReasonCode,
@@ -1965,7 +1965,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   if (await blockMutationOnTourSampleGroup(id, res)) return;
 
-  const { outcome, approvedAmount, closureReason } = req.body;
+  const { outcome, approvedAmount, closureReason, override } = req.body;
   if (!outcome) { res.status(400).json({ error: "outcome is required" }); return; }
 
   if (outcome === "Denied") {
@@ -2028,6 +2028,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         extraFields: approvedAmount !== undefined ? { approvedAmount: String(approvedAmount) } : undefined,
         closureReason: effectiveReason ?? closureReason,
         closure,
+        override,
       });
       // Task #659 — emit a distinct `closure_marked_non_issue` audit
       // row alongside the standard `group_status_and_outcome_changed`
@@ -2059,6 +2060,7 @@ router.patch("/invoice-groups/:id/outcome", asyncHandler(async (req, res): Promi
         approvedAmount: approvedAmount !== undefined ? String(approvedAmount) : undefined,
         closureReason: effectiveReason ?? closureReason,
         closure,
+        override,
       });
       res.json(result.group);
     }
@@ -2353,6 +2355,23 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
   const validStatuses = hasActiveSubmission ? [] : (VALID_GROUP_STATUS_TRANSITIONS[group.status] || []);
   const validOutcomes = VALID_GROUP_OUTCOME_BY_STATUS[group.status] || [];
 
+  // Task #758 — per-target terminal lane map. See claims valid-transitions
+  // for the shared rationale. Mirrors the writers' combined
+  // status+outcome policy so the UI's override-panel gating matches the
+  // backend in normal-lane cases like Needs Review → Resolved/Approved.
+  const terminalLane: Record<string, "normal" | "override"> = {};
+  for (const t of TERMINAL_OUTCOMES) {
+    const dest = destStatusForTerminalOutcome(t);
+    terminalLane[t] = getTerminalClosureLane({
+      currentStatus: group.status,
+      targetOutcome: t,
+      derivedDestStatus: dest,
+      validOutcomesForCurrentStatus: validOutcomes,
+      validStatusTransitions: VALID_GROUP_STATUS_TRANSITIONS[group.status] || [],
+      validOutcomesForDestStatus: VALID_GROUP_OUTCOME_BY_STATUS[dest] || [],
+    });
+  }
+
   const canQueueForPortal = !hasActiveSubmission &&
     group.status === "Needs Evidence" &&
     !!group.errorTypeId;
@@ -2392,6 +2411,7 @@ router.get("/invoice-groups/:id/valid-transitions", asyncHandler(async (req, res
   res.json({
     validStatuses,
     validOutcomes,
+    terminalLane,
     canQueueForPortal,
     hasActiveSubmission,
     hasBeenSubmitted,

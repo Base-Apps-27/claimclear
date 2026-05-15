@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useUpdateClaimOutcome,
   useUpdateInvoiceGroupOutcome,
+  useGetClaimValidTransitions,
+  useGetInvoiceGroupValidTransitions,
   getGetClaimQueryKey,
   getGetClaimValidTransitionsQueryKey,
   getListClaimAuditLogsQueryKey,
@@ -134,11 +136,38 @@ export function ClosureConfirmDialog({
 
   const [note, setNote] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Task #758 — same override gate as the structured intake dialog.
+  const [overrideReason, setOverrideReason] = useState("");
 
   const updateClaimOutcome = useUpdateClaimOutcome();
   const updateGroupOutcome = useUpdateInvoiceGroupOutcome();
 
   const isClaim = target.kind === "claim";
+  const claimValidTransitions = useGetClaimValidTransitions(target.id, {
+    query: {
+      queryKey: getGetClaimValidTransitionsQueryKey(target.id),
+      enabled: open && isClaim,
+    },
+  });
+  const groupValidTransitions = useGetInvoiceGroupValidTransitions(target.id, {
+    query: {
+      queryKey: getGetInvoiceGroupValidTransitionsQueryKey(target.id),
+      enabled: open && !isClaim,
+    },
+  });
+  // Task #758 — server-driven override gating. The valid-transitions
+  // endpoint returns a `terminalLane` map (per terminal outcome →
+  // "normal" | "override") computed via the same policy the writer
+  // uses, so the dialog never re-implements the policy on the client.
+  const terminalLane =
+    (isClaim
+      ? claimValidTransitions.data?.terminalLane
+      : groupValidTransitions.data?.terminalLane) ?? null;
+  // vocab-allow-next-line
+  const requiresOverride = terminalLane?.["Denied"] === "override";
+  const overrideTrimmed = overrideReason.trim();
+  const overrideValid = !requiresOverride || overrideTrimmed.length >= 20;
+
   const submitting = isClaim
     ? updateClaimOutcome.isPending
     : updateGroupOutcome.isPending;
@@ -147,6 +176,7 @@ export function ClosureConfirmDialog({
     if (!open) return;
     setNote("");
     setSubmitError(null);
+    setOverrideReason("");
   }, [open]);
 
   const handleSubmit = async () => {
@@ -183,6 +213,7 @@ export function ClosureConfirmDialog({
       closureDrivers: null,
       closureDispatchers: null,
       closureCommunicatedTo: null,
+      ...(requiresOverride ? { override: { reason: overrideTrimmed } } : {}),
     };
 
     try {
@@ -316,6 +347,32 @@ export function ClosureConfirmDialog({
           </p>
         </div>
 
+        {requiresOverride && (
+          <div
+            className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2"
+            data-testid="closure-confirm-override-panel"
+          >
+            <div className="text-xs font-semibold text-amber-900">
+              Override required
+            </div>
+            <p className="text-[11px] text-amber-900">
+              This item is in a status that doesn't normally allow recording
+              Denied by Payor. Explain (≥20 characters) why the normal flow
+              is being bypassed; this is recorded on the audit log.
+            </p>
+            <Textarea
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Confirmed offline with payor liaison; closing per ticket #4471."
+              data-testid="closure-confirm-override-reason"
+            />
+            <div className="text-[11px] text-amber-900/80">
+              {overrideTrimmed.length}/20 characters
+            </div>
+          </div>
+        )}
+
         {submitError && (
           <div
             className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -338,12 +395,12 @@ export function ClosureConfirmDialog({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || !overrideValid}
             className={cn(banner.submitClass)}
             data-testid="closure-confirm-submit"
           >
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {banner.submitLabel}
+            {requiresOverride ? `Override and ${banner.submitLabel.toLowerCase()}` : banner.submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

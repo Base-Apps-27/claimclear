@@ -2263,6 +2263,18 @@ paths:
                     type: array
                     items:
                       type: string
+                  terminalLane:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [normal, override]
+                    description: |
+                      Task #758 — per-target terminal-outcome lane map. For each
+                      terminal outcome (Denied, Approved, Partially Approved,
+                      Non-Issue, Withdrawn, No Action Needed), tells the closure
+                      dialogs whether the writer accepts that target on the
+                      normal lane (`"normal"`) or requires `override.reason`
+                      ≥20 chars (`"override"`).
                   hasActiveSubmission:
                     type: boolean
                   canQueueForPortal:
@@ -6029,6 +6041,19 @@ components:
           type: array
           items:
             type: string
+        terminalLane:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [normal, override]
+          description: |
+            Task #758 — per-target terminal-outcome lane map. For each
+            terminal outcome (Denied, Approved, Partially Approved,
+            Non-Issue, Withdrawn, No Action Needed), tells the closure
+            dialogs whether the writer accepts that target on the normal
+            lane (`"normal"`) or requires `override.reason` ≥20 chars
+            (`"override"`). Lets the UI surface the override panel
+            without re-implementing the policy on the client.
         canQueueForPortal:
           type: boolean
         hasActiveSubmission:
@@ -6894,8 +6919,29 @@ components:
           type: ["string", "null"]
         closureReviewNotes:
           type: ["string", "null"]
+        override:
+          $ref: "#/components/schemas/TerminalCloseOverride"
       required:
         - outcome
+
+    TerminalCloseOverride:
+      type: ["object", "null"]
+      description: |
+        Task #758 — terminal-closure override. Supply when the operator
+        is closing a leg or group into a terminal outcome (Denied,
+        Approved, Partially Approved, Non-Issue, Withdrawn, No Action
+        Needed) from a source status whose normal outcome envelope does
+        not permit it (e.g. Ready to Review, Portal Queued, Generating
+        Email, On Hold, Awaiting Response → Non-Issue). The reason is
+        required (≥20 chars), recorded in the audit-log metadata as
+        `override:{applied,sourceStatus,targetOutcome,reason}` and
+        appended to the lifecycle note. Omitted on the normal lane.
+      properties:
+        reason:
+          type: string
+          minLength: 20
+      required:
+        - reason
 
     UpdateInvoiceGroupOutcomeBody:
       type: object
@@ -6944,6 +6990,8 @@ components:
           type: ["string", "null"]
         closureReviewNotes:
           type: ["string", "null"]
+        override:
+          $ref: "#/components/schemas/TerminalCloseOverride"
       required:
         - outcome
 

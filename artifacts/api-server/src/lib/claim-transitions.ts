@@ -6,6 +6,14 @@ import { broadcastClaimEvent } from "./sse";
 import { closureAuditPayload, type NormalizedClosure } from "./closure-validation";
 import { computeAttestationDelta, type AttestationGroupContext } from "./attestation";
 import { setClaimDisposition } from "./leg-state/set-claim-disposition";
+import {
+  getTerminalClosurePolicy,
+  resolveTerminalOverride,
+  isTerminalOutcome,
+  isSystemControlledClosureBypass,
+  NORMAL_LANE_SYSTEM_SOURCES,
+  type TerminalOverride,
+} from "./terminal-closure-policy";
 
 // A "DB executor" is anything with the same select/update/insert surface as
 // the top-level `db` handle. The drizzle transaction object passed to
@@ -209,15 +217,43 @@ export async function transitionClaimOutcome(opts: {
   closureReason?: ClosureReason | null;
   /** Full validated closure detail payload, when the staff filed a structured closure. */
   closure?: NormalizedClosure | null;
+  /**
+   * Task #758 — terminal-closure override. When the source status's normal
+   * outcome envelope doesn't include `newOutcome` AND the target is a
+   * terminal outcome, the operator may supply an override reason
+   * (≥TERMINAL_OVERRIDE_MIN_REASON chars) to record reality. The reason
+   * is stamped into audit metadata and notes. See terminal-closure-policy.ts.
+   */
+  override?: TerminalOverride | null;
 }): Promise<TransitionResult> {
-  const { claimId, newOutcome, source, reason, actor, systemOverride = false, approvedAmount, invoiceNumbers, closure } = opts;
+  const { claimId, newOutcome, source, reason, actor, systemOverride = false, approvedAmount, invoiceNumbers, closure, override } = opts;
   let { closureReason } = opts;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
+  // Terminal-closure override resolution. When the target outcome is in
+  // the terminal set, decide whether this is the normal lane or the
+  // override lane and validate the override payload accordingly. The
+  // result `overrideReason` (string|null) is what we stamp into audit
+  // metadata; presence also unlocks bypassing the per-outcome guards
+  // below (response-required, no-submission, etc.) — those are exactly
+  // the rules the operator is explicitly choosing to bypass.
+  let overrideReason: string | null = null;
+  if (!systemOverride && isTerminalOutcome(newOutcome)) {
+    const validOutcomes = VALID_OUTCOME_BY_STATUS[old.status] || [];
+    const policy = getTerminalClosurePolicy(old.status, newOutcome, validOutcomes);
+    overrideReason = resolveTerminalOverride(policy, old.status, newOutcome, override);
+  }
+  const overrideApplied = overrideReason !== null;
+  const closureBypass =
+    overrideApplied || isSystemControlledClosureBypass(old.status, newOutcome);
+
   if (!systemOverride) {
-    if (old.invoiceGroupId) {
+    // Task #758 review feedback: explicit terminal-closure override
+    // bypasses the active-submission lock so stuck bot-owned legs
+    // remain closable.
+    if (!overrideApplied && old.invoiceGroupId) {
       const activeSubmissions = await db.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
         .where(and(
           eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId),
@@ -229,13 +265,18 @@ export async function transitionClaimOutcome(opts: {
     }
 
     const allowed = VALID_OUTCOME_BY_STATUS[old.status] || [];
-    if (!allowed.includes(newOutcome)) {
+    if (!allowed.includes(newOutcome) && !closureBypass) {
       throw new Error(`Cannot set outcome to "${newOutcome}" when claim is in "${old.status}" status. ${allowed.length > 0 ? `Valid outcomes: ${allowed.join(", ")}` : "Outcome changes are not allowed in this status."}`);
     }
   }
 
   if (newOutcome === "Denied") {
-    if (!systemOverride) {
+    // Per Task #758 review feedback: the Denied response-required guard
+    // is a per-outcome semantic invariant ("don't claim the payor denied
+    // unless we have a recorded response"). Only an explicit operator
+    // override (with reason ≥20 chars) is allowed to bypass it — the
+    // system-controlled normal lane is NOT enough on its own.
+    if (!systemOverride && !overrideApplied) {
       const responseCount = await db.select({ id: portalResponsesTable.id })
         .from(portalResponsesTable)
         .where(eq(portalResponsesTable.claimId, claimId))
@@ -249,7 +290,7 @@ export async function transitionClaimOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride && old.invoiceGroupId) {
+    if (!systemOverride && !overrideApplied && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
         .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
@@ -259,7 +300,7 @@ export async function transitionClaimOutcome(opts: {
       }
     }
   } else if (newOutcome === "Non-Issue") {
-    if (!systemOverride && old.invoiceGroupId) {
+    if (!systemOverride && !overrideApplied && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
         .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
@@ -307,10 +348,16 @@ export async function transitionClaimOutcome(opts: {
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
 
   const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
+  const overrideAuditFragment = overrideApplied
+    ? { override: { applied: true, sourceStatus: old.status, targetOutcome: newOutcome, reason: overrideReason } }
+    : {};
+  const overrideNoteFragment = overrideApplied
+    ? ` — Override (from ${old.status}): ${overrideReason}`
+    : "";
   await db.insert(auditLogsTable).values({
     claimId,
     action: "outcome_changed",
-    details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}`,
+    details: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` (${closureLabel})` : ""}${overrideApplied ? ` [override from ${old.status}]` : ""}`,
     metadata: {
       from: old.outcome,
       to: newOutcome,
@@ -320,6 +367,7 @@ export async function transitionClaimOutcome(opts: {
       closureReason: closureReason ?? null,
       closureReasonLabel: closureLabel,
       ...(closure ? { closure: closureAuditPayload(closure) } : {}),
+      ...overrideAuditFragment,
     },
     userEmail: actor.userEmail,
     userName: actor.userName,
@@ -328,7 +376,7 @@ export async function transitionClaimOutcome(opts: {
   await db.insert(notesTable).values({
     claimId,
     type: "outcome_recorded",
-    content: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` — ${closureLabel}` : ""}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}`,
+    content: `Outcome changed from ${old.outcome} to ${newOutcome}${closureLabel ? ` — ${closureLabel}` : ""}${approvedAmount ? ` (approved: $${approvedAmount})` : ""} — ${reason}${overrideNoteFragment}`,
     author: actor.userName || actor.userEmail || source,
   });
 
@@ -354,15 +402,53 @@ export async function transitionClaimStatusAndOutcome(opts: {
   closureReason?: ClosureReason | null;
   closure?: NormalizedClosure | null;
   systemOverride?: boolean;
+  /** Task #758 — terminal-closure override. See transitionClaimOutcome. */
+  override?: TerminalOverride | null;
 }): Promise<TransitionResult> {
-  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields, closure, systemOverride = false } = opts;
+  const { claimId, newStatus, newOutcome, source, reason, actor, extraFields, closure, systemOverride = false, override } = opts;
   let { closureReason } = opts;
 
   const [old] = await db.select().from(claimsTable).where(eq(claimsTable.id, claimId));
   if (!old) throw new Error(`Claim ${claimId} not found`);
 
+  // Terminal-closure override resolution. See transitionClaimOutcome
+  // for the full rationale; same shape applies here. The override
+  // bypasses the source-status outcome guard (and source-status
+  // *transition* guard, since terminal closures are by definition
+  // exit transitions to operator-resolved end states), and downgrades
+  // the per-outcome guards (response required, no-submission) the
+  // operator is explicitly choosing to overrule. The
+  // SYSTEM_CONTROLLED_STATUSES *entry* guard stays — override is for
+  // closing OUT of those statuses, not into them.
+  // Task #758 — for combined status+outcome flips the "normal lane"
+  // is whatever the writer's own status-transition + target-status
+  // outcome envelope would already accept (mirrors the guards
+  // immediately below); otherwise the closure runs on the override
+  // lane (≥20-char reason). Earlier iterations only inspected the
+  // source-status outcome envelope, which wrongly demanded override
+  // on legitimate normal flips like Needs Review → Resolved/Approved.
+  let overrideReason: string | null = null;
+  if (!systemOverride && isTerminalOutcome(newOutcome)) {
+    const statusNormallyAllowed =
+      old.status === newStatus ||
+      (VALID_MANUAL_STATUS_TRANSITIONS[old.status] || []).includes(newStatus);
+    const outcomeNormallyAllowed =
+      (VALID_OUTCOME_BY_STATUS[newStatus] || []).includes(newOutcome);
+    const normalLaneAccepts =
+      NORMAL_LANE_SYSTEM_SOURCES.has(old.status) ||
+      (statusNormallyAllowed && outcomeNormallyAllowed);
+    const policy = normalLaneAccepts ? "allowed-normally" : "allowed-with-override";
+    overrideReason = resolveTerminalOverride(policy, old.status, newOutcome, override);
+  }
+  const overrideApplied = overrideReason !== null;
+  const closureBypass =
+    overrideApplied || isSystemControlledClosureBypass(old.status, newOutcome);
+
   if (!systemOverride) {
-    if (old.invoiceGroupId) {
+    // Task #758 review feedback: explicit terminal-closure override
+    // bypasses the active-submission lock so stuck bot-owned legs
+    // remain closable.
+    if (!overrideApplied && old.invoiceGroupId) {
       const activeSubmissions = await db.select({ id: portalSubmissionsTable.id }).from(portalSubmissionsTable)
         .where(and(
           eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId),
@@ -379,14 +465,18 @@ export async function transitionClaimStatusAndOutcome(opts: {
       }
 
       const allowedStatuses = VALID_MANUAL_STATUS_TRANSITIONS[old.status] || [];
-      if (!allowedStatuses.includes(newStatus)) {
+      if (!allowedStatuses.includes(newStatus) && !closureBypass) {
         throw new Error(`Cannot transition from "${old.status}" to "${newStatus}". Valid transitions: ${allowedStatuses.length > 0 ? allowedStatuses.join(", ") : "none (status is system-controlled)"}`);
       }
     }
 
-    const allowedOutcomes = VALID_OUTCOME_BY_STATUS[old.status] || [];
-    if (!allowedOutcomes.includes(newOutcome)) {
-      throw new Error(`Cannot set outcome to "${newOutcome}" when claim is in "${old.status}" status. ${allowedOutcomes.length > 0 ? `Valid outcomes: ${allowedOutcomes.join(", ")}` : "Outcome changes are not allowed in this status."}`);
+    // Task #758 — outcome envelope is checked against the DESTINATION
+    // status (mirrors group writer line ~854). The earlier source-status
+    // form rejected legitimate normal flips like Needs Review →
+    // Resolved/Approved even though Resolved → Approved is in envelope.
+    const allowedOutcomes = VALID_OUTCOME_BY_STATUS[newStatus] || [];
+    if (allowedOutcomes.length > 0 && !allowedOutcomes.includes(newOutcome) && !closureBypass) {
+      throw new Error(`Cannot set outcome to "${newOutcome}" when claim is moving to "${newStatus}" status. Valid outcomes: ${allowedOutcomes.join(", ")}`);
     }
   }
 
@@ -394,7 +484,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
     if (closureReason !== "cannot_dispute") {
       throw new Error(`Withdrawn outcome requires a closureReason of "cannot_dispute".`);
     }
-    if (!systemOverride && old.invoiceGroupId) {
+    if (!systemOverride && !overrideApplied && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
         .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
@@ -405,7 +495,10 @@ export async function transitionClaimStatusAndOutcome(opts: {
     }
   }
   if (newOutcome === "Denied") {
-    if (!systemOverride) {
+    // See transitionClaimOutcome — Denied response-required guard is
+    // a per-outcome semantic invariant; bypass requires explicit
+    // operator override, NOT just the system-controlled normal lane.
+    if (!systemOverride && !overrideApplied) {
       const responseCount = await db.select({ id: portalResponsesTable.id })
         .from(portalResponsesTable)
         .where(eq(portalResponsesTable.claimId, claimId))
@@ -417,7 +510,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
     if (closureReason === undefined) closureReason = "denied_by_payor";
   }
   if (newOutcome === "Non-Issue") {
-    if (!systemOverride && old.invoiceGroupId) {
+    if (!systemOverride && !overrideApplied && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
         .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
@@ -437,7 +530,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
     if (closureReason !== undefined && closureReason !== "non_issue") {
       throw new Error(`"No Action Needed" outcome requires closureReason "non_issue".`);
     }
-    if (!systemOverride && old.invoiceGroupId) {
+    if (!systemOverride && !overrideApplied && old.invoiceGroupId) {
       const submissionCount = await db.select({ id: portalSubmissionsTable.id })
         .from(portalSubmissionsTable)
         .where(eq(portalSubmissionsTable.invoiceGroupId, old.invoiceGroupId))
@@ -493,10 +586,16 @@ export async function transitionClaimStatusAndOutcome(opts: {
   if (closureLabel) changes.push(`closure: ${closureLabel}`);
   const changeDesc = changes.length > 0 ? changes.join(", ") : "no change";
 
+  const overrideAuditFragment2 = overrideApplied
+    ? { override: { applied: true, sourceStatus: old.status, targetOutcome: newOutcome, reason: overrideReason } }
+    : {};
+  const overrideNoteFragment2 = overrideApplied
+    ? ` — Override (from ${old.status}): ${overrideReason}`
+    : "";
   await db.insert(auditLogsTable).values({
     claimId,
     action: "status_and_outcome_changed",
-    details: `${changeDesc} — ${reason}`,
+    details: `${changeDesc} — ${reason}${overrideApplied ? ` [override from ${old.status}]` : ""}`,
     metadata: {
       fromStatus: old.status, toStatus: newStatus,
       fromOutcome: old.outcome, toOutcome: newOutcome,
@@ -504,6 +603,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
       closureReason: closureReason ?? null,
       closureReasonLabel: closureLabel,
       ...(closure ? { closure: closureAuditPayload(closure) } : {}),
+      ...overrideAuditFragment2,
     },
     userEmail: actor.userEmail,
     userName: actor.userName,
@@ -512,7 +612,7 @@ export async function transitionClaimStatusAndOutcome(opts: {
   await db.insert(notesTable).values({
     claimId,
     type: "status_change",
-    content: `${changeDesc} — ${reason}`,
+    content: `${changeDesc} — ${reason}${overrideNoteFragment2}`,
     author: actor.userName || actor.userEmail || source,
   });
 

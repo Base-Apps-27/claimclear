@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
 import type { ClosureReason } from "./closureReason";
+import type { TerminalCloseOverride } from "./terminalCloseOverride";
 
 /**
  * Body for `PATCH /claims/{id}/outcome`. The closure detail fields
@@ -56,4 +57,5 @@ export interface UpdateClaimOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  override?: TerminalCloseOverride | null;
 }
