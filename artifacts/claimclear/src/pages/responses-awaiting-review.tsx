@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRowSettle } from "@/hooks/use-row-settle";
 import { Link, useLocation, useParams } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
@@ -92,6 +92,7 @@ import {
   Tag,
   Building2,
   Search,
+  X,
 } from "lucide-react";
 import {
   FacetedFilter,
@@ -101,7 +102,7 @@ import {
   type FacetedFilterCategory,
   type FacetOption,
 } from "@/components/list-table/faceted-filter";
-import { FilterChipStrip, type FilterChip } from "@/components/list-table/filter-chip-strip";
+import { type FilterChip } from "@/components/list-table/filter-chip-strip";
 import { Input } from "@/components/ui/input";
 import { useUrlParams } from "@/lib/use-url-params";
 import {
@@ -191,18 +192,13 @@ export default function ResponsesAwaitingReview() {
   // The list-event subscription stays at the shell level so SSE-driven
   // invalidation reaches the verdict-pending workspace whether the
   // operator landed via the bare path or a deep link.
+  // Task #759 — Header V2: the page shell no longer renders a stand-alone
+  // title + prose blurb. The new <ReviewHeader> (rendered inside
+  // <VerdictPendingTabContent>) owns the single-row title + count badge +
+  // info tooltip + caption pattern.
   useInvoiceGroupsListEvents();
   return (
     <div className="space-y-5">
-      <div className="space-y-1">
-        <h2 className="text-2xl font-bold tracking-tight">
-          Responses Awaiting Review
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          Pick a verdict on each payor reply. Re-attestation work lives on the
-          dedicated Attestation Queue page.
-        </p>
-      </div>
       <VerdictPendingTabContent />
     </div>
   );
@@ -858,108 +854,72 @@ function VerdictPendingTabContent() {
     // reattachable across an unexpected reload.
   };
 
+  // Task #759 — Header V2 ("Controls / State Split"). The header used to
+  // stack 7 vertical strips (title, two prose blurbs, hidden items,
+  // filter bar, active chips, sort row, bulk bar) eating ~280px before
+  // the first row. ReviewHeader collapses that into:
+  //   row 1: title + count badge + info tooltip + caption
+  //   row 2: toolbar (filter, search, HC-shortcut OR bulk-bar, sort)
+  //   row 3: collapsible "Showing / Hiding" state strip (only when
+  //          filters or hidden buckets are active)
+  // The composition pulls FilterBar's pieces apart via the
+  // useFilterBarSlots hook so the trigger + search live in the toolbar
+  // while the active chips live in the state strip.
+  const filterSlots = useFilterBarSlots({
+    filterQ,
+    filterStatuses,
+    filterResponseTypes,
+    filterErrorTypeIds,
+    filterClientNumbers,
+    filterServiceDateFrom,
+    filterServiceDateTo,
+    filterResponseReceivedFrom,
+    filterResponseReceivedTo,
+    errorTypes: errorTypesList,
+    clientOptions,
+    onSetQ: (q) => url.set({ q: q || null }, false),
+    setMultiParam,
+    toggleMulti,
+    onSetServiceDateRange: (v) =>
+      url.set({ serviceDateFrom: v.from || null, serviceDateTo: v.to || null }, false),
+    onSetResponseReceivedRange: (v) =>
+      url.set({ responseReceivedFrom: v.from || null, responseReceivedTo: v.to || null }, false),
+    clearAllFilters,
+  });
+  const hiddenSlots = useHiddenItemsChips();
+
   return (
     <div className="space-y-5" data-testid="verdict-pending-tab-content">
-      <div className="space-y-1">
-        <div className="flex items-center gap-3 flex-wrap">
-          <p className="text-muted-foreground text-sm">
-            Stage 2 inbox. The payor responded — read what they said,
-            weigh the AI hint, and pick the verdict (continue the
-            dispute, mark paid, or close as denied). Oldest response
-            first.
-          </p>
-          {groups.length > 0 && (
-            <Badge variant="secondary" data-testid="page-count-badge">
-              {groups.length} verdict pending
-            </Badge>
-          )}
-        </div>
-      </div>
-
       <UnclassifiedResponsesSection />
 
-      <HiddenItemsStrip />
-
-      <FilterBar
-        filterQ={filterQ}
-        filterStatuses={filterStatuses}
-        filterResponseTypes={filterResponseTypes}
-        filterErrorTypeIds={filterErrorTypeIds}
-        filterClientNumbers={filterClientNumbers}
-        filterServiceDateFrom={filterServiceDateFrom}
-        filterServiceDateTo={filterServiceDateTo}
-        filterResponseReceivedFrom={filterResponseReceivedFrom}
-        filterResponseReceivedTo={filterResponseReceivedTo}
-        errorTypes={errorTypesList}
-        clientOptions={clientOptions}
-        onSetQ={(q) => url.set({ q: q || null }, false)}
-        setMultiParam={setMultiParam}
-        toggleMulti={toggleMulti}
-        onSetServiceDateRange={(v) =>
-          url.set({ serviceDateFrom: v.from || null, serviceDateTo: v.to || null }, false)
-        }
-        onSetResponseReceivedRange={(v) =>
-          url.set({ responseReceivedFrom: v.from || null, responseReceivedTo: v.to || null }, false)
-        }
+      <ReviewHeader
+        groupCount={groups.length}
+        hasActiveFilters={hasActiveFilters}
+        sortMode={sortMode}
+        onSortChange={handleSortChange}
+        filterSlots={filterSlots}
+        hiddenSlots={hiddenSlots}
         clearAllFilters={clearAllFilters}
+        selectionEligibleAllCount={selectionPreview.eligibleAll.length}
+        onSelectAllEligible={selectAllEligible}
+        bulkBar={
+          selectedGroupIds.size > 0 ? (
+            <BulkApproveBar
+              selectedCount={selectedGroupIds.size}
+              eligibleCount={selectionPreview.eligible.length}
+              skippedCount={selectionPreview.skipped.length}
+              totalDollars={selectionPreview.totalDollars}
+              allEligible={allSelectionsEligible}
+              overCap={overCap}
+              cap={BULK_APPROVE_MAX_ROWS}
+              onSelectAllEligible={selectAllEligible}
+              onClear={clearSelection}
+              onOpenConfirm={() => setBulkConfirmOpen(true)}
+            />
+          ) : null
+        }
       />
 
-
-      {groups.length > 0 && (
-        <div className="flex items-center justify-end gap-2">
-          {selectionPreview.eligibleAll.length > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={selectAllEligible}
-              data-testid="bulk-approve-header-select-all-eligible"
-            >
-              Select all High-confidence Approvals
-              <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold">
-                {selectionPreview.eligibleAll.length}
-              </span>
-            </Button>
-          )}
-          <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
-          <Select value={sortMode} onValueChange={handleSortChange}>
-            <SelectTrigger
-              className="w-[220px] h-8 text-xs"
-              data-testid="sort-mode-select"
-              aria-label="Sort responses awaiting review"
-            >
-              <SelectValue placeholder="Sort by…" />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  <span className="block">
-                    <span className="font-medium">{opt.label}</span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {opt.help}
-                    </span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {selectedGroupIds.size > 0 && (
-        <BulkApproveBar
-          selectedCount={selectedGroupIds.size}
-          eligibleCount={selectionPreview.eligible.length}
-          skippedCount={selectionPreview.skipped.length}
-          totalDollars={selectionPreview.totalDollars}
-          allEligible={allSelectionsEligible}
-          overCap={overCap}
-          cap={BULK_APPROVE_MAX_ROWS}
-          onSelectAllEligible={selectAllEligible}
-          onClear={clearSelection}
-          onOpenConfirm={() => setBulkConfirmOpen(true)}
-        />
-      )}
       <Workspace
         isLoading={isLoading}
         isError={isError}
@@ -1033,8 +993,33 @@ function BulkApproveBar({
       <span className="text-sm font-semibold" data-testid="bulk-approve-bar-count">
         {selectedCount} selected
       </span>
-      <span className="text-xs text-muted-foreground">
-        {eligibleCount} eligible · {skippedCount} would be skipped · total {formatCurrency(String(totalDollars))}
+      {/* Task #759 — adverse-selection color coding: eligible reads
+          green (good to go), skipped reads amber (heads-up) so the
+          operator can spot a partly-ineligible selection at a glance.
+          Falls back to muted styling when the count is zero so a clean
+          "8 eligible · 0 would be skipped" line doesn't shout. */}
+      <span className="text-xs text-muted-foreground inline-flex items-center gap-1 flex-wrap">
+        <span
+          className={
+            eligibleCount > 0
+              ? "font-semibold text-green-700"
+              : "text-muted-foreground"
+          }
+        >
+          {eligibleCount} eligible
+        </span>
+        <span aria-hidden="true">·</span>
+        <span
+          className={
+            skippedCount > 0
+              ? "font-semibold text-amber-700"
+              : "text-muted-foreground"
+          }
+        >
+          {skippedCount} would be skipped
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>total {formatCurrency(String(totalDollars))}</span>
       </span>
       <div className="ml-auto flex items-center gap-2">
         <Button
@@ -1254,53 +1239,81 @@ function UnclassifiedResponsesSection() {
  * which is invalidated on the same SSE pulse the inbox uses (see
  * `useInvoiceGroupsListEvents`).
  */
-function HiddenItemsStrip() {
+/**
+ * Task #759 — Header V2 split. The "Hidden from this view" strip used to
+ * render its own card wrapper (or a "Nothing hidden" italic line, or a
+ * skeleton) directly between the prose blurb and the FilterBar. The V2
+ * layout puts those chips inside the collapsible "Showing/Hiding" state
+ * strip alongside the active filter chips, and collapses the strip
+ * entirely when both groups are empty.
+ *
+ * This hook returns ready-to-render chip nodes plus visibility flags so
+ * the <ReviewHeader> composer can decide whether the state strip
+ * appears at all. Loading / empty markers are still rendered as
+ * sr-only spans so existing test ids
+ * (`hidden-items-strip-loading`, `hidden-items-strip-empty`) keep
+ * resolving in the canonical states.
+ */
+interface HiddenItemsSlots {
+  isLoading: boolean;
+  hasChips: boolean;
+  /** The chips (with click-through tooltips), or null when there are none. */
+  chips: ReactNode;
+  /** Sr-only marker spans that preserve loading / empty test ids. */
+  marker: ReactNode;
+}
+
+function useHiddenItemsChips(): HiddenItemsSlots {
   const { data, isLoading } = useGetResponsesAwaitingReviewHiddenCounts({
     query: { queryKey: getGetResponsesAwaitingReviewHiddenCountsQueryKey() },
   });
 
   if (isLoading || !data) {
-    return <Skeleton className="h-9 w-full max-w-xl" data-testid="hidden-items-strip-loading" />;
+    return {
+      isLoading: true,
+      hasChips: false,
+      chips: null,
+      marker: (
+        <Skeleton
+          className="sr-only"
+          data-testid="hidden-items-strip-loading"
+        />
+      ),
+    };
   }
 
   const { awaitingPayorAgain, acknowledgmentOnly } = data;
   // `unclassified` is intentionally excluded — it has its own actionable
-  // section above (UnclassifiedResponsesSection), so this strip should
-  // collapse to "Nothing hidden" when the only hidden items are
-  // unclassified ones.
+  // section above (UnclassifiedResponsesSection), so this collapses to
+  // "Nothing hidden" when the only hidden items are unclassified ones.
   const totalHidden = awaitingPayorAgain + acknowledgmentOnly;
 
   if (totalHidden === 0) {
-    return (
-      <div
-        className="text-xs text-muted-foreground italic"
-        data-testid="hidden-items-strip-empty"
-      >
-        Nothing hidden from this view.
-      </div>
-    );
+    return {
+      isLoading: false,
+      hasChips: false,
+      chips: null,
+      marker: (
+        <span className="sr-only" data-testid="hidden-items-strip-empty">
+          Nothing hidden from this view.
+        </span>
+      ),
+    };
   }
 
   // Click-through destinations reuse existing list pages with precise
   // filters so the chip count and the resulting page list always agree.
   const chips: Array<{
     key: string;
-    count: number;
     label: string;
     tooltip: string;
     href: string;
     toneClass: string;
   }> = [];
 
-  // Note: the "unclassified" bucket is now rendered as its own
-  // actionable section above this strip (UnclassifiedResponsesSection)
-  // so operators can assign an error type inline without leaving the
-  // page. We deliberately don't push it as a chip here to avoid a
-  // double-render of the same count.
   if (awaitingPayorAgain > 0) {
     chips.push({
       key: "awaitingPayorAgain",
-      count: awaitingPayorAgain,
       label: `${awaitingPayorAgain} waiting for payor again`,
       tooltip:
         "Operator clicked \"I replied — wait for payor again\" and no newer reply has arrived. The inbox suppresses these until a fresh response lands.",
@@ -1311,7 +1324,6 @@ function HiddenItemsStrip() {
   if (acknowledgmentOnly > 0) {
     chips.push({
       key: "acknowledgmentOnly",
-      count: acknowledgmentOnly,
       label:
         acknowledgmentOnly === 1
           ? "1 has only acknowledgment/abstain responses"
@@ -1323,29 +1335,220 @@ function HiddenItemsStrip() {
     });
   }
 
+  return {
+    isLoading: false,
+    hasChips: true,
+    chips: (
+      <>
+        {chips.map((chip) => (
+          <Tooltip key={chip.key}>
+            <TooltipTrigger asChild>
+              <Link
+                href={chip.href}
+                className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${chip.toneClass}`}
+                data-testid={`hidden-items-chip-${chip.key}`}
+              >
+                {chip.label}
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{chip.tooltip}</TooltipContent>
+          </Tooltip>
+        ))}
+      </>
+    ),
+    marker: null,
+  };
+}
+
+/**
+ * Task #759 — Header V2 ("Controls / State Split") composer.
+ *
+ * Renders three rows:
+ *   1. Title row: page title + verdict-pending count badge + info-icon
+ *      tooltip carrying the long "Stage 2 inbox…" copy + a short
+ *      "Stage 2 inbox · oldest first" caption.
+ *   2. Toolbar row: filter trigger + search + (HC-shortcut OR sort) on
+ *      the right. Hidden when the inbox is genuinely empty (no rows AND
+ *      no active filters), so the empty-state success card stands alone.
+ *   3. Bulk-approve bar (slides in below the toolbar when the operator
+ *      has selected rows; replaces the inline HC-shortcut on the right
+ *      of the toolbar to avoid duplication).
+ *   4. State strip: collapsible "Showing / Hiding" block surfacing
+ *      active filter chips and hidden-bucket chips. The whole strip
+ *      disappears when there are no chips on either side.
+ *
+ * The duplicate "Select all High-confidence Approvals" header button has
+ * been removed; only the inline toolbar shortcut (when selection = 0)
+ * and the bulk-bar instance (when selection > 0) remain.
+ */
+interface ReviewHeaderProps {
+  groupCount: number;
+  hasActiveFilters: boolean;
+  sortMode: SortMode;
+  onSortChange: (value: string) => void;
+  filterSlots: FilterBarSlots;
+  hiddenSlots: HiddenItemsSlots;
+  clearAllFilters: () => void;
+  selectionEligibleAllCount: number;
+  onSelectAllEligible: () => void;
+  bulkBar: ReactNode;
+}
+
+function ReviewHeader({
+  groupCount,
+  hasActiveFilters,
+  sortMode,
+  onSortChange,
+  filterSlots,
+  hiddenSlots,
+  clearAllFilters,
+  selectionEligibleAllCount,
+  onSelectAllEligible,
+  bulkBar,
+}: ReviewHeaderProps) {
+  const hasSelection = bulkBar !== null;
+  // Hide the toolbar when there are no rows AND no filters — the
+  // inbox-empty success card on its own is the whole UI in that case
+  // (V2SplitEmpty mockup).
+  const showToolbar = groupCount > 0 || hasActiveFilters;
+  // The state strip surfaces "what's narrowing the view" — collapse it
+  // when nothing is filtered and nothing is hidden.
+  const showStateStrip =
+    filterSlots.hasActiveChips || hiddenSlots.hasChips;
+  // Task #753 — "Clear all" stays gated on 2+ active filter chips so a
+  // single chip's per-chip × is enough.
+  const showClearAll = filterSlots.chipCount >= 2;
+
   return (
-    <div
-      className="flex items-center gap-2 flex-wrap rounded-md border border-dashed bg-muted/30 px-3 py-2"
-      data-testid="hidden-items-strip"
-    >
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
-        <Eye className="h-3.5 w-3.5" />
-        Hidden from this view
-      </span>
-      {chips.map((chip) => (
-        <Tooltip key={chip.key}>
+    <div className="space-y-3">
+      {/* Row 1 — title + count badge + info tooltip + short caption. */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <h2 className="text-2xl font-bold tracking-tight">
+          Responses Awaiting Review
+        </h2>
+        <Badge variant="secondary" data-testid="page-count-badge">
+          {groupCount} verdict pending
+        </Badge>
+        <Tooltip>
           <TooltipTrigger asChild>
-            <Link
-              href={chip.href}
-              className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${chip.toneClass}`}
-              data-testid={`hidden-items-chip-${chip.key}`}
+            <button
+              type="button"
+              className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="About Responses Awaiting Review"
+              data-testid="responses-awaiting-review-info"
             >
-              {chip.label}
-            </Link>
+              <HelpCircle className="h-4 w-4" />
+            </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-xs">{chip.tooltip}</TooltipContent>
+          <TooltipContent className="max-w-sm">
+            Stage 2 inbox. The payor responded — read what they said,
+            weigh the AI hint, and pick the verdict (continue the
+            dispute, mark paid, or close as denied). Oldest response
+            first. Re-attestation work lives on the dedicated Attestation
+            Queue page.
+          </TooltipContent>
         </Tooltip>
-      ))}
+        <span className="ml-auto text-xs text-muted-foreground">
+          Stage 2 inbox · oldest first
+        </span>
+      </div>
+
+      {/* Row 2 — toolbar (filter, search, HC-shortcut OR nothing, sort). */}
+      {showToolbar && (
+        <div
+          className="flex items-center gap-2 flex-wrap"
+          data-testid="responses-awaiting-review-filter-bar"
+        >
+          {filterSlots.trigger}
+          {filterSlots.search}
+          <span className="ml-auto flex items-center gap-2">
+            {!hasSelection && selectionEligibleAllCount > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onSelectAllEligible}
+                data-testid="bulk-approve-header-select-all-eligible"
+              >
+                Select {selectionEligibleAllCount} HC approvals
+              </Button>
+            )}
+            <ArrowDownWideNarrow className="h-4 w-4 text-muted-foreground" />
+            <Select value={sortMode} onValueChange={onSortChange}>
+              <SelectTrigger
+                className="w-[220px] h-8 text-xs"
+                data-testid="sort-mode-select"
+                aria-label="Sort responses awaiting review"
+              >
+                <SelectValue placeholder="Sort by…" />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    <span className="block">
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {opt.help}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </span>
+        </div>
+      )}
+
+      {/* Bulk-approve bar slides in below the toolbar when there's a
+          selection (replaces the inline HC-shortcut on the toolbar's
+          right edge above). */}
+      {bulkBar}
+
+      {/* Row 3 — collapsible state strip. */}
+      {showStateStrip && (
+        <div
+          className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/30 px-3 py-2"
+          data-testid={hiddenSlots.hasChips ? "hidden-items-strip" : undefined}
+        >
+          {filterSlots.hasActiveChips && (
+            <>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Showing
+              </span>
+              {filterSlots.chips}
+            </>
+          )}
+          {filterSlots.hasActiveChips && hiddenSlots.hasChips && (
+            <span className="h-4 w-px bg-border" aria-hidden="true" />
+          )}
+          {hiddenSlots.hasChips && (
+            <>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+                <Eye className="h-3 w-3" />
+                Hiding
+              </span>
+              {hiddenSlots.chips}
+            </>
+          )}
+          {showClearAll && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="ml-auto text-xs text-muted-foreground h-6 px-2 hover:text-foreground"
+              data-testid="filter-chip-strip-clear-all"
+            >
+              Clear all
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Sr-only markers preserve `hidden-items-strip-loading` and
+          `hidden-items-strip-empty` test ids in the canonical states
+          even when the V2 layout collapses the visible strip. */}
+      {hiddenSlots.marker}
     </div>
   );
 }
@@ -2870,7 +3073,36 @@ interface FilterBarProps {
   clearAllFilters: () => void;
 }
 
-function FilterBar({
+/**
+ * Task #759 — Header V2 split. The filter UI used to render as a single
+ * <FilterBar> wrapper with trigger + search on top and active chips
+ * underneath. The V2 layout puts the trigger + search inside the toolbar
+ * row and the active chips inside the collapsible "Showing/Hiding" state
+ * strip. This hook returns those pieces as ready-to-render slots so the
+ * <ReviewHeader> composer can place them in the right rows without
+ * re-implementing any of the filter wiring.
+ *
+ * Behavior preserved verbatim:
+ *  - free-text input is locally shadowed and pushed to the URL on
+ *    blur/Enter (no per-keystroke navigations)
+ *  - chip removal calls back into the same setMultiParam / onSet* paths
+ *  - "Clear all" surface still requires 2+ chips (handled in
+ *    <ReviewHeader> against `chipCount`)
+ *  - the FacetedFilter trigger keeps `responses-awaiting-review-filter-trigger`
+ *  - the search input keeps `responses-awaiting-review-search-input`
+ */
+export interface FilterBarSlots {
+  trigger: ReactNode;
+  search: ReactNode;
+  /** Active filter chips, ready to render inside the state strip. */
+  chips: ReactNode;
+  /** Number of chips (incl. the search "q") so the caller can decide
+   *  whether the state strip / "Clear all" should appear. */
+  chipCount: number;
+  hasActiveChips: boolean;
+}
+
+function useFilterBarSlots({
   filterQ,
   filterStatuses,
   filterResponseTypes,
@@ -2888,7 +3120,7 @@ function FilterBar({
   onSetServiceDateRange,
   onSetResponseReceivedRange,
   clearAllFilters,
-}: FilterBarProps) {
+}: FilterBarProps): FilterBarSlots {
   const [open, setOpen] = useState(false);
   // Local-shadow the free-text input so the operator can type without
   // an effect cycle reflowing the value back into the input on every
@@ -3103,44 +3335,68 @@ function FilterBar({
     });
   }
 
-  return (
-    <div data-testid="responses-awaiting-review-filter-bar">
-      <div className="flex items-center gap-2 flex-wrap">
-        <FacetedFilter
-          open={open}
-          onOpenChange={setOpen}
-          categories={categories}
-          totalApplied={totalApplied - (filterQ ? 1 : 0)}
-          onClearAll={clearAllFilters}
-          triggerTestId="responses-awaiting-review-filter-trigger"
-        />
-        <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            value={qDraft}
-            onChange={(e) => setQDraft(e.target.value)}
-            onBlur={() => {
-              if ((qDraft || "") !== (filterQ ?? "")) onSetQ(qDraft);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onSetQ(qDraft);
-              }
-            }}
-            placeholder="Search invoice #, client, error description…"
-            className="pl-7 h-8 text-xs"
-            data-testid="responses-awaiting-review-search-input"
-          />
-        </div>
-      </div>
-      {/* Task #753 — "Clear all" appears only when 2+ chips are
-          active; with a single chip the per-chip × is enough. */}
-      <FilterChipStrip
-        chips={chips}
-        onClearAll={clearAllFilters}
-        minChipsForClearAll={2}
+  const trigger = (
+    <FacetedFilter
+      open={open}
+      onOpenChange={setOpen}
+      categories={categories}
+      totalApplied={totalApplied - (filterQ ? 1 : 0)}
+      onClearAll={clearAllFilters}
+      triggerTestId="responses-awaiting-review-filter-trigger"
+    />
+  );
+
+  const search = (
+    <div className="relative flex-1 min-w-[220px] max-w-md">
+      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+      <Input
+        value={qDraft}
+        onChange={(e) => setQDraft(e.target.value)}
+        onBlur={() => {
+          if ((qDraft || "") !== (filterQ ?? "")) onSetQ(qDraft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSetQ(qDraft);
+          }
+        }}
+        placeholder="Search invoice #, client, error description…"
+        className="pl-7 h-8 text-xs"
+        data-testid="responses-awaiting-review-search-input"
       />
     </div>
   );
+
+  // Render chips inline (matches the V2 mockup's pill style); chip removal
+  // routes through the same setMultiParam / onSet* paths as the legacy
+  // FilterChipStrip render.
+  const chipNodes = chips.length > 0 ? (
+    <>
+      {chips.map((chip) => (
+        <span
+          key={chip.key}
+          className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium px-2.5 py-0.5"
+        >
+          {chip.label}
+          <button
+            type="button"
+            onClick={chip.onRemove}
+            className="ml-0.5 rounded-full hover:bg-primary/20 p-0.5 transition-colors"
+            aria-label={`Remove ${chip.label} filter`}
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      ))}
+    </>
+  ) : null;
+
+  return {
+    trigger,
+    search,
+    chips: chipNodes,
+    chipCount: chips.length,
+    hasActiveChips: chips.length > 0,
+  };
 }
