@@ -349,15 +349,16 @@ export default function D2Ledger() {
               </h2>
             </div>
             
-            {/* Ledger List */}
-            <div className="flex-none p-4 space-y-2 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/30 max-h-[300px] overflow-y-auto custom-scrollbar shadow-inner">
+            {/* Ledger as horizontal strip — D2's LegRow verbatim, laid out as fixed-width cards */}
+            <div className="flex-none p-4 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/30 flex items-stretch gap-2 overflow-x-auto custom-scrollbar shadow-inner">
               {Object.values(LEGS).map((leg) => (
-                <LegRow
-                  key={leg.key}
-                  leg={leg}
-                  selected={selectedKey === leg.key}
-                  onClick={() => setSelectedKey(leg.key)}
-                />
+                <div key={leg.key} className="shrink-0 w-[300px]">
+                  <LegRow
+                    leg={leg}
+                    selected={selectedKey === leg.key}
+                    onClick={() => setSelectedKey(leg.key)}
+                  />
+                </div>
               ))}
             </div>
 
