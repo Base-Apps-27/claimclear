@@ -1,0 +1,53 @@
+Phase 0: enrich the contact-name lookup with recent call history (depends on #227)
+Now that #227 has landed the Talkdesk call pipeline, the same screen-pop endpoint that #240 is building for "who is this caller?" can answer "what have they been calling about?" in the same response with one extra SQL query. No new tables, no matcher, no rollups — both halves key off the normalized E.164 phone number that's already indexed in fact_calls and (after #240's own normalization step) recipient_pii.phone.
+
+This phase is additive to #240's existing scope: same endpoint, same auth, same Talkdesk Studio plumbing. It just returns a richer body.
+
+Done looks like
+The contact-lookup endpoint that #240 builds returns one extra field:
+
+{
+  "contact": { /* whatever #240 already returns: name, recipient_id, etc. */ },
+  "recentCalls": [
+    {
+      "talkdeskCallId": "…",
+      "startedAt": "2026-05-17T18:42:09Z",
+      "direction": "inbound",
+      "agentName": "Maria L.",
+      "queueName": "Member Services",
+      "dispositionName": "ETA inquiry",
+      "talkSeconds": 142,
+      "wasAbandoned": false
+    }
+    // up to 10, newest first
+  ],
+  "recentCallSummary": {
+    "calls24h": 3,
+    "calls7d": 7,
+    "lastAgentName": "Maria L.",
+    "lastDispositionName": "ETA inquiry",
+    "lastCallAt": "2026-05-17T18:42:09Z"
+  }
+}
+
+When the phone has no call history, recentCalls is [] and recentCallSummary returns zeros + nulls — never omitted, so the agent UI's shape is stable.
+
+Steps
+Extend the reads module (artifacts/api-server/src/lib/talkdesk/reads.ts) with two intentional functions, not ad-hoc queries:
+
+listRecentCallsForPhone(phoneE164: string, opts?: { hours?: number; limit?: number }) — selects from v_calls filtered by ani_e164 = $1 OR dnis_e164 = $1 so both inbound and outbound show up, ordered newest-first, capped (default 10).
+getRecentCallSummaryForPhone(phoneE164: string) — one aggregate query returning the calls24h / calls7d / lastAgentName / lastDispositionName / lastCallAt shape.
+Both functions normalize the input phone through the same toE164 helper #227 uses, so the endpoint never has to think about format.
+Wire into the contact-lookup endpoint that #240 is building. The endpoint accepts a phone number; after resolving the contact, fire the two reads functions in parallel with the contact lookup (independent queries — Promise.all), assemble the response. Do not let a slow fact_calls query block the contact lookup; if the call-history query throws or times out (cap at ~500ms), log it and return recentCalls: [] / zeroed summary so the screen-pop still pops with the name.
+
+Add an index if needed to keep the lookup fast. #227 already indexes ani_e164 and dnis_e164. Confirm a composite or covering index supports WHERE ani_e164 = $1 ORDER BY started_at DESC LIMIT 10 cheaply at current row counts; add one if EXPLAIN shows a seq scan once a few thousand calls are loaded.
+
+Document the response shape in whatever README #240 produces, with a one-line note that this enrichment depends on the #227 pipeline being live (and degrades gracefully — empty arrays — if Talkdesk credentials aren't configured or the live poller is paused).
+
+Out of scope (intentionally deferred)
+Member-keyed call history that spans multiple phones for the same recipient. Today this is phone-keyed only. If a member has two phones, screen-pop only shows the history for the line that just rang. Solve later if it becomes a real complaint — would require the call_to_recipient bridge sketched but rejected during #227 planning.
+Trip association. Knowing "this call was about ride #X" requires a separate scoring job and is its own task.
+Per-member rollup materialized views. Not needed at this volume; the two reads queries are sub-100ms against a properly-indexed fact_calls and run only on call ring, not on a hot loop.
+Talkdesk Studio configuration. The Studio HTTP Request step that calls this endpoint is admin-side work in Talkdesk, not in this repo.
+Why this approach (and not a bridge table)
+Considered during #227 planning: building a call_to_recipient bridge plus a member_call_summary materialized view. Rejected for now — the data we need for the agent screen-pop is fully derivable at query time from fact_calls keyed on the normalized E.164 phone that already arrives in the screen-pop request. Building precomputed structures up front buys nothing the agent can feel and locks us into a model before we know what the second use case is. If/when offline analytics need member-level aggregation across phone changes, we add the bridge then with zero data loss in the interim.
