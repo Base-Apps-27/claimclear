@@ -100,7 +100,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ["artifacts/claimclear/src/components/service-date-cell.tsx", "empty-state 'Open group' / 'Review legs' anchor"],
   ["artifacts/claimclear/src/components/queue-needs-review-panel.tsx", "'Open in full view' escape-hatch"],
   ["artifacts/claimclear/src/components/queue-response-review-panel.tsx", "'↗' drilldown + response-anchor jump"],
-  ["artifacts/claimclear/src/components/group-dossier-chrome.tsx", "renders the queue-deep-link CTA + breadcrumb"],
+  ["artifacts/claimclear/src/components/invoice-group-detail-v2.tsx", "renders the queue-deep-link CTA in the left-rail Submission summary (Task #767 — GroupDossierChrome absorbed into V2)"],
   ["artifacts/claimclear/src/components/attestation/group-review-pane.tsx", "completion pane reference"],
   ["artifacts/claimclear/src/components/attestation/completed-detail-pane.tsx", "completed-detail reference"],
   ["artifacts/claimclear/src/components/urgent-today-why.tsx", "'Cleared today' rows are reference-only (currently-urgent rows already route to /queue)"],

@@ -29,8 +29,16 @@ import {
   useCreateInvoiceGroupNote,
   useCompleteGroupReattest,
   useUpdateInvoiceGroupStatus,
+  useHoldInvoiceGroup,
+  useRemoveInvoiceGroupHold,
   getListInvoiceGroupsQueryKey,
 } from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { TONE_STYLE } from "@/components/cohesion";
+import { CloseAsNonIssueDialog } from "@/components/close-as-non-issue-dialog";
+import { ClosureIntakeDialog } from "@/components/closure/closure-intake-dialog";
 import {
   Dialog,
   DialogContent,
@@ -52,7 +60,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
   XCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
-  ShieldCheck, Layers, History, ArrowRight,
+  ShieldCheck, Layers, History, ArrowRight, PauseCircle, PlayCircle, Copy,
 } from "lucide-react";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
@@ -115,6 +123,12 @@ import {
 
 interface Props {
   groupId: number;
+  // Task #767 — set when the operator arrived from the manual-entry
+  // intake flow. Renders the purple "Invoice saved" guidance banner at
+  // the top of the page so they know to pick error types per leg before
+  // walking the SOP. Absorbed from GroupDossierChrome during the D2
+  // full-page graduation.
+  fromManual?: boolean;
 }
 
 /* -------------------------- Card primitives ---------------------------- */
@@ -149,6 +163,40 @@ function FieldRow({ label, value }: { label: string; value: ReactNode }) {
         {label}
       </span>
       <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{value}</span>
+    </div>
+  );
+}
+
+// Task #767 — compact single-row stat for the left-rail Submission
+// Summary card. Same yes/no badge + timestamp layout as the chrome's
+// SummaryStat, but stacked horizontally in the narrow 260px rail.
+function SubmissionSummaryStat({
+  label, value, testId,
+}: { label: string; value: string | null | undefined; testId: string }) {
+  const done = !!value;
+  return (
+    <div data-testid={testId} className="flex items-start justify-between gap-2">
+      <div className="text-[10px] uppercase tracking-wide pt-0.5" style={{ color: "var(--cc-muted-fg)" }}>
+        {label}
+      </div>
+      <div className="text-[11px] text-right flex items-center gap-1.5 flex-shrink-0">
+        <span
+          className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide"
+          style={
+            done
+              ? { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)" }
+              : { background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }
+          }
+          data-testid={`${testId}-state`}
+        >
+          {done ? "Yes" : "No"}
+        </span>
+        {done ? (
+          <span className="mono">{formatDateTime(value ?? undefined)}</span>
+        ) : (
+          <span style={{ color: "var(--cc-muted-fg)" }}>—</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -661,7 +709,7 @@ function DeniedByPayorConfirmRow({
 
 /* ============================== Page ================================== */
 
-export function InvoiceGroupDetailV2({ groupId }: Props) {
+export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -706,6 +754,15 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   // so the detail page right rail is a quiet status panel pointing the
   // operator there.
   const completeReattestMutation = useCompleteGroupReattest();
+  // Task #767 — Place/Release hold + Withdraw + Close-as-non-issue
+  // were absorbed from GroupDossierChrome into the left-rail
+  // "Overrides & Admin" panel as part of the D2 full-page graduation.
+  const holdMutation = useHoldInvoiceGroup();
+  const removeHoldMutation = useRemoveInvoiceGroupHold();
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdReason, setHoldReason] = useState("");
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [closeNonIssueOpen, setCloseNonIssueOpen] = useState(false);
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
   const [newNote, setNewNote] = useState("");
@@ -962,9 +1019,48 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     );
   }
 
-  /* #687 — onConfirmDeleteNote / onSubmitHold / onClearHold removed.
-     Note delete lives in queue chrome; hold place/release lives in
-     V3HoldExit hero (A) only. */
+  /* Task #767 — onPlaceHold / onClearHold returned here (left rail
+     "Overrides & Admin" panel) when GroupDossierChrome was absorbed
+     into the D2 3-col page. Note delete is still queue-chrome-only;
+     V3HoldExit hero (A) remains the queue-side hold surface. */
+  function onPlaceHold() {
+    const reason = holdReason.trim();
+    if (!reason) return;
+    holdMutation.mutate(
+      { id: groupId, data: { reason } },
+      {
+        onSuccess: () => {
+          invalidateGroup();
+          successToast({ title: "__VERB__", description: "Group placed on hold." });
+          setHoldOpen(false);
+          setHoldReason("");
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Failed to place on hold",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+  function onClearHold() {
+    removeHoldMutation.mutate(
+      { id: groupId },
+      {
+        onSuccess: () => {
+          invalidateGroup();
+          successToast({ title: "__VERB__", description: "Hold cleared." });
+        },
+        onError: (err: unknown) =>
+          toast({
+            title: "Failed to clear hold",
+            description: err instanceof Error ? err.message : String(err),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
 
   const isReady = !isLoading && !!group && !!detail;
   const isAlreadyClosed = group?.status === "Resolved" || group?.status === "Denied";
@@ -973,7 +1069,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
     <div className="cc-scope min-h-screen p-6" style={{ background: "var(--cc-bg)", color: "var(--cc-fg)" }} data-testid="invoice-group-detail-v2">
       <SkeletonSwap
         loading={!isReady}
-        className="max-w-[1180px] mx-auto"
+        className="max-w-[1440px] mx-auto"
         skeleton={
           <div className="space-y-4" data-testid="invoice-group-detail-v2-skeleton">
             <Skeleton className="h-10 w-2/3" />
@@ -1003,6 +1099,29 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
             <span>
               <strong>Tour sample.</strong> This is the read-only group used by the in-app tour. Edits are disabled.
             </span>
+          </div>
+        )}
+
+        {/* Task #767 — guidance banner absorbed from the retired
+            GroupDossierChrome. Set by `?from=manual` query param when
+            the operator arrived from the manual-entry intake flow so
+            they know to pick error types per leg before walking the
+            SOP. */}
+        {fromManual && (
+          <div
+            className="rounded-md border px-4 py-3 flex items-start gap-3"
+            style={{
+              background: TONE_STYLE.purple.bg,
+              borderColor: TONE_STYLE.purple.border,
+              color: TONE_STYLE.purple.fg,
+            }}
+            data-testid="banner-from-manual"
+          >
+            <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              Invoice saved. Pick an error type for each leg below to start triage,
+              then walk the SOP and queue the dispute.
+            </div>
           </div>
         )}
 
@@ -1386,19 +1505,93 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
           />
         </div>
 
-        {/* Two-column layout */}
-        <div className="grid grid-cols-12 gap-4">
+        {/* D2 3-col shell (Task #767). LEFT 260px = orientation +
+            admin (Primary Action → Submission Summary → Group Details
+            → MAS Action → Overrides & Admin → Close this group).
+            CENTER flex-1 = the actual body (Disputed Legs + Invoice-
+            wide context). RIGHT 320px = ambient surfaces
+            (Communication → Payor responses → Group Evidence → Notes
+            → Activity history → Sync inbox). Replaces the legacy
+            8/4 grid + the now-retired GroupDossierChrome top panel. */}
+        <div className="flex gap-4 items-start" data-testid="group-detail-3col-shell">
 
-          {/* LEFT — orchestration body (8 cols) */}
-          <div className="col-span-8 space-y-4">
+          {/* LEFT — orientation + admin (260px) */}
+          <aside className="w-[260px] shrink-0 space-y-4" data-testid="group-detail-left-rail">
 
-            {/* Group-aggregate-context card removed in Task #265 — per-leg
-                context lives on each leg row in the queue and the editable
-                AI write-up replaces the group-level narrative form. */}
+            {/* Phase-aware Primary Action — single next-step CTA so
+                the operator's first glance answers "what do I do
+                next?". Mutations live in queue chrome / ClosureActions
+                / MAS panel below — this card just routes. */}
+            <PrimaryActionTile
+              group={group}
+              outlook={deriveInvoiceDisputeOutlook(group, allRides).outlook}
+              anyDisputableLegs={disputedRides.length > 0}
+              anyDisputableNeedsEvidence={group.status === "Needs Evidence"}
+            />
 
-            {/* Group details + Evidence */}
-            <div className="grid grid-cols-2 gap-4">
-              <CcCard
+            {/* Submission Summary — read-only snapshot of where this
+                group is in the submission pipeline. Absorbed from
+                GroupDossierChrome (Task #767). Stats stack vertically
+                in the narrow 260px rail instead of the chrome's
+                3-column grid. */}
+            <CcCard
+              title="Submission summary"
+              icon={<FileText className="w-3.5 h-3.5" />}
+              testId="group-detail-submission-summary-readonly"
+              action={
+                <span
+                  className="text-[10px] px-2 py-0.5 rounded font-medium"
+                  style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}
+                  data-testid="group-detail-submission-summary-status"
+                >
+                  {group.status || "—"}
+                </span>
+              }
+            >
+              <div className="text-[11px] mb-3" style={{ color: "var(--cc-muted-fg)" }}>
+                Read-only snapshot of where this group is in the
+                submission pipeline. Operator actions live in the queue.
+              </div>
+              <div className="space-y-2">
+                <SubmissionSummaryStat
+                  label="Preview generated"
+                  value={(group as { previewGeneratedAt?: string | null }).previewGeneratedAt ?? null}
+                  testId="group-detail-summary-preview-at"
+                />
+                <SubmissionSummaryStat
+                  label="Draft reviewed"
+                  value={(group as { draftReviewedAt?: string | null }).draftReviewedAt ?? null}
+                  testId="group-detail-summary-reviewed-at"
+                />
+                <SubmissionSummaryStat
+                  label="Last submitted"
+                  value={group.disputeEmailSentAt ?? null}
+                  testId="group-detail-summary-submitted-at"
+                />
+              </div>
+              <Link
+                href={`/queue?group=${groupId}`}
+                data-testid="group-detail-cta-process-in-queue"
+                className="mt-3 pt-3 -mx-4 -mb-4 px-4 py-3 flex items-center justify-between gap-3 hover:opacity-90 transition-opacity rounded-b"
+                style={{ borderTop: "1px solid var(--cc-border)", color: "var(--cc-fg)" }}
+              >
+                <div className="flex items-start gap-2 min-w-0">
+                  <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: "var(--cc-purple-fg)" }} />
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium">Process in queue</div>
+                    <div className="text-[10px] mt-0.5" style={{ color: "var(--cc-muted-fg)" }}>
+                      Triage, preview, review, send.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 flex-shrink-0" />
+              </Link>
+            </CcCard>
+
+            {/* Group details — moved here from the legacy 8-col area
+                so static metadata reads as orientation in the left
+                rail (D2 layout). */}
+            <CcCard
                 title="Group details"
                 icon={<FileText className="w-3.5 h-3.5" />}
                 testId="group-details-card"
@@ -1454,77 +1647,229 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                   />
                 </div>
               </CcCard>
-
-              {(() => {
-                // Show the same union of attachments the bot worker
-                // submits via collectGroupEvidenceUrls: JSONB column +
-                // canonical claim_evidence rows (group-level + per-leg).
-                type FileEntry = { url: string; name?: string | null; legNumber?: number | null };
-                const items: FileEntry[] = [];
-                const seen = new Set<string>();
-                const add = (url: string | null | undefined, name: string | null | undefined, legNumber: number | null) => {
-                  if (!url || seen.has(url)) return;
-                  seen.add(url);
-                  items.push({ url, name: name ?? null, legNumber });
-                };
-                for (const f of (detail.evidenceFiles ?? [])) add(f?.url, f?.name ?? null, null);
-                const groupRows = (detail as { groupEvidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> }).groupEvidence ?? [];
-                for (const r of groupRows) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), null);
-                allRides.forEach((ride, idx) => {
-                  const rideAny = ride as { evidenceFiles?: Array<{ url?: string; filename?: string | null; name?: string | null }> | null; evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> };
-                  for (const f of (rideAny.evidenceFiles ?? [])) add(f?.url ?? null, (f as { name?: string | null }).name ?? f?.filename ?? null, idx + 1);
-                  for (const r of (rideAny.evidence ?? [])) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), idx + 1);
-                });
-                return (
-                  <CcCard
-                    title={
-                      <>
-                        Group evidence
-                        {items.length > 0 && (
-                          <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                            · {items.length} file{items.length === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </>
+              {/* MAS action — quiet status panel (Task #333). The actual
+                cancel-in-MAS + re-attest checklist lives on the
+                Responses Awaiting Review (RAR) workspace; this card
+                points the operator there instead of duplicating the
+                playbook in the right rail. Admins get a subdued
+                "Mark as already re-attested" link below the panel
+                that opens the offline-recording override modal. */}
+            {group.reattestRequired && (
+              <CcCard
+                title="MAS action"
+                icon={<Stamp className="w-3.5 h-3.5" />}
+                testId="group-reattest-summary-card"
+                action={
+                  <span
+                    className="text-xs px-2 py-0.5 rounded font-semibold"
+                    style={
+                      group.reattestCompletedAt
+                        ? { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)" }
+                        : { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }
                     }
-                    icon={<Paperclip className="w-3.5 h-3.5" />}
-                    testId="group-evidence-card"
-                    padded={false}
                   >
-                    {items.length === 0 ? (
-                      <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                        No evidence attached yet.
-                      </div>
-                    ) : items.map((f, i) => {
-                      const name = f.name || (() => {
-                        try {
-                          const path = new URL(f.url, "http://x").pathname;
-                          const last = path.split("/").filter(Boolean).pop() || f.url;
-                          return decodeURIComponent(last);
-                        } catch {
-                          return f.url;
-                        }
-                      })();
-                      return (
+                    {group.reattestCompletedAt ? "Reattest complete" : "Reattest required"}
+                  </span>
+                }
+              >
+                {group.reattestCompletedAt ? (
+                  <div className="space-y-2" data-testid="group-reattest-complete">
+                    <p className="text-xs" style={{ color: "var(--cc-fg)" }}>
+                      Reattestation complete · <span className="mono">{formatDateTime(group.reattestCompletedAt)}</span>
+                      {group.reattestCompletedBy ? ` by ${group.reattestCompletedBy}` : ""}
+                    </p>
+                    {group.reattestNote && (
+                      <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>{group.reattestNote}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div data-testid="group-reattest-pending" className="space-y-3">
+                    {/* #687 — MasActionChecklist mount removed from the
+                         detail page. Per-leg MAS cancel is owned by the
+                         queue chrome; the admin-only "recorded offline"
+                         override below stays here for re-attest. */}
+                    {canShowOfflineReattestOverride({
+                      isAdmin,
+                      reattestRequired: !!group.reattestRequired,
+                      reattestCompletedAt: group.reattestCompletedAt,
+                    }) && (
+                      <div
+                        className="pt-2 mt-1"
+                        style={{ borderTop: "1px dashed var(--cc-border)" }}
+                        data-testid="reattest-admin-overrides"
+                      >
                         <div
-                          key={`${f.url}-${i}`}
-                          className="px-3 py-1.5 text-xs flex items-center gap-2"
-                          style={{ borderBottom: i < items.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                          className="text-[10px] uppercase tracking-wide mb-1"
+                          style={{ color: "var(--cc-muted-fg)" }}
                         >
-                          <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
-                          <span className="font-medium flex-1 truncate">{name}</span>
-                          {f.legNumber != null && (
-                            <span className="cc-pill cc-pill-muted" style={{ fontSize: "9px", padding: "0 0.3rem" }}>L{f.legNumber}</span>
-                          )}
+                          Admin overrides
                         </div>
-                      );
-                    })}
-                  </CcCard>
-                );
-              })()}
-            </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetOfflineForm();
+                            setOfflineModalOpen(true);
+                          }}
+                          className="text-xs hover:underline inline-flex items-center gap-1"
+                          style={{ color: "var(--cc-amber-fg)" }}
+                          data-testid="button-open-mark-reattested-offline"
+                        >
+                          <ClipboardCheck className="w-3 h-3" /> Mark as already re-attested →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CcCard>
+            )}
 
-            {/* D2 graduation (Task #767): per-leg column grid + full-width
+              {/* Overrides & admin — operator-only escalations (Task #767,
+                  absorbed from GroupDossierChrome). Place/Release hold,
+                  Withdraw, Close as non-issue, Reclassify legs, and Mark
+                  duplicates live here in the left rail per the D2 layout. */}
+              <CcCard
+                title="Overrides & admin"
+                icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                testId="group-detail-overrides-card"
+              >
+                <div className="text-[11px] mb-2" style={{ color: "var(--cc-muted-fg)" }}>
+                  Operator-only escalations. Audited.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {group.status === "On Hold" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onClearHold}
+                      disabled={removeHoldMutation.isPending}
+                      data-testid="group-detail-action-release-group-hold"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
+                      Release hold
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setHoldOpen(true)}
+                      disabled={isAlreadyClosed || holdMutation.isPending}
+                      data-testid="group-detail-action-place-group-hold"
+                    >
+                      <PauseCircle className="w-3.5 h-3.5 mr-1.5" />
+                      Place on hold
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setWithdrawOpen(true)}
+                    data-testid="group-detail-action-withdraw-group"
+                  >
+                    <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                    Withdraw
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCloseNonIssueOpen(true)}
+                    data-testid="group-detail-action-close-as-non-issue"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                    Close as non-issue
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    asChild
+                    data-testid="group-detail-action-reclassify-group"
+                  >
+                    <a href="#group-detail-section-legs">
+                      <Layers className="w-3.5 h-3.5 mr-1.5" />
+                      Reclassify legs
+                    </a>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    asChild
+                    data-testid="group-detail-action-mark-duplicate"
+                  >
+                    <a href="#group-detail-section-legs">
+                      <Copy className="w-3.5 h-3.5 mr-1.5" />
+                      Mark duplicates
+                    </a>
+                  </Button>
+                </div>
+              </CcCard>
+  
+              {/* Close this group */}
+            <CcCard
+              title="Close this group"
+              icon={<XCircle className="w-3.5 h-3.5" />}
+              testId="group-closure-card"
+            >
+              <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
+                Close after the payor has issued a final decision on every disputed leg.
+              </div>
+              {isAlreadyClosed ? (
+                <p className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                  Already closed — outcome <strong>{outcomeLabel(group.outcome)}</strong>
+                  {group.closureReason ? ` · ${group.closureReason}` : ""}.
+                </p>
+              ) : (
+                <>
+                  {/* Denied by Payor uses the LIGHT confirm dialog — the
+                      payor decided the outcome, so the structured intake
+                      doesn't apply here. The button is enabled only when a
+                      portal/email response has been recorded (same gate as
+                      before); the dialog summarizes that response and
+                      auto-fills every required closure field. */}
+                  <DeniedByPayorConfirmRow
+                    groupId={groupId}
+                    outcome={group.outcome}
+                    closureReason={group.closureReason}
+                    hasResponse={!!validTransitions?.hasResponse}
+                    responses={detail.responses ?? []}
+                    onAfterSuccess={invalidateGroup}
+                  />
+
+                  {/* Cannot-Dispute is a manual operator decision (we
+                      decided not to dispute), so the full structured
+                      intake still belongs here.
+                      `id="closure-actions"` is the scroll anchor that
+                      PrimaryActionTile's "Close group" CTA targets when
+                      outlook=nothing_to_do (Task #767). */}
+                  {!validTransitions?.hasBeenSubmitted && (
+                    <div id="closure-actions">
+                    <ClosureActions
+                      target={{ kind: "invoice_group", id: groupId }}
+                      outcome={group.outcome}
+                      closureReason={group.closureReason}
+                      triggers={[
+                        {
+                          reason: "cannot_dispute" as const,
+                          label: "Withdraw — Cannot Dispute",
+                          sub: "No clear path to recover",
+                          disabledReason:
+                            "Close because we decided not to dispute (no clear path to recover).",
+                          testId: "v2-group-close-cannot-dispute",
+                        },
+                      ]}
+                      onAfterSuccess={invalidateGroup}
+                    />
+                    </div>
+                  )}
+                </>
+              )}
+            </CcCard>
+            </aside>
+
+            {/* CENTER — disputed legs body + invoice-wide context. */}
+            <section className="flex-1 min-w-0 space-y-4" data-testid="group-detail-center">
+              {/* Scroll anchor for the "Reclassify legs" / "Mark duplicates"
+                  buttons in the left-rail Overrides & admin card. */}
+              <div id="group-detail-section-legs" data-testid="group-detail-section-legs" aria-hidden="true" />
+              {/* D2 graduation (Task #767): per-leg column grid + full-width
                 invoice-wide context replace the legacy rides/legs table.
                 Each LegColumn surfaces evidence + audit excerpt + verdict
                 for one leg; per-leg mutations stay in queue chrome and the
@@ -1658,15 +2003,12 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 generatedEmailAt={group.generatedEmailAt}
               />
             </div>
+            </section>
 
-            {/* Task #659 — submission preview / draft / Mark Reviewed /
-                Submit live in the queue right pane only. The dossier
-                surfaces a read-only Submission summary card and a
-                "Process this invoice in the queue →" CTA above this V2
-                surface; the operator-facing submission gauntlet has
-                been removed from this page. */}
+            {/* RIGHT — ambient surfaces (320px) */}
+            <aside className="w-[320px] shrink-0 space-y-4" data-testid="group-detail-right-rail">
 
-            {/* Communication thread */}
+              {/* Communication thread */}
             <div id="invoice-thread" />
             <CcCard
               title={
@@ -1724,7 +2066,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               />
             </CcCard>
 
-            {/* Post-submit verdict + responses */}
+              {/* Post-submit verdict + responses */}
             <CcCard
               title="Payor responses & per-leg verdict"
               icon={<Gavel className="w-3.5 h-3.5" />}
@@ -1838,106 +2180,307 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 </div>
               )}
             </CcCard>
-          </div>
 
-          {/* RIGHT — rail (4 cols) */}
-          <div className="col-span-4 space-y-4">
-
-            {/* D2 graduation (Task #767): phase-aware Primary Action tile.
-                Maps lifecycle + outlook to a single next-step CTA so the
-                operator always has one clear orientation cue. Mutations
-                still live in queue chrome / ClosureActions / MAS panel
-                below — this card just routes. Drift on Special Context
-                is a chip on the context card, NOT an override here. */}
-            <PrimaryActionTile
-              group={group}
-              outlook={deriveInvoiceDisputeOutlook(group, allRides).outlook}
-              anyDisputableLegs={disputedRides.length > 0}
-              anyDisputableNeedsEvidence={group.status === "Needs Evidence"}
-            />
-
-            {/* MAS action — quiet status panel (Task #333). The actual
-                cancel-in-MAS + re-attest checklist lives on the
-                Responses Awaiting Review (RAR) workspace; this card
-                points the operator there instead of duplicating the
-                playbook in the right rail. Admins get a subdued
-                "Mark as already re-attested" link below the panel
-                that opens the offline-recording override modal. */}
-            {group.reattestRequired && (
-              <CcCard
-                title="MAS action"
-                icon={<Stamp className="w-3.5 h-3.5" />}
-                testId="group-reattest-summary-card"
-                action={
-                  <span
-                    className="text-xs px-2 py-0.5 rounded font-semibold"
-                    style={
-                      group.reattestCompletedAt
-                        ? { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)" }
-                        : { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)" }
+                {/* Scroll anchor — Task #767, was on the retired chrome. */}
+              <div id="group-detail-section-evidence" data-testid="group-detail-section-evidence" aria-hidden="true" />
+              {(() => {
+                // Show the same union of attachments the bot worker
+                // submits via collectGroupEvidenceUrls: JSONB column +
+                // canonical claim_evidence rows (group-level + per-leg).
+                type FileEntry = { url: string; name?: string | null; legNumber?: number | null };
+                const items: FileEntry[] = [];
+                const seen = new Set<string>();
+                const add = (url: string | null | undefined, name: string | null | undefined, legNumber: number | null) => {
+                  if (!url || seen.has(url)) return;
+                  seen.add(url);
+                  items.push({ url, name: name ?? null, legNumber });
+                };
+                for (const f of (detail.evidenceFiles ?? [])) add(f?.url, f?.name ?? null, null);
+                const groupRows = (detail as { groupEvidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> }).groupEvidence ?? [];
+                for (const r of groupRows) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), null);
+                allRides.forEach((ride, idx) => {
+                  const rideAny = ride as { evidenceFiles?: Array<{ url?: string; filename?: string | null; name?: string | null }> | null; evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }> };
+                  for (const f of (rideAny.evidenceFiles ?? [])) add(f?.url ?? null, (f as { name?: string | null }).name ?? f?.filename ?? null, idx + 1);
+                  for (const r of (rideAny.evidence ?? [])) add(r?.imageUrl ?? null, displayedEvidenceName(r?.evidenceTypeName, r?.imageUrl), idx + 1);
+                });
+                return (
+                  <CcCard
+                    title={
+                      <>
+                        Group evidence
+                        {items.length > 0 && (
+                          <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
+                            · {items.length} file{items.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </>
                     }
+                    icon={<Paperclip className="w-3.5 h-3.5" />}
+                    testId="group-evidence-card"
+                    padded={false}
                   >
-                    {group.reattestCompletedAt ? "Reattest complete" : "Reattest required"}
-                  </span>
-                }
-              >
-                {group.reattestCompletedAt ? (
-                  <div className="space-y-2" data-testid="group-reattest-complete">
-                    <p className="text-xs" style={{ color: "var(--cc-fg)" }}>
-                      Reattestation complete · <span className="mono">{formatDateTime(group.reattestCompletedAt)}</span>
-                      {group.reattestCompletedBy ? ` by ${group.reattestCompletedBy}` : ""}
-                    </p>
-                    {group.reattestNote && (
-                      <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>{group.reattestNote}</p>
-                    )}
-                  </div>
-                ) : (
-                  <div data-testid="group-reattest-pending" className="space-y-3">
-                    {/* #687 — MasActionChecklist mount removed from the
-                         detail page. Per-leg MAS cancel is owned by the
-                         queue chrome; the admin-only "recorded offline"
-                         override below stays here for re-attest. */}
-                    {canShowOfflineReattestOverride({
-                      isAdmin,
-                      reattestRequired: !!group.reattestRequired,
-                      reattestCompletedAt: group.reattestCompletedAt,
-                    }) && (
-                      <div
-                        className="pt-2 mt-1"
-                        style={{ borderTop: "1px dashed var(--cc-border)" }}
-                        data-testid="reattest-admin-overrides"
-                      >
-                        <div
-                          className="text-[10px] uppercase tracking-wide mb-1"
-                          style={{ color: "var(--cc-muted-fg)" }}
-                        >
-                          Admin overrides
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetOfflineForm();
-                            setOfflineModalOpen(true);
-                          }}
-                          className="text-xs hover:underline inline-flex items-center gap-1"
-                          style={{ color: "var(--cc-amber-fg)" }}
-                          data-testid="button-open-mark-reattested-offline"
-                        >
-                          <ClipboardCheck className="w-3 h-3" /> Mark as already re-attested →
-                        </button>
+                    {items.length === 0 ? (
+                      <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                        No evidence attached yet.
                       </div>
-                    )}
-                  </div>
-                )}
-              </CcCard>
-            )}
+                    ) : items.map((f, i) => {
+                      const name = f.name || (() => {
+                        try {
+                          const path = new URL(f.url, "http://x").pathname;
+                          const last = path.split("/").filter(Boolean).pop() || f.url;
+                          return decodeURIComponent(last);
+                        } catch {
+                          return f.url;
+                        }
+                      })();
+                      return (
+                        <div
+                          key={`${f.url}-${i}`}
+                          className="px-3 py-1.5 text-xs flex items-center gap-2"
+                          style={{ borderBottom: i < items.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                        >
+                          <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
+                          <span className="font-medium flex-1 truncate">{name}</span>
+                          {f.legNumber != null && (
+                            <span className="cc-pill cc-pill-muted" style={{ fontSize: "9px", padding: "0 0.3rem" }}>L{f.legNumber}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </CcCard>
+                );
+              })()}
 
-            {/* Admin offline-recording override modal. Amber chrome
+              {/* Notes */}
+            <CcCard
+              title={
+                <>
+                  Notes
+                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
+                    · {visibleNotes.length}
+                  </span>
+                </>
+              }
+              icon={<Pin className="w-3.5 h-3.5" />}
+              testId="notes-card"
+            >
+              {visibleNotes.length === 0 ? (
+                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                  No notes recorded for this group yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {visibleNotes.slice(0, 6).map((n) => (
+                    <div key={n.id} className="text-sm flex gap-2 items-start group/group-note" data-testid={`note-${n.id}`}>
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+                        style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
+                      >
+                        {authorInitial(n.author)}
+                      </div>
+                      <div className="flex-1 min-w-0 text-xs">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="font-semibold">{n.author || "Unknown"}</span>
+                          <span style={{ color: "var(--cc-muted-fg)" }}>{relativeTime(n.createdAt)}</span>
+                        </div>
+                        <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
+                      </div>
+                      {/* #687 — group-note delete control removed; notes
+                          are deleted from the queue chrome only. */}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--cc-border)" }}>
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  rows={2}
+                  placeholder="Add a note for this invoice group…"
+                  className="cc-input w-full text-xs"
+                  style={{
+                    background: "var(--cc-bg)",
+                    border: "1px solid var(--cc-border)",
+                    color: "var(--cc-fg)",
+                    padding: "6px 8px",
+                    borderRadius: 4,
+                    resize: "vertical",
+                  }}
+                  data-testid="group-note-textarea"
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={onSubmitNote}
+                    disabled={
+                      !newNote.trim() ||
+                      createNoteMutation.isPending ||
+                      noteBreath.breathing
+                    }
+                    className={cn(
+                      "cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5",
+                      noteBreath.className,
+                    )}
+                    style={{
+                      background: "var(--cc-purple-fg)",
+                      color: "white",
+                      opacity:
+                        !newNote.trim() ||
+                        createNoteMutation.isPending ||
+                        noteBreath.breathing
+                          ? 0.6
+                          : 1,
+                    }}
+                    data-testid="group-note-submit-button"
+                  >
+                    {createNoteMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    Add note
+                  </button>
+                </div>
+              </div>
+            </CcCard>
+
+              {/* Scroll anchor — Task #767, was on the retired chrome. */}
+            <div id="group-detail-section-activity" data-testid="group-detail-section-activity" aria-hidden="true" />
+            {/* Activity history — was "Audit timeline". Renamed to read
+                like a standard activity feed (what happened, when, by
+                whom) instead of a system-audit log; data shape is
+                unchanged. Kept in sync with the per-leg surface in
+                claim-detail-v2.tsx. */}
+            <CcCard
+              title="Activity history"
+              icon={<Activity className="w-3.5 h-3.5" />}
+              testId="audit-timeline-card"
+              padded={false}
+            >
+              {sortedAudit.length === 0 ? (
+                <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                  No activity recorded for this invoice yet.
+                </div>
+              ) : (
+                sortedAudit.slice(0, 12).map((e, i, arr) => {
+                  // Task #334: render the admin "recorded offline" override
+                  // (mas_reattest_recorded_offline) with an unmistakable
+                  // amber ShieldCheck + "Admin override" badge so reviewers
+                  // can tell it apart from a normal mas_reattest_completed
+                  // row. The trimmed offlineNote and the recorded-by email
+                  // are surfaced inline (the note is on the audit row's
+                  // metadata; see the offline branch in
+                  // routes/invoice-groups.ts).
+                  const isOfflineOverride =
+                    e.action === "mas_reattest_recorded_offline";
+                  const meta =
+                    isOfflineOverride && e.metadata && typeof e.metadata === "object"
+                      ? (e.metadata as Record<string, unknown>)
+                      : null;
+                  const offlineNoteFromMeta =
+                    meta && typeof meta.offlineNote === "string"
+                      ? meta.offlineNote.trim()
+                      : "";
+                  return (
+                    <div
+                      key={e.id}
+                      className="px-4 py-2 flex items-start gap-2 text-xs"
+                      style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
+                      data-testid={`audit-${e.id}`}
+                    >
+                      <div
+                        className="mt-0.5 flex-shrink-0"
+                        style={{ color: isOfflineOverride ? "var(--cc-amber-fg)" : auditTone(e.action) }}
+                      >
+                        {isOfflineOverride ? <ShieldCheck className="w-3 h-3" /> : auditIcon(e.action)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cc-fg)" }}>
+                          <span>{e.details || e.action}</span>
+                          {isOfflineOverride && (
+                            <span
+                              data-testid={`audit-${e.id}-admin-override-badge`}
+                              className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded"
+                              style={{
+                                background: "var(--cc-amber-bg)",
+                                color: "var(--cc-amber-fg)",
+                                border: "1px solid var(--cc-amber-fg)",
+                              }}
+                            >
+                              Admin override
+                            </span>
+                          )}
+                        </div>
+                        {isOfflineOverride && offlineNoteFromMeta && (
+                          <div
+                            data-testid={`audit-${e.id}-offline-note`}
+                            className="text-[11px] mt-1 px-2 py-1 rounded whitespace-pre-wrap break-words"
+                            style={{
+                              background: "var(--cc-amber-bg)",
+                              border: "1px solid var(--cc-amber-fg)",
+                              color: "var(--cc-fg)",
+                            }}
+                          >
+                            <span className="font-semibold" style={{ color: "var(--cc-amber-fg)" }}>
+                              Offline note:
+                            </span>{" "}
+                            {offlineNoteFromMeta}
+                          </div>
+                        )}
+                        <div className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
+                          {isOfflineOverride ? (
+                            <>
+                              <span data-testid={`audit-${e.id}-recorded-by`}>
+                                Recorded by{" "}
+                                <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
+                                  {e.userEmail || e.userName || "system"}
+                                </span>
+                              </span>
+                              {" · "}
+                              {relativeTime(e.timestamp)}
+                            </>
+                          ) : (
+                            <>
+                              {(e.userName || e.userEmail || "system")} · {relativeTime(e.timestamp)}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CcCard>
+
+              {/* Footer hint surfacing the inbox-sync action also in the rail */}
+            <div className="text-[11px] text-center" style={{ color: "var(--cc-muted-fg)" }}>
+              <button
+                onClick={onSyncInbox}
+                disabled={checkEmailMutation.isPending}
+                className="cc-btn text-[11px] gap-1 inline-flex items-center px-2 py-1"
+                style={{ border: "1px solid var(--cc-border)" }}
+                data-testid="rail-sync-inbox"
+              >
+                {checkEmailMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Inbox className="w-3 h-3" />
+                )}
+                Sync inbox
+              </button>
+            </div>
+            </aside>
+          </div>
+        </div>
+        ) : null}
+        </SkeletonSwap>
+
+              {/* Admin offline-recording override modal. Amber chrome
                 makes it visually distinct from a normal completion;
                 the submit button stays disabled until the trimmed
                 note hits 10 chars AND the operator ticks the
                 acknowledgement checkbox. */}
-            {canShowOfflineReattestOverride({
+            {group && canShowOfflineReattestOverride({
               isAdmin,
               reattestRequired: !!group.reattestRequired,
               reattestCompletedAt: group.reattestCompletedAt,
@@ -2151,292 +2694,64 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               </Dialog>
             )}
 
-            {/* Notes */}
-            <CcCard
-              title={
-                <>
-                  Notes
-                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                    · {visibleNotes.length}
-                  </span>
-                </>
-              }
-              icon={<Pin className="w-3.5 h-3.5" />}
-              testId="notes-card"
-            >
-              {visibleNotes.length === 0 ? (
-                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No notes recorded for this group yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleNotes.slice(0, 6).map((n) => (
-                    <div key={n.id} className="text-sm flex gap-2 items-start group/group-note" data-testid={`note-${n.id}`}>
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
-                        style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
-                      >
-                        {authorInitial(n.author)}
-                      </div>
-                      <div className="flex-1 min-w-0 text-xs">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="font-semibold">{n.author || "Unknown"}</span>
-                          <span style={{ color: "var(--cc-muted-fg)" }}>{relativeTime(n.createdAt)}</span>
-                        </div>
-                        <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
-                      </div>
-                      {/* #687 — group-note delete control removed; notes
-                          are deleted from the queue chrome only. */}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--cc-border)" }}>
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  rows={2}
-                  placeholder="Add a note for this invoice group…"
-                  className="cc-input w-full text-xs"
-                  style={{
-                    background: "var(--cc-bg)",
-                    border: "1px solid var(--cc-border)",
-                    color: "var(--cc-fg)",
-                    padding: "6px 8px",
-                    borderRadius: 4,
-                    resize: "vertical",
-                  }}
-                  data-testid="group-note-textarea"
-                />
-                <div className="flex justify-end mt-2">
-                  <button
-                    type="button"
-                    onClick={onSubmitNote}
-                    disabled={
-                      !newNote.trim() ||
-                      createNoteMutation.isPending ||
-                      noteBreath.breathing
-                    }
-                    className={cn(
-                      "cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5",
-                      noteBreath.className,
-                    )}
-                    style={{
-                      background: "var(--cc-purple-fg)",
-                      color: "white",
-                      opacity:
-                        !newNote.trim() ||
-                        createNoteMutation.isPending ||
-                        noteBreath.breathing
-                          ? 0.6
-                          : 1,
-                    }}
-                    data-testid="group-note-submit-button"
-                  >
-                    {createNoteMutation.isPending ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="w-3.5 h-3.5" />
-                    )}
-                    Add note
-                  </button>
-                </div>
-              </div>
-            </CcCard>
-
-            {/* Activity history — was "Audit timeline". Renamed to read
-                like a standard activity feed (what happened, when, by
-                whom) instead of a system-audit log; data shape is
-                unchanged. Kept in sync with the per-leg surface in
-                claim-detail-v2.tsx. */}
-            <CcCard
-              title="Activity history"
-              icon={<Activity className="w-3.5 h-3.5" />}
-              testId="audit-timeline-card"
-              padded={false}
-            >
-              {sortedAudit.length === 0 ? (
-                <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No activity recorded for this invoice yet.
-                </div>
-              ) : (
-                sortedAudit.slice(0, 12).map((e, i, arr) => {
-                  // Task #334: render the admin "recorded offline" override
-                  // (mas_reattest_recorded_offline) with an unmistakable
-                  // amber ShieldCheck + "Admin override" badge so reviewers
-                  // can tell it apart from a normal mas_reattest_completed
-                  // row. The trimmed offlineNote and the recorded-by email
-                  // are surfaced inline (the note is on the audit row's
-                  // metadata; see the offline branch in
-                  // routes/invoice-groups.ts).
-                  const isOfflineOverride =
-                    e.action === "mas_reattest_recorded_offline";
-                  const meta =
-                    isOfflineOverride && e.metadata && typeof e.metadata === "object"
-                      ? (e.metadata as Record<string, unknown>)
-                      : null;
-                  const offlineNoteFromMeta =
-                    meta && typeof meta.offlineNote === "string"
-                      ? meta.offlineNote.trim()
-                      : "";
-                  return (
-                    <div
-                      key={e.id}
-                      className="px-4 py-2 flex items-start gap-2 text-xs"
-                      style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                      data-testid={`audit-${e.id}`}
-                    >
-                      <div
-                        className="mt-0.5 flex-shrink-0"
-                        style={{ color: isOfflineOverride ? "var(--cc-amber-fg)" : auditTone(e.action) }}
-                      >
-                        {isOfflineOverride ? <ShieldCheck className="w-3 h-3" /> : auditIcon(e.action)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap" style={{ color: "var(--cc-fg)" }}>
-                          <span>{e.details || e.action}</span>
-                          {isOfflineOverride && (
-                            <span
-                              data-testid={`audit-${e.id}-admin-override-badge`}
-                              className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded"
-                              style={{
-                                background: "var(--cc-amber-bg)",
-                                color: "var(--cc-amber-fg)",
-                                border: "1px solid var(--cc-amber-fg)",
-                              }}
-                            >
-                              Admin override
-                            </span>
-                          )}
-                        </div>
-                        {isOfflineOverride && offlineNoteFromMeta && (
-                          <div
-                            data-testid={`audit-${e.id}-offline-note`}
-                            className="text-[11px] mt-1 px-2 py-1 rounded whitespace-pre-wrap break-words"
-                            style={{
-                              background: "var(--cc-amber-bg)",
-                              border: "1px solid var(--cc-amber-fg)",
-                              color: "var(--cc-fg)",
-                            }}
-                          >
-                            <span className="font-semibold" style={{ color: "var(--cc-amber-fg)" }}>
-                              Offline note:
-                            </span>{" "}
-                            {offlineNoteFromMeta}
-                          </div>
-                        )}
-                        <div className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
-                          {isOfflineOverride ? (
-                            <>
-                              <span data-testid={`audit-${e.id}-recorded-by`}>
-                                Recorded by{" "}
-                                <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
-                                  {e.userEmail || e.userName || "system"}
-                                </span>
-                              </span>
-                              {" · "}
-                              {relativeTime(e.timestamp)}
-                            </>
-                          ) : (
-                            <>
-                              {(e.userName || e.userEmail || "system")} · {relativeTime(e.timestamp)}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </CcCard>
-
-            {/* Close this group */}
-            <CcCard
-              title="Close this group"
-              icon={<XCircle className="w-3.5 h-3.5" />}
-              testId="group-closure-card"
-            >
-              <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
-                Close after the payor has issued a final decision on every disputed leg.
-              </div>
-              {isAlreadyClosed ? (
-                <p className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  Already closed — outcome <strong>{outcomeLabel(group.outcome)}</strong>
-                  {group.closureReason ? ` · ${group.closureReason}` : ""}.
-                </p>
-              ) : (
-                <>
-                  {/* Denied by Payor uses the LIGHT confirm dialog — the
-                      payor decided the outcome, so the structured intake
-                      doesn't apply here. The button is enabled only when a
-                      portal/email response has been recorded (same gate as
-                      before); the dialog summarizes that response and
-                      auto-fills every required closure field. */}
-                  <DeniedByPayorConfirmRow
-                    groupId={groupId}
-                    outcome={group.outcome}
-                    closureReason={group.closureReason}
-                    hasResponse={!!validTransitions?.hasResponse}
-                    responses={detail.responses ?? []}
-                    onAfterSuccess={invalidateGroup}
-                  />
-
-                  {/* Cannot-Dispute is a manual operator decision (we
-                      decided not to dispute), so the full structured
-                      intake still belongs here.
-                      `id="closure-actions"` is the scroll anchor that
-                      PrimaryActionTile's "Close group" CTA targets when
-                      outlook=nothing_to_do (Task #767). */}
-                  {!validTransitions?.hasBeenSubmitted && (
-                    <div id="closure-actions">
-                    <ClosureActions
-                      target={{ kind: "invoice_group", id: groupId }}
-                      outcome={group.outcome}
-                      closureReason={group.closureReason}
-                      triggers={[
-                        {
-                          reason: "cannot_dispute" as const,
-                          label: "Withdraw — Cannot Dispute",
-                          sub: "No clear path to recover",
-                          disabledReason:
-                            "Close because we decided not to dispute (no clear path to recover).",
-                          testId: "v2-group-close-cannot-dispute",
-                        },
-                      ]}
-                      onAfterSuccess={invalidateGroup}
-                    />
-                    </div>
-                  )}
-                </>
-              )}
-            </CcCard>
-
-            {/* Footer hint surfacing the inbox-sync action also in the rail */}
-            <div className="text-[11px] text-center" style={{ color: "var(--cc-muted-fg)" }}>
-              <button
-                onClick={onSyncInbox}
-                disabled={checkEmailMutation.isPending}
-                className="cc-btn text-[11px] gap-1 inline-flex items-center px-2 py-1"
-                style={{ border: "1px solid var(--cc-border)" }}
-                data-testid="rail-sync-inbox"
-              >
-                {checkEmailMutation.isPending ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Inbox className="w-3 h-3" />
-                )}
-                Sync inbox
-              </button>
+        {/* Task #767 — hold / withdraw / close-as-non-issue dialogs were
+            absorbed from the retired GroupDossierChrome. Modal portals,
+            so their position in the JSX tree doesn't matter visually;
+            kept at the bottom of the page for code locality with the
+            other dialog mounts. */}
+        <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
+          <DialogContent className="max-w-md" data-testid="group-detail-place-hold-modal">
+            <DialogHeader>
+              <DialogTitle>Place group on hold</DialogTitle>
+              <DialogDescription>
+                The group will be removed from operator queues until the hold is
+                cleared. The reason is recorded in the audit trail.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="group-hold-reason" className="text-xs">Reason</Label>
+              <Textarea
+                id="group-hold-reason"
+                value={holdReason}
+                onChange={(e) => setHoldReason(e.target.value)}
+                placeholder="Why is this group going on hold?"
+                rows={3}
+                data-testid="group-detail-hold-reason-input"
+              />
             </div>
-          </div>
-        </div>
-      </div>
-      ) : null}
-      </SkeletonSwap>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setHoldOpen(false)} disabled={holdMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={onPlaceHold}
+                disabled={!holdReason.trim() || holdMutation.isPending}
+                data-testid="group-detail-hold-confirm-button"
+              >
+                {holdMutation.isPending ? "Placing…" : "Place on hold"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* #687 — group hold dialog + group-note delete AlertDialog
-          removed. Hold is owned by V3HoldExit hero (A); note delete
-          lives in queue chrome. */}
-    </div>
-  );
-}
+        {withdrawOpen ? (
+          <ClosureIntakeDialog
+            open={withdrawOpen}
+            onOpenChange={setWithdrawOpen}
+            target={{ kind: "group", id: groupId }}
+            reason="cannot_dispute"
+            onSuccess={invalidateGroup}
+          />
+        ) : null}
+
+        <CloseAsNonIssueDialog
+          open={closeNonIssueOpen}
+          onOpenChange={setCloseNonIssueOpen}
+          groupId={groupId}
+          onSuccess={invalidateGroup}
+        />
+  
+      </div>
+    );
+  }
+  

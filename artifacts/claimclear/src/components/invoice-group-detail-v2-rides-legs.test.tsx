@@ -87,20 +87,20 @@ test("Rides & legs row renders Non-contestable for cannot_dispute and Non-issue 
   );
 });
 
-test("invoice-group-detail-v2 rides & legs row passes the leg row to StateBadge", () => {
+test("invoice-group-detail-v2 leg column passes the leg to StateBadge", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(
     join(here, "invoice-group-detail-v2.tsx"),
     "utf8",
   );
-  // Task #554 — the row pill now goes through `<StateBadge
-  // variant="subStatus" value={sub} leg={r} />`. StateBadge calls
-  // `legSubStatusDisplayLabel(value, leg)` internally when `leg` is
-  // provided, so the reason-aware label contract from #521 still
-  // holds, just one indirection up.
+  // Task #767 — D2 graduation replaced the rides/legs row table with
+  // per-leg LegColumn cards. The reason-aware StateBadge contract from
+  // Tasks #521/#554 still holds, just inside LegColumn now — the column
+  // passes `leg={ride}` to `<StateBadge variant="subStatus" />` so
+  // `legSubStatusDisplayLabel(value, leg)` runs with the row context.
   assert.match(
     src,
-    /<StateBadge[^>]*variant="subStatus"[^>]*\bleg=\{r\}/,
-    "rides & legs row must pass `leg={r}` to StateBadge — see Tasks #521, #554",
+    /<StateBadge[^>]*variant="subStatus"[^>]*\bleg=\{ride\}/,
+    "LegColumn must pass `leg={ride}` to StateBadge — see Tasks #521, #554, #767",
   );
 });
