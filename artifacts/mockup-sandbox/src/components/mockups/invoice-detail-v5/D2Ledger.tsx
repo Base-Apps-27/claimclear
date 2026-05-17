@@ -20,7 +20,17 @@ import {
   Send,
   Paperclip,
   Check,
-  PauseCircle
+  PauseCircle,
+  Maximize2,
+  X,
+  Bold,
+  Italic,
+  Underline,
+  List,
+  Image as ImageIcon,
+  Reply,
+  CornerUpLeft,
+  Trash2
 } from "lucide-react";
 
 export type LegStatus = "investigating" | "ready" | "review" | "hold";
@@ -145,6 +155,7 @@ export const GROUP_FILES = [
 
 export default function D2Ledger() {
   const [selectedKey, setSelectedKey] = useState("1278");
+  const [commsOpen, setCommsOpen] = useState(false);
   const selected = LEGS[selectedKey];
 
   return (
@@ -365,7 +376,17 @@ export default function D2Ledger() {
              <div className="cc-card overflow-hidden border-[var(--cc-green-border)]">
                 <div className="bg-[var(--cc-green-bg)] text-[var(--cc-green-fg)] px-3 py-2 border-b border-[var(--cc-green-border)] flex items-center justify-between">
                   <h3 className="text-[10px] uppercase tracking-wider font-bold flex items-center gap-1.5"><MessageSquare className="w-3 h-3" /> Communication</h3>
-                  <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 bg-white/60 border border-[var(--cc-green-border)] rounded">Group verdict · Approved</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 bg-white/60 border border-[var(--cc-green-border)] rounded">Group verdict · Approved</span>
+                    <button
+                      onClick={() => setCommsOpen(true)}
+                      title="Open full thread"
+                      aria-label="Open full thread"
+                      className="p-1 rounded hover:bg-white/60 border border-transparent hover:border-[var(--cc-green-border)] transition-colors"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 <div className="divide-y divide-[var(--cc-border)]">
 
@@ -473,6 +494,382 @@ export default function D2Ledger() {
 
           </div>
         </div>
+      </div>
+
+      {commsOpen && <CommunicationThreadModal onClose={() => setCommsOpen(false)} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  CommunicationThreadModal — email-style full-thread reader/composer  */
+/*  Uses D2 chrome primitives (cc-card, cc-btn, cc-input, color tokens) */
+/* ------------------------------------------------------------------ */
+
+export function CommunicationThreadModal({ onClose }: { onClose: () => void }) {
+  const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<{ name: string; size: string }[]>([
+    { name: "gps_log_supplement_1278.csv", size: "8.4 KB" }
+  ]);
+  const [activeFormats, setActiveFormats] = useState<Record<string, boolean>>({});
+
+  function toggleFormat(key: string) {
+    setActiveFormats((s) => ({ ...s, [key]: !s[key] }));
+  }
+
+  function removeAttachment(i: number) {
+    setAttachments((a) => a.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="cc-scope w-full max-w-[920px] max-h-[88vh] bg-[var(--cc-card)] border border-[var(--cc-border)] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+      >
+        {/* Modal header */}
+        <div className="flex-none px-5 py-3 border-b border-[var(--cc-border)] bg-[var(--cc-card)] flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-md bg-[var(--cc-green-bg)] border border-[var(--cc-green-border)] flex items-center justify-center shrink-0">
+              <MessageSquare className="w-4 h-4 text-[var(--cc-green-fg)]" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h2 className="text-sm font-bold text-[var(--cc-fg)] truncate">GPS Exemption Request — Invoice <span className="mono">1865697140</span></h2>
+                <span className="cc-badge bg-[var(--cc-green-bg)] text-[var(--cc-green-fg)] border-[var(--cc-green-border)] text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5">Approved</span>
+              </div>
+              <div className="text-[11px] text-[var(--cc-muted-fg)] flex items-center gap-2">
+                <span className="font-medium">3 messages</span>
+                <span>•</span>
+                <span>Payor portal · ticket <span className="mono">#88582</span></span>
+                <span>•</span>
+                <span>2 legs</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md hover:bg-[var(--cc-muted)] text-[var(--cc-muted-fg)] hover:text-[var(--cc-fg)] transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Thread body (scrollable) */}
+        <div className="flex-1 overflow-y-auto bg-[var(--cc-bg)] custom-scrollbar p-5 space-y-3">
+
+          {/* Message 1: payor verdict (incoming, expanded email format) */}
+          <ThreadMessage
+            initials="PP"
+            initialsBg="var(--cc-green-bg)"
+            initialsFg="var(--cc-green-fg)"
+            initialsBorder="var(--cc-green-border)"
+            sender="Payor Portal · Backfill Bot"
+            senderEmail="portal-backfill@payor.example.com"
+            to="claims-ops@agapeny.com"
+            subject="GPS Exemption Request Approved"
+            date="May 13, 2026 · 7:43 AM"
+            tags={[
+              { label: "approval", tone: "green" },
+              { label: "portal", tone: "muted" },
+              { label: "ticket #88582", tone: "muted" }
+            ]}
+            attachments={[
+              { name: "verdict_88582.pdf", size: "112 KB" },
+              { name: "gps_review_summary.txt", size: "4.1 KB" }
+            ]}
+            body={
+              <>
+                <p className="mb-2">Hi team,</p>
+                <p className="mb-2">A detailed review of the GPS data received for invoice <span className="mono">1865697140</span> confirmed GPS compliance despite the event IDs submitted via GPS being incorrect.</p>
+                <p className="mb-2"><span className="font-semibold">Verdict:</span> approved for Leg #1277. Leg #1278 remains blocked pending a separate GPS log supplement (SOP Q3).</p>
+                <p className="mb-2">Please file the supplement against ticket <span className="mono">#88582</span> so we can close the cluster.</p>
+                <p className="text-[var(--cc-muted-fg)]">— Payor Backfill Automation</p>
+              </>
+            }
+            footer="Applied to: Leg #1277 ✓ · Leg #1278 blocked (missing evidence)"
+          />
+
+          {/* Message 2: operator note (internal) */}
+          <ThreadMessage
+            initials="O1"
+            initialsBg="var(--cc-muted)"
+            initialsFg="var(--cc-fg)"
+            initialsBorder="var(--cc-border)"
+            sender="Operator 1"
+            senderEmail="someidy.s@agapeny.com"
+            internal
+            subject="Re: GPS Exemption Request"
+            date="May 13, 2026 · 9:02 AM"
+            tags={[{ label: "internal note", tone: "muted" }]}
+            body={
+              <p>Verdict applied to Leg #1277. Need to resolve Leg #1278 GPS log separately before this group can fully close. I'll pull the supplemental log from the dispatch system and reply on this thread.</p>
+            }
+          />
+
+          {/* Message 3: original outbound submission */}
+          <ThreadMessage
+            initials="CC"
+            initialsBg="var(--cc-blue-bg)"
+            initialsFg="var(--cc-blue-fg)"
+            initialsBorder="var(--cc-blue-border)"
+            sender="ClaimClear · Outbound"
+            senderEmail="claims-ops@agapeny.com"
+            to="portal-backfill@payor.example.com"
+            subject="GPS Exemption Package — Invoice 1865697140"
+            date="May 9, 2026 · 5:39 PM"
+            tags={[
+              { label: "submission", tone: "blue" },
+              { label: "2 legs · GPS exemption pkg", tone: "muted" }
+            ]}
+            attachments={[
+              { name: "exemption_pkg_1865697140.zip", size: "1.2 MB" },
+              { name: "trip_manifest_1277.pdf", size: "118 KB" },
+              { name: "trip_manifest_1278.pdf", size: "124 KB" }
+            ]}
+            body={
+              <>
+                <p className="mb-2">To whom it may concern,</p>
+                <p className="mb-2">Submitting the GPS exemption package for both legs of invoice <span className="mono">1865697140</span>. The driver's manifest and dispatch logs support the deviation under SOP Q3.</p>
+                <p>Awaiting verdict at your earliest convenience.</p>
+              </>
+            }
+          />
+        </div>
+
+        {/* Composer */}
+        <div className="flex-none border-t border-[var(--cc-border)] bg-[var(--cc-card)]">
+          {/* Compose header: To/Subject */}
+          <div className="px-5 pt-4 pb-2 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs">
+              <CornerUpLeft className="w-3.5 h-3.5 text-[var(--cc-muted-fg)]" />
+              <span className="text-[var(--cc-muted-fg)] font-semibold uppercase tracking-wider text-[10px] w-14">Reply to</span>
+              <span className="font-medium text-[var(--cc-fg)]">portal-backfill@payor.example.com</span>
+              <span className="text-[var(--cc-muted-fg)]">· ticket <span className="mono">#88582</span></span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="w-3.5" />
+              <span className="text-[var(--cc-muted-fg)] font-semibold uppercase tracking-wider text-[10px] w-14">Subject</span>
+              <input
+                type="text"
+                defaultValue="Re: GPS Exemption Request Approved"
+                className="flex-1 cc-input text-xs py-1 bg-[var(--cc-bg)]"
+              />
+            </div>
+          </div>
+
+          {/* Rich text toolbar */}
+          <div className="px-5 pt-2 pb-1 flex items-center gap-0.5 border-t border-[var(--cc-border)] bg-[var(--cc-muted)]/40">
+            <FormatBtn icon={<Bold className="w-3.5 h-3.5" />} active={activeFormats.bold} onClick={() => toggleFormat("bold")} label="Bold" />
+            <FormatBtn icon={<Italic className="w-3.5 h-3.5" />} active={activeFormats.italic} onClick={() => toggleFormat("italic")} label="Italic" />
+            <FormatBtn icon={<Underline className="w-3.5 h-3.5" />} active={activeFormats.underline} onClick={() => toggleFormat("underline")} label="Underline" />
+            <div className="w-px h-4 bg-[var(--cc-border)] mx-1" />
+            <FormatBtn icon={<List className="w-3.5 h-3.5" />} active={activeFormats.list} onClick={() => toggleFormat("list")} label="Bulleted list" />
+            <FormatBtn icon={<LinkIcon className="w-3.5 h-3.5" />} active={activeFormats.link} onClick={() => toggleFormat("link")} label="Insert link" />
+            <FormatBtn icon={<ImageIcon className="w-3.5 h-3.5" />} active={activeFormats.image} onClick={() => toggleFormat("image")} label="Insert image" />
+            <div className="ml-auto text-[10px] text-[var(--cc-muted-fg)] font-medium uppercase tracking-wider">Rich text</div>
+          </div>
+
+          {/* Body textarea */}
+          <div className="px-5 pb-2">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Write your reply. Quote prior messages with > or attach supporting evidence below."
+              className="w-full cc-input text-xs py-2 px-3 bg-[var(--cc-bg)] resize-none min-h-[120px] leading-relaxed"
+            />
+          </div>
+
+          {/* Attachments / drop zone */}
+          <div className="px-5 pb-3">
+            {attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {attachments.map((a, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-1.5 border border-[var(--cc-border)] rounded px-2 py-1 text-[10px] bg-[var(--cc-card)] group"
+                  >
+                    <Paperclip className="w-3 h-3 text-[var(--cc-blue-fg)]" />
+                    <span className="font-medium text-[var(--cc-fg)]">{a.name}</span>
+                    <span className="text-[var(--cc-muted-fg)]">{a.size}</span>
+                    <button
+                      onClick={() => removeAttachment(i)}
+                      className="ml-1 opacity-50 hover:opacity-100 text-[var(--cc-destructive)]"
+                      aria-label="Remove attachment"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label className="flex items-center justify-center gap-2 border border-dashed border-[var(--cc-border)] rounded-md py-3 text-[11px] text-[var(--cc-muted-fg)] hover:border-[var(--cc-primary)] hover:text-[var(--cc-fg)] cursor-pointer transition-colors bg-[var(--cc-bg)]">
+              <Upload className="w-3.5 h-3.5" />
+              <span>Drop files here or <span className="font-semibold text-[var(--cc-primary)]">browse</span> to attach evidence</span>
+              <input type="file" multiple className="hidden" />
+            </label>
+          </div>
+
+          {/* Footer actions */}
+          <div className="px-5 py-3 border-t border-[var(--cc-border)] bg-[var(--cc-muted)]/40 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[10px] text-[var(--cc-muted-fg)]">
+              <CheckCircle2 className="w-3 h-3 text-[var(--cc-success)]" />
+              <span>Reply will post to ticket <span className="mono">#88582</span> and append to this thread.</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className="cc-btn cc-btn-sm cc-btn-secondary px-3 py-1.5 text-xs">Cancel</button>
+              <button className="cc-btn cc-btn-sm cc-btn-secondary px-3 py-1.5 text-xs flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" /> Save draft
+              </button>
+              <button className="cc-btn cc-btn-sm cc-btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5">
+                <Send className="w-3.5 h-3.5" /> Send reply
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormatBtn({ icon, active, onClick, label }: { icon: React.ReactNode; active?: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={!!active}
+      className={`p-1.5 rounded transition-colors border ${
+        active
+          ? "bg-[var(--cc-primary)]/10 text-[var(--cc-primary)] border-[var(--cc-primary)]/30"
+          : "text-[var(--cc-muted-fg)] hover:text-[var(--cc-fg)] hover:bg-[var(--cc-card)] border-transparent"
+      }`}
+    >
+      {icon}
+    </button>
+  );
+}
+
+type ThreadTag = { label: string; tone: "green" | "blue" | "muted" | "amber" };
+
+function ThreadMessage({
+  initials,
+  initialsBg,
+  initialsFg,
+  initialsBorder,
+  sender,
+  senderEmail,
+  to,
+  subject,
+  date,
+  tags,
+  attachments,
+  body,
+  footer,
+  internal
+}: {
+  initials: string;
+  initialsBg: string;
+  initialsFg: string;
+  initialsBorder: string;
+  sender: string;
+  senderEmail: string;
+  to?: string;
+  subject: string;
+  date: string;
+  tags?: ThreadTag[];
+  attachments?: { name: string; size: string }[];
+  body: React.ReactNode;
+  footer?: string;
+  internal?: boolean;
+}) {
+  const tagToneCls: Record<ThreadTag["tone"], string> = {
+    green: "bg-[var(--cc-green-bg)] text-[var(--cc-green-fg)] border-[var(--cc-green-border)]",
+    blue: "bg-[var(--cc-blue-bg)] text-[var(--cc-blue-fg)] border-[var(--cc-blue-border)]",
+    amber: "bg-[var(--cc-amber-bg)]/40 text-[var(--cc-amber-fg)] border-[var(--cc-amber-border)]",
+    muted: "bg-[var(--cc-muted)] text-[var(--cc-muted-fg)] border-[var(--cc-border)]"
+  };
+
+  return (
+    <div className={`cc-card overflow-hidden ${internal ? "border-dashed" : ""}`}>
+      {/* Message header */}
+      <div className="px-4 py-3 border-b border-[var(--cc-border)] bg-[var(--cc-card)] flex items-start gap-3">
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border shrink-0 mt-0.5"
+          style={{ background: initialsBg, color: initialsFg, borderColor: initialsBorder }}
+        >
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className="font-semibold text-xs text-[var(--cc-fg)]">{sender}</span>
+            <span className="text-[10px] text-[var(--cc-muted-fg)] mono">&lt;{senderEmail}&gt;</span>
+            {internal && (
+              <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-[var(--cc-muted)] text-[var(--cc-muted-fg)] rounded border border-[var(--cc-border)]">
+                internal
+              </span>
+            )}
+          </div>
+          {to && (
+            <div className="text-[10px] text-[var(--cc-muted-fg)]">
+              <span className="font-semibold uppercase tracking-wider mr-1">to</span>
+              <span className="mono">{to}</span>
+            </div>
+          )}
+          <div className="text-[11px] text-[var(--cc-fg)] font-medium mt-1 truncate">{subject}</div>
+          {tags && tags.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              {tags.map((t, i) => (
+                <span key={i} className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${tagToneCls[t.tone]}`}>
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="text-[10px] text-[var(--cc-muted-fg)] shrink-0 whitespace-nowrap">{date}</div>
+      </div>
+
+      {/* Message body */}
+      <div className="p-4 bg-[var(--cc-card)] text-[12px] text-[var(--cc-fg)] leading-relaxed">
+        {body}
+        {footer && <p className="text-[10px] text-[var(--cc-muted-fg)] mt-3 italic">{footer}</p>}
+      </div>
+
+      {/* Attachments */}
+      {attachments && attachments.length > 0 && (
+        <div className="px-4 py-2.5 border-t border-[var(--cc-border)] bg-[var(--cc-muted)]/30">
+          <div className="text-[9px] uppercase font-bold tracking-wider text-[var(--cc-muted-fg)] mb-1.5 flex items-center gap-1">
+            <Paperclip className="w-3 h-3" /> {attachments.length} attachment{attachments.length > 1 ? "s" : ""}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {attachments.map((a, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-1.5 border border-[var(--cc-border)] rounded px-2 py-1 text-[10px] bg-[var(--cc-card)] hover:border-[var(--cc-primary)] cursor-pointer"
+              >
+                <FileText className="w-3 h-3 text-[var(--cc-blue-fg)]" />
+                <span className="font-medium text-[var(--cc-fg)]">{a.name}</span>
+                <span className="text-[var(--cc-muted-fg)]">{a.size}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Per-message quick actions */}
+      <div className="px-4 py-2 border-t border-[var(--cc-border)] bg-[var(--cc-muted)]/20 flex items-center gap-3 text-[10px] text-[var(--cc-muted-fg)]">
+        <button className="flex items-center gap-1 hover:text-[var(--cc-fg)] font-semibold uppercase tracking-wider">
+          <Reply className="w-3 h-3" /> Reply
+        </button>
+        <button className="flex items-center gap-1 hover:text-[var(--cc-fg)] font-semibold uppercase tracking-wider">
+          <CornerUpLeft className="w-3 h-3" /> Quote
+        </button>
       </div>
     </div>
   );
