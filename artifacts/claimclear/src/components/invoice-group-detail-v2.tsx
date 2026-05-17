@@ -845,6 +845,9 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
   // Task #555 — Legs Queue defaults to disputed-only; the disclosure
   // surfaces excluded / sibling-duplicate rows on demand.
   const [disputedOnly, setDisputedOnly] = useState(true);
+  // Horizontal scroll strip for the legs grid when there are 3+ legs.
+  // Chevron buttons in the section header drive it via scrollBy().
+  const legsStripRef = useRef<HTMLDivElement | null>(null);
   const visibleRides = disputedOnly ? disputedRides : allRides;
 
   /* ---- Notes / Audit (from detail payload) ---- */
@@ -1534,6 +1537,32 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                 <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>
                   · {allRides.length} leg{allRides.length === 1 ? "" : "s"} · {inDisputeCount} disputed
                 </span>
+                {/* 3+ legs: hint that the strip scrolls + paging chevrons */}
+                {visibleRides.length >= 3 && (
+                  <span className="text-[11px] font-normal ml-1 inline-flex items-center gap-1.5" style={{ color: "var(--cc-muted-fg)" }}>
+                    · scroll
+                    <button
+                      type="button"
+                      onClick={() => legsStripRef.current?.scrollBy({ left: -380, behavior: "smooth" })}
+                      className="cc-btn p-0.5 rounded"
+                      style={{ border: "1px solid var(--cc-border)" }}
+                      aria-label="Scroll legs left"
+                      data-testid="legs-strip-prev"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => legsStripRef.current?.scrollBy({ left: 380, behavior: "smooth" })}
+                      className="cc-btn p-0.5 rounded"
+                      style={{ border: "1px solid var(--cc-border)" }}
+                      aria-label="Scroll legs right"
+                      data-testid="legs-strip-next"
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
               </div>
               {hiddenCount > 0 && (
                 <button
@@ -1558,9 +1587,46 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               <div className="cc-card px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
                 No legs to show.
               </div>
+            ) : visibleRides.length >= 3 ? (
+              /* 3+ legs: horizontal scroll strip with snap. Each column is
+                 a fixed 360px so the rest of the page (invoice-wide context,
+                 right rail) never shifts as the operator pages through legs.
+                 Edge mask gradients hint at more content off-screen. */
+              <div className="relative">
+                <div
+                  ref={legsStripRef}
+                  className="overflow-x-auto pb-2 snap-x snap-mandatory"
+                  style={{
+                    scrollbarWidth: "thin",
+                    WebkitMaskImage:
+                      "linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%)",
+                    maskImage:
+                      "linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%)",
+                  }}
+                  data-testid="leg-columns-strip"
+                >
+                  <div className="flex gap-4 items-start px-1">
+                    {visibleRides.map((r, idx) => (
+                      <div
+                        key={r.id}
+                        className="snap-start shrink-0"
+                        style={{ width: "360px" }}
+                      >
+                        <LegColumn
+                          ride={r}
+                          legNumber={idx + 1}
+                          groupId={groupId}
+                          auditEntries={detail?.auditLogs ?? []}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             ) : (
+              /* 1–2 legs: keep the 50/50 grid — no scroll needed. */
               <div
-                className={`grid grid-cols-1 ${visibleRides.length >= 3 ? "xl:grid-cols-3 lg:grid-cols-2" : "lg:grid-cols-2"} gap-4 items-start`}
+                className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
                 data-testid="leg-columns-grid"
               >
                 {visibleRides.map((r, idx) => (
