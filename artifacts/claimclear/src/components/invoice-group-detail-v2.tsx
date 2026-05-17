@@ -43,6 +43,7 @@ import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
+  InvoiceGroupResponse,
   PortalResponseItem,
   AuditLogResponse,
   NoteResponse,
@@ -51,7 +52,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
   Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
   XCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
-  ShieldCheck,
+  ShieldCheck, Layers, History, ArrowRight,
 } from "lucide-react";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
@@ -148,6 +149,356 @@ function FieldRow({ label, value }: { label: string; value: ReactNode }) {
         {label}
       </span>
       <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{value}</span>
+    </div>
+  );
+}
+
+/* ----------------------- D2 leg + context primitives ----------------------- */
+
+// Per-leg verdict tone derived from `claims.outcome`. The chip styling mirrors
+// the mockup's LegVerdictCard; sub-text is a stable phrase so we don't fan out
+// to per-leg detail fetches just to fill a sentence.
+function LegVerdictCard({ ride }: { ride: ClaimResponse }) {
+  const o = (ride.outcome ?? "Pending") as string;
+  const excluded = ride.includedInDispute === false;
+  if (o === "Approved") {
+    return (
+      <div className="cc-card p-3" style={{ background: "color-mix(in srgb, var(--cc-green-bg) 30%, transparent)", borderColor: "var(--cc-green-border)" }}>
+        <h3 className="font-bold text-[10px] uppercase tracking-wider mb-1 flex items-center gap-2" style={{ color: "var(--cc-green-fg)" }}>
+          <CheckCircle2 className="w-3.5 h-3.5" /> Leg verdict
+        </h3>
+        <p className="font-bold text-sm" style={{ color: "var(--cc-fg)" }}>{outcomeLabel(o)}</p>
+        <p className="text-[11px] font-medium" style={{ color: "var(--cc-muted-fg)" }}>Recoupment reversed.</p>
+      </div>
+    );
+  }
+  if (o === "Denied") {
+    return (
+      <div className="cc-card p-3" style={{ background: "color-mix(in srgb, var(--cc-amber-bg) 40%, transparent)", borderColor: "var(--cc-amber-border)" }}>
+        <h3 className="font-bold text-[10px] uppercase tracking-wider mb-1 flex items-center gap-2" style={{ color: "var(--cc-amber-fg)" }}>
+          <XCircle className="w-3.5 h-3.5" /> Leg verdict
+        </h3>
+        <p className="font-bold text-sm" style={{ color: "var(--cc-fg)" }}>{outcomeLabel(o)}</p>
+        <p className="text-[11px] font-medium" style={{ color: "var(--cc-muted-fg)" }}>Payor upheld charge.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="cc-card p-3" style={{ background: "color-mix(in srgb, var(--cc-muted) 40%, transparent)", border: "1px dashed var(--cc-border)" }}>
+      <h3 className="font-bold text-[10px] uppercase tracking-wider mb-1 flex items-center gap-2" style={{ color: "var(--cc-muted-fg)" }}>
+        <Clock className="w-3.5 h-3.5" /> Leg verdict
+      </h3>
+      <p className="font-bold text-sm" style={{ color: "var(--cc-fg)" }}>{excluded ? "Excluded from dispute" : "Pending"}</p>
+      <p className="text-[11px] font-medium" style={{ color: "var(--cc-muted-fg)" }}>
+        {excluded ? "Not part of the active dispute package." : "Awaiting verdict."}
+      </p>
+    </div>
+  );
+}
+
+// Per-leg column: header pill + service-date/error-type, single "Walk SOP" CTA
+// into the queue (per-leg mutations live in queue chrome — keeping inline
+// actions off the dossier per Task #687), evidence rollup, audit excerpt
+// filtered to this leg, and the verdict card. Group-level data (special
+// circumstances, generated email) is rendered separately below the grid.
+function LegColumn({
+  ride, legNumber, groupId, auditEntries,
+}: {
+  ride: ClaimResponse;
+  legNumber: number;
+  groupId: number;
+  auditEntries: AuditLogResponse[];
+}) {
+  const sub = deriveLegSubStatus(ride);
+  const rideAny = ride as {
+    evidenceFiles?: Array<{ url?: string; name?: string | null; filename?: string | null; size?: number | null }> | null;
+    evidence?: Array<{ imageUrl?: string | null; evidenceTypeName?: string | null }>;
+  };
+  type Item = { url: string; name: string; size?: number | null };
+  const items: Item[] = [];
+  const seen = new Set<string>();
+  const add = (url: string | null | undefined, name: string | null | undefined, size?: number | null) => {
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    let n = name ?? null;
+    if (!n) {
+      try { n = decodeURIComponent(new URL(url, "http://x").pathname.split("/").filter(Boolean).pop() || url); }
+      catch { n = url; }
+    }
+    items.push({ url, name: n, size });
+  };
+  for (const f of rideAny.evidenceFiles ?? []) add(f?.url ?? null, f?.name ?? f?.filename ?? null, f?.size ?? null);
+  for (const e of rideAny.evidence ?? []) add(e?.imageUrl ?? null, displayedEvidenceName(e?.evidenceTypeName, e?.imageUrl));
+  const legAudit = auditEntries.filter((a) => a.claimId === ride.id).slice(0, 5);
+  const excluded = ride.includedInDispute === false;
+  return (
+    <div className={`cc-card overflow-hidden flex flex-col ${excluded ? "opacity-75" : ""}`} data-testid={`leg-column-${ride.id}`}>
+      <div className="px-4 py-3 space-y-2" style={{ borderBottom: "1px solid var(--cc-border)", background: "color-mix(in srgb, var(--cc-muted) 30%, transparent)" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold mono leading-tight">
+                {ride.confNumber ? <RefNumber value={ride.confNumber} variant="inline" /> : <>#{ride.id}</>}
+              </h2>
+              <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded border" style={{ background: "var(--cc-card)", color: "var(--cc-muted-fg)", borderColor: "var(--cc-border)" }}>
+                Leg {legNumber}
+              </span>
+              <StateBadge variant="subStatus" value={sub} leg={ride} />
+            </div>
+            <div className="flex items-center gap-2 text-[11px] mt-1.5 flex-wrap" style={{ color: "var(--cc-muted-fg)" }}>
+              <span className="font-bold text-xs mono tracking-tight" style={{ color: "var(--cc-fg)" }}>
+                {formatCurrency(ride.claimAmount ?? "0")}
+              </span>
+              <span>•</span>
+              <span className="mono">{ride.date ? formatDateTime(ride.date) : "—"}</span>
+              {ride.carNumber && (<><span>•</span><span className="mono">Car {ride.carNumber}</span></>)}
+            </div>
+            {ride.errorTypeName && (
+              <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--cc-muted-fg)" }} title={ride.errorTypeName}>
+                {ride.errorTypeName}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <Link
+            href={`/queue?groupId=${groupId}&legId=${ride.id}`}
+            className="ml-auto text-[11px] font-semibold hover:underline flex items-center gap-1"
+            style={{ color: "var(--cc-primary)" }}
+            data-testid={`leg-walk-sop-${ride.id}`}
+          >
+            Walk SOP in queue <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+      </div>
+
+      <div className="p-3 space-y-3">
+        <div className="cc-card overflow-hidden">
+          <div className="px-3 py-2 flex justify-between items-center" style={{ background: "color-mix(in srgb, var(--cc-muted) 50%, transparent)", borderBottom: "1px solid var(--cc-border)" }}>
+            <h3 className="font-semibold text-[11px] uppercase tracking-wider flex items-center gap-2" style={{ color: "var(--cc-muted-fg)" }}>
+              <Paperclip className="w-3.5 h-3.5" /> Per-leg evidence
+              <span className="font-normal text-[10px] ml-1" style={{ color: "var(--cc-muted-fg)" }}>({items.length})</span>
+            </h3>
+          </div>
+          <div className="p-2 space-y-1">
+            {items.length === 0 ? (
+              <p className="text-[11px] italic px-1 py-1" style={{ color: "var(--cc-muted-fg)" }}>No per-leg attachments.</p>
+            ) : items.map((f, i) => (
+              <a
+                key={`${f.url}-${i}`}
+                href={f.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-2 py-1.5 rounded border text-[12px] hover:border-[var(--cc-primary)]"
+                style={{ borderColor: "var(--cc-border)", background: "var(--cc-card)" }}
+              >
+                <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cc-blue-fg)" }} />
+                <span className="font-medium truncate flex-1">{f.name}</span>
+                {typeof f.size === "number" && (
+                  <span className="text-[10px] mono" style={{ color: "var(--cc-muted-fg)" }}>
+                    {f.size > 1024 ? `${Math.round(f.size / 1024)} KB` : `${f.size} B`}
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
+
+        {legAudit.length > 0 && (
+          <div className="cc-card p-3">
+            <h3 className="font-semibold mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider" style={{ color: "var(--cc-muted-fg)" }}>
+              <History className="w-3.5 h-3.5" /> Per-leg audit
+            </h3>
+            <div className="space-y-2 pl-1">
+              {legAudit.map((a) => (
+                <div key={a.id} className="relative pl-3" style={{ borderLeft: "2px solid var(--cc-border)" }}>
+                  <p className="text-[10px] mb-0.5 uppercase tracking-wide font-medium" style={{ color: "var(--cc-muted-fg)" }}>
+                    <span className="mono">{formatDateTime(a.timestamp)}</span> • {a.userName || a.userEmail || "System"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--cc-fg)" }}>{a.action}{a.details ? ` — ${a.details}` : ""}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <LegVerdictCard ride={ride} />
+      </div>
+    </div>
+  );
+}
+
+// Invoice-wide context: Special Context (operator's understanding notes) stacked
+// above the AI/portal generated write-up. Both are read-only here — editing
+// happens in the queue. Drift is shown as a chip (NOT a CTA override per spec).
+function InvoiceWideContext({
+  specialCircumstances,
+  understandingReadbackForText,
+  understandingReadbackAt,
+  understandingReadbackBy,
+  generatedEmailSubject,
+  generatedEmailBody,
+  generatedEmailAt,
+}: {
+  specialCircumstances: string | null | undefined;
+  understandingReadbackForText: string | null | undefined;
+  understandingReadbackAt: string | null | undefined;
+  understandingReadbackBy: string | null | undefined;
+  generatedEmailSubject: string | null | undefined;
+  generatedEmailBody: string | null | undefined;
+  generatedEmailAt: string | null | undefined;
+}) {
+  const hasSpecial = !!(specialCircumstances && specialCircumstances.trim());
+  // Drift anchor: text differs from the snapshot the latest readback was generated for.
+  const drift = hasSpecial && understandingReadbackForText != null && understandingReadbackForText !== specialCircumstances;
+  const isStale = !!drift;
+  const hasGenerated = !!(generatedEmailSubject || generatedEmailBody);
+  return (
+    <div className="space-y-4">
+      <div className="cc-card overflow-hidden" data-testid="invoice-wide-special-context">
+        <div className="px-4 py-2.5 flex justify-between items-center" style={{ background: "color-mix(in srgb, var(--cc-muted) 50%, transparent)", borderBottom: "1px solid var(--cc-border)" }}>
+          <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2" style={{ color: "var(--cc-muted-fg)" }}>
+            <FileText className="w-3.5 h-3.5" /> Special context
+            <span className="font-normal text-[10px] ml-1 normal-case tracking-normal">(invoice-wide)</span>
+          </h3>
+          {hasSpecial && (
+            <span
+              className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded border"
+              style={
+                isStale
+                  ? { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", borderColor: "var(--cc-amber-border)" }
+                  : { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)", borderColor: "var(--cc-green-border)" }
+              }
+              data-testid="special-context-readback-status"
+            >
+              {isStale ? "Readback stale" : "Readback fresh"}
+            </span>
+          )}
+        </div>
+        <div className="p-4 space-y-3" style={{ background: "var(--cc-card)" }}>
+          {hasSpecial ? (
+            <>
+              <p className="text-[13px] leading-relaxed whitespace-pre-line" style={{ color: "var(--cc-fg)" }}>{specialCircumstances}</p>
+              {(understandingReadbackBy || understandingReadbackAt) && (
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide pt-2" style={{ color: "var(--cc-muted-fg)", borderTop: "1px solid var(--cc-border)" }}>
+                  {understandingReadbackBy && <span className="font-medium">{understandingReadbackBy}</span>}
+                  {understandingReadbackBy && understandingReadbackAt && <span>•</span>}
+                  {understandingReadbackAt && <span className="mono">{formatDateTime(understandingReadbackAt)}</span>}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>No special context noted for this invoice yet.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="cc-card overflow-hidden" data-testid="invoice-wide-generated-writeup">
+        <div className="px-4 py-2.5 flex justify-between items-center" style={{ background: "color-mix(in srgb, var(--cc-muted) 50%, transparent)", borderBottom: "1px solid var(--cc-border)" }}>
+          <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2" style={{ color: "var(--cc-muted-fg)" }}>
+            <Send className="w-3.5 h-3.5" /> Generated write-up
+            <span className="font-normal text-[10px] ml-1 normal-case tracking-normal">(invoice-wide)</span>
+          </h3>
+          <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded border" style={{ background: "var(--cc-card)", borderColor: "var(--cc-border)", color: "var(--cc-muted-fg)" }}>Read only</span>
+        </div>
+        <div style={{ background: "var(--cc-card)" }}>
+          {hasGenerated ? (
+            <>
+              {generatedEmailSubject && (
+                <div className="px-4 py-2" style={{ borderBottom: "1px solid var(--cc-border)", background: "color-mix(in srgb, var(--cc-muted) 20%, transparent)" }}>
+                  <p className="text-[12px] font-semibold" style={{ color: "var(--cc-fg)" }} title={generatedEmailSubject}>{generatedEmailSubject}</p>
+                </div>
+              )}
+              {generatedEmailAt && (
+                <div className="px-4 py-2 text-[10px] uppercase tracking-wide mono" style={{ color: "var(--cc-muted-fg)", borderBottom: "1px solid var(--cc-border)" }}>
+                  Generated {formatDateTime(generatedEmailAt)}
+                </div>
+              )}
+              {generatedEmailBody && (
+                <div className="p-4">
+                  <p className="text-[12px] leading-relaxed whitespace-pre-line" style={{ color: "var(--cc-fg)" }}>{generatedEmailBody}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>No dispute write-up generated yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Phase-aware Primary Action tile. Maps invoice lifecycle + outlook to a
+// single CTA so operators always have one clear next step. Mirrors the D2
+// mockup's left-rail "PRIMARY ACTION" block. Drift on Special Context is
+// shown as a chip on the context card and does NOT override this CTA.
+function PrimaryActionTile({
+  group, outlook, anyDisputableLegs, anyDisputableNeedsEvidence,
+}: {
+  group: InvoiceGroupResponse;
+  outlook: "has_disputable" | "reattest_only" | "nothing_to_do";
+  anyDisputableLegs: boolean;
+  anyDisputableNeedsEvidence: boolean;
+}) {
+  const groupId = group.id;
+  type Cta = { label: string; sub: string; href?: string; tone?: "primary" | "muted" | "good" | "warn" };
+  let cta: Cta;
+  if (isClosed(group.status)) {
+    cta = {
+      label: `Closed${group.outcome ? ` — ${outcomeLabel(group.outcome)}` : ""}`,
+      sub: group.closureReason || (group.updatedAt ? `Closed ${formatRelative(group.updatedAt)}` : "View-only"),
+      tone: "muted",
+    };
+  } else if (isInFlight(group.status)) {
+    if (group.status === "Awaiting Response") {
+      cta = {
+        label: "Awaiting payor response",
+        sub: group.disputeEmailSentAt ? `Submitted ${formatRelative(group.disputeEmailSentAt)}` : "Submission in flight",
+        tone: "muted",
+      };
+    } else if (group.status === "Ready to Review") {
+      cta = { label: "Review response", sub: "New verdict from payor", href: `/responses-awaiting-review/${groupId}`, tone: "good" };
+    } else {
+      cta = { label: "Submission in flight", sub: `Status: ${group.status}`, tone: "muted" };
+    }
+  } else if (outlook === "nothing_to_do" || !anyDisputableLegs) {
+    cta = { label: "Close group", sub: "No legs left to act on", href: `#closure-actions`, tone: "warn" };
+  } else if (outlook === "reattest_only") {
+    cta = { label: "Re-attest in MAS", sub: "No dispute path — re-attest only", href: `/queue?groupId=${groupId}`, tone: "warn" };
+  } else if (anyDisputableNeedsEvidence) {
+    cta = { label: "Walk SOP", sub: "Open in queue & resolve gates", href: `/queue?groupId=${groupId}`, tone: "primary" };
+  } else {
+    cta = { label: "Review & submit", sub: "Final check before portal", href: `/queue?groupId=${groupId}`, tone: "primary" };
+  }
+  const bg =
+    cta.tone === "primary" ? "var(--cc-primary)" :
+    cta.tone === "good"    ? "var(--cc-green-fg)" :
+    cta.tone === "warn"    ? "var(--cc-amber-fg)" :
+                              "var(--cc-muted)";
+  const fg =
+    cta.tone === "muted" ? "var(--cc-fg)" : "white";
+  const body = (
+    <div className="w-full flex items-center justify-between px-4 py-3 rounded-md transition-colors group shadow-sm border" style={{ background: bg, color: fg, borderColor: bg }}>
+      <div className="text-left min-w-0">
+        <div className="font-semibold text-sm truncate">{cta.label}</div>
+        <div className="text-[10px] opacity-80 mt-0.5 font-medium truncate">{cta.sub}</div>
+      </div>
+      {cta.href && <ArrowRight className="w-5 h-5 opacity-80 group-hover:translate-x-1 transition-transform shrink-0 ml-2" />}
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-2" data-testid="primary-action-tile">
+      <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--cc-muted-fg)" }}>Primary action</div>
+      {cta.href ? (
+        cta.href.startsWith("#") ? (
+          <a href={cta.href} onClick={(e) => { e.preventDefault(); document.querySelector(cta.href!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+            {body}
+          </a>
+        ) : (
+          <Link href={cta.href}>{body}</Link>
+        )
+      ) : body}
     </div>
   );
 }
@@ -1060,8 +1411,24 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               >
                 <div className="space-y-0">
                   <FieldRow label="Invoice #" value={group.invoiceNumber ? <RefNumber value={group.invoiceNumber} variant="inline" /> : <span className="mono">#{group.id}</span>} />
-                  <FieldRow label="Payor" value={group.payorEmail || <span style={{ color: "var(--cc-muted-fg)" }}>—</span>} />
-                  <FieldRow label="Plan" value={group.clientNumber || <span style={{ color: "var(--cc-muted-fg)" }}>—</span>} />
+                  <FieldRow
+                    label="Member ID"
+                    value={(() => {
+                      const id = group.clientNumber || allRides.find((r) => r.clientNumber)?.clientNumber;
+                      return id ? <span className="mono">{id}</span> : <span style={{ color: "var(--cc-muted-fg)" }}>—</span>;
+                    })()}
+                  />
+                  <FieldRow
+                    label="Drivers"
+                    value={(() => {
+                      const cars = Array.from(
+                        new Set(allRides.map((r) => r.carNumber).filter((c): c is string => !!c && c.trim().length > 0)),
+                      );
+                      return cars.length > 0
+                        ? <span className="mono">{cars.map((c) => `Car ${c}`).join(", ")}</span>
+                        : <span style={{ color: "var(--cc-muted-fg)" }}>—</span>;
+                    })()}
+                  />
                   <FieldRow
                     label="Submitted"
                     value={
@@ -1154,104 +1521,77 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
               })()}
             </div>
 
-            {/* Rides / legs table */}
-            <CcCard
-              title={
-                <>
-                  Rides &amp; legs
-                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                    · {allRides.length} leg{allRides.length === 1 ? "" : "s"} · {inDisputeCount} disputed
-                  </span>
-                </>
-              }
-              icon={<ListChecks className="w-3.5 h-3.5" />}
-              testId="rides-legs-card"
-              action={
-                /* Task #555 — Legs Queue defaults to disputed-only;
-                    operators don't routinely care about excluded /
-                    sibling-duplicate rows but want to be able to
-                    expand them. Replaces the symmetric All/Disputed
-                    toggle with a "+N hidden" disclosure that flips
-                    back when the operator's done. */
-                hiddenCount > 0 ? (
-                  <button
-                    type="button"
-                    className="cc-btn text-xs px-2 py-1"
-                    style={
-                      disputedOnly
-                        ? { border: "1px solid var(--cc-border)", color: "var(--cc-muted-fg)" }
-                        : { background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }
-                    }
-                    onClick={() => setDisputedOnly(!disputedOnly)}
-                    data-testid="legs-hidden-disclosure"
-                  >
-                    {disputedOnly
-                      ? `+${hiddenCount} hidden — show`
-                      : "Hide excluded / duplicates"}
-                  </button>
-                ) : null
-              }
-              padded={false}
-            >
-              <div
-                className="text-[11px] uppercase tracking-wide font-semibold grid grid-cols-12 px-4 py-2"
-                style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}
-              >
-                <div className="col-span-3">Leg / member</div>
-                <div className={isClerk ? "col-span-4" : "col-span-3"}>Service date</div>
-                {!isClerk && <div className="col-span-2 text-right">Amount</div>}
-                <div className="col-span-2">Sub-status</div>
-                <div className={isClerk ? "col-span-3 text-right" : "col-span-2 text-right"}>Action</div>
+            {/* D2 graduation (Task #767): per-leg column grid + full-width
+                invoice-wide context replace the legacy rides/legs table.
+                Each LegColumn surfaces evidence + audit excerpt + verdict
+                for one leg; per-leg mutations stay in queue chrome and the
+                column's only inline CTA is "Walk SOP in queue". The +N
+                hidden disclosure for excluded/duplicate legs is preserved. */}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Layers className="w-3.5 h-3.5" style={{ color: "var(--cc-muted-fg)" }} />
+                Disputed legs
+                <span className="text-xs font-normal" style={{ color: "var(--cc-muted-fg)" }}>
+                  · {allRides.length} leg{allRides.length === 1 ? "" : "s"} · {inDisputeCount} disputed
+                </span>
               </div>
-              {visibleRides.length === 0 ? (
-                <div className="px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No legs to show.
-                </div>
-              ) : (
-                visibleRides.map((r, i) => {
-                  const sub = deriveLegSubStatus(r);
-                  const included = r.includedInDispute !== false;
-                  return (
-                    <div
-                      key={r.id}
-                      className={`grid grid-cols-12 px-4 py-2.5 text-sm items-center hover:bg-[var(--cc-muted)] ${!included ? "opacity-60" : ""}`}
-                      style={{ borderBottom: i < visibleRides.length - 1 ? "1px solid var(--cc-border)" : "none" }}
-                      data-testid={`legs-queue-row-${r.id}`}
-                    >
-                      <div className="col-span-3">
-                        <div className="font-mono font-semibold text-xs" style={{ color: "var(--cc-purple-fg)" }}>
-                          {r.confNumber || `#${r.id}`}
-                        </div>
-                        <div className="text-[11px]" style={{ color: "var(--cc-muted-fg)" }}>
-                          Leg #{r.id}
-                        </div>
-                      </div>
-                      <div className={`${isClerk ? "col-span-4" : "col-span-3"} text-xs mono`} style={{ color: "var(--cc-fg)" }}>
-                        {r.date ? formatDateTime(r.date) : "—"}
-                      </div>
-                      {!isClerk && (
-                        <div className="col-span-2 text-right mono font-semibold">
-                          {formatCurrency(r.claimAmount ?? "0")}
-                        </div>
-                      )}
-                      <div className="col-span-2">
-                        <StateBadge variant="subStatus" value={sub} leg={r} />
-                      </div>
-                      <div className={`${isClerk ? "col-span-3" : "col-span-2"} flex items-center justify-end gap-1.5`}>
-                        <Link
-                          href={`/claims/${r.id}`}
-                          className="cc-btn text-[11px] inline-flex items-center gap-0.5 px-1.5 py-1"
-                          style={{ color: "var(--cc-purple-fg)" }}
-                          data-testid={`legs-queue-open-${r.id}`}
-                        >
-                          Open <ChevronRight className="w-3 h-3" />
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })
+              {hiddenCount > 0 && (
+                <button
+                  type="button"
+                  className="cc-btn text-xs px-2 py-1"
+                  style={
+                    disputedOnly
+                      ? { border: "1px solid var(--cc-border)", color: "var(--cc-muted-fg)" }
+                      : { background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }
+                  }
+                  onClick={() => setDisputedOnly(!disputedOnly)}
+                  data-testid="legs-hidden-disclosure"
+                >
+                  {disputedOnly
+                    ? `+${hiddenCount} hidden — show`
+                    : "Hide excluded / duplicates"}
+                </button>
               )}
-            </CcCard>
+            </div>
+
+            {visibleRides.length === 0 ? (
+              <div className="cc-card px-4 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                No legs to show.
+              </div>
+            ) : (
+              <div
+                className={`grid grid-cols-1 ${visibleRides.length >= 3 ? "xl:grid-cols-3 lg:grid-cols-2" : "lg:grid-cols-2"} gap-4 items-start`}
+                data-testid="leg-columns-grid"
+              >
+                {visibleRides.map((r, idx) => (
+                  <LegColumn
+                    key={r.id}
+                    ride={r}
+                    legNumber={idx + 1}
+                    groupId={groupId}
+                    auditEntries={detail?.auditLogs ?? []}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* INVOICE-WIDE divider + stacked Special Context / Generated Write-up */}
+            <div className="pt-2">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-px flex-1" style={{ background: "var(--cc-border)" }} />
+                <h3 className="text-[10px] font-bold uppercase tracking-wider px-2" style={{ color: "var(--cc-muted-fg)" }}>Invoice-wide</h3>
+                <div className="h-px flex-1" style={{ background: "var(--cc-border)" }} />
+              </div>
+              <InvoiceWideContext
+                specialCircumstances={group.specialCircumstances}
+                understandingReadbackForText={(group as { understandingReadbackForText?: string | null }).understandingReadbackForText}
+                understandingReadbackAt={(group as { understandingReadbackAt?: string | null }).understandingReadbackAt}
+                understandingReadbackBy={(group as { understandingReadbackBy?: string | null }).understandingReadbackBy}
+                generatedEmailSubject={group.generatedEmailSubject}
+                generatedEmailBody={group.generatedEmailBody}
+                generatedEmailAt={group.generatedEmailAt}
+              />
+            </div>
 
             {/* Task #659 — submission preview / draft / Mark Reviewed /
                 Submit live in the queue right pane only. The dossier
@@ -1436,6 +1776,19 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
           {/* RIGHT — rail (4 cols) */}
           <div className="col-span-4 space-y-4">
+
+            {/* D2 graduation (Task #767): phase-aware Primary Action tile.
+                Maps lifecycle + outlook to a single next-step CTA so the
+                operator always has one clear orientation cue. Mutations
+                still live in queue chrome / ClosureActions / MAS panel
+                below — this card just routes. Drift on Special Context
+                is a chip on the context card, NOT an override here. */}
+            <PrimaryActionTile
+              group={group}
+              outlook={deriveInvoiceDisputeOutlook(group, allRides).outlook}
+              anyDisputableLegs={disputedRides.length > 0}
+              anyDisputableNeedsEvidence={group.status === "Needs Evidence"}
+            />
 
             {/* MAS action — quiet status panel (Task #333). The actual
                 cancel-in-MAS + re-attest checklist lives on the
@@ -1964,8 +2317,12 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
 
                   {/* Cannot-Dispute is a manual operator decision (we
                       decided not to dispute), so the full structured
-                      intake still belongs here. */}
+                      intake still belongs here.
+                      `id="closure-actions"` is the scroll anchor that
+                      PrimaryActionTile's "Close group" CTA targets when
+                      outlook=nothing_to_do (Task #767). */}
                   {!validTransitions?.hasBeenSubmitted && (
+                    <div id="closure-actions">
                     <ClosureActions
                       target={{ kind: "invoice_group", id: groupId }}
                       outcome={group.outcome}
@@ -1982,6 +2339,7 @@ export function InvoiceGroupDetailV2({ groupId }: Props) {
                       ]}
                       onAfterSuccess={invalidateGroup}
                     />
+                    </div>
                   )}
                 </>
               )}

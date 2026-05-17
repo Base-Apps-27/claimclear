@@ -80,7 +80,6 @@ const navDescriptions: Record<string, string> = {
   "Queue": "Process invoices step-by-step through the dispute workflow: review, evidence, decision, submit.",
   "Responses Awaiting Review": "Stage-2 inbox: payor sent something back and a verdict is owed. Master/detail review with response thread, AI hint, and verdict actions.",
   "All Invoices": "Browse, search, and filter every invoice (the dispute unit).",
-  "All Legs": "Browse the individual ride/leg records that roll up into invoices. Use this for granular search.",
   "Withdrawals": "Review closed claims and groups (withdrawn, non-issue, accepted loss) — capture lessons, who was told, and mark addressed.",
   "Import": "Upload CSV or Excel files to bulk-import invoices and the legs that belong to them.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
@@ -240,7 +239,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       label: "Browse",
       items: [
         { label: "All Invoices", href: "/invoice-groups", icon: FolderOpen },
-        { label: "All Legs", href: "/claims", icon: Files },
         { label: "Withdrawals", href: "/withdrawals", icon: FileMinus },
       ],
     },

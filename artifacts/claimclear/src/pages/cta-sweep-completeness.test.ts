@@ -70,7 +70,6 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // Queue + detail surfaces — blocklisted by Task #660; they own the
   // surfaces and may reference detail URLs internally.
   ["artifacts/claimclear/src/pages/queue.tsx", "queue surface (blocklisted)"],
-  ["artifacts/claimclear/src/pages/claim-detail.tsx", "detail surface (blocklisted)"],
   ["artifacts/claimclear/src/pages/invoice-group-detail.tsx", "detail surface (blocklisted)"],
   ["artifacts/claimclear/src/components/claim-detail-v2.tsx", "detail surface (blocklisted)"],
   ["artifacts/claimclear/src/components/invoice-group-detail-v2.tsx", "detail surface (blocklisted)"],
@@ -81,7 +80,6 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
 
   // List / directory pages — row navigation IS the list contract;
   // these pages never host walk/submit CTAs.
-  ["artifacts/claimclear/src/pages/claims.tsx", "list-page row navigation + 'View details' menu"],
   ["artifacts/claimclear/src/pages/invoice-groups.tsx", "list-page row navigation + 'View details' menu"],
 
   // Reference / escape-hatch / closed-state surfaces. Each link

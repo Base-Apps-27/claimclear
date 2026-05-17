@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation, useParams } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setOnSessionExpired } from "@workspace/api-client-react";
+import { setOnSessionExpired, useGetClaim, getGetClaimQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import type { ComponentType } from "react";
 import { Toaster } from "@/components/ui/toaster";
@@ -10,8 +10,6 @@ import { AppLayout } from "@/components/layout";
 import { HistoryTracker } from "@/components/back-bar";
 import { AdminTourProvider } from "@/tour/admin-tour";
 import Dashboard from "@/pages/dashboard";
-import ClaimsList from "@/pages/claims";
-import ClaimDetail from "@/pages/claim-detail";
 import ClaimNew from "@/pages/claim-new";
 import InvoiceNew from "@/pages/invoice-new";
 import Queue, { QueuePreview } from "@/pages/queue";
@@ -72,6 +70,38 @@ function ScrollToTopOnRouteChange() {
   return null;
 }
 
+// Legacy /claims/:id bookmarks: look up the leg's parent invoice group
+// and redirect to the group page (the leg's column renders inline there).
+// Falls back to the invoice-groups list if the lookup 404s or the leg has
+// no group. We don't render any chrome — this is purely a router hop.
+function ClaimToGroupRedirect() {
+  const params = useParams<{ id: string }>();
+  const legId = Number(params.id);
+  const enabled = Number.isFinite(legId) && legId > 0;
+  const { data: claim, isLoading, isError, error } = useGetClaim(legId, {
+    query: { queryKey: getGetClaimQueryKey(legId), enabled },
+  });
+  if (!enabled) return <Redirect to="/invoice-groups" />;
+  if (isLoading) return null;
+  // Only fall back to the list on a real 404 / missing-parent case. Transient
+  // failures (network, 5xx, auth) should NOT silently drop the deep-link user;
+  // surface a small retry instead so they can recover or refresh.
+  if (isError) {
+    const status =
+      (error as { status?: number; response?: { status?: number } } | undefined)?.status ??
+      (error as { response?: { status?: number } } | undefined)?.response?.status;
+    if (status === 404) return <Redirect to="/invoice-groups" />;
+    return (
+      <div className="p-6 text-sm" data-testid="claim-redirect-error">
+        Couldn't load that leg. <a className="underline" href={window.location.pathname}>Retry</a>{" · "}
+        <a className="underline" href="/invoice-groups">Back to invoice groups</a>
+      </div>
+    );
+  }
+  const groupId = (claim as { invoiceGroupId?: number | null } | undefined)?.invoiceGroupId;
+  return groupId ? <Redirect to={`/invoice-groups/${groupId}`} /> : <Redirect to="/invoice-groups" />;
+}
+
 function Router() {
   return (
     <AdminTourProvider>
@@ -90,11 +120,11 @@ function Router() {
         <Route path="/review" component={() => <Redirect to="/queue?tab=needs-review" />} />
         <Route path="/invoice-groups" component={InvoiceGroupsList} />
         <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />
-        <Route path="/claims" component={ClaimsList} />
+        <Route path="/claims" component={() => <Redirect to="/invoice-groups" />} />
         <Route path="/withdrawals" component={Withdrawals} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/invoices/new" component={() => <DenyClerk component={InvoiceNew} />} />
-        <Route path="/claims/:id" component={ClaimDetail} />
+        <Route path="/claims/:id" component={ClaimToGroupRedirect} />
         <Route path="/import" component={() => <DenyClerk component={Import} />} />
         <Route path="/error-types" component={() => <DenyClerk component={ErrorTypes} />} />
         <Route path="/portal-submissions" component={PortalSubmissions} />
