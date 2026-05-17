@@ -23,12 +23,12 @@ import {
   PauseCircle
 } from "lucide-react";
 
-type LegStatus = "investigating" | "ready" | "review" | "hold";
-type EvidenceFile = { name: string; size: string; date: string; missing?: boolean; requiredBy?: string; badge?: string };
-type SopAnswer = { q: string; a: string; state: "yes" | "no" | "blocked" | "pending"; blockReason?: string };
-type LegAuditEntry = { when: string; who: string; what: string; tone?: "block" | "ok" | "muted" };
-type LegVerdict = { tone: "approved" | "denied" | "pending"; headline: string; sub: string };
-type Leg = {
+export type LegStatus = "investigating" | "ready" | "review" | "hold";
+export type EvidenceFile = { name: string; size: string; date: string; missing?: boolean; requiredBy?: string; badge?: string };
+export type SopAnswer = { q: string; a: string; state: "yes" | "no" | "blocked" | "pending"; blockReason?: string };
+export type LegAuditEntry = { when: string; who: string; what: string; tone?: "block" | "ok" | "muted" };
+export type LegVerdict = { tone: "approved" | "denied" | "pending"; headline: string; sub: string };
+export type Leg = {
   key: string;
   ref: string;
   serviceDate: string;
@@ -45,7 +45,7 @@ type Leg = {
   verdict: LegVerdict;
 };
 
-const LEGS: Record<string, Leg> = {
+export const LEGS: Record<string, Leg> = {
   "1278": {
     key: "1278",
     ref: "15018283",
@@ -114,14 +114,14 @@ const LEGS: Record<string, Leg> = {
   },
 };
 
-const STATUS_PILL: Record<LegStatus, { bg: string; fg: string; border: string }> = {
+export const STATUS_PILL: Record<LegStatus, { bg: string; fg: string; border: string }> = {
   ready: { bg: "var(--cc-green-bg)", fg: "var(--cc-green-fg)", border: "var(--cc-green-border)" },
   review: { bg: "var(--cc-amber-bg)", fg: "var(--cc-amber-fg)", border: "var(--cc-amber-border)" },
   investigating: { bg: "var(--cc-blue-bg)", fg: "var(--cc-blue-fg)", border: "var(--cc-blue-border)" },
   hold: { bg: "var(--cc-muted)", fg: "var(--cc-muted-fg)", border: "var(--cc-border)" },
 };
 
-const AUDIT_LOG = [
+export const AUDIT_LOG = [
   { action: "queued 2 legs for re-attestation", author: "someidy.s@agapeny.com", time: "3d ago", type: "note" },
   { action: "Promoted 2 draft verdicts to operator_confirmed", author: "someidy.s@agapeny.com", time: "3d ago", type: "check" },
   { action: "Upgraded synthetic portal_response #497 with LLM classification", author: "system:duplicate_cluster_response_upgrade", time: "4d ago", type: "check" },
@@ -133,7 +133,7 @@ const AUDIT_LOG = [
   { action: "Status changed from Awaiting Response to Portal Queued (backfill)", author: "system (backfill)", time: "1w ago", type: "clock" },
 ];
 
-const GROUP_FILES = [
+export const GROUP_FILES = [
   { id: "b0a6e5c3-11f7-4905-904a-4cfe1147b668.png", badge: "L1" },
   { id: "833cd17e-8dac-447d-93cd-f4a22eac3334.png", badge: "L1" },
   { id: "6b6ec689-1699-4939-af5a-aa4bb941185e.png", badge: "L1" },
@@ -478,7 +478,7 @@ export default function D2Ledger() {
   );
 }
 
-function KpiTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function KpiTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="flex-1 p-3 px-4 flex flex-col justify-center">
       <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--cc-muted-fg)] mb-1">{label}</div>
@@ -488,7 +488,7 @@ function KpiTile({ label, value, sub }: { label: string; value: string; sub?: st
   );
 }
 
-function AdminRow({ label, icon, tone }: { label: string; icon?: React.ReactNode; tone?: string }) {
+export function AdminRow({ label, icon, tone }: { label: string; icon?: React.ReactNode; tone?: string }) {
   return (
     <button className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors flex items-center gap-2 hover:bg-[var(--cc-muted)] ${tone || "text-[var(--cc-muted-fg)] hover:text-[var(--cc-fg)]"}`}>
       {icon && <span className="opacity-70">{icon}</span>}
@@ -497,7 +497,7 @@ function AdminRow({ label, icon, tone }: { label: string; icon?: React.ReactNode
   );
 }
 
-function ClosureReasonRow({ label, hint }: { label: string; hint: string }) {
+export function ClosureReasonRow({ label, hint }: { label: string; hint: string }) {
   return (
     <button className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-[var(--cc-card)] flex items-center justify-between gap-2 transition-colors border border-transparent hover:border-[var(--cc-border)]">
       <div className="flex flex-col">
@@ -509,7 +509,7 @@ function ClosureReasonRow({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
+export function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-1.5 text-sm border-b border-dashed border-[var(--cc-border)] last:border-0">
       <span className="text-[10px] uppercase tracking-wider font-semibold text-[var(--cc-muted-fg)] shrink-0">{label}</span>
@@ -522,7 +522,7 @@ function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
 /*  Leg row in the ledger                                              */
 /* ------------------------------------------------------------------ */
 
-function LegRow({ leg, selected, onClick }: { leg: Leg; selected: boolean; onClick: () => void }) {
+export function LegRow({ leg, selected, onClick }: { leg: Leg; selected: boolean; onClick: () => void }) {
   const pill = STATUS_PILL[leg.status];
   const dim = leg.status === "hold" ? "text-[var(--cc-muted-fg)] opacity-80" : "";
   
@@ -564,7 +564,7 @@ function LegRow({ leg, selected, onClick }: { leg: Leg; selected: boolean; onCli
 /*  Focus panel — renders for ANY selected leg                          */
 /* ------------------------------------------------------------------ */
 
-function FocusPanel({ leg }: { leg: Leg }) {
+export function FocusPanel({ leg }: { leg: Leg }) {
   const validEvidence = leg.evidence.filter((e) => !e.missing).length;
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -671,7 +671,7 @@ function FocusPanel({ leg }: { leg: Leg }) {
   );
 }
 
-function SopRow({ index, row }: { index: number; row: SopAnswer }) {
+export function SopRow({ index, row }: { index: number; row: SopAnswer }) {
   const isBlocked = row.state === "blocked";
   const isPending = row.state === "pending";
   const icon =
@@ -698,7 +698,7 @@ function SopRow({ index, row }: { index: number; row: SopAnswer }) {
   );
 }
 
-function LegVerdictCard({ verdict }: { verdict: LegVerdict }) {
+export function LegVerdictCard({ verdict }: { verdict: LegVerdict }) {
   if (verdict.tone === "approved") {
     return (
       <div className="cc-card p-4 bg-[var(--cc-green-bg)]/30 border-[var(--cc-green-border)]">
@@ -733,7 +733,7 @@ function LegVerdictCard({ verdict }: { verdict: LegVerdict }) {
   );
 }
 
-function EvidenceFileRow({ file }: { file: EvidenceFile }) {
+export function EvidenceFileRow({ file }: { file: EvidenceFile }) {
   if (file.missing) {
     return (
       <div className="flex items-center justify-between p-2.5 rounded border border-[var(--cc-amber-border)] bg-[var(--cc-amber-bg)] relative overflow-hidden shadow-sm">
