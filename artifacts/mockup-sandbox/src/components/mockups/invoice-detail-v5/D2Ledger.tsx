@@ -38,6 +38,7 @@ export type EvidenceFile = { name: string; size: string; date: string; missing?:
 export type SopAnswer = { q: string; a: string; state: "yes" | "no" | "blocked" | "pending"; blockReason?: string };
 export type LegAuditEntry = { when: string; who: string; what: string; tone?: "block" | "ok" | "muted" };
 export type LegVerdict = { tone: "approved" | "denied" | "pending"; headline: string; sub: string };
+export type GeneratedWriteup = { subject: string; body: string; at: string; via: string };
 export type Leg = {
   key: string;
   ref: string;
@@ -53,6 +54,8 @@ export type Leg = {
   evidenceTotal: number;
   audit: LegAuditEntry[];
   verdict: LegVerdict;
+  specialContext?: string;
+  generatedWriteup?: GeneratedWriteup;
 };
 
 export const LEGS: Record<string, Leg> = {
@@ -88,6 +91,15 @@ export const LEGS: Record<string, Leg> = {
       headline: "Pending — awaiting evidence",
       sub: "SOP Q3 blocked on gps_log.csv. Leg cannot resolve until evidence is provided.",
     },
+    specialContext:
+      "Driver reported the pickup point is a side-entrance loading bay behind the residence, not the front-door GPS pin. Member uses a wheelchair and is staged at the rear ramp. Confirmed with dispatch — Car 7141 has serviced this address 6× in the prior 30 days at the same coordinates with no GPS flag.",
+    generatedWriteup: {
+      subject: "Dispute — GPS Pickup Too Far from Residence — Conf #15018283",
+      body:
+        "We are disputing the GPS deviation flag applied to confirmation #15018283 (service date 4/18/2026, $40.01). The recorded pickup coordinates correspond to the residence's rear loading bay used for wheelchair staging — the same coordinates have been used for 6 prior trips for this member with no flag. Awaiting gps_log.csv to attach the breadcrumb trail before submission.",
+      at: "May 9, 4:07 PM",
+      via: "AI draft · operator review pending",
+    },
   },
   "1277": {
     key: "1277",
@@ -120,6 +132,15 @@ export const LEGS: Record<string, Leg> = {
       tone: "approved",
       headline: "Approved — No recoupment",
       sub: "Inherited from group verdict on closed ticket #88582. Set by System via duplicate-cluster resolution.",
+    },
+    specialContext:
+      "Clean walk with no anomalies. Driver Car 2296 followed the authorized route end-to-end. No operator overrides applied — context captured automatically from SOP Q1–Q4 confirmations.",
+    generatedWriteup: {
+      subject: "GPS Exemption Package — Conf #15018282",
+      body:
+        "GPS exemption request submitted via payor portal for confirmation #15018282 (service date 4/18/2026, $40.01). All SOP gates cleared: ride completed, driver confirmed pickup, GPS deviation under 5 mi threshold. Supporting evidence: trip_manifest.pdf, driver_statement.txt, gps_log.csv. Package was bundled with sibling leg #15018283 under ticket #88582.",
+      at: "May 9, 5:39 PM",
+      via: "Portal submission · sent",
     },
   },
 };
@@ -288,8 +309,8 @@ export default function D2Ledger() {
               </div>
               <div className="p-2 px-3">
                 <FieldRow label="Invoice #" value={<span className="flex items-center gap-1">1865697140 <Copy className="w-3 h-3 text-[var(--cc-muted-fg)] cursor-pointer" /></span>} />
-                <FieldRow label="Payor" value="—" />
-                <FieldRow label="Plan" value="SR50480M" />
+                <FieldRow label="Member ID" value={<span className="mono">VG88511B</span>} />
+                <FieldRow label="Drivers" value={<span className="mono text-[10px]">Car 2296, Car 7141</span>} />
                 <FieldRow label="Submitted" value="May 9 2026, 5:39 PM" />
                 <FieldRow label="Error Type" value={<span className="truncate max-w-[120px] block" title="GPS Pickup Too Far from Residence">GPS Pickup...</span>} />
                 <FieldRow label="Closure Rsn" value={<span className="text-[var(--cc-muted-fg)]">n/a</span>} />
@@ -439,18 +460,28 @@ export default function D2Ledger() {
                 </div>
              </div>
 
-             {/* Group Evidence */}
+             {/* Group Evidence — L# badge = ordinal position of the leg the file was uploaded through */}
              <div className="cc-card overflow-hidden">
                 <div className="bg-[var(--cc-muted)]/50 px-3 py-2 border-b border-[var(--cc-border)]">
                   <h3 className="text-[10px] uppercase tracking-wider font-semibold text-[var(--cc-muted-fg)]">Group Evidence • 7 files</h3>
                 </div>
+                <div className="px-3 py-1.5 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/20 flex items-center gap-3 text-[10px] text-[var(--cc-muted-fg)]">
+                  <span className="font-semibold uppercase tracking-wide">Source leg:</span>
+                  <span className="flex items-center gap-1"><span className="px-1 rounded font-semibold bg-[var(--cc-blue-bg)] text-[var(--cc-blue-fg)] border border-[var(--cc-blue-border)]">L1</span> LEG #1 · 15018282</span>
+                  <span className="flex items-center gap-1"><span className="px-1 rounded font-semibold bg-[var(--cc-purple-bg)] text-[var(--cc-purple-fg)] border border-[var(--cc-purple-border)]">L2</span> LEG #2 · 15018283</span>
+                </div>
                 <div className="p-2 flex flex-wrap gap-1.5 bg-[var(--cc-card)]">
                    {GROUP_FILES.map((f, i) => (
-                     <div key={i} className="flex items-center gap-1.5 border border-[var(--cc-border)] rounded px-1.5 py-1 text-[10px] hover:border-[var(--cc-primary)] cursor-pointer group">
+                     <button
+                       key={i}
+                       type="button"
+                       aria-label={`${f.id}, uploaded via ${f.badge === "L1" ? "LEG #1 (15018282)" : "LEG #2 (15018283)"} walk`}
+                       className="flex items-center gap-1.5 border border-[var(--cc-border)] rounded px-1.5 py-1 text-[10px] hover:border-[var(--cc-primary)] focus:outline-none focus:border-[var(--cc-primary)] focus:ring-1 focus:ring-[var(--cc-primary)] cursor-pointer group bg-[var(--cc-card)]"
+                     >
                         <FileText className="w-3 h-3 text-[var(--cc-blue-fg)]" />
-                        <span className="truncate max-w-[80px] font-medium" title={f.id}>{f.id}</span>
-                        <span className="px-1 bg-[var(--cc-muted)] rounded font-semibold text-[var(--cc-muted-fg)]">{f.badge}</span>
-                     </div>
+                        <span className="truncate max-w-[80px] font-medium">{f.id}</span>
+                        <span className={`px-1 rounded font-semibold ${f.badge === "L1" ? "bg-[var(--cc-blue-bg)] text-[var(--cc-blue-fg)] border border-[var(--cc-blue-border)]" : "bg-[var(--cc-purple-bg)] text-[var(--cc-purple-fg)] border border-[var(--cc-purple-border)]"}`}>{f.badge}</span>
+                     </button>
                    ))}
                 </div>
              </div>
@@ -1051,15 +1082,51 @@ export function FocusPanel({ leg }: { leg: Leg }) {
                 {leg.evidence.map((file, i) => (
                   <EvidenceFileRow key={i} file={file} />
                 ))}
-
-                {/* DROP ZONE */}
-                <div className="mt-3 border border-dashed border-[var(--cc-muted-fg)] opacity-60 rounded-md p-4 flex flex-col items-center justify-center text-center bg-[var(--cc-card)] hover:bg-[var(--cc-muted)] transition-colors cursor-pointer">
-                  <Upload className="w-4 h-4 text-[var(--cc-muted-fg)] mb-1.5" />
-                  <p className="text-[11px] font-medium text-[var(--cc-fg)] uppercase tracking-wide">Drag &amp; drop evidence</p>
-                </div>
+                <p className="text-[10px] text-[var(--cc-muted-fg)] italic pt-1 px-0.5">Evidence is captured during the SOP walk in Queue — view only here.</p>
               </div>
             </div>
-            
+
+            {/* SPECIAL CONTEXT — view-only readback of per-leg context the operator entered during cue/mini-cue */}
+            {leg.specialContext && (
+              <div className="cc-card overflow-hidden">
+                <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+                  <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+                    <FileText className="w-3.5 h-3.5" />
+                    Special Context
+                  </h3>
+                  <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">Read only</span>
+                </div>
+                <div className="p-4 bg-[var(--cc-card)]">
+                  <p className="text-[12px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{leg.specialContext}</p>
+                </div>
+              </div>
+            )}
+
+            {/* GENERATED WRITE-UP — view-only of the AI/portal draft for this leg */}
+            {leg.generatedWriteup && (
+              <div className="cc-card overflow-hidden">
+                <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+                  <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+                    <Send className="w-3.5 h-3.5" />
+                    Generated Write-up
+                  </h3>
+                  <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">Read only</span>
+                </div>
+                <div className="bg-[var(--cc-card)]">
+                  <div className="px-4 py-2 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/20 flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold text-[var(--cc-fg)] truncate" title={leg.generatedWriteup.subject}>{leg.generatedWriteup.subject}</p>
+                  </div>
+                  <div className="px-4 py-2 border-b border-[var(--cc-border)] flex items-center justify-between text-[10px] uppercase tracking-wide text-[var(--cc-muted-fg)]">
+                    <span className="font-medium">{leg.generatedWriteup.via}</span>
+                    <span>{leg.generatedWriteup.at}</span>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[12px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{leg.generatedWriteup.body}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* LEG VERDICT — data-driven per leg */}
             <LegVerdictCard verdict={leg.verdict} />
          </div>
