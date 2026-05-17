@@ -39,6 +39,13 @@ export type SopAnswer = { q: string; a: string; state: "yes" | "no" | "blocked" 
 export type LegAuditEntry = { when: string; who: string; what: string; tone?: "block" | "ok" | "muted" };
 export type LegVerdict = { tone: "approved" | "denied" | "pending"; headline: string; sub: string };
 export type GeneratedWriteup = { subject: string; body: string; at: string; via: string };
+export type GroupContext = {
+  specialCircumstances: string;
+  specialCircumstancesUpdatedBy: string;
+  specialCircumstancesUpdatedAt: string;
+  readbackStatus: "fresh" | "stale";
+  generatedWriteup: GeneratedWriteup;
+};
 export type Leg = {
   key: string;
   ref: string;
@@ -54,8 +61,6 @@ export type Leg = {
   evidenceTotal: number;
   audit: LegAuditEntry[];
   verdict: LegVerdict;
-  specialContext?: string;
-  generatedWriteup?: GeneratedWriteup;
 };
 
 export const LEGS: Record<string, Leg> = {
@@ -91,15 +96,6 @@ export const LEGS: Record<string, Leg> = {
       headline: "Pending — awaiting evidence",
       sub: "SOP Q3 blocked on gps_log.csv. Leg cannot resolve until evidence is provided.",
     },
-    specialContext:
-      "Driver reported the pickup point is a side-entrance loading bay behind the residence, not the front-door GPS pin. Member uses a wheelchair and is staged at the rear ramp. Confirmed with dispatch — Car 7141 has serviced this address 6× in the prior 30 days at the same coordinates with no GPS flag.",
-    generatedWriteup: {
-      subject: "Dispute — GPS Pickup Too Far from Residence — Conf #15018283",
-      body:
-        "We are disputing the GPS deviation flag applied to confirmation #15018283 (service date 4/18/2026, $40.01). The recorded pickup coordinates correspond to the residence's rear loading bay used for wheelchair staging — the same coordinates have been used for 6 prior trips for this member with no flag. Awaiting gps_log.csv to attach the breadcrumb trail before submission.",
-      at: "May 9, 4:07 PM",
-      via: "AI draft · operator review pending",
-    },
   },
   "1277": {
     key: "1277",
@@ -133,15 +129,28 @@ export const LEGS: Record<string, Leg> = {
       headline: "Approved — No recoupment",
       sub: "Inherited from group verdict on closed ticket #88582. Set by System via duplicate-cluster resolution.",
     },
-    specialContext:
-      "Clean walk with no anomalies. Driver Car 2296 followed the authorized route end-to-end. No operator overrides applied — context captured automatically from SOP Q1–Q4 confirmations.",
-    generatedWriteup: {
-      subject: "GPS Exemption Package — Conf #15018282",
-      body:
-        "GPS exemption request submitted via payor portal for confirmation #15018282 (service date 4/18/2026, $40.01). All SOP gates cleared: ride completed, driver confirmed pickup, GPS deviation under 5 mi threshold. Supporting evidence: trip_manifest.pdf, driver_statement.txt, gps_log.csv. Package was bundled with sibling leg #15018283 under ticket #88582.",
-      at: "May 9, 5:39 PM",
-      via: "Portal submission · sent",
-    },
+  },
+};
+
+// Invoice-wide context — backend mapping:
+//   specialCircumstances                  -> invoice_groups.special_circumstances
+//   specialCircumstancesUpdatedBy/At      -> invoice_groups.special_circumstances_updated_by / _at
+//   readbackStatus                        -> derived from special_circumstances_readback_at vs updated_at
+//   generatedWriteup.{subject,body,at}    -> invoice_groups.generated_email_{subject,body,at}
+//   generatedWriteup.via                  -> derived from generated_email_via + ticket linkage
+// Note: invoice_groups.group_context is DEPRECATED (Task #265) — do not surface it.
+export const GROUP_CONTEXT: GroupContext = {
+  specialCircumstances:
+    "Member VG88511B uses a wheelchair and is staged at the residence's rear loading bay for pickup, not the front-door GPS pin. Both legs on this invoice (#15018282 and #15018283) were serviced from the same coordinates, consistent with 6 prior trips in the trailing 30 days that cleared without a GPS flag. Treat the deviation as a known location-capture limitation, not a route variance.",
+  specialCircumstancesUpdatedBy: "Operator 1 · someidy.s@agapeny.com",
+  specialCircumstancesUpdatedAt: "May 9, 3:42 PM",
+  readbackStatus: "fresh",
+  generatedWriteup: {
+    subject: "Dispute — GPS Pickup Too Far from Residence — Invoice #1865697140",
+    body:
+      "We are disputing the GPS deviation flag applied to invoice #1865697140 (confirmation #15018282 and #15018283, both serviced 4/18/2026, $40.01 each).\n\nCRITICAL CONTEXT: Member VG88511B uses a wheelchair and is staged at the residence's rear loading bay for pickup, not the front-door GPS pin. Both legs were serviced from the same coordinates, consistent with 6 prior trips in the trailing 30 days that cleared without a GPS flag.\n\nLeg #15018282 (Car 2296): SOP Q1–Q4 cleared; GPS deviation under 5 mi threshold; full evidence package attached (trip_manifest.pdf, driver_statement.txt, gps_log.csv).\n\nLeg #15018283 (Car 7141): SOP Q3 blocked pending gps_log.csv; manifest and driver statement provided.\n\nRequesting both claims be reconsidered and paid in full per standard reimbursement guidelines.",
+    at: "May 9, 5:39 PM",
+    via: "AI draft · sent via portal · ticket #88582",
   },
 };
 
@@ -175,9 +184,8 @@ export const GROUP_FILES = [
 ];
 
 export default function D2Ledger() {
-  const [selectedKey, setSelectedKey] = useState("1278");
+  const legs = Object.values(LEGS);
   const [commsOpen, setCommsOpen] = useState(false);
-  const selected = LEGS[selectedKey];
 
   return (
     <div className="cc-scope flex flex-col h-screen overflow-hidden bg-[var(--cc-bg)] text-[var(--cc-fg)]">
@@ -366,26 +374,30 @@ export default function D2Ledger() {
             <div className="flex-none px-4 py-3 border-b border-[var(--cc-border)] flex items-center justify-between bg-[var(--cc-card)] shadow-sm z-10">
               <h2 className="text-sm font-semibold flex items-center gap-2 text-[var(--cc-fg)]">
                 <Layers className="w-4 h-4 text-[var(--cc-muted-fg)]" />
-                Disputed Legs <span className="text-[var(--cc-muted-fg)] font-normal text-xs ml-1">(2 active)</span>
+                Disputed Legs <span className="text-[var(--cc-muted-fg)] font-normal text-xs ml-1">({legs.length} active)</span>
               </h2>
             </div>
-            
-            {/* Ledger as horizontal strip — D2's LegRow verbatim, laid out as fixed-width cards */}
-            <div className="flex-none p-4 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/30 flex items-stretch gap-2 overflow-x-auto custom-scrollbar shadow-inner">
-              {Object.values(LEGS).map((leg) => (
-                <div key={leg.key} className="shrink-0 w-[300px]">
-                  <LegRow
-                    leg={leg}
-                    selected={selectedKey === leg.key}
-                    onClick={() => setSelectedKey(leg.key)}
-                  />
-                </div>
-              ))}
-            </div>
 
-            {/* Persistent Focus Panel */}
+            {/* Stacked content: per-leg columns, then invoice-wide context */}
             <div className="flex-1 overflow-y-auto bg-[var(--cc-bg)] custom-scrollbar">
-              <FocusPanel leg={selected} />
+              <div className="p-6 space-y-6">
+                {/* PER-LEG GRID — one column per leg, side-by-side on wide viewports */}
+                <div className={`grid grid-cols-1 ${legs.length >= 3 ? "xl:grid-cols-3 lg:grid-cols-2" : "lg:grid-cols-2"} gap-6 items-start`}>
+                  {legs.map((leg) => (
+                    <LegColumn key={leg.key} leg={leg} />
+                  ))}
+                </div>
+
+                {/* INVOICE-WIDE CONTEXT — full width below leg columns */}
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-px flex-1 bg-[var(--cc-border)]" />
+                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--cc-muted-fg)] px-2">Invoice-wide</h3>
+                    <div className="h-px flex-1 bg-[var(--cc-border)]" />
+                  </div>
+                  <InvoiceWideContext context={GROUP_CONTEXT} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -948,189 +960,171 @@ export function FieldRow({ label, value }: { label: string; value: React.ReactNo
 }
 
 /* ------------------------------------------------------------------ */
-/*  Leg row in the ledger                                              */
+/*  Per-leg column — one rendered per leg, side-by-side                */
 /* ------------------------------------------------------------------ */
 
-export function LegRow({ leg, selected, onClick }: { leg: Leg; selected: boolean; onClick: () => void }) {
+export function LegColumn({ leg }: { leg: Leg }) {
+  const validEvidence = leg.evidence.filter((e) => !e.missing).length;
   const pill = STATUS_PILL[leg.status];
-  const dim = leg.status === "hold" ? "text-[var(--cc-muted-fg)] opacity-80" : "";
-  
   return (
-    <button
-      className={`w-full text-left rounded-md border p-3 transition-all relative overflow-hidden group ${
-        selected
-          ? "bg-[var(--cc-card)] border-[var(--cc-primary)] shadow-sm ring-1 ring-[var(--cc-primary)] z-10"
-          : "bg-[var(--cc-card)] border-[var(--cc-border)] hover:border-[var(--cc-primary)] hover:shadow-sm"
-      }`}
-      onClick={onClick}
-    >
-      {selected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--cc-primary)]" />}
-      
-      <div className="flex justify-between items-start mb-1.5">
-        <div>
-          <div className={`font-mono text-sm font-bold flex items-center gap-1.5 ${dim}`}>
-             {leg.ref} <span className="text-[9px] font-sans font-semibold tracking-wider text-[var(--cc-muted-fg)] px-1.5 py-0.5 bg-[var(--cc-muted)] rounded border border-[var(--cc-border)]">LEG #{leg.key}</span>
+    <div className="cc-card bg-[var(--cc-card)] overflow-hidden flex flex-col">
+      {/* COLUMN HEADER — compact: ref + leg badge + status + per-leg actions */}
+      <div className="px-4 py-3 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/30 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold mono leading-tight">{leg.ref}</h2>
+              <span className="text-[10px] font-semibold tracking-wider uppercase text-[var(--cc-muted-fg)] bg-[var(--cc-card)] px-1.5 py-0.5 rounded border border-[var(--cc-border)]">Leg #{leg.key}</span>
+              <span
+                className="text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded border"
+                style={{ backgroundColor: pill.bg, color: pill.fg, borderColor: pill.border }}
+              >
+                {leg.statusLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-[var(--cc-muted-fg)] mt-1.5 flex-wrap">
+              <span className="text-[var(--cc-fg)] font-bold text-xs mono tracking-tight">{leg.amount}</span>
+              <span>•</span>
+              <span>{leg.serviceDate}</span>
+            </div>
+            <p className="text-[11px] text-[var(--cc-muted-fg)] mt-0.5 truncate" title={leg.errorType}>{leg.errorType}</p>
           </div>
-          <div className="text-[10px] text-[var(--cc-muted-fg)] mt-1 font-medium tracking-wide uppercase">{leg.serviceDate}</div>
         </div>
-        <div className="text-right">
-           <span className={`font-bold text-sm mono ${dim}`}>{leg.amount}</span>
-           <div className="mt-1.5">
-             <span
-               className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border"
-               style={{ background: pill.bg, color: pill.fg, borderColor: pill.border }}
-             >
-               {leg.statusLabel}
-             </span>
-           </div>
+        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><Tag className="w-3 h-3" /> Reclassify</button>
+          <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><XCircle className="w-3 h-3" /> Exclude</button>
+          <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><LinkIcon className="w-3 h-3" /> Mark dup</button>
+          <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><CheckCircle2 className="w-3 h-3" /> Offline</button>
+          <button className="ml-auto text-[11px] text-[var(--cc-primary)] font-semibold hover:underline flex items-center gap-1">Walk SOP <ArrowRight className="w-3 h-3" /></button>
         </div>
       </div>
-    </button>
+
+      {/* CONTENT — stacked: SOP → Evidence → Audit → Verdict */}
+      <div className="p-4 space-y-4">
+        {/* SOP TRANSCRIPT */}
+        <div className="cc-card overflow-hidden">
+          <div className="px-3 py-2 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+            <h3 className="font-semibold text-[11px] uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+              <Layers className="w-3.5 h-3.5" />
+              SOP Transcript
+            </h3>
+            <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">{leg.sopProgress}</span>
+          </div>
+          <div className="bg-[var(--cc-card)]">
+            {leg.sop.map((row, i) => (
+              <SopRow key={i} index={i + 1} row={row} />
+            ))}
+          </div>
+        </div>
+
+        {/* PER-LEG EVIDENCE */}
+        <div className="cc-card overflow-hidden">
+          <div className="px-3 py-2 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+            <h3 className="font-semibold text-[11px] uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+              <Paperclip className="w-3.5 h-3.5" />
+              Per-Leg Evidence
+              <span className="text-[var(--cc-muted-fg)] font-normal text-[10px] ml-1">
+                ({validEvidence}/{leg.evidenceTotal})
+              </span>
+            </h3>
+          </div>
+          <div className="p-3 space-y-2 bg-[var(--cc-muted)]/30">
+            {leg.evidence.map((file, i) => (
+              <EvidenceFileRow key={i} file={file} />
+            ))}
+            <p className="text-[10px] text-[var(--cc-muted-fg)] italic pt-1 px-0.5">Captured during the SOP walk in Queue — view only here.</p>
+          </div>
+        </div>
+
+        {/* PER-LEG AUDIT */}
+        <div className="cc-card p-3 bg-[var(--cc-card)]">
+          <h3 className="font-semibold mb-2.5 flex items-center gap-2 text-[var(--cc-muted-fg)] text-[10px] uppercase tracking-wider">
+            <History className="w-3.5 h-3.5" /> Per-Leg Audit Excerpt
+          </h3>
+          <div className="space-y-2.5 pl-1">
+            {leg.audit.map((e, i) => {
+              const dot =
+                e.tone === "block" ? "bg-[var(--cc-amber-bg)] border-[var(--cc-amber-border)]" :
+                e.tone === "ok"    ? "bg-[var(--cc-green-bg)] border-[var(--cc-green-border)]" :
+                                     "bg-[var(--cc-border)]";
+              return (
+                <div key={i} className="relative pl-4 border-l-2 border-[var(--cc-border)]">
+                  <div className={`absolute w-2 h-2 ${dot} border rounded-full -left-[5px] top-1.5`}></div>
+                  <p className="text-[10px] text-[var(--cc-muted-fg)] mb-0.5 uppercase tracking-wide font-medium">{e.when} • {e.who}</p>
+                  <p className="text-xs text-[var(--cc-fg)]">{e.what}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* LEG VERDICT */}
+        <LegVerdictCard verdict={leg.verdict} />
+
+      </div>
+    </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Focus panel — renders for ANY selected leg                          */
+/*  Invoice-wide context — Special Circumstances + Generated Write-up */
 /* ------------------------------------------------------------------ */
 
-export function FocusPanel({ leg }: { leg: Leg }) {
-  const validEvidence = leg.evidence.filter((e) => !e.missing).length;
+export function InvoiceWideContext({ context }: { context: GroupContext }) {
+  const isStale = context.readbackStatus === "stale";
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* FOCUS HEADER & ACTIONS */}
-      <div className="flex items-start justify-between gap-4 border-b border-[var(--cc-border)] pb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-             <h2 className="text-2xl font-bold mono">{leg.ref}</h2>
-             <span className="text-xs font-semibold tracking-wider uppercase text-[var(--cc-muted-fg)] bg-[var(--cc-muted)] px-2 py-0.5 rounded border border-[var(--cc-border)]">Leg #{leg.key}</span>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-[var(--cc-muted-fg)] font-medium uppercase tracking-wide mt-2">
-            <span className="text-[var(--cc-fg)] font-bold text-sm mono tracking-tight">{leg.amount}</span>
-            <span>•</span>
-            <span>Service: {leg.serviceDate}</span>
-            <span>•</span>
-            <span className="truncate max-w-[250px]">{leg.errorType}</span>
-          </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {/* SPECIAL CONTEXT — operator's understanding notes, lands verbatim in dispute write-up's CRITICAL CONTEXT */}
+      <div className="cc-card overflow-hidden">
+        <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+          <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+            <FileText className="w-3.5 h-3.5" />
+            Special Context
+            <span className="text-[var(--cc-muted-fg)] font-normal text-[10px] ml-1 normal-case tracking-normal">(invoice-wide)</span>
+          </h3>
+          <span
+            className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 rounded border"
+            style={
+              isStale
+                ? { backgroundColor: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", borderColor: "var(--cc-amber-border)" }
+                : { backgroundColor: "var(--cc-green-bg)", color: "var(--cc-green-fg)", borderColor: "var(--cc-green-border)" }
+            }
+          >
+            {isStale ? "Readback stale" : "Readback fresh"}
+          </span>
         </div>
-
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><Tag className="w-3 h-3" /> Reclassify</button>
-            <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><XCircle className="w-3 h-3" /> Exclude</button>
-            <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><LinkIcon className="w-3 h-3" /> Mark dup</button>
-            <button className="cc-btn cc-btn-sm cc-btn-ghost text-[var(--cc-muted-fg)] border border-[var(--cc-border)] bg-white hover:bg-[var(--cc-muted)]"><CheckCircle2 className="w-3 h-3" /> Offline</button>
+        <div className="p-4 bg-[var(--cc-card)] space-y-3">
+          <p className="text-[13px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{context.specialCircumstances}</p>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--cc-muted-fg)] pt-2 border-t border-[var(--cc-border)]">
+            <span className="font-medium">{context.specialCircumstancesUpdatedBy}</span>
+            <span>•</span>
+            <span>{context.specialCircumstancesUpdatedAt}</span>
           </div>
-          <button className="text-xs text-[var(--cc-primary)] font-semibold hover:underline flex items-center gap-1 mt-1">Walk this SOP in Queue <ArrowRight className="w-3 h-3" /></button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-         
-         {/* LEFT SUB-COLUMN: SOP */}
-         <div className="space-y-6">
-            <div className="cc-card overflow-hidden">
-              <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
-                <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
-                  <Layers className="w-3.5 h-3.5" />
-                  SOP Transcript
-                </h3>
-                <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">{leg.sopProgress}</span>
-              </div>
-              <div className="bg-[var(--cc-card)]">
-                {leg.sop.map((row, i) => (
-                  <SopRow key={i} index={i + 1} row={row} />
-                ))}
-              </div>
-            </div>
-            
-            {/* AUDIT (Leg specific — data-driven) */}
-            <div className="cc-card p-4 bg-[var(--cc-card)]">
-               <h3 className="font-semibold mb-3 flex items-center gap-2 text-[var(--cc-muted-fg)] text-[10px] uppercase tracking-wider">
-                 <History className="w-3.5 h-3.5" /> Per-Leg Audit Excerpt
-               </h3>
-               <div className="space-y-3 pl-1">
-                 {leg.audit.map((e, i) => {
-                   const dot =
-                     e.tone === "block" ? "bg-[var(--cc-amber-bg)] border-[var(--cc-amber-border)]" :
-                     e.tone === "ok"    ? "bg-[var(--cc-green-bg)] border-[var(--cc-green-border)]" :
-                                          "bg-[var(--cc-border)]";
-                   return (
-                     <div key={i} className="relative pl-4 border-l-2 border-[var(--cc-border)]">
-                       <div className={`absolute w-2 h-2 ${dot} border rounded-full -left-[5px] top-1.5`}></div>
-                       <p className="text-[10px] text-[var(--cc-muted-fg)] mb-0.5 uppercase tracking-wide font-medium">{e.when} • {e.who}</p>
-                       <p className="text-xs text-[var(--cc-fg)]">{e.what}</p>
-                     </div>
-                   );
-                 })}
-               </div>
-            </div>
-         </div>
-
-         {/* RIGHT SUB-COLUMN: Evidence */}
-         <div className="space-y-6">
-            <div className="cc-card overflow-hidden">
-              <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
-                <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
-                  <Paperclip className="w-3.5 h-3.5" />
-                  Per-Leg Evidence
-                  <span className="text-[var(--cc-muted-fg)] font-normal text-[10px] ml-1">
-                    ({validEvidence}/{leg.evidenceTotal})
-                  </span>
-                </h3>
-              </div>
-              <div className="p-3 space-y-2 bg-[var(--cc-muted)]/30">
-                {leg.evidence.map((file, i) => (
-                  <EvidenceFileRow key={i} file={file} />
-                ))}
-                <p className="text-[10px] text-[var(--cc-muted-fg)] italic pt-1 px-0.5">Evidence is captured during the SOP walk in Queue — view only here.</p>
-              </div>
-            </div>
-
-            {/* SPECIAL CONTEXT — view-only readback of per-leg context the operator entered during cue/mini-cue */}
-            {leg.specialContext && (
-              <div className="cc-card overflow-hidden">
-                <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
-                  <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
-                    <FileText className="w-3.5 h-3.5" />
-                    Special Context
-                  </h3>
-                  <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">Read only</span>
-                </div>
-                <div className="p-4 bg-[var(--cc-card)]">
-                  <p className="text-[12px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{leg.specialContext}</p>
-                </div>
-              </div>
-            )}
-
-            {/* GENERATED WRITE-UP — view-only of the AI/portal draft for this leg */}
-            {leg.generatedWriteup && (
-              <div className="cc-card overflow-hidden">
-                <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
-                  <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
-                    <Send className="w-3.5 h-3.5" />
-                    Generated Write-up
-                  </h3>
-                  <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">Read only</span>
-                </div>
-                <div className="bg-[var(--cc-card)]">
-                  <div className="px-4 py-2 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/20 flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-semibold text-[var(--cc-fg)] truncate" title={leg.generatedWriteup.subject}>{leg.generatedWriteup.subject}</p>
-                  </div>
-                  <div className="px-4 py-2 border-b border-[var(--cc-border)] flex items-center justify-between text-[10px] uppercase tracking-wide text-[var(--cc-muted-fg)]">
-                    <span className="font-medium">{leg.generatedWriteup.via}</span>
-                    <span>{leg.generatedWriteup.at}</span>
-                  </div>
-                  <div className="p-4">
-                    <p className="text-[12px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{leg.generatedWriteup.body}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* LEG VERDICT — data-driven per leg */}
-            <LegVerdictCard verdict={leg.verdict} />
-         </div>
-
+      {/* GENERATED WRITE-UP — view-only of the AI/portal draft for the whole invoice */}
+      <div className="cc-card overflow-hidden">
+        <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
+          <h3 className="font-semibold text-xs uppercase tracking-wider flex items-center gap-2 text-[var(--cc-muted-fg)]">
+            <Send className="w-3.5 h-3.5" />
+            Generated Write-up
+            <span className="text-[var(--cc-muted-fg)] font-normal text-[10px] ml-1 normal-case tracking-normal">(invoice-wide)</span>
+          </h3>
+          <span className="text-[10px] font-bold tracking-wide uppercase px-1.5 py-0.5 bg-[var(--cc-card)] border border-[var(--cc-border)] text-[var(--cc-muted-fg)] rounded">Read only</span>
+        </div>
+        <div className="bg-[var(--cc-card)]">
+          <div className="px-4 py-2 border-b border-[var(--cc-border)] bg-[var(--cc-muted)]/20">
+            <p className="text-[12px] font-semibold text-[var(--cc-fg)]" title={context.generatedWriteup.subject}>{context.generatedWriteup.subject}</p>
+          </div>
+          <div className="px-4 py-2 border-b border-[var(--cc-border)] flex items-center justify-between text-[10px] uppercase tracking-wide text-[var(--cc-muted-fg)]">
+            <span className="font-medium">{context.generatedWriteup.via}</span>
+            <span>{context.generatedWriteup.at}</span>
+          </div>
+          <div className="p-4">
+            <p className="text-[12px] text-[var(--cc-fg)] leading-relaxed whitespace-pre-line">{context.generatedWriteup.body}</p>
+          </div>
+        </div>
       </div>
     </div>
   );
