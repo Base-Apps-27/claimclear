@@ -1073,7 +1073,7 @@ export function LegColumn({ leg }: { leg: Leg }) {
 export function InvoiceWideContext({ context }: { context: GroupContext }) {
   const isStale = context.readbackStatus === "stale";
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="space-y-6">
       {/* SPECIAL CONTEXT — operator's understanding notes, lands verbatim in dispute write-up's CRITICAL CONTEXT */}
       <div className="cc-card overflow-hidden">
         <div className="px-4 py-2.5 bg-[var(--cc-muted)]/50 border-b border-[var(--cc-border)] flex justify-between items-center">
