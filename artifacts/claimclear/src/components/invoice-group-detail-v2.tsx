@@ -58,7 +58,7 @@ import type {
 } from "@workspace/api-client-react";
 import {
   Loader2, ChevronLeft, ChevronRight, Edit2, Save, Plus, Paperclip, Send,
-  Mail, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
+  Mail, MessageSquare, Gavel, Stamp, FileText, Activity, Pin, AlertTriangle, CheckCircle2,
   XCircle, Lock, ListChecks, Sparkles, Inbox, Clock, ClipboardCheck,
   ShieldCheck, Layers, History, ArrowRight, PauseCircle, PlayCircle, Copy,
 } from "lucide-react";
