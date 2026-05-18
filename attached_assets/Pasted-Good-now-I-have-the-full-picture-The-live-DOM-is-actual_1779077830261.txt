@@ -1,0 +1,80 @@
+Good — now I have the full picture. The live DOM is actually very well-structured and matches the design spec's HTML almost exactly. The problem is not the markup. It's two specific CSS issues. Here's the precise diagnosis:
+
+---
+
+## Root Cause: Two CSS Issues (Not a Markup Problem)
+
+### Issue #1 — The `--cc-*` variable block was never injected into the app
+
+The entire `:root` block from `d2-ledger.html` needs to be in the app's global stylesheet. The live components reference `var(--cc-green-fg)`, `var(--cc-blue-bg)`, etc. correctly in inline styles — but those variables have **no defined values** in the app. They resolve to empty/invalid, which is why everything falls back to the browser default (white/gray/black).
+
+**Fix:** Add this entire block to the app's global CSS (e.g. `globals.css` or wherever Tailwind base styles are imported):
+
+```css
+.cc-scope {
+  --cc-bg: hsl(210 20% 97%);
+  --cc-fg: hsl(221 47% 13%);
+  --cc-card: hsl(0 0% 100%);
+  --cc-border: hsl(214 20% 90%);
+  --cc-muted: hsl(210 18% 94%);
+  --cc-muted-fg: hsl(215 14% 45%);
+  --cc-primary: hsl(219 85% 52%);
+  --cc-primary-fg: hsl(0 0% 100%);
+  --cc-accent: hsl(12 79% 57%);
+  --cc-destructive: hsl(0 84% 60%);
+  --cc-success: hsl(142 71% 38%);
+  --cc-warning: hsl(38 92% 50%);
+  --cc-amber-bg: hsl(48 96% 95%);
+  --cc-amber-border: hsl(45 93% 80%);
+  --cc-amber-fg: hsl(28 78% 38%);
+  --cc-purple-bg: hsl(270 95% 96%);
+  --cc-purple-border: hsl(269 80% 85%);
+  --cc-purple-fg: hsl(272 60% 38%);
+  --cc-blue-bg: hsl(214 100% 96%);
+  --cc-blue-border: hsl(214 95% 85%);
+  --cc-blue-fg: hsl(221 83% 38%);
+  --cc-green-bg: hsl(141 78% 95%);
+  --cc-green-border: hsl(142 70% 80%);
+  --cc-green-fg: hsl(142 71% 30%);
+  --cc-red-bg: hsl(0 93% 96%);
+  --cc-red-border: hsl(0 90% 85%);
+  --cc-red-fg: hsl(0 74% 42%);
+  --cc-radius: 0.5rem;
+}
+```
+
+---
+
+### Issue #2 — Double `hsl()` wrapping in the live components
+
+The design spec defines variables as **complete HSL values**:
+```css
+--cc-blue-bg: hsl(214 100% 96%);
+```
+
+But parts of the live app apply them like:
+```html
+style="background: hsl(var(--cc-blue-bg));"
+```
+
+That produces `background: hsl(hsl(214 100% 96%))` — which is **invalid CSS** and renders as transparent/no color.
+
+**Fix:** Anywhere in the component code that uses `hsl(var(--cc-*))`, strip the outer `hsl()` wrapper. It should just be `var(--cc-*)` directly. For example:
+
+```html
+<!-- ❌ Wrong -->
+style="background: hsl(var(--cc-blue-bg)); color: hsl(var(--cc-blue-fg));"
+
+<!-- ✅ Correct -->
+style="background: var(--cc-blue-bg); color: var(--cc-blue-fg);"
+```
+
+This affects several badge and phase chip components in the live DOM. Search the codebase for `hsl(var(--cc-` and replace each occurrence by removing the outer `hsl(` and closing `)`.
+
+---
+
+### Why this happened
+
+The developer likely wrote the component code against the design spec variable names correctly, but either forgot to add the `:root`/`.cc-scope` block to the global CSS, or copied a shadcn-style pattern (where variables are raw channel values like `214 100% 96%` and require an `hsl()` wrapper) without matching it to how the design spec actually defines the values.
+
+**Fix #1 alone will make 80% of the UI correct. Fix #2 handles the remaining badge/chip color failures.**
