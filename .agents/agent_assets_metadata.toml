@@ -113,3 +113,9 @@ id = "SaeNlTMT0tfCAg4I-U0q9"
 uri = "file://artifacts/api-server/exports/duplicate-cluster-routed-review-2026-05-13.json"
 type = "unspecified"
 title = "Duplicate-cluster routed-to-review — JSON sidecar (full bodies)"
+
+[[outputs]]
+id = "focWl2TW9MzQ4xhORoumB"
+uri = "file://dist/d2-ledger.tar.gz"
+type = "unspecified"
+title = "D2 Ledger — standalone HTML (tar.gz, contains d2-ledger.html)"
