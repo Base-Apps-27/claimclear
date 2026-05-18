@@ -231,7 +231,7 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      'Task #764. Restrict to invoice groups that have at least one\nride\/claim with the given carNumber (we treat carNumber as\nthe driver identifier, matching how Insights\' Repeat\nOffenders section already works). Exact match. Drives the\n\"Driver\" filter on the invoice groups list page and the\nclick-through from the Insights Repeat Offenders driver row.\n',
+      'Task #764 \/ #766. Comma-separated list of car numbers (we\ntreat carNumber as the driver identifier, matching how\nInsights\' Repeat Offenders section already works). Restricts\nto invoice groups that have at least one ride\/claim whose\ncarNumber matches any of the listed values (exact match, IN\nclause inside an EXISTS subquery). A single value preserves\nthe original equality semantics. Drives the \"Driver\" filter\non the invoice groups list page and the click-through from\nthe Insights Repeat Offenders driver row.\n',
     ),
   q: zod.coerce
     .string()

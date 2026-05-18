@@ -540,9 +540,14 @@ export default function InvoiceGroupsList() {
       result.push({ key: "serviceDate", label, onRemove: () => set({ serviceDateFrom: null, serviceDateTo: null, page: null }, false) });
     }
     if (filterCarNumber) {
+      // Task #766 — facet now accepts multiple car numbers. Re-split
+      // the raw value so the chip reads as a comma+space list
+      // ("Driver: 45, 67, 92") regardless of how the operator typed it,
+      // and a single Clear wipes the whole list.
+      const cars = filterCarNumber.split(",").map(c => c.trim()).filter(Boolean);
       result.push({
         key: "carNumber",
-        label: `Driver: ${filterCarNumber}`,
+        label: `Driver: ${cars.join(", ")}`,
         onRemove: () => set({ carNumber: null, page: null }, false),
       });
     }
@@ -910,7 +915,12 @@ export default function InvoiceGroupsList() {
     },
     // Task #764 — Driver / car number text input. We treat carNumber
     // as the driver identifier (matching how Insights' Repeat
-    // Offenders section already works). Exact match on the wire.
+    // Offenders section already works).
+    // Task #766 — accepts a comma-separated list of car numbers so
+    // operators investigating a cluster of repeat offenders can scope
+    // the list to several drivers at once. The wire format passes the
+    // raw string through; the API splits and turns it into an IN
+    // clause inside the EXISTS subquery.
     {
       id: "carNumber",
       label: "Driver",
@@ -923,15 +933,24 @@ export default function InvoiceGroupsList() {
             type="text"
             value={filterCarNumber || ""}
             onChange={e => {
-              const trimmed = e.target.value.trim();
-              set({ carNumber: trimmed || null, page: null }, false);
+              // Preserve the operator's in-progress typing (including
+              // trailing spaces around commas) — only outer whitespace
+              // is trimmed. The chip and API both re-split on commas,
+              // so "45, 67, 92" and "45,67,92" behave identically.
+              // If the value is just delimiters / whitespace (e.g. ","
+              // or " , "), normalize to null so we don't render a
+              // blank "Driver:" chip that doesn't actually filter
+              // anything server-side.
+              const raw = e.target.value.replace(/^\s+|\s+$/g, "");
+              const hasToken = raw.split(",").some(c => c.trim().length > 0);
+              set({ carNumber: hasToken ? raw : null, page: null }, false);
             }}
-            placeholder="e.g. 45"
+            placeholder="e.g. 45, 67, 92"
             data-testid="facet-carNumber-input"
             className="h-8"
           />
           <p className="text-[11px] text-muted-foreground">
-            Narrow to invoices that include at least one ride with this car number. Same identifier Insights uses for drivers.
+            Narrow to invoices that include at least one ride with any of these car numbers. Separate multiple drivers with commas.
           </p>
         </div>
       ),

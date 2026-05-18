@@ -425,14 +425,28 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
   // that have at least one ride/claim with the given carNumber.
   // EXISTS subquery against the claims table joined to this group so
   // we don't multiply rows.
+  // Task #766 — extended to accept comma-separated car numbers so
+  // operators can scope the list to a cluster of repeat-offender
+  // drivers in one view (mirrors the comma-tolerant behavior of the
+  // `status`, `errorTypeId`, and `clientNumber` facets above). Single
+  // value still uses `=` for plan compatibility; multi-value switches
+  // to an IN clause inside the EXISTS subquery.
   const carNumberRaw = query.carNumber as string | undefined;
   if (carNumberRaw && typeof carNumberRaw === "string" && carNumberRaw.trim().length > 0) {
-    const carNum = carNumberRaw.trim();
-    conditions.push(sql`EXISTS (
-      SELECT 1 FROM ${claimsTable}
-      WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
-        AND ${claimsTable.carNumber} = ${carNum}
-    )`);
+    const carNums = carNumberRaw.split(",").map(c => c.trim()).filter(Boolean);
+    if (carNums.length === 1) {
+      conditions.push(sql`EXISTS (
+        SELECT 1 FROM ${claimsTable}
+        WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+          AND ${claimsTable.carNumber} = ${carNums[0]}
+      )`);
+    } else if (carNums.length > 1) {
+      conditions.push(sql`EXISTS (
+        SELECT 1 FROM ${claimsTable}
+        WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+          AND ${claimsTable.carNumber} IN (${sql.join(carNums.map(c => sql`${c}`), sql`, `)})
+      )`);
+    }
   }
 
   const expiringMode = parseExpiringMode(query.expiring);

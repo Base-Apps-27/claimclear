@@ -227,12 +227,15 @@ match against `invoice_groups.client_number`. Drives the
  */
   clientNumber?: string;
   /**
- * Task #764. Restrict to invoice groups that have at least one
-ride/claim with the given carNumber (we treat carNumber as
-the driver identifier, matching how Insights' Repeat
-Offenders section already works). Exact match. Drives the
-"Driver" filter on the invoice groups list page and the
-click-through from the Insights Repeat Offenders driver row.
+ * Task #764 / #766. Comma-separated list of car numbers (we
+treat carNumber as the driver identifier, matching how
+Insights' Repeat Offenders section already works). Restricts
+to invoice groups that have at least one ride/claim whose
+carNumber matches any of the listed values (exact match, IN
+clause inside an EXISTS subquery). A single value preserves
+the original equality semantics. Drives the "Driver" filter
+on the invoice groups list page and the click-through from
+the Insights Repeat Offenders driver row.
 
  */
   carNumber?: string;
