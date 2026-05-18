@@ -149,6 +149,11 @@ const CC_CARD_TONE_STYLE: Record<CcCardTone, React.CSSProperties> = {
   blue:    { background: "var(--cc-blue-bg)",   color: "var(--cc-blue-fg)",   borderColor: "var(--cc-blue-border)" },
 };
 
+// D2 graduation: card chrome is the mockup's compact "tab header" pattern —
+// a thin gray strip with a 10px uppercase title sits flush above a white
+// body. Tinted variants paint the strip in the matching palette and pick up
+// the matching border on the wrapper so the colored strip doesn't float
+// inside a default gray frame.
 function CcCard({
   title, action, icon, children, padded = true, testId, tone = "default",
 }: {
@@ -159,26 +164,34 @@ function CcCard({
   const headerTone = CC_CARD_TONE_STYLE[tone];
   const headerStyle: React.CSSProperties =
     tone === "default"
-      ? { borderBottom: "1px solid var(--cc-border)" }
+      ? {
+          background: "color-mix(in srgb, var(--cc-muted) 50%, transparent)",
+          borderBottom: "1px solid var(--cc-border)",
+        }
       : {
           background: headerTone.background,
           color: headerTone.color,
           borderBottom: `1px solid ${headerTone.borderColor}`,
         };
-  // Tinted cards also pick up a matching border so the colored header
-  // doesn't sit awkwardly inside a default gray frame.
+  const titleColor =
+    tone === "default" ? "var(--cc-muted-fg)" : "currentColor";
   const cardStyle: React.CSSProperties =
     tone === "default" ? {} : { borderColor: headerTone.borderColor };
   return (
-    <div className="cc-card" data-testid={testId} style={cardStyle}>
+    <div className="cc-card overflow-hidden" data-testid={testId} style={cardStyle}>
       <div
-        className="px-4 py-3 flex items-center justify-between"
+        className="px-3 py-2 flex items-center justify-between"
         style={headerStyle}
       >
-        <div className="flex items-center gap-2 text-sm font-semibold">{icon}{title}</div>
+        <h3
+          className="text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1.5 m-0"
+          style={{ color: titleColor }}
+        >
+          {icon}{title}
+        </h3>
         {action}
       </div>
-      <div className={padded ? "p-4" : ""}>{children}</div>
+      <div className={padded ? "p-3" : ""} style={{ background: "var(--cc-card)" }}>{children}</div>
     </div>
   );
 }
@@ -186,14 +199,59 @@ function CcCard({
 function FieldRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div
-      className="flex items-center justify-between py-1.5 text-sm"
+      className="flex items-center justify-between py-1.5 text-xs"
       style={{ borderBottom: "1px dashed var(--cc-border)" }}
     >
-      <span className="text-xs uppercase tracking-wide font-medium" style={{ color: "var(--cc-muted-fg)" }}>
+      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--cc-muted-fg)" }}>
         {label}
       </span>
-      <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{value}</span>
+      <span className="font-medium text-xs" style={{ color: "var(--cc-fg)" }}>{value}</span>
     </div>
+  );
+}
+
+// D2 graduation: compact list-style row used inside the Overrides & Admin
+// card. Mirrors the mockup's AdminRow — single line, small icon left, label
+// right, hover tint. Replaces the chunky shadcn outline buttons.
+function AdminRow({
+  label, icon, onClick, disabled, testId, asAnchor, anchorHref, tone = "default",
+}: {
+  label: string;
+  icon: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  testId?: string;
+  asAnchor?: boolean;
+  anchorHref?: string;
+  tone?: "default" | "destructive";
+}) {
+  const baseStyle: React.CSSProperties = {
+    color: tone === "destructive" ? "var(--cc-red-fg)" : "var(--cc-fg)",
+    opacity: disabled ? 0.5 : 1,
+    cursor: disabled ? "not-allowed" : "pointer",
+  };
+  const cls =
+    "w-full text-left px-2 py-1.5 text-[12px] font-medium rounded flex items-center gap-2 hover:bg-[color-mix(in_srgb,var(--cc-muted)_60%,transparent)] transition-colors";
+  if (asAnchor && anchorHref) {
+    return (
+      <a href={anchorHref} className={cls} style={baseStyle} data-testid={testId}>
+        <span className="opacity-70" style={{ color: "var(--cc-muted-fg)" }}>{icon}</span>
+        {label}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cls}
+      style={baseStyle}
+      data-testid={testId}
+    >
+      <span className="opacity-70" style={{ color: "var(--cc-muted-fg)" }}>{icon}</span>
+      {label}
+    </button>
   );
 }
 
@@ -1844,150 +1902,121 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
             )}
 
               {/* Overrides & admin — operator-only escalations (Task #767,
-                  absorbed from GroupDossierChrome). Place/Release hold,
-                  Withdraw, Close as non-issue, Reclassify legs, and Mark
-                  duplicates live here in the left rail per the D2 layout. */}
+                  absorbed from GroupDossierChrome). D2 graduation
+                  consolidates Place/Release hold, Withdraw, Reclassify,
+                  Mark duplicates, AND Close-this-group into a single
+                  card with compact list-style rows (mockup's AdminRow). */}
               <CcCard
-                title="Overrides & admin"
-                icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                title="Overrides & Admin"
                 testId="group-detail-overrides-card"
                 tone="purple"
+                padded={false}
                 action={
                   <span className="text-[9px] uppercase tracking-wider font-bold opacity-70">
                     Operator only
                   </span>
                 }
               >
-                <div className="text-[11px] mb-2" style={{ color: "var(--cc-muted-fg)" }}>
-                  Operator-only escalations. Audited.
-                </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="p-1.5 flex flex-col gap-0.5">
                   {group.status === "On Hold" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
+                    <AdminRow
+                      label="Release hold"
+                      icon={<PlayCircle className="w-3.5 h-3.5" />}
                       onClick={onClearHold}
                       disabled={removeHoldMutation.isPending}
-                      data-testid="group-detail-action-release-group-hold"
-                    >
-                      <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
-                      Release hold
-                    </Button>
+                      testId="group-detail-action-release-group-hold"
+                    />
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
+                    <AdminRow
+                      label="Place on hold"
+                      icon={<PauseCircle className="w-3.5 h-3.5" />}
                       onClick={() => setHoldOpen(true)}
                       disabled={isAlreadyClosed || holdMutation.isPending}
-                      data-testid="group-detail-action-place-group-hold"
-                    >
-                      <PauseCircle className="w-3.5 h-3.5 mr-1.5" />
-                      Place on hold
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setWithdrawOpen(true)}
-                    data-testid="group-detail-action-withdraw-group"
-                  >
-                    <XCircle className="w-3.5 h-3.5 mr-1.5" />
-                    Withdraw
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCloseNonIssueOpen(true)}
-                    data-testid="group-detail-action-close-as-non-issue"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                    Close as non-issue
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    asChild
-                    data-testid="group-detail-action-reclassify-group"
-                  >
-                    <a href="#group-detail-section-legs">
-                      <Layers className="w-3.5 h-3.5 mr-1.5" />
-                      Reclassify legs
-                    </a>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    asChild
-                    data-testid="group-detail-action-mark-duplicate"
-                  >
-                    <a href="#group-detail-section-legs">
-                      <Copy className="w-3.5 h-3.5 mr-1.5" />
-                      Mark duplicates
-                    </a>
-                  </Button>
-                </div>
-              </CcCard>
-  
-              {/* Close this group */}
-            <CcCard
-              title="Close this group"
-              icon={<XCircle className="w-3.5 h-3.5" />}
-              testId="group-closure-card"
-            >
-              <div className="text-xs mb-3" style={{ color: "var(--cc-muted-fg)" }}>
-                Close after the payor has issued a final decision on every disputed leg.
-              </div>
-              {isAlreadyClosed ? (
-                <p className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  Already closed — outcome <strong>{outcomeLabel(group.outcome)}</strong>
-                  {group.closureReason ? ` · ${group.closureReason}` : ""}.
-                </p>
-              ) : (
-                <>
-                  {/* Denied by Payor uses the LIGHT confirm dialog — the
-                      payor decided the outcome, so the structured intake
-                      doesn't apply here. The button is enabled only when a
-                      portal/email response has been recorded (same gate as
-                      before); the dialog summarizes that response and
-                      auto-fills every required closure field. */}
-                  <DeniedByPayorConfirmRow
-                    groupId={groupId}
-                    outcome={group.outcome}
-                    closureReason={group.closureReason}
-                    hasResponse={!!validTransitions?.hasResponse}
-                    responses={detail.responses ?? []}
-                    onAfterSuccess={invalidateGroup}
-                  />
-
-                  {/* Cannot-Dispute is a manual operator decision (we
-                      decided not to dispute), so the full structured
-                      intake still belongs here.
-                      `id="closure-actions"` is the scroll anchor that
-                      PrimaryActionTile's "Close group" CTA targets when
-                      outlook=nothing_to_do (Task #767). */}
-                  {!validTransitions?.hasBeenSubmitted && (
-                    <div id="closure-actions">
-                    <ClosureActions
-                      target={{ kind: "invoice_group", id: groupId }}
-                      outcome={group.outcome}
-                      closureReason={group.closureReason}
-                      triggers={[
-                        {
-                          reason: "cannot_dispute" as const,
-                          label: "Withdraw — Cannot Dispute",
-                          sub: "No clear path to recover",
-                          disabledReason:
-                            "Close because we decided not to dispute (no clear path to recover).",
-                          testId: "v2-group-close-cannot-dispute",
-                        },
-                      ]}
-                      onAfterSuccess={invalidateGroup}
+                      testId="group-detail-action-place-group-hold"
                     />
+                  )}
+                  <AdminRow
+                    label="Withdraw"
+                    icon={<XCircle className="w-3.5 h-3.5" />}
+                    onClick={() => setWithdrawOpen(true)}
+                    testId="group-detail-action-withdraw-group"
+                  />
+                  <AdminRow
+                    label="Close as non-issue"
+                    icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                    onClick={() => setCloseNonIssueOpen(true)}
+                    testId="group-detail-action-close-as-non-issue"
+                  />
+                  <AdminRow
+                    label="Reclassify legs"
+                    icon={<Layers className="w-3.5 h-3.5" />}
+                    asAnchor
+                    anchorHref="#group-detail-section-legs"
+                    testId="group-detail-action-reclassify-group"
+                  />
+                  <AdminRow
+                    label="Mark duplicates"
+                    icon={<Copy className="w-3.5 h-3.5" />}
+                    asAnchor
+                    anchorHref="#group-detail-section-legs"
+                    testId="group-detail-action-mark-duplicate"
+                  />
+                </div>
+
+                {/* Close-this-group footer (mockup pattern) — sits inside
+                    the same Overrides card on a muted strip, with the
+                    Denied-by-Payor confirm row + Cannot-Dispute trigger
+                    (when not yet submitted) as compact reasons. */}
+                <div
+                  className="p-2 space-y-1.5"
+                  style={{
+                    borderTop: "1px solid var(--cc-border)",
+                    background: "color-mix(in srgb, var(--cc-muted) 30%, transparent)",
+                  }}
+                  data-testid="group-closure-card"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-1" style={{ color: "var(--cc-muted-fg)" }}>
+                    <CheckCircle2 className="w-3 h-3" /> Close this group
+                  </div>
+                  {isAlreadyClosed ? (
+                    <p className="text-[11px] italic px-1" style={{ color: "var(--cc-muted-fg)" }}>
+                      Already closed — outcome <strong>{outcomeLabel(group.outcome)}</strong>
+                      {group.closureReason ? ` · ${group.closureReason}` : ""}.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      <DeniedByPayorConfirmRow
+                        groupId={groupId}
+                        outcome={group.outcome}
+                        closureReason={group.closureReason}
+                        hasResponse={!!validTransitions?.hasResponse}
+                        responses={detail.responses ?? []}
+                        onAfterSuccess={invalidateGroup}
+                      />
+                      {!validTransitions?.hasBeenSubmitted && (
+                        <div id="closure-actions">
+                          <ClosureActions
+                            target={{ kind: "invoice_group", id: groupId }}
+                            outcome={group.outcome}
+                            closureReason={group.closureReason}
+                            triggers={[
+                              {
+                                reason: "cannot_dispute" as const,
+                                label: "Withdraw — Cannot Dispute",
+                                sub: "No clear path to recover",
+                                disabledReason:
+                                  "Close because we decided not to dispute (no clear path to recover).",
+                                testId: "v2-group-close-cannot-dispute",
+                              },
+                            ]}
+                            onAfterSuccess={invalidateGroup}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
-                </>
-              )}
-            </CcCard>
+                </div>
+              </CcCard>
             </aside>
 
             {/* CENTER — disputed legs body + invoice-wide context. */}

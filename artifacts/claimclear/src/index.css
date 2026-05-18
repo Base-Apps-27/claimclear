@@ -557,6 +557,23 @@
 .cc-scope .cc-btn:not([disabled]):hover { background: var(--cc-muted); }
 .cc-scope .cc-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
+.cc-scope .cc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--cc-border);
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  white-space: nowrap;
+}
+.cc-scope .cc-badge-secondary { background: var(--cc-muted); border-color: transparent; }
+
+.cc-scope .cc-divider { height: 1px; background: var(--cc-border); }
+
 .cc-scope .cc-input,
 .cc-scope .cc-select,
 .cc-scope .cc-textarea {
