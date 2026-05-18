@@ -274,31 +274,6 @@ export default function Insights() {
     };
   }, [dailyFlow]);
 
-  // ─── Submissions vs responses (focused daily bars) ─────────────────
-  // Two-series bar chart at invoice-grain. Separated from Daily flow
-  // because operators kept asking for an at-a-glance read of "how
-  // many did we file today vs how many came back" without the four
-  // other lines competing for attention.
-  const submissionsVsResponses = useMemo(() => {
-    const points = timeseries?.points ?? [];
-    return points.map(p => ({
-      label: formatShortDate(p.date),
-      submitted: p.invoicesSubmitted ?? 0,
-      responses: p.responsesReceived ?? 0,
-    }));
-  }, [timeseries]);
-  const submissionsVsResponsesTotals = useMemo(() => {
-    const denom = Math.max(1, submissionsVsResponses.length);
-    const submitted = submissionsVsResponses.reduce((s, p) => s + p.submitted, 0);
-    const responses = submissionsVsResponses.reduce((s, p) => s + p.responses, 0);
-    return {
-      submitted,
-      responses,
-      avgSubmittedPerDay: submitted / denom,
-      avgResponsesPerDay: responses / denom,
-    };
-  }, [submissionsVsResponses]);
-
   // ─── Outcomes recovered-$ trend (current window vs prior window
   // overlay). Only meaningful for users who can see money — clerks
   // get the buckets but no overlay chart.
@@ -650,69 +625,6 @@ export default function Insights() {
             </div>
           );
         })()}
-      </Section>
-
-      {/* ─── Submissions vs responses (focused) ────────────────────── */}
-      <Section
-        title={<span className="flex items-center gap-2">Submissions vs responses <span className="text-[10px] font-normal text-muted-foreground uppercase">Invoices</span></span>}
-        icon={<BarChart3 className="w-4 h-4" />}
-        action={
-          <span className="text-[11px] text-muted-foreground">
-            {submissionsVsResponsesTotals.submitted} submitted · {submissionsVsResponsesTotals.responses} responses · last {days}d
-          </span>
-        }
-      >
-        <div className="flex items-stretch gap-6 flex-wrap">
-          <div className="min-w-[180px] text-xs space-y-2.5">
-            <div>
-              <div className="text-muted-foreground">Avg submitted / day</div>
-              <div
-                className="text-xl font-bold tabular-nums"
-                style={{ color: "hsl(var(--cc-warning))" }}
-                data-testid="svr-avg-submitted"
-              >
-                {submissionsVsResponsesTotals.avgSubmittedPerDay.toFixed(1)}
-              </div>
-              <div className="text-[10px] text-muted-foreground">{submissionsVsResponsesTotals.submitted} total</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Avg responses / day</div>
-              <div
-                className="text-xl font-bold tabular-nums"
-                style={{ color: "hsl(var(--primary))" }}
-                data-testid="svr-avg-responses"
-              >
-                {submissionsVsResponsesTotals.avgResponsesPerDay.toFixed(1)}
-              </div>
-              <div className="text-[10px] text-muted-foreground">{submissionsVsResponsesTotals.responses} total</div>
-            </div>
-            <div className="pt-1 border-t border-border text-[11px] text-muted-foreground">
-              <InfoTooltip content="Submitted = invoice claims we sent to payors each day. Responses = decisions/messages received back from payors each day. Both are invoice-grain activity counts (not dollars)." />
-              <span className="ml-1.5">What we filed vs what came back</span>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[280px] h-52" data-testid="submissions-vs-responses-chart">
-            <SkeletonSwap loading={tsLoading} className="h-full" skeleton={<Skeleton className="h-full w-full" />}>
-              {submissionsVsResponses.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-                  No activity in this window
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={submissionsVsResponses} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" width={32} allowDecimals={false} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="submitted" name="Submitted (us)" fill="hsl(var(--cc-warning))" radius={[2, 2, 0, 0]} />
-                    <Bar dataKey="responses" name="Responses received (payor)" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </SkeletonSwap>
-          </div>
-        </div>
       </Section>
 
       {/* ─── Daily flow ────────────────────────────────────────────── */}
