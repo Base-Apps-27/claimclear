@@ -116,6 +116,7 @@ interface SeedOpts {
   includedInDispute?: boolean;
   withErrorType?: boolean;
   activeSubmission?: boolean;
+  submissionStatus?: "pending" | "in_progress" | "submitted" | "failed" | "cancelled" | "draft" | "dry_run";
 }
 
 interface Seeded {
@@ -161,10 +162,10 @@ async function seedGroup(opts: SeedOpts = {}): Promise<Seeded> {
     bodyFormat: "text",
   }).returning();
 
-  if (opts.activeSubmission) {
+  if (opts.activeSubmission || opts.submissionStatus) {
     await db.insert(portalSubmissionsTable).values({
       invoiceGroupId: group.id,
-      status: "in_progress",
+      status: opts.submissionStatus ?? "in_progress",
       submittedAt: new Date().toISOString(),
     });
   }
@@ -283,6 +284,37 @@ test("bulk-approve: mixed eligible and skipped — gate filters non-AI, partial_
     await cleanupSeeded(lowConf);
     await cleanupSeeded(noLegs);
     await cleanupSeeded(activeSub);
+  }
+});
+
+// ---- Regression: 'submitted' is terminal, not in-flight ------------------
+//
+// Every row on Responses Awaiting Review has a `submitted`-status portal
+// submission — that submission is exactly what generated the payor
+// response. Treating `submitted` as "in flight" used to skip every row on
+// the page, making bulk approve a no-op there. Only `pending` /
+// `in_progress` count as actively-running.
+
+test("bulk-approve: a 'submitted' portal submission does NOT skip the group", async () => {
+  const seed = await seedGroup({ submissionStatus: "submitted" });
+  try {
+    const res = await fetchJson<BulkApproveBody>(
+      "/api/invoice-groups/bulk-approve",
+      {
+        method: "POST",
+        body: {
+          portalResponseIds: [seed.portalResponseId],
+          note: "Responses Awaiting Review bulk approve",
+        },
+      },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status}: ${JSON.stringify(res.json)}`);
+    assert.equal(res.json.approved, 1,
+      `group with a terminal-submitted portal submission should still be eligible: ${JSON.stringify(res.json)}`);
+    assert.equal(res.json.skipped.length, 0);
+    assert.equal(res.json.approvedItems[0].id, seed.groupId);
+  } finally {
+    await cleanupSeeded(seed);
   }
 });
 

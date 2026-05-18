@@ -5608,11 +5608,16 @@ async function evaluateBulkApproveCandidate(
   if (otherViewers.length > 0)
     return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "presence_locked" } };
 
+  // Only `pending` / `in_progress` represent an actively-running portal
+  // submission. `submitted` is the terminal-successful state — and is in
+  // fact the *cause* of the payor response that landed this group on
+  // Responses Awaiting Review in the first place, so treating it as
+  // "in flight" used to skip every row on that page.
   const activeSubs = await db.select({ id: portalSubmissionsTable.id })
     .from(portalSubmissionsTable)
     .where(and(
       eq(portalSubmissionsTable.invoiceGroupId, groupId),
-      inArray(portalSubmissionsTable.status, ["pending", "in_progress", "submitted"] as const),
+      inArray(portalSubmissionsTable.status, ["pending", "in_progress"] as const),
     ));
   if (activeSubs.length > 0)
     return { kind: "skip", row: { portalResponseId: prId, id: groupId, refNumber: group.invoiceNumber, reason: "active_submission" } };
