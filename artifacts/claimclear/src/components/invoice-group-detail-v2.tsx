@@ -343,6 +343,13 @@ function LegColumn({
   for (const e of rideAny.evidence ?? []) add(e?.imageUrl ?? null, displayedEvidenceName(e?.evidenceTypeName, e?.imageUrl));
   const legAudit = auditEntries.filter((a) => a.claimId === ride.id).slice(0, 5);
   const excluded = ride.includedInDispute === false;
+  // D2 polish — when the error type involves a GPS deviation we tint the
+  // chip amber so the operator's eye lands on the blocking SOP gate at a
+  // glance. Same goes for the per-leg evidence section when nothing is
+  // attached yet — the empty state becomes an amber "Upload evidence"
+  // affordance instead of a flat grey "no attachments" note.
+  const isGpsDeviation = /gps/i.test(ride.errorTypeName ?? "");
+  const needsEvidence = items.length === 0 && !excluded;
   return (
     <div className={`cc-card overflow-hidden flex flex-col ${excluded ? "opacity-75" : ""}`} data-testid={`leg-column-${ride.id}`}>
       <div className="px-4 py-3 space-y-2" style={{ borderBottom: "1px solid var(--cc-border)", background: "color-mix(in srgb, var(--cc-muted) 30%, transparent)" }}>
@@ -366,9 +373,26 @@ function LegColumn({
               {ride.carNumber && (<><span>•</span><span className="mono">Car {ride.carNumber}</span></>)}
             </div>
             {ride.errorTypeName && (
-              <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--cc-muted-fg)" }} title={ride.errorTypeName}>
-                {ride.errorTypeName}
-              </p>
+              isGpsDeviation ? (
+                <p
+                  className="text-[11px] mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border font-semibold"
+                  style={{
+                    background: "var(--cc-amber-bg)",
+                    color: "var(--cc-amber-fg)",
+                    borderColor: "var(--cc-amber-border)",
+                    maxWidth: "100%",
+                  }}
+                  title={ride.errorTypeName}
+                  data-testid={`leg-error-type-gps-${ride.id}`}
+                >
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{ride.errorTypeName}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--cc-muted-fg)" }} title={ride.errorTypeName}>
+                  {ride.errorTypeName}
+                </p>
+              )
             )}
           </div>
         </div>
@@ -394,7 +418,23 @@ function LegColumn({
           </div>
           <div className="p-2 space-y-1">
             {items.length === 0 ? (
-              <p className="text-[11px] italic px-1 py-1" style={{ color: "var(--cc-muted-fg)" }}>No per-leg attachments.</p>
+              needsEvidence ? (
+                <Link
+                  href={`/queue?groupId=${groupId}&legId=${ride.id}`}
+                  className="flex items-center justify-center gap-2 px-2 py-3 rounded border-2 border-dashed text-[12px] font-semibold hover:opacity-90 transition-opacity"
+                  style={{
+                    background: "var(--cc-amber-bg)",
+                    color: "var(--cc-amber-fg)",
+                    borderColor: "var(--cc-amber-border)",
+                  }}
+                  data-testid={`leg-upload-evidence-${ride.id}`}
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  Upload evidence
+                </Link>
+              ) : (
+                <p className="text-[11px] italic px-1 py-1" style={{ color: "var(--cc-muted-fg)" }}>No per-leg attachments.</p>
+              )
             ) : items.map((f, i) => (
               <a
                 key={`${f.url}-${i}`}
@@ -579,9 +619,9 @@ function PrimaryActionTile({
   } else if (outlook === "reattest_only") {
     cta = { label: "Re-attest in MAS", sub: "No dispute path — re-attest only", href: `/queue?groupId=${groupId}`, tone: "warn" };
   } else if (anyDisputableNeedsEvidence) {
-    cta = { label: "Walk SOP", sub: "Open in queue & resolve gates", href: `/queue?groupId=${groupId}`, tone: "primary" };
+    cta = { label: "Open in queue", sub: "Walk SOP & build submission", href: `/queue?groupId=${groupId}`, tone: "primary" };
   } else {
-    cta = { label: "Review & submit", sub: "Final check before portal", href: `/queue?groupId=${groupId}`, tone: "primary" };
+    cta = { label: "Open in queue", sub: "Final check before portal", href: `/queue?groupId=${groupId}`, tone: "primary" };
   }
   const bg =
     cta.tone === "primary" ? "var(--cc-primary)" :
@@ -1473,11 +1513,12 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
           </div>
         </div>
 
-        {/* Response-received banner */}
+        {/* Response-received banner. The Communication card now lives in
+            the right rail (D2 layout), so this no longer needs a "Jump to
+            thread" link — operators can see the latest reply already. */}
         {bannerData && (
-          <a
-            href="#invoice-thread"
-            className="cc-card block no-underline hover:shadow-sm transition-shadow"
+          <div
+            className="cc-card block"
             style={{
               background: "var(--cc-amber-bg)",
               border: "1px solid var(--cc-amber-fg)",
@@ -1517,12 +1558,6 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 )}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                <span
-                  className="cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5 font-semibold"
-                  style={{ background: "var(--cc-amber-fg)", color: "white" }}
-                >
-                  Jump to thread
-                </span>
                 <button
                   title="Mark read"
                   className="w-7 h-7 rounded inline-flex items-center justify-center"
@@ -1537,7 +1572,7 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 </button>
               </div>
             </div>
-          </a>
+          </div>
         )}
 
         {/* KPI strip — money tiles hidden for clerks (sums of nulls
@@ -2360,9 +2395,27 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                         >
                           <Paperclip className="w-3 h-3 flex-shrink-0" style={{ color: "var(--cc-muted-fg)" }} />
                           <span className="font-medium flex-1 truncate">{name}</span>
-                          {f.legNumber != null && (
-                            <span className="cc-pill cc-pill-muted" style={{ fontSize: "9px", padding: "0 0.3rem" }}>L{f.legNumber}</span>
-                          )}
+                          {f.legNumber != null && (() => {
+                            // D2 polish — L1 reads as blue, L2 as purple so the
+                            // operator's eye can immediately tell which leg of the
+                            // group an attachment belongs to. Anything beyond L2
+                            // falls back to the muted token.
+                            const tone =
+                              f.legNumber === 1
+                                ? { bg: "var(--cc-blue-bg)", fg: "var(--cc-blue-fg)", border: "var(--cc-blue-border)" }
+                                : f.legNumber === 2
+                                ? { bg: "var(--cc-purple-bg)", fg: "var(--cc-purple-fg)", border: "var(--cc-purple-border)" }
+                                : { bg: "var(--cc-muted)", fg: "var(--cc-muted-fg)", border: "var(--cc-border)" };
+                            return (
+                              <span
+                                className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded border uppercase"
+                                style={{ background: tone.bg, color: tone.fg, borderColor: tone.border }}
+                                data-testid={`group-evidence-leg-chip-L${f.legNumber}`}
+                              >
+                                L{f.legNumber}
+                              </span>
+                            );
+                          })()}
                         </div>
                       );
                     })}

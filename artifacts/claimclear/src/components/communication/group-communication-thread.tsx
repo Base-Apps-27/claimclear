@@ -34,6 +34,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatDateTime } from "@/lib/format";
 import { RichTextEditor } from "./rich-text-editor";
 import { extractClipboardFiles } from "@/components/decision-tree/evidence-paste";
@@ -183,8 +189,16 @@ export function GroupCommunicationThread({
   );
 
   if (bare) {
+    // D2 polish (Task #767+) — in bare mode the card chrome is provided
+    // by the right-rail page-level CcCard, which sits in a narrow column.
+    // Cap the inner thread at a fixed max-height with internal scroll so a
+    // long inbound email doesn't push the rest of the rail (Group evidence,
+    // Notes, Activity) hundreds of pixels down the page.
     return (
-      <div className="space-y-4" data-testid="group-communication-thread">
+      <div
+        className="space-y-4 max-h-[520px] overflow-y-auto pr-1"
+        data-testid="group-communication-thread"
+      >
         {inner}
       </div>
     );
@@ -302,31 +316,53 @@ function ConversationSection({
           </div>
 
           {conversation.status !== "resolved" && onReply && (
-            <div className="border-t">
-              {!replyOpen ? (
-                <div className="px-4 py-2.5 flex justify-end">
-                  <Button
-                    size="sm"
-                    onClick={() => setReplyOpen(true)}
-                    data-testid="group-thread-reply-trigger"
-                  >
-                    <Reply className="h-3 w-3 mr-1" /> Reply to thread
-                  </Button>
-                </div>
-              ) : (
-                <ReplyComposer
-                  conversationId={conversation.conversationId}
-                  defaultTo={lastInbound?.senderEmail ?? ""}
-                  defaultSubject={`Re: ${conversation.subject.replace(/^re:\s*/i, "")}`}
-                  isSending={isSending}
-                  onSend={async (input) => {
-                    await onReply(input);
-                    setReplyOpen(false);
-                  }}
-                  onCancel={() => setReplyOpen(false)}
-                />
-              )}
-            </div>
+            <>
+              {/* D2 polish — always-visible reply affordance. Both the
+                  placeholder input and the blue send icon open the
+                  full-thread modal composer so it's obvious how to
+                  respond at a glance. */}
+              <div className="border-t bg-muted/30 p-2 flex gap-2 items-center">
+                <button
+                  type="button"
+                  onClick={() => setReplyOpen(true)}
+                  className="flex-1 text-left text-xs px-3 py-2 rounded border bg-background text-muted-foreground hover:border-primary transition-colors"
+                  data-testid="group-thread-reply-trigger"
+                >
+                  Reply to thread…
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReplyOpen(true)}
+                  className="inline-flex items-center justify-center rounded px-2.5 py-2 bg-primary text-primary-foreground hover:opacity-90"
+                  title="Reply to thread"
+                  data-testid="group-thread-reply-send-trigger"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <Dialog open={replyOpen} onOpenChange={setReplyOpen}>
+                <DialogContent className="max-w-3xl p-0 gap-0 max-h-[90vh] overflow-y-auto">
+                  <DialogHeader className="px-5 py-3 border-b">
+                    <DialogTitle className="text-base flex items-center gap-2">
+                      <Reply className="h-4 w-4" />
+                      Reply — {conversation.subject}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <ReplyComposer
+                    conversationId={conversation.conversationId}
+                    defaultTo={lastInbound?.senderEmail ?? ""}
+                    defaultSubject={`Re: ${conversation.subject.replace(/^re:\s*/i, "")}`}
+                    isSending={isSending}
+                    onSend={async (input) => {
+                      await onReply(input);
+                      setReplyOpen(false);
+                    }}
+                    onCancel={() => setReplyOpen(false)}
+                  />
+                </DialogContent>
+              </Dialog>
+            </>
           )}
         </>
       )}
