@@ -1571,55 +1571,63 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
           </div>
         </div>
 
-        {/* Response-received banner. The Communication card now lives in
-            the right rail (D2 layout), so this no longer needs a "Jump to
-            thread" link — operators can see the latest reply already. */}
-        {bannerData && (
-          <div
-            className="cc-card block"
-            style={{
-              background: "var(--cc-amber-bg)",
-              border: "1px solid var(--cc-amber-fg)",
-              borderLeftWidth: "4px",
-              color: "var(--cc-fg)",
-              padding: "10px 14px",
-            }}
-            data-testid="response-received-banner"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                   style={{ background: "var(--cc-amber-fg)", color: "white" }}>
-                <Mail className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-sm font-bold" style={{ color: "var(--cc-amber-fg)" }}>
-                    New response from payor
-                  </span>
-                  {bannerData.subject && (
-                    <>
-                      <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
-                      <span className="text-xs font-medium" style={{ color: "var(--cc-fg)" }}>
-                        {bannerData.subject}
-                      </span>
-                    </>
-                  )}
-                  <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
-                  <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
-                    {relativeTime(bannerData.timestamp)}
-                  </span>
-                </div>
-                {bannerData.preview && (
-                  <div className="text-xs mt-0.5 truncate" style={{ color: "var(--cc-fg)" }}>
-                    "{bannerData.preview}"
-                  </div>
+        {/* Response-received banner — D2 polish: compact blue strip with
+            a one-line truncated preview and a Jump-to-thread anchor that
+            scrolls to the Communication card in the right rail. The
+            previous amber-bordered banner was rendering the full payor
+            email body (raw HTML / inline <script> text included),
+            producing a ~30-line wall instead of a one-line tease. The
+            preview is sanitized to a single line below so the truncate
+            class can actually clip it. */}
+        {bannerData && (() => {
+          const oneLinePreview = (bannerData.preview ?? "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 240);
+          return (
+            <div
+              className="flex items-start gap-3 px-4 py-2.5"
+              style={{
+                background: "var(--cc-blue-bg)",
+                borderTop: "1px solid var(--cc-blue-border)",
+                borderBottom: "1px solid var(--cc-blue-border)",
+              }}
+              data-testid="response-received-banner"
+            >
+              <MessageSquare
+                className="w-4 h-4 mt-0.5 shrink-0"
+                style={{ color: "var(--cc-blue-fg)" }}
+              />
+              <div className="flex-1 min-w-0 text-sm" style={{ color: "var(--cc-blue-fg)" }}>
+                <p className="font-semibold mb-0.5">
+                  New response from payor
+                  {bannerData.subject ? <> · {bannerData.subject}</> : null}
+                  {" · "}
+                  {relativeTime(bannerData.timestamp)}
+                </p>
+                {oneLinePreview && (
+                  <p className="opacity-90 truncate max-w-4xl">
+                    "{oneLinePreview}"
+                  </p>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <a
+                  href="#invoice-thread"
+                  className="cc-btn cc-btn-sm"
+                  style={{
+                    background: "rgba(255,255,255,0.5)",
+                    color: "var(--cc-blue-fg)",
+                    borderColor: "var(--cc-blue-border)",
+                  }}
+                  data-testid="response-received-banner-jump"
+                >
+                  Jump to thread
+                </a>
                 <button
                   title="Mark read"
                   className="w-7 h-7 rounded inline-flex items-center justify-center"
-                  style={{ color: "var(--cc-muted-fg)" }}
+                  style={{ color: "var(--cc-blue-fg)", opacity: 0.7 }}
                   onClick={(e) => {
                     e.preventDefault();
                     setBannerDismissedAt(computedBanner?.timestamp ?? null);
@@ -1630,8 +1638,8 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* KPI strip — money tiles hidden for clerks (sums of nulls
             would otherwise leak as $0.00). D2 polish (Task #767): a
