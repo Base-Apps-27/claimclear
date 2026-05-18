@@ -1,0 +1,132 @@
+Now I have everything I need. Here's a clear developer brief you can hand directly to your dev:
+
+---
+
+## Developer Brief: UI Gap — Current vs. Target Design (D2 Ledger)
+
+### Overview
+The current live UI (see screenshots) was built without adopting the redesign spec (`d2-ledger.html`). The core issues are **typography, color system, layout structure, and component styling**. Below is a section-by-section breakdown.
+
+---
+
+### 1. Typography
+**Current:** System default font (looks like `-apple-system` or similar)
+**Target:** Two explicit fonts must be loaded and applied:
+- `Inter` (400/500/600/700) — body text, UI labels
+- `JetBrains Mono` (500) — all invoice/trip IDs and codes (`.mono` class)
+
+**Fix:** Add the Google Fonts `<link>` tags from the HTML `<head>` and apply `font-family: 'Inter', sans-serif` to `body`. Apply `.mono` (JetBrains Mono) to any element displaying a numeric ID like `1865697140`, `15018283`, `SR50480M`, etc.
+
+---
+
+### 2. Color System
+**Current:** Generic blue/gray palette, no semantic color tokens
+**Target:** A full CSS custom property (variable) system is defined in `:root`. Every component color must pull from these variables — **not hardcoded hex/Tailwind colors.**
+
+Key variables the dev needs to wire up:
+```css
+--cc-bg, --cc-fg, --cc-card, --cc-border, --cc-muted, --cc-muted-fg
+--cc-primary, --cc-success, --cc-destructive, --cc-warning
+--cc-green-bg/border/fg  (approved states)
+--cc-amber-bg/border/fg  (needs review / warning states)
+--cc-purple-bg/border/fg (Leg 2 evidence tags)
+--cc-blue-bg/border/fg   (Leg 1 evidence tags, send icons)
+--cc-red-bg/border/fg    (error/denied states)
+```
+
+---
+
+### 3. Invoice Header — Color Accent Bar
+**Current:** Plain header, no visual hierarchy marker
+**Target:** A **1px-wide colored vertical bar** sits to the left of the invoice title. Its color reflects the group verdict state (green for Approved, amber for Needs Review, red for Denied).
+
+```html
+<div class="w-1 h-12 rounded shrink-0" style="background:var(--cc-green-fg);" aria-hidden="true"></div>
+```
+This is the first child inside the header's flex container, before `<h1>`.
+
+---
+
+### 4. Badge System
+**Current:** Badges appear as plain pills or rectangular chips with generic colors
+**Target:** Three badge types, all using the `.cc-badge` class:
+- **Status badge** (e.g. "Response received", "Approved") — colored background/border/text from semantic color tokens (`--cc-green-*`)
+- **Cached state badge** (e.g. "cached: Ready to Review") — dashed border, muted foreground, `.cc-badge-secondary`
+- **Error type tag** (e.g. "GPS Pickup Too Far from Residence") — muted background, solid border, regular text weight
+
+---
+
+### 5. Section Header Style
+**Current:** Section labels are styled like regular headings
+**Target:** All panel section headers use this exact pattern:
+```css
+font-size: 10px; text-transform: uppercase; letter-spacing: wider; font-weight: 600; color: var(--cc-muted-fg);
+```
+With a muted header background on the card:
+```css
+background: color-mix(in srgb, var(--cc-muted) 50%, transparent);
+border-bottom: 1px solid var(--cc-border);
+```
+
+---
+
+### 6. Evidence File Chips (Per-Leg)
+**Current:** Evidence files listed as plain text rows
+**Target:** Each file is a compact **chip/button** with:
+- A `file-text` Lucide icon (blue)
+- Truncated UUID filename (max ~80px)
+- A colored leg badge — **blue background for L1, purple background for L2**
+
+```html
+<button class="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px]" style="border:1px solid var(--cc-border); background:var(--cc-card);">
+  <i data-lucide="file-text" style="color:var(--cc-blue-fg);"></i>
+  <span class="truncate max-w-[80px] font-medium">b0a6e5c3-11f7...png</span>
+  <span style="background:var(--cc-blue-bg); color:var(--cc-blue-fg); border:1px solid var(--cc-blue-border);">L1</span>
+</button>
+```
+
+---
+
+### 7. Activity History Icons
+**Current:** Activity log items are plain text list rows
+**Target:** Each event type gets a **specific Lucide icon with a semantic color:**
+- Verdict/approval → `check-circle-2` in `--cc-success` (green)
+- Submission/send events → `send` in `--cc-blue-fg`
+- Cancellations → `x-circle` in `--cc-destructive` (red)
+- Status changes → `clock` in muted gray
+
+---
+
+### 8. Notes Section — Inline Input
+**Current:** Notes panel is display-only
+**Target:** At the bottom of the Notes card, always render an inline input row:
+```html
+<div class="flex gap-2">
+  <input type="text" placeholder="Add note..." class="flex-1 cc-input text-[11px] py-1.5" />
+  <button class="cc-btn cc-btn-sm cc-btn-primary"><i data-lucide="send"></i></button>
+</div>
+```
+
+---
+
+### 9. Icon Library
+**Current:** No consistent icon system visible
+**Target:** Lucide Icons via unpkg CDN. Load with:
+```html
+<script src="https://unpkg.com/lucide@latest"></script>
+```
+Then call `lucide.createIcons()` after DOM load. Icons are declared as `<i data-lucide="icon-name">` and sized via `[data-lucide] { width: 1em; height: 1em; stroke-width: 2; }`.
+
+---
+
+### Summary Priority Order for Dev
+1. Wire in the CSS variable system (`:root` block)
+2. Apply Inter + JetBrains Mono fonts
+3. Fix the badge components (color tokens + types)
+4. Add the invoice header accent bar
+5. Fix section header styles
+6. Rebuild evidence chips with L1/L2 badges
+7. Add icons to activity history
+8. Add inline note input
+
+The `d2-ledger.html` file is the **source of truth** — the dev should be able to open it in a browser and use it as a live visual reference alongside the component-by-component diff above.

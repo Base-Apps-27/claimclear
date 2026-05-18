@@ -7,7 +7,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- D2-parity fonts: Inter for body/UI and JetBrains Mono for the
+         `.mono` class (invoice numbers, member IDs, trip IDs, every
+         ledger figure). Without JBM loaded the `.mono` rule in
+         index.css falls back to ui-monospace and IDs render in the
+         OS's default monospaced face, which is the single biggest
+         reason ledger numerals look generic vs the mockup. -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script>
       // Apply persisted theme before first paint to avoid a flash of
       // light mode on dark-mode users. Mirrors the logic in
