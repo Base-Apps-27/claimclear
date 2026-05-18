@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatDateTime, formatCurrency } from "@/lib/format";
 import { RefNumber } from "@/components/ref-number";
-import { useIsQueuePreview } from "@/lib/preview-mode";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
@@ -92,7 +91,6 @@ interface Props {
 }
 
 export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, onReclassifyLeg, bare, footerStateRef, onFooterStateChange, onDirtyChange }: Props) {
-  const queuePreview = useIsQueuePreview();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -597,27 +595,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   // no synthetic confidence/timing copy. The existing edit step
   // below (`Review & edit`) remains the only writable surface.
   const submitted = !isPreSubmit;
-  const heroStages = [
-    { key: "walk", label: "Walk legs", done: allResolved, active: !allResolved },
-    {
-      key: "preview",
-      label: "Generate",
-      done: previewGenerated,
-      active: allResolved && !previewGenerated,
-    },
-    {
-      key: "review",
-      label: "Review & edit",
-      done: draftReviewed,
-      active: previewGenerated && !draftReviewed && !submitted,
-    },
-    {
-      key: "submit",
-      label: submitVerb,
-      done: submitted,
-      active: draftReviewed && !submitted,
-    },
-  ];
   const hasSavedDraftEdit =
     (group?.draftSubject ?? null) !== null ||
     (group?.draftDescriptionHtml ?? null) !== null;
@@ -703,36 +680,9 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                 Closed · {closureReason}
               </Badge>
             )}
-            {/* Stepper consolidation (queue-preview): the PinnedFooter
-                already renders a MiniPhase stepper for the same five
-                stages, so we hide this hero-level duplicate when the
-                operator is on /queue-preview. Production /queue keeps
-                both renders for back-compat with #687 muscle memory. */}
-            {!queuePreview && <div
-              className="ml-auto flex items-center gap-1 rounded border border-border bg-muted/40 p-0.5"
-              role="list"
-              data-testid="gauntlet-hero-stages"
-            >
-              {heroStages.map((s) => (
-                <span
-                  key={s.key}
-                  role="listitem"
-                  data-testid={`gauntlet-hero-stage-${s.key}`}
-                  data-state={s.done ? "done" : s.active ? "active" : "todo"}
-                  className={
-                    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium " +
-                    (s.done
-                      ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300"
-                      : s.active
-                        ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                        : "text-muted-foreground")
-                  }
-                >
-                  {s.done ? <CheckCircle2 className="w-3 h-3" /> : null}
-                  {s.label}
-                </span>
-              ))}
-            </div>}
+            {/* Stepper consolidation: the PinnedFooter already renders
+                a MiniPhase stepper for the same five stages, so the
+                hero-level duplicate is omitted. */}
           </div>
 
           {/* Attachments rail — read-only chips for the group's

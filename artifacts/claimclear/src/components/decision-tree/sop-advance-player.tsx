@@ -90,7 +90,6 @@ import {
 } from "@workspace/api-client-react";
 import { invalidateLegCache } from "@/lib/apply-mutation-result";
 import { RefNumber } from "@/components/ref-number";
-import { useIsQueuePreview } from "@/lib/preview-mode";
 import type {
   ClaimEvidenceResponse,
   ClaimResponse,
@@ -1350,12 +1349,10 @@ export function SopAdvancePlayer(props: Props) {
     currentNode.instructionImageUrl ||
     currentNode.instructionLinkUrl;
 
-  // Queue-preview surface only — surface the leg's confirmation
-  // number inline in the player header so operators don't have to
-  // detour to claim/invoice detail just to know which record they're
-  // walking. Distinct from `isPreview` (the player's own sandbox
-  // mode); we read the route-level context to decide whether to show.
-  const queuePreview = useIsQueuePreview();
+  // Surface the leg's confirmation number inline in the player header
+  // so operators don't have to detour to claim/invoice detail just to
+  // know which record they're walking. Suppressed in the player's own
+  // sandbox `isPreview` mode (where there is no real claim).
   // `leg` is `LegLite` (live → ClaimResponse, preview → synthesized).
   // Both shapes carry these as optional metadata, but the Lite type
   // narrows them away. Read once via a single typed view rather than
@@ -1368,7 +1365,7 @@ export function SopAdvancePlayer(props: Props) {
   return (
     <div className="space-y-3 min-w-0" data-testid="sop-advance-player">
       {isPreview && <PreviewModeBadge />}
-      {queuePreview && headerLegConfNumber && (
+      {headerLegConfNumber && (
         <div
           className="flex items-center gap-2 text-[11px]"
           data-testid="sop-player-claim-id-row"

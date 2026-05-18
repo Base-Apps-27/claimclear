@@ -75,7 +75,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { RefNumber } from "@/components/ref-number";
-import { useIsQueuePreview } from "@/lib/preview-mode";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { ClassifyDialog } from "@/components/classify-dialog";
 import {
@@ -277,9 +276,6 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
   const [gauntletFooterState, setGauntletFooterState] = useState<GauntletFooterState | null>(null);
   const [gauntletDirty, setGauntletDirty] = useState(false);
   const onFooterStateChange = useCallback((s: GauntletFooterState) => setGauntletFooterState(s), []);
-  // Gate experimental UX (e.g. the active-leg end-state stack below
-  // the group hero) to /queue-preview so the live /queue stays stable.
-  const queuePreview = useIsQueuePreview();
 
   useEffect(() => {
     setForceReview(false);
@@ -546,11 +542,10 @@ export function InlineGroupWorkspaceMini({ groupId }: Props) {
             stuck on its "Loading playbook…" placeholder forever.
             Fall through to ResolvedHero — it accurately reflects
             the terminal and the leg has no walk to rewind. */}
-      {/* Gated to Queue Preview only — the operator opted into the
-          experimental surface, so we trial leg-end-state stacking
-          there before promoting it to the live Queue. */}
-      {queuePreview &&
-        activeLeg &&
+      {/* Active-leg end-state stack: keep the leg's terminal screen
+          visible beneath the group hero so operators can undo or
+          modify a single leg's verdict without leaving the workspace. */}
+      {activeLeg &&
         (hero === "reattest" ||
           hero === "closeout" ||
           hero === "generate") &&
@@ -708,7 +703,6 @@ function GroupSummaryHeader({
   onSelectLeg: (id: number) => void;
   onOpenChip: (k: ChipKey) => void;
 }) {
-  const queuePreview = useIsQueuePreview();
   return (
     <div className="cc-group-header" data-testid="mini-group-header">
       <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -785,7 +779,7 @@ function GroupSummaryHeader({
                 data-testid={`mini-leg-tab-${leg.id}`}
               >
                 Leg {i + 1} {legStateIcon(leg, resolvedIndex)}
-                {queuePreview && leg.confNumber && (
+                {leg.confNumber && (
                   <span
                     className="mono text-[10px] opacity-70 ml-1"
                     data-testid={`mini-leg-tab-conf-${leg.id}`}
@@ -1360,7 +1354,6 @@ function ReadyHero({
   rides: ClaimResponse[];
   resolvedIndex: ReturnType<typeof buildLegResolvedIndex>;
 }) {
-  const queuePreview = useIsQueuePreview();
   const isDirectEmail = detail.useDirectEmail === true;
   const destinationName = isDirectEmail
     ? (detail.payorEmail ? `Direct email (${detail.payorEmail})` : "Direct email")
@@ -1497,11 +1490,7 @@ function ReadyHero({
                 <div className="flex items-center gap-1.5">
                   <span className="cc-meta text-[10px] font-semibold uppercase tracking-wider">Leg {i + 1}</span>
                   <span
-                    className={
-                      queuePreview
-                        ? "mono text-[12px] font-bold text-foreground"
-                        : "mono text-[11px] font-semibold"
-                    }
+                    className="mono text-[12px] font-bold text-foreground"
                     data-testid={`ready-leg-card-conf-${leg.id}`}
                   >
                     {leg.confNumber ?? ""}

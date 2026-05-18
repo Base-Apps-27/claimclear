@@ -1588,19 +1588,3 @@ function ClassificationInboxRow({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Preview surface — `/queue-preview`. Same data + render path as the
-// live Queue, but children that read `useIsQueuePreview()` opt into
-// the additive treatments (inline Claim ID in three surfaces, gauntlet
-// stepper consolidation, etc.). Production `/queue` is untouched.
-// Gated to non-clerk operators in App.tsx via DenyClerk.
-// ─────────────────────────────────────────────────────────────────────
-import { QueuePreviewProvider } from "@/lib/preview-mode";
-
-export function QueuePreview() {
-  return (
-    <QueuePreviewProvider>
-      <Queue />
-    </QueuePreviewProvider>
-  );
-}

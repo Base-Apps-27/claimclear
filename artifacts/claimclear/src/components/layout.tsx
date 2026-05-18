@@ -218,9 +218,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "Queue", href: "/queue", icon: ListTodo },
-        ...(isClerk
-          ? []
-          : [{ label: "Queue (preview)", href: "/queue-preview", icon: ListTodo } as NavItem]),
         {
           label: "Responses Awaiting Review",
           href: "/responses-awaiting-review",

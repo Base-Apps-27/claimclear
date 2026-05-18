@@ -12,7 +12,7 @@ import { AdminTourProvider } from "@/tour/admin-tour";
 import Dashboard from "@/pages/dashboard";
 import ClaimNew from "@/pages/claim-new";
 import InvoiceNew from "@/pages/invoice-new";
-import Queue, { QueuePreview } from "@/pages/queue";
+import Queue from "@/pages/queue";
 import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
 import PortalSubmissions from "@/pages/portal-submissions";
@@ -111,7 +111,7 @@ function Router() {
         <Route path="/" component={() => <Redirect to="/dashboard" />} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/queue" component={Queue} />
-        <Route path="/queue-preview" component={() => <DenyClerk component={QueuePreview} />} />
+        <Route path="/queue-preview" component={() => <Redirect to="/queue" />} />
         <Route path="/queue-v3" component={() => <Redirect to="/queue" />} />
         <Route path="/queue-mini" component={() => <Redirect to="/queue" />} />
         <Route path="/attestation-queue" component={AttestationQueue} />
