@@ -233,9 +233,13 @@ export default function Insights() {
     const points = timeseries?.points ?? [];
     return points.map(p => {
       const created = flowUnit === "invoices" ? p.invoicesCreated : p.claimsCreated;
-      const submitted = flowUnit === "invoices" ? p.invoicesSubmitted : 0;
+      // Submitted / Responses are sourced from invoice-grain fields
+      // regardless of the unit toggle — there's no per-leg equivalent
+      // for "claims submitted" or "payor responses", and operators
+      // need these two visible on the graph at all times.
+      const submitted = p.invoicesSubmitted ?? 0;
       const reattested = flowUnit === "invoices" ? p.invoicesReattested : 0;
-      const responses = flowUnit === "invoices" ? p.responsesReceived : 0;
+      const responses = p.responsesReceived ?? 0;
       const resolved = flowUnit === "invoices" ? p.invoicesResolved : p.claimsResolved;
       return {
         label: formatShortDate(p.date),
@@ -667,17 +671,15 @@ export default function Insights() {
               <div className="text-muted-foreground">Avg submitted / day</div>
               <div className="text-xl font-bold tabular-nums">{flowTotals.avgSubmittedPerDay.toFixed(1)}</div>
             </div>
+            <div>
+              <div className="text-muted-foreground">Avg responses / day</div>
+              <div className="text-xl font-bold tabular-nums">{flowTotals.avgResponsesPerDay.toFixed(1)}</div>
+            </div>
             {flowUnit === "invoices" && (
-              <>
-                <div>
-                  <div className="text-muted-foreground">Avg re-attested / day</div>
-                  <div className="text-xl font-bold tabular-nums">{flowTotals.avgReattestedPerDay.toFixed(1)}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Avg responses / day</div>
-                  <div className="text-xl font-bold tabular-nums">{flowTotals.avgResponsesPerDay.toFixed(1)}</div>
-                </div>
-              </>
+              <div>
+                <div className="text-muted-foreground">Avg re-attested / day</div>
+                <div className="text-xl font-bold tabular-nums">{flowTotals.avgReattestedPerDay.toFixed(1)}</div>
+              </div>
             )}
             <div>
               <div className="text-muted-foreground">Backlog delta</div>
@@ -713,12 +715,14 @@ export default function Insights() {
                     <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="created" name="Created" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                    {/* Submitted (us) and Responses (payor) always render so
+                        the "in vs out" story is visible in both unit modes.
+                        Re-attested and Resolved are unit-specific and only
+                        appear in their relevant mode. */}
+                    <Line type="monotone" dataKey="submitted" name="Submitted (us)" stroke="hsl(var(--cc-warning))" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="responses" name="Responses received (payor)" stroke="hsl(var(--cc-info, var(--primary)))" strokeWidth={2} strokeDasharray="2 2" dot={false} />
                     {flowUnit === "invoices" ? (
-                      <>
-                        <Line type="monotone" dataKey="submitted" name="Submitted (us)" stroke="hsl(var(--cc-warning))" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="reattested" name="Re-attested (us)" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
-                        <Line type="monotone" dataKey="responses" name="Responses received (payor)" stroke="hsl(var(--cc-info, var(--primary)))" strokeWidth={2} strokeDasharray="2 2" dot={false} />
-                      </>
+                      <Line type="monotone" dataKey="reattested" name="Re-attested (us)" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
                     ) : (
                       <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--cc-success))" strokeWidth={2} dot={false} />
                     )}
