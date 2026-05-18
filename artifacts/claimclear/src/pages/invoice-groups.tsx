@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useRole } from "@/lib/role";
 import { Link, useLocation } from "wouter";
-import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock, RefreshCw, XCircle, Sparkles } from "lucide-react";
+import { Tag, X, Loader2, CheckCircle2, FolderOpen, Download, MoreHorizontal, Send, FileText, Files, Filter, Activity, FileCheck, AlertCircle, FileWarning, Calendar as CalendarIcon, CalendarOff, DollarSign, Clock, RefreshCw, XCircle, Sparkles, Truck } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { ServiceDateCell, type ServiceDateReason } from "@/components/service-date-cell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -38,7 +39,7 @@ import {
   type FacetOption,
 } from "@/components/list-table/faceted-filter";
 import { useUrlParams } from "@/lib/use-url-params";
-import { CREATED_DATE_PRESETS } from "@/lib/date-presets";
+import { CREATED_DATE_PRESETS, SERVICE_DATE_PRESETS } from "@/lib/date-presets";
 import {
   PageHeader, FilterStrip, type FilterStripTab,
   StatusStrip, StatusDot,
@@ -165,6 +166,15 @@ export default function InvoiceGroupsList() {
   const filterErrorDetails = get("errorDetails") as "" | "empty" | "present";
   const filterCreatedFrom = get("createdFrom");
   const filterCreatedTo = get("createdTo");
+  // Task #764 — service date (when the ride happened) range + driver
+  // (carNumber) filter. Operators almost always look up invoices by
+  // when the ride happened, not when the record landed in the system.
+  // Drives the prominent "Date of Service" facet next to Created Date,
+  // and the Driver facet that the Insights Repeat Offenders row now
+  // links into.
+  const filterServiceDateFrom = get("serviceDateFrom");
+  const filterServiceDateTo = get("serviceDateTo");
+  const filterCarNumber = get("carNumber");
   const filterAmountMin = get("amountMin");
   const filterAmountMax = get("amountMax");
   const filterExpiringRaw = get("expiring");
@@ -281,6 +291,9 @@ export default function InvoiceGroupsList() {
     errorDetails: (filterErrorDetails || undefined) as "empty" | "present" | undefined,
     createdFrom: filterCreatedFrom || undefined,
     createdTo: filterCreatedTo || undefined,
+    serviceDateFrom: filterServiceDateFrom || undefined,
+    serviceDateTo: filterServiceDateTo || undefined,
+    carNumber: filterCarNumber || undefined,
     amountMin: filterAmountMin || undefined,
     amountMax: filterAmountMax || undefined,
     expiring: (filterExpiring || undefined) as ListInvoiceGroupsParams["expiring"],
@@ -467,11 +480,11 @@ export default function InvoiceGroupsList() {
   };
 
   const clearFilters = () => {
-    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, outlook: null, readyToGenerate: null, page: null }, false);
+    set({ status: null, outcome: null, errorTypeId: null, errorDetails: null, createdFrom: null, createdTo: null, serviceDateFrom: null, serviceDateTo: null, carNumber: null, amountMin: null, amountMax: null, expiring: null, missingServiceDate: null, missingServiceDateReason: null, legSubStatus: null, draftReviewed: null, outlook: null, readyToGenerate: null, page: null }, false);
     setSelectAllMatching(false);
   };
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed || !!filterOutlook || filterReadyToGenerate;
+  const hasActiveFilters = filterStatuses.length > 0 || filterOutcomes.length > 0 || filterErrorTypeIds.length > 0 || !!filterErrorDetails || !!filterCreatedFrom || !!filterCreatedTo || !!filterServiceDateFrom || !!filterServiceDateTo || !!filterCarNumber || !!filterAmountMin || !!filterAmountMax || !!filterExpiring || filterMissingServiceDate || !!filterMissingReason || effectiveLegSubStatuses.length > 0 || !!effectiveDraftReviewed || !!filterOutlook || filterReadyToGenerate;
 
   const chips = useMemo((): FilterChip[] => {
     const result: FilterChip[] = [];
@@ -517,6 +530,21 @@ export default function InvoiceGroupsList() {
     }
     if (filterErrorDetails) {
       result.push({ key: "errorDetails", label: filterErrorDetails === "empty" ? "No description" : "Has description", onRemove: () => set({ errorDetails: null, page: null }, false) });
+    }
+    if (filterServiceDateFrom || filterServiceDateTo) {
+      const label = filterServiceDateFrom && filterServiceDateTo
+        ? `Service date: ${filterServiceDateFrom} – ${filterServiceDateTo}`
+        : filterServiceDateFrom
+          ? `Service date ≥ ${filterServiceDateFrom}`
+          : `Service date ≤ ${filterServiceDateTo}`;
+      result.push({ key: "serviceDate", label, onRemove: () => set({ serviceDateFrom: null, serviceDateTo: null, page: null }, false) });
+    }
+    if (filterCarNumber) {
+      result.push({
+        key: "carNumber",
+        label: `Driver: ${filterCarNumber}`,
+        onRemove: () => set({ carNumber: null, page: null }, false),
+      });
     }
     if (filterCreatedFrom || filterCreatedTo) {
       const label = filterCreatedFrom && filterCreatedTo ? `Created: ${filterCreatedFrom} – ${filterCreatedTo}` : filterCreatedFrom ? `Created ≥ ${filterCreatedFrom}` : `Created ≤ ${filterCreatedTo}`;
@@ -564,7 +592,7 @@ export default function InvoiceGroupsList() {
       });
     }
     return result;
-  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, filterOutlook, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, filterReadyToGenerate, set]);
+  }, [search, filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails, filterCreatedFrom, filterCreatedTo, filterServiceDateFrom, filterServiceDateTo, filterCarNumber, filterAmountMin, filterAmountMax, filterExpiring, filterMissingServiceDate, filterMissingReason, filterOutlook, errorTypes, activeTab, effectiveLegSubStatuses, effectiveDraftReviewed, filterImportBatch, filterReadyToGenerate, set]);
 
   const toggleCol = (key: string) => {
     setVisibleCols(prev => {
@@ -604,6 +632,8 @@ export default function InvoiceGroupsList() {
   const errorTypeCount = filterErrorTypeIds.length;
   const errorDetailsCount = filterErrorDetails ? 1 : 0;
   const createdDateCount = filterCreatedFrom || filterCreatedTo ? 1 : 0;
+  const serviceDateCount = filterServiceDateFrom || filterServiceDateTo ? 1 : 0;
+  const carNumberCount = filterCarNumber ? 1 : 0;
   const amountCount = filterAmountMin || filterAmountMax ? 1 : 0;
   const deadlineCount = filterExpiring ? 1 : 0;
   const missingServiceDateCount = (filterMissingServiceDate || filterMissingReason) ? 1 : 0;
@@ -613,7 +643,8 @@ export default function InvoiceGroupsList() {
 
   const totalAppliedFilters =
     statusCount + outcomeCount + errorTypeCount + errorDetailsCount +
-    createdDateCount + amountCount + deadlineCount + missingServiceDateCount +
+    createdDateCount + serviceDateCount + carNumberCount +
+    amountCount + deadlineCount + missingServiceDateCount +
     legSubStatusCount + draftReviewedCount + outlookCount;
 
   const legSubStatusOptions: FacetOption[] = useMemo(
@@ -849,6 +880,62 @@ export default function InvoiceGroupsList() {
         />
       ),
     },
+    // Task #764 — Date of Service. Listed BEFORE Created Date because
+    // operators almost always look up invoices by when the ride
+    // happened, not when the record landed in the system. Mirrors the
+    // same date-range component / preset pattern as Created Date so
+    // both feel equally first-class in the filter rail.
+    {
+      id: "serviceDate",
+      label: "Date of Service",
+      icon: CalendarIcon,
+      appliedCount: serviceDateCount,
+      render: () => (
+        <FacetDateRange
+          value={{ from: filterServiceDateFrom, to: filterServiceDateTo }}
+          onChange={v =>
+            set(
+              {
+                serviceDateFrom: v.from || null,
+                serviceDateTo: v.to || null,
+                page: null,
+              },
+              false,
+            )
+          }
+          presets={SERVICE_DATE_PRESETS}
+          testIdPrefix="facet-serviceDate"
+        />
+      ),
+    },
+    // Task #764 — Driver / car number text input. We treat carNumber
+    // as the driver identifier (matching how Insights' Repeat
+    // Offenders section already works). Exact match on the wire.
+    {
+      id: "carNumber",
+      label: "Driver",
+      icon: Truck,
+      appliedCount: carNumberCount,
+      render: () => (
+        <div className="p-3 space-y-2" data-testid="facet-carNumber">
+          <div className="text-xs font-semibold text-muted-foreground uppercase">Driver / car #</div>
+          <Input
+            type="text"
+            value={filterCarNumber || ""}
+            onChange={e => {
+              const trimmed = e.target.value.trim();
+              set({ carNumber: trimmed || null, page: null }, false);
+            }}
+            placeholder="e.g. 45"
+            data-testid="facet-carNumber-input"
+            className="h-8"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Narrow to invoices that include at least one ride with this car number. Same identifier Insights uses for drivers.
+          </p>
+        </div>
+      ),
+    },
     {
       id: "createdDate",
       label: "Created Date",
@@ -903,13 +990,15 @@ export default function InvoiceGroupsList() {
   ], [
     clerk,
     statusCount, outcomeCount, errorTypeCount, errorDetailsCount,
-    createdDateCount, amountCount, deadlineCount, missingServiceDateCount,
+    createdDateCount, serviceDateCount, carNumberCount,
+    amountCount, deadlineCount, missingServiceDateCount,
     legSubStatusCount, draftReviewedCount, outlookCount,
     statusOptions, outcomeOptions, errorTypeOptions, legSubStatusOptions,
     filterStatuses, filterOutcomes, filterErrorTypeIds, filterErrorDetails,
     filterExpiring, filterOutlook,
     filterMissingServiceDate, filterMissingReason,
     filterCreatedFrom, filterCreatedTo,
+    filterServiceDateFrom, filterServiceDateTo, filterCarNumber,
     filterAmountMin, filterAmountMax,
     isPreSubmitTab, effectiveLegSubStatuses, effectiveDraftReviewed,
     set,
@@ -1248,12 +1337,41 @@ export default function InvoiceGroupsList() {
                       <tr>
                         <td colSpan={colCount} className="px-4 py-0">
                           {(search || hasActiveFilters) ? (
-                            <EmptyState
-                              icon={Filter}
-                              title="No invoice groups match your filters"
-                              description="Try removing a filter or adjusting your search to see more results."
-                              primaryAction={{ label: "Clear filters", onClick: () => { clearFilters(); set({ q: null }, false); } }}
-                            />
+                            (() => {
+                              // Task #764 — synthesize a contextual empty-state
+                              // title from the driver (carNumber) and the two
+                              // date ranges currently in play. The Insights
+                              // Repeat Offenders click-through lands here with
+                              // `?carNumber=…`, and it's confusing to see a
+                              // generic "no groups match your filters" when
+                              // you came from a specific driver row. We
+                              // prioritize driver + service-date because those
+                              // are the new facets and the most common Insights
+                              // entry path; created-date falls back behind.
+                              const fmtRange = (from: string, to: string) =>
+                                from && to ? `between ${from} and ${to}` : from ? `on or after ${from}` : `on or before ${to}`;
+                              const parts: string[] = [];
+                              if (filterCarNumber) parts.push(`driver ${filterCarNumber}`);
+                              if (filterServiceDateFrom || filterServiceDateTo) {
+                                parts.push(`service date ${fmtRange(filterServiceDateFrom, filterServiceDateTo)}`);
+                              } else if (filterCreatedFrom || filterCreatedTo) {
+                                parts.push(`created ${fmtRange(filterCreatedFrom, filterCreatedTo)}`);
+                              }
+                              const contextualTitle = parts.length > 0
+                                ? `No invoices for ${parts.join(" • ")}`
+                                : "No invoice groups match your filters";
+                              const contextualDescription = parts.length > 0
+                                ? "Try widening the date range, clearing the driver, or removing other filters."
+                                : "Try removing a filter or adjusting your search to see more results.";
+                              return (
+                                <EmptyState
+                                  icon={Filter}
+                                  title={contextualTitle}
+                                  description={contextualDescription}
+                                  primaryAction={{ label: "Clear filters", onClick: () => { clearFilters(); set({ q: null }, false); } }}
+                                />
+                              );
+                            })()
                           ) : (
                             <EmptyState
                               icon={FolderOpen}

@@ -1063,7 +1063,7 @@ export default function Insights() {
                       <TrendArrow d={d.trend} />
                     </span>
                     <Link
-                      href={`/claims?carNumber=${encodeURIComponent(d.carNumber)}`}
+                      href={`/invoice-groups?carNumber=${encodeURIComponent(d.carNumber)}`}
                       className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                       style={{ width: 56, justifyContent: "flex-end" }}
                     >

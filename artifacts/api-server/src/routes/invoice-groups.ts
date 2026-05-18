@@ -419,6 +419,22 @@ function buildInvoiceGroupWhere(query: Record<string, unknown>): SQL | undefined
     }
   }
 
+  // Task #764 — Driver (carNumber) facet. We treat carNumber as the
+  // driver identifier (same convention Insights uses on the Repeat
+  // Offenders section). Restricts the group list to invoice groups
+  // that have at least one ride/claim with the given carNumber.
+  // EXISTS subquery against the claims table joined to this group so
+  // we don't multiply rows.
+  const carNumberRaw = query.carNumber as string | undefined;
+  if (carNumberRaw && typeof carNumberRaw === "string" && carNumberRaw.trim().length > 0) {
+    const carNum = carNumberRaw.trim();
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${claimsTable}
+      WHERE ${claimsTable.invoiceGroupId} = ${invoiceGroupsTable.id}
+        AND ${claimsTable.carNumber} = ${carNum}
+    )`);
+  }
+
   const expiringMode = parseExpiringMode(query.expiring);
   if (expiringMode) {
     conditions.push(buildInvoiceGroupExpiringCondition(expiringMode));

@@ -227,6 +227,12 @@ export const ListInvoiceGroupsQueryParams = zod.object({
     .describe(
       'Task #753. Comma-separated list of payor\/client numbers. Exact\nmatch against `invoice_groups.client_number`. Drives the\n\"Payor \/ client\" facet on the Responses Awaiting Review page.\n',
     ),
+  carNumber: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      'Task #764. Restrict to invoice groups that have at least one\nride\/claim with the given carNumber (we treat carNumber as\nthe driver identifier, matching how Insights\' Repeat\nOffenders section already works). Exact match. Drives the\n\"Driver\" filter on the invoice groups list page and the\nclick-through from the Insights Repeat Offenders driver row.\n',
+    ),
   q: zod.coerce
     .string()
     .optional()

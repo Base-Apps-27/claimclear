@@ -398,6 +398,17 @@ paths:
             "Payor / client" facet on the Responses Awaiting Review page.
           schema:
             type: string
+        - name: carNumber
+          in: query
+          description: |
+            Task #764. Restrict to invoice groups that have at least one
+            ride/claim with the given carNumber (we treat carNumber as
+            the driver identifier, matching how Insights' Repeat
+            Offenders section already works). Exact match. Drives the
+            "Driver" filter on the invoice groups list page and the
+            click-through from the Insights Repeat Offenders driver row.
+          schema:
+            type: string
         - name: q
           in: query
           description: |
