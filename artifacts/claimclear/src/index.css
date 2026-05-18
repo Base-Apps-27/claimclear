@@ -101,6 +101,38 @@
   --cc-red-fg: 0 74% 42%;
   --cc-success: 142 71% 38%;
   --cc-warning: 38 92% 50%;
+
+  /* Pre-wrapped tone tokens (Task: D2 polish — fix transparent
+     StateBadge chips). `--cc-*-bg/fg/border` above are raw HSL
+     channels and need an outer `hsl()` at the call site, BUT inside
+     `.cc-scope` (below) those same names are re-aliased to wrapped
+     `hsl(...)` values to satisfy the dominant in-scope convention
+     (bare `var(--cc-blue-bg)`). That re-aliasing breaks the few
+     consumers that ALSO wrap with `hsl()` — most importantly
+     TONE_STYLE in `cohesion/tone.ts`, which feeds every <StateBadge>
+     on the page. Result before this fix: header phase chip,
+     computed-outcome chip, status-investigating chips, and the
+     group verdict chip all rendered as `hsl(hsl(...))` (invalid →
+     transparent) anywhere a StateBadge appeared inside .cc-scope.
+     These `--cc-tone-*` tokens are literal `hsl(...)` strings with
+     no var indirection, so they resolve correctly in EVERY scope
+     and are immune to the .cc-scope alias collision. TONE_STYLE
+     reads these directly. Dark-mode override is in `.dark` below. */
+  --cc-tone-blue-bg: hsl(214 100% 96%);
+  --cc-tone-blue-fg: hsl(221 83% 38%);
+  --cc-tone-blue-border: hsl(214 95% 85%);
+  --cc-tone-purple-bg: hsl(270 95% 96%);
+  --cc-tone-purple-fg: hsl(272 60% 38%);
+  --cc-tone-purple-border: hsl(269 80% 85%);
+  --cc-tone-amber-bg: hsl(48 96% 95%);
+  --cc-tone-amber-fg: hsl(28 78% 38%);
+  --cc-tone-amber-border: hsl(45 93% 80%);
+  --cc-tone-green-bg: hsl(141 78% 95%);
+  --cc-tone-green-fg: hsl(142 71% 30%);
+  --cc-tone-green-border: hsl(142 70% 80%);
+  --cc-tone-red-bg: hsl(0 93% 96%);
+  --cc-tone-red-fg: hsl(0 74% 42%);
+  --cc-tone-red-border: hsl(0 90% 85%);
 }
 
 .dark {
@@ -152,6 +184,25 @@
   --cc-red-fg: 0 80% 72%;
   --cc-success: 142 60% 50%;
   --cc-warning: 38 92% 60%;
+
+  /* Dark-mode mirrors of the pre-wrapped tone tokens declared in
+     `:root` above. Same rationale: literal `hsl(...)` strings with
+     no var indirection, immune to .cc-scope alias collision. */
+  --cc-tone-blue-bg: hsl(219 60% 16%);
+  --cc-tone-blue-fg: hsl(219 90% 75%);
+  --cc-tone-blue-border: hsl(219 60% 26%);
+  --cc-tone-purple-bg: hsl(271 50% 18%);
+  --cc-tone-purple-fg: hsl(271 90% 78%);
+  --cc-tone-purple-border: hsl(271 50% 28%);
+  --cc-tone-amber-bg: hsl(38 60% 16%);
+  --cc-tone-amber-fg: hsl(38 95% 70%);
+  --cc-tone-amber-border: hsl(38 60% 26%);
+  --cc-tone-green-bg: hsl(142 50% 12%);
+  --cc-tone-green-fg: hsl(142 70% 65%);
+  --cc-tone-green-border: hsl(142 50% 22%);
+  --cc-tone-red-bg: hsl(0 50% 15%);
+  --cc-tone-red-fg: hsl(0 80% 72%);
+  --cc-tone-red-border: hsl(0 50% 25%);
 }
 
 @layer base {

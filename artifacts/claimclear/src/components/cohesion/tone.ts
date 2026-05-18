@@ -6,31 +6,39 @@ type ToneStyle = {
   border: string;
 };
 
+// Reads the pre-wrapped `--cc-tone-*` tokens defined in
+// `src/index.css` at `:root` (and overridden in `.dark`). Those
+// tokens are literal `hsl(...)` strings with no var indirection,
+// so they resolve correctly both INSIDE `.cc-scope` (where the
+// raw `--cc-*-bg` names are re-aliased to wrapped form and would
+// double-wrap with an outer `hsl()`) and OUTSIDE it. Do not change
+// these back to `hsl(var(--cc-*-bg))` — that's what produced the
+// transparent StateBadge chips on the invoice group detail page.
 export const TONE_STYLE: Record<Tone, ToneStyle> = {
   blue: {
-    bg: "hsl(var(--cc-blue-bg))",
-    fg: "hsl(var(--cc-blue-fg))",
-    border: "hsl(var(--cc-blue-border))",
+    bg: "var(--cc-tone-blue-bg)",
+    fg: "var(--cc-tone-blue-fg)",
+    border: "var(--cc-tone-blue-border)",
   },
   purple: {
-    bg: "hsl(var(--cc-purple-bg))",
-    fg: "hsl(var(--cc-purple-fg))",
-    border: "hsl(var(--cc-purple-border))",
+    bg: "var(--cc-tone-purple-bg)",
+    fg: "var(--cc-tone-purple-fg)",
+    border: "var(--cc-tone-purple-border)",
   },
   amber: {
-    bg: "hsl(var(--cc-amber-bg))",
-    fg: "hsl(var(--cc-amber-fg))",
-    border: "hsl(var(--cc-amber-border))",
+    bg: "var(--cc-tone-amber-bg)",
+    fg: "var(--cc-tone-amber-fg)",
+    border: "var(--cc-tone-amber-border)",
   },
   green: {
-    bg: "hsl(var(--cc-green-bg))",
-    fg: "hsl(var(--cc-green-fg))",
-    border: "hsl(var(--cc-green-border))",
+    bg: "var(--cc-tone-green-bg)",
+    fg: "var(--cc-tone-green-fg)",
+    border: "var(--cc-tone-green-border)",
   },
   red: {
-    bg: "hsl(var(--cc-red-bg))",
-    fg: "hsl(var(--cc-red-fg))",
-    border: "hsl(var(--cc-red-border))",
+    bg: "var(--cc-tone-red-bg)",
+    fg: "var(--cc-tone-red-fg)",
+    border: "var(--cc-tone-red-border)",
   },
   muted: {
     bg: "hsl(var(--muted))",
