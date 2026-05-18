@@ -529,14 +529,36 @@
   --cc-radius: 0.5rem;
   color: var(--cc-fg);
   background: var(--cc-bg);
+  /* Polish parity with the mockup-sandbox D2 surface — the mockup
+     declares font-family directly on .cc-scope and gets Inter's
+     OpenType features for free (tabular numbers in KPI/$ values,
+     the alternate 1/4/6 glyphs that make ledger figures align).
+     Without these the page renders in body-inherited Inter but
+     with default proportional figures, which is the single biggest
+     reason the production page reads as "less crisp" than D2 even
+     though every token value matches 1:1. */
+  font-family: 'Inter', var(--app-font-sans, ui-sans-serif), system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'tnum' on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.cc-scope .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cc-scope .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-feature-settings: 'tnum' on; }
 
 .cc-scope .cc-card {
   background: var(--cc-card);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius);
+  /* Subtle elevation — the mockup gets away without a shadow
+     because it floats on a single .cc-bg surface, but inside the
+     real app's AppSidebar chrome the cards visually collide with
+     the page background. 1px outer shadow lifts every cc-card off
+     the canvas without changing layout. Dark mode dampens it to
+     a transparent black so it stays subtle on dark surfaces. */
+  box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+}
+.dark .cc-scope .cc-card {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.25);
 }
 
 .cc-scope .cc-btn {

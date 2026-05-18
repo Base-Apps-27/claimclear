@@ -1326,31 +1326,26 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
             BackBar replaces both, but we keep the import alive without a
             stale node so a future refactor sees the intentional removal. */}
 
-        {/* D2 accent header — full-height status stripe on the left,
-            single compact pill row, and a one-line meta strip that
-            folds the service-date (was its own dedicated strip),
-            Updated, days-in-queue, dispute count, and hold reason
-            into a single muted line. The "Invoice group" eyebrow was
-            removed entirely — the breadcrumb above already establishes
-            scope, and D2 prizes the pill row as the first thing the
-            operator's eye lands on. */}
+        {/* Accent header */}
         <div
-          className={`cc-card overflow-hidden flex items-stretch${justCleared ? " cc-card-just-cleared" : ""}`}
+          className={`cc-card p-4${justCleared ? " cc-card-just-cleared" : ""}`}
           data-just-cleared={justCleared ? "true" : undefined}
         >
-          {/* Status accent stripe — full card height (was a stubby 48px
-              bar that visually disappeared next to a taller pill row +
-              meta line). Color is picked from statusAccent() so green =
-              verdict in hand, blue = in-flight, amber = blocked / on
-              hold, red = denied / withdrawn, purple = pre-submit. */}
-          <div
-            className="w-1 self-stretch shrink-0"
-            style={{ background: statusAccent(group.status).fg }}
-          />
-          <div className="flex-1 min-w-0 p-4 flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              {/* Task #767 — accent bar color reflects the group's
+                  status tone so operators can scan the header in one
+                  glance (green = verdict in hand, blue = in-flight,
+                  amber = blocked / on hold, red = denied / withdrawn,
+                  purple = pre-submit drafting). */}
+              <div className="w-1 h-12 rounded" style={{ background: statusAccent(group.status).fg }} />
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-wide font-semibold mb-0.5"
+                     style={{ color: "var(--cc-muted-fg)" }}>
+                  Invoice group
+                </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold mono inline-flex items-center gap-2 m-0">
+                  <h1 className="text-xl font-bold mono inline-flex items-center gap-2">
                     {group.invoiceNumber ? (
                       <RefNumber value={group.invoiceNumber} variant="chip" />
                     ) : (
@@ -1359,10 +1354,10 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                   </h1>
                   {/* Task #555 — phase chip is now the primary state
                        affordance on this surface; the database-stored
-                       `status` is demoted to a small dashed "cached"
-                       sub-label so operators can still spot drift
-                       between the computed phase and the persisted
-                       column without it dominating the header. */}
+                       `status` is demoted to a small "(cached)" sub-
+                       label so operators can still spot drift between
+                       the computed phase and the persisted column
+                       without it dominating the header. */}
                   <StateBadge
                     variant="phase"
                     value={(group as { phase?: string }).phase ?? "triage"}
@@ -1370,13 +1365,20 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                     data-testid="header-phase-chip"
                   />
                   <span
-                    className="text-[10px] font-normal px-1.5 py-0.5 rounded border border-dashed"
-                    style={{ color: "var(--cc-muted-fg)", borderColor: "var(--cc-border)" }}
+                    className="text-[10px] font-normal"
+                    style={{ color: "var(--cc-muted-fg)" }}
                     data-testid="header-status-cached"
                   >
-                    cached: {group.status}
+                    (cached: {group.status})
                   </span>
-                  {/* Task #555 — computed group outcome. */}
+                  {/* Task #555 — computed group outcome lives in the
+                       header so the operator's first glance answers
+                       "where did this dispute land?" without scrolling
+                       to the verdict card. The value is recomputed
+                       from per-leg verdicts on every render via the
+                       shared helper; the persisted `group.outcome`
+                       column is intentionally NOT read here so a stale
+                       row never misleads the surface. */}
                   {(() => {
                     const computed = deriveGroupOutcomeFromLegs(allRides).outcome;
                     if (!computed) return null;
@@ -1388,63 +1390,25 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                       />
                     );
                   })()}
-                  {group.errorTypeName ? (
-                    <span
-                      className="text-xs px-2 py-0.5 rounded"
-                      style={{
-                        background: "var(--cc-muted)",
-                        color: "var(--cc-muted-fg)",
-                        border: "1px solid var(--cc-border)",
-                      }}
-                    >
-                      {group.errorTypeName}
+                  <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>·</span>
+                  <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                    {group.errorTypeName ? <>{group.errorTypeName} · </> : null}
+                    <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
+                      {allRides.length} leg{allRides.length === 1 ? "" : "s"}
                     </span>
-                  ) : null}
-                  <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>—</span>
-                  <span className="text-xs font-medium mono" style={{ color: "var(--cc-fg)" }}>
-                    {allRides.length} leg{allRides.length === 1 ? "" : "s"}
                     <HideForClerk>
                       {" · "}
-                      {formatCurrency(group.totalAmount ?? "0")}
+                      <span className="font-medium mono" style={{ color: "var(--cc-fg)" }}>
+                        {formatCurrency(group.totalAmount ?? "0")}
+                      </span>
                     </HideForClerk>
                   </span>
                 </div>
-                <div className="text-xs mt-2" style={{ color: "var(--cc-muted-fg)" }}>
+                <div className="text-xs mt-1.5" style={{ color: "var(--cc-muted-fg)" }}>
                   {group.updatedAt ? (
                     <>Updated <span className="font-medium" style={{ color: "var(--cc-fg)" }}>{relativeTime(group.updatedAt)}</span> · </>
                   ) : null}
                   {daysInQueue}d in queue
-                  {/* Service date — folded inline (was its own
-                      dedicated `ServiceDateBanner` strip below the
-                      meta line in the prior layout, which created an
-                      extra visual row D2 doesn't have). The banner
-                      component is intentionally retained as a module
-                      export — other surfaces (list cells) still
-                      consume it. */}
-                  {(() => {
-                    const sd = (group as { earliestDate?: string | null }).earliestDate;
-                    if (!sd) {
-                      // Show the empty-state reason the banner used to
-                      // surface, but as a single inline phrase.
-                      const reason = (group as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason;
-                      if (!reason) return null;
-                      return (
-                        <> · <span data-testid="group-header-service-date-missing">Service date unavailable</span></>
-                      );
-                    }
-                    let label = sd;
-                    try {
-                      const d = new Date(sd.length === 10 ? sd + "T00:00:00" : sd);
-                      if (!Number.isNaN(d.getTime())) {
-                        label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-                      }
-                    } catch {
-                      // fall through with raw string
-                    }
-                    return (
-                      <> · Service date <span className="font-medium" style={{ color: "var(--cc-fg)" }} data-testid="group-header-service-date">{label}</span></>
-                    );
-                  })()}
                   {inDisputeCount > 0
                     ? ` · ${inDisputeCount} of ${allRides.length} legs in dispute`
                     : null}
@@ -1480,7 +1444,21 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                     </>
                   ) : null}
                 </div>
+                {/* Service-date strip (Task #353). Re-uses the same enum
+                    the list cell consumes so the empty-state language is
+                    identical across surfaces. Hidden when no group id is
+                    available (defensive — the header always has one). */}
+                {group.id != null ? (
+                  <div className="mt-1.5">
+                    <ServiceDateBanner
+                      groupId={group.id as number}
+                      earliestDate={(group as { earliestDate?: string | null }).earliestDate ?? null}
+                      reason={(group as { serviceDateReason?: ServiceDateReason | null }).serviceDateReason ?? null}
+                    />
+                  </div>
+                ) : null}
               </div>
+            </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Task #555 — single sectioned "Transitions" dropdown.
                    Top section is *Phase actions* (Submit dispute,
@@ -2505,16 +2483,120 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
               );
             })()}
 
-              {/* D2 removes the "Payor responses & per-leg verdict"
-                  card entirely. The group verdict is shown inline in
-                  the Communication card's header pill, and payor
-                  responses are the messages in the comms stack itself,
-                  so this card was duplicating both. The retired markup
-                  used <CcCard title="Payor responses & per-leg verdict">
-                  with isPreSubmit/Group verdict/Payor responses
-                  sections; the data (detail.responses, computed
-                  outcome) is still rendered above via the message stack
-                  and verdict pill. */}
+              {/* Post-submit verdict + responses */}
+            <CcCard
+              title="Payor responses & per-leg verdict"
+              icon={<Gavel className="w-3.5 h-3.5" />}
+              testId="group-response-summary-card"
+            >
+              {isPreSubmit ? (
+                <div
+                  className="flex items-center gap-2 text-xs p-2.5 rounded"
+                  style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>
+                    Activates after this group is submitted to portal.
+                    Per-leg verdicts are recorded here and surface read-only on each leg page.
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <div className="text-xs uppercase tracking-wide font-semibold" style={{ color: "var(--cc-muted-fg)" }}>
+                      Group verdict
+                    </div>
+                    {(() => {
+                      // Task #555 — never trust `group.outcome`; the
+                      // canonical verdict is computed from per-leg
+                      // verdicts via the shared helper so the rail's
+                      // outcome cannot drift behind a leg edit.
+                      const computedOutcome =
+                        deriveGroupOutcomeFromLegs(allRides).outcome;
+                      return computedOutcome !== "Pending";
+                    })() ? (
+                      <div className="text-sm space-y-1 p-3 rounded" style={{ background: "var(--cc-muted)" }}>
+                        <div className="flex items-center gap-2">
+                          <StateBadge
+                            variant="outcome"
+                            value={deriveGroupOutcomeFromLegs(allRides).outcome}
+                            data-testid="group-verdict-outcome"
+                          />
+                          {group.closureReason && (
+                            <span className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                              · {group.closureReason}
+                            </span>
+                          )}
+                        </div>
+                        {group.approvedAmount && (
+                          <HideForClerk>
+                            <p className="text-xs" style={{ color: "var(--cc-muted-fg)" }}>
+                              Approved amount: {formatCurrency(group.approvedAmount)}
+                            </p>
+                          </HideForClerk>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm italic" style={{ color: "var(--cc-muted-fg)" }} data-testid="group-verdict-empty">
+                        No verdict recorded yet.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs uppercase tracking-wide font-semibold" style={{ color: "var(--cc-muted-fg)" }}>
+                      Payor responses
+                    </div>
+                    {(() => {
+                      const responses = detail.responses ?? [];
+                      if (responses.length === 0) {
+                        return (
+                          <p className="text-sm italic" style={{ color: "var(--cc-muted-fg)" }} data-testid="group-responses-empty">
+                            No responses received yet.
+                          </p>
+                        );
+                      }
+                      return (
+                        <ul className="space-y-2">
+                          {responses.slice(0, 5).map((r: PortalResponseItem) => (
+                            <li
+                              key={r.id}
+                              className="rounded p-2.5 text-sm"
+                              style={{ border: "1px solid var(--cc-border)", background: "var(--cc-muted)" }}
+                              data-testid={`group-response-${r.id}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}>
+                                  {r.responseType}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ border: "1px solid var(--cc-border)", color: "var(--cc-muted-fg)" }}>
+                                  {r.source}
+                                </span>
+                                {r.subject && (
+                                  <span className="text-xs font-medium truncate">{r.subject}</span>
+                                )}
+                                <span className="text-xs ml-auto" style={{ color: "var(--cc-muted-fg)" }}>
+                                  {r.senderName || r.senderEmail || "Unknown sender"}
+                                </span>
+                              </div>
+                              {r.aiSummary && (
+                                <p className="text-xs line-clamp-2" style={{ color: "var(--cc-muted-fg)" }}>
+                                  {r.aiSummary}
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                          {responses.length > 5 && (
+                            <li className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                              +{responses.length - 5} more — see legacy page for the full thread.
+                            </li>
+                          )}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </CcCard>
 
                 {/* Scroll anchor — Task #767, was on the retired chrome. */}
               <div id="group-detail-section-evidence" data-testid="group-detail-section-evidence" aria-hidden="true" />
