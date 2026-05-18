@@ -932,6 +932,12 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
   const [newNote, setNewNote] = useState("");
+  // D2 polish: inline quick-reply input at the foot of the Communication
+  // card (mockup pattern). Fires the same replyMutation as the legacy
+  // full thread composer — defaults `to` to the latest inbound sender's
+  // email and `subject` to "Re: <latestSubject>" so a one-line operator
+  // reply lands in the right conversation without opening a modal.
+  const [replyDraft, setReplyDraft] = useState("");
   // Save-confirmation breath replaces the success toast for routine saves
   // (Task #316). Errors still toast via the mutation's onError below.
   const noteBreath = useBreath();
@@ -2212,47 +2218,267 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 ) : undefined
               }
             >
-              <GroupCommunicationThread
-                bare
-                conversations={conversations}
-                groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
-                isSyncing={checkEmailMutation.isPending}
-                isSending={replyMutation.isPending}
-                onSyncInbox={onSyncInbox}
-                onReply={async (input) => {
+              {/* D2 message stack — flattens every conversation's messages,
+                  sorts newest first, and renders each as a tidy card with
+                  sender · type header, tag chips, optional subject, and a
+                  truncated preview in a muted quote box. Replaces the
+                  legacy GroupCommunicationThread mount that rendered the
+                  raw payor portal HTML (full email body + inline scripts)
+                  inside the right rail. */}
+              {(() => {
+                type StackMsg = {
+                  id: string | number;
+                  convId: string;
+                  direction: "inbound" | "outbound";
+                  senderName: string;
+                  senderEmail: string;
+                  subject: string;
+                  preview: string;
+                  timestamp: string;
+                  responseType: string | null;
+                  mentions: { label: string }[];
+                };
+                const flat: StackMsg[] = [];
+                for (const c of conversations) {
+                  for (const m of c.messages) {
+                    const oneLine = (m.bodyPreview || "")
+                      .replace(/\s+/g, " ")
+                      .trim();
+                    flat.push({
+                      id: m.id,
+                      convId: c.conversationId,
+                      direction: m.direction as "inbound" | "outbound",
+                      senderName: m.senderName || (m.direction === "outbound" ? "Operator" : "Payor"),
+                      senderEmail: m.senderEmail || "",
+                      subject: (m.subject ?? c.subject ?? "") as string,
+                      preview: oneLine.length > 320 ? oneLine.slice(0, 320) + "…" : oneLine,
+                      timestamp: m.timestamp,
+                      responseType: m.responseType ?? null,
+                      mentions: m.mentionedLegIds.map((l) => ({ label: l.label })),
+                    });
+                  }
+                }
+                flat.sort(
+                  (a, b) =>
+                    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+                );
+                const topMsgs = flat.slice(0, 5);
+                const latestConv = conversations
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(b.lastActivityAt).getTime() -
+                      new Date(a.lastActivityAt).getTime(),
+                  )[0];
+                const latestInbound = flat.find((m) => m.direction === "inbound");
+                const replyTo = latestInbound?.senderEmail || "";
+                const tagStyleFor = (
+                  tone: "green" | "blue" | "amber" | "red" | "muted",
+                ): React.CSSProperties => {
+                  if (tone === "green") return { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)", border: "1px solid var(--cc-green-border)" };
+                  if (tone === "blue")  return { background: "var(--cc-blue-bg)",  color: "var(--cc-blue-fg)",  border: "1px solid var(--cc-blue-border)" };
+                  if (tone === "amber") return { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", border: "1px solid var(--cc-amber-border)" };
+                  if (tone === "red")   return { background: "var(--cc-red-bg)",   color: "var(--cc-red-fg)",   border: "1px solid var(--cc-red-border)" };
+                  return { background: "var(--cc-muted)", color: "var(--cc-muted-fg)", border: "1px solid var(--cc-border)" };
+                };
+                const onSendQuickReply = async () => {
+                  const body = replyDraft.trim();
+                  if (!body || !latestConv) return;
+                  if (!replyTo) {
+                    toast({
+                      title: "Cannot quick-reply",
+                      description: "No recipient address on this thread — open the full composer.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
                   try {
                     await replyMutation.mutateAsync({
                       id: groupId,
-                      conversationId: input.conversationId,
+                      conversationId: latestConv.conversationId,
                       data: {
-                        subject: input.subject,
-                        bodyText: htmlBodyToPlainText(input.bodyHtml),
-                        to: input.to,
-                        cc: input.cc.length > 0 ? input.cc : undefined,
-                        attachments:
-                          input.attachments.length > 0 ? input.attachments : undefined,
+                        subject: latestConv.subject?.toLowerCase().startsWith("re:")
+                          ? latestConv.subject
+                          : `Re: ${latestConv.subject ?? ""}`.trim(),
+                        bodyText: body,
+                        to: [replyTo],
                       },
                     });
-                    successToast({
-                      title: "__VERB__",
-                      description: `Reply sent to ${input.to.join(", ")}`,
-                    });
-                    await qc.invalidateQueries({
-                      queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
-                    });
-                    await qc.invalidateQueries({
-                      queryKey: getGetInvoiceGroupQueryKey(groupId),
-                    });
+                    setReplyDraft("");
+                    successToast({ title: "__VERB__", description: `Reply sent to ${replyTo}` });
+                    await qc.invalidateQueries({ queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId) });
+                    await qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
                   } catch (err) {
                     toast({
                       title: "Failed to send reply",
                       description: err instanceof Error ? err.message : "Please try again.",
                       variant: "destructive",
                     });
-                    throw err;
                   }
-                }}
-              />
+                };
+                return (
+                  <div style={{ background: "var(--cc-card)" }} data-testid="group-comms-message-stack">
+                    {topMsgs.length === 0 ? (
+                      <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                        No messages on this thread yet.
+                      </div>
+                    ) : (
+                      topMsgs.map((m, i, arr) => {
+                        const isInbound = m.direction === "inbound";
+                        const headerLabel = isInbound
+                          ? `${m.senderName} · ${m.responseType ? m.responseType.replace(/_/g, " ") : "response"}`
+                          : `Outbound · ${m.senderName}`;
+                        const tags: { label: string; tone: "green" | "blue" | "amber" | "red" | "muted" }[] = [];
+                        if (m.responseType) {
+                          const rt = m.responseType.toLowerCase();
+                          tags.push({
+                            label: rt.replace(/_/g, " "),
+                            tone:
+                              rt.includes("approv") ? "green" :
+                              rt.includes("deny") || rt.includes("denial") ? "red" :
+                              rt.includes("hold") ? "amber" :
+                              "muted",
+                          });
+                        }
+                        tags.push({
+                          label: isInbound ? "portal" : "submission",
+                          tone: isInbound ? "muted" : "blue",
+                        });
+                        return (
+                          <div
+                            key={`${m.convId}-${m.id}`}
+                            className="p-3"
+                            style={{
+                              background: "var(--cc-card)",
+                              borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none",
+                            }}
+                            data-testid={`group-comms-msg-${m.id}`}
+                          >
+                            <div className="flex items-center justify-between mb-1 text-xs gap-2">
+                              <span className="font-semibold truncate" style={{ color: "var(--cc-fg)" }}>
+                                {headerLabel}
+                              </span>
+                              <span className="text-[10px] shrink-0" style={{ color: "var(--cc-muted-fg)" }}>
+                                {formatDateTime(m.timestamp)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mb-2 mt-1.5 flex-wrap">
+                              {tags.map((t, ti) => (
+                                <span
+                                  key={ti}
+                                  className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded"
+                                  style={tagStyleFor(t.tone)}
+                                >
+                                  {t.label}
+                                </span>
+                              ))}
+                            </div>
+                            {m.subject && (
+                              <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--cc-fg)" }}>
+                                {m.subject}
+                              </p>
+                            )}
+                            {m.preview && (
+                              <p
+                                className="text-[11px] opacity-90 leading-relaxed p-2 rounded"
+                                style={{
+                                  color: "var(--cc-fg)",
+                                  background: "color-mix(in srgb, var(--cc-muted) 40%, transparent)",
+                                  border: "1px solid var(--cc-border)",
+                                }}
+                              >
+                                {m.preview}
+                              </p>
+                            )}
+                            {m.mentions.length > 0 && (
+                              <p className="text-[10px] mt-2 italic" style={{ color: "var(--cc-muted-fg)" }}>
+                                Mentions: {m.mentions.map((x) => x.label).join(" · ")}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                    {/* Quick-reply foot — single-line input + send button.
+                        Disabled when there's no conversation to reply to
+                        yet or when a send is already in flight. */}
+                    <div
+                      className="p-2 flex gap-2"
+                      style={{
+                        background: "color-mix(in srgb, var(--cc-muted) 30%, transparent)",
+                        borderTop: topMsgs.length > 0 ? "1px solid var(--cc-border)" : "none",
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={replyDraft}
+                        onChange={(e) => setReplyDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && replyDraft.trim()) {
+                            e.preventDefault();
+                            void onSendQuickReply();
+                          }
+                        }}
+                        placeholder={
+                          latestConv
+                            ? `Reply to ${replyTo || "thread"}…`
+                            : "Awaiting payor — no thread yet"
+                        }
+                        className="flex-1 cc-input text-xs py-1.5"
+                        style={{ background: "var(--cc-card)" }}
+                        disabled={!latestConv || replyMutation.isPending}
+                        data-testid="group-comms-quick-reply-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void onSendQuickReply()}
+                        disabled={
+                          !latestConv ||
+                          !replyDraft.trim() ||
+                          replyMutation.isPending
+                        }
+                        className="cc-btn cc-btn-sm cc-btn-primary px-2 py-1"
+                        title="Send reply"
+                        data-testid="group-comms-quick-reply-send"
+                      >
+                        {replyMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                    {/* Inbox sync action — was on GroupCommunicationThread.
+                        Kept as a quiet text link beneath the reply box so
+                        the affordance survives the rewrite. */}
+                    {onSyncInbox && (
+                      <div
+                        className="px-3 py-1.5 flex items-center justify-end text-[10px]"
+                        style={{
+                          background: "color-mix(in srgb, var(--cc-muted) 20%, transparent)",
+                          borderTop: "1px solid var(--cc-border)",
+                          color: "var(--cc-muted-fg)",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={onSyncInbox}
+                          disabled={checkEmailMutation.isPending}
+                          className="inline-flex items-center gap-1 hover:opacity-80 transition-opacity"
+                          data-testid="group-comms-sync-inbox"
+                        >
+                          {checkEmailMutation.isPending ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Inbox className="w-3 h-3" />
+                          )}
+                          Sync inbox
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </CcCard>
               );
             })()}
