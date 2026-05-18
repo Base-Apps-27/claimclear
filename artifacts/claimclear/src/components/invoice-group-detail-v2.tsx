@@ -6,7 +6,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
 import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
 import { useTransientFlag } from "@/hooks/use-transient-flag";
-import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed } from "@/lib/lifecycle-phase";
+import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed, getLifecyclePhase } from "@/lib/lifecycle-phase";
 import { partitionTransitions } from "@/lib/transitions-partition";
 import { deriveGroupOutcomeFromLegs } from "@/lib/group-outcome";
 import {
@@ -133,17 +133,47 @@ interface Props {
 
 /* -------------------------- Card primitives ---------------------------- */
 
+// Task #767 — D2 polish pass. Header `tone` paints the card header strip
+// in one of the cc-* accent colors so operators can scan the page by
+// color (purple = operator-only escalations, green = group-verdict
+// surfaces, amber = blocked / needs action, blue = informational). The
+// card body stays white in every tone so the chrome reads as a "stamped
+// folder tab" rather than a fully-tinted card.
+type CcCardTone = "default" | "purple" | "green" | "amber" | "blue";
+
+const CC_CARD_TONE_STYLE: Record<CcCardTone, React.CSSProperties> = {
+  default: {},
+  purple:  { background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)", borderColor: "var(--cc-purple-border)" },
+  green:   { background: "var(--cc-green-bg)",  color: "var(--cc-green-fg)",  borderColor: "var(--cc-green-border)" },
+  amber:   { background: "var(--cc-amber-bg)",  color: "var(--cc-amber-fg)",  borderColor: "var(--cc-amber-border)" },
+  blue:    { background: "var(--cc-blue-bg)",   color: "var(--cc-blue-fg)",   borderColor: "var(--cc-blue-border)" },
+};
+
 function CcCard({
-  title, action, icon, children, padded = true, testId,
+  title, action, icon, children, padded = true, testId, tone = "default",
 }: {
   title: ReactNode; action?: ReactNode; icon?: ReactNode;
   children: ReactNode; padded?: boolean; testId?: string;
+  tone?: CcCardTone;
 }) {
+  const headerTone = CC_CARD_TONE_STYLE[tone];
+  const headerStyle: React.CSSProperties =
+    tone === "default"
+      ? { borderBottom: "1px solid var(--cc-border)" }
+      : {
+          background: headerTone.background,
+          color: headerTone.color,
+          borderBottom: `1px solid ${headerTone.borderColor}`,
+        };
+  // Tinted cards also pick up a matching border so the colored header
+  // doesn't sit awkwardly inside a default gray frame.
+  const cardStyle: React.CSSProperties =
+    tone === "default" ? {} : { borderColor: headerTone.borderColor };
   return (
-    <div className="cc-card" data-testid={testId}>
+    <div className="cc-card" data-testid={testId} style={cardStyle}>
       <div
         className="px-4 py-3 flex items-center justify-between"
-        style={{ borderBottom: "1px solid var(--cc-border)" }}
+        style={headerStyle}
       >
         <div className="flex items-center gap-2 text-sm font-semibold">{icon}{title}</div>
         {action}
@@ -168,37 +198,71 @@ function FieldRow({ label, value }: { label: string; value: ReactNode }) {
 }
 
 // Task #767 — compact single-row stat for the left-rail Submission
-// Summary card. Same yes/no badge + timestamp layout as the chrome's
-// SummaryStat, but stacked horizontally in the narrow 260px rail.
+// Summary card. D2 polish pass: green check + timestamp when done,
+// dashed-circle + "—" when pending. The `*-state` testid still flips
+// between "Yes" / "No" so the contract tests (group-detail-no-submission
+// V2 source scans + RAR regression) keep working without a rewrite.
 function SubmissionSummaryStat({
   label, value, testId,
 }: { label: string; value: string | null | undefined; testId: string }) {
   const done = !!value;
   return (
-    <div data-testid={testId} className="flex items-start justify-between gap-2">
-      <div className="text-[10px] uppercase tracking-wide pt-0.5" style={{ color: "var(--cc-muted-fg)" }}>
-        {label}
-      </div>
-      <div className="text-[11px] text-right flex items-center gap-1.5 flex-shrink-0">
-        <span
-          className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide"
-          style={
-            done
-              ? { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)" }
-              : { background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }
-          }
-          data-testid={`${testId}-state`}
-        >
-          {done ? "Yes" : "No"}
-        </span>
+    <div data-testid={testId} className="flex items-center justify-between gap-2 text-xs">
+      <span style={{ color: "var(--cc-muted-fg)" }}>{label}</span>
+      <span
+        className="flex items-center gap-1 font-medium"
+        style={{ color: done ? "var(--cc-success)" : "var(--cc-muted-fg)" }}
+      >
         {done ? (
-          <span className="mono">{formatDateTime(value ?? undefined)}</span>
+          <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
         ) : (
-          <span style={{ color: "var(--cc-muted-fg)" }}>—</span>
+          <Clock className="w-3 h-3" aria-hidden="true" />
         )}
-      </div>
+        <span className="mono text-[11px]" data-testid={`${testId}-state`} data-state={done ? "Yes" : "No"}>
+          {done ? formatDateTime(value ?? undefined) : "—"}
+        </span>
+      </span>
     </div>
   );
+}
+
+// Task #767 — status-driven accent color for the header rail bar and
+// the Submission Summary status pill. Phase-driven (not keyword-
+// driven) so every canonical status in `STATUSES_BY_PHASE` maps to a
+// stable color and new statuses can't silently fall through to the
+// default purple:
+//
+//   pre-submit (New, Needs Evidence, Processed)
+//     → purple — operator still drafting / packaging
+//   in-flight (Portal Queued, Generating Email, Awaiting Response)
+//     → blue   — waiting on portal/payor, no operator action
+//   response-pending (Ready to Review, Needs Review)
+//     → green  — payor verdict landed, ready for operator
+//   mas-action-required (MAS Eligible)
+//     → green  — positive MAS verdict, re-attestation owed
+//   on-hold
+//     → amber  — manually parked, deadline clock still ticking
+//   closed: Resolved → green, Denied / Withdrawn → red
+const ACCENT_GREEN  = { bg: "var(--cc-green-bg)",  fg: "var(--cc-green-fg)",  border: "var(--cc-green-border)"  };
+const ACCENT_BLUE   = { bg: "var(--cc-blue-bg)",   fg: "var(--cc-blue-fg)",   border: "var(--cc-blue-border)"   };
+const ACCENT_AMBER  = { bg: "var(--cc-amber-bg)",  fg: "var(--cc-amber-fg)",  border: "var(--cc-amber-border)"  };
+const ACCENT_RED    = { bg: "var(--cc-red-bg)",    fg: "var(--cc-red-fg)",    border: "var(--cc-red-border)"    };
+const ACCENT_PURPLE = { bg: "var(--cc-purple-bg)", fg: "var(--cc-purple-fg)", border: "var(--cc-purple-border)" };
+
+function statusAccent(status: string | null | undefined): {
+  bg: string; fg: string; border: string;
+} {
+  if (status === "Denied" || status === "Withdrawn") return ACCENT_RED;
+  if (status === "Resolved") return ACCENT_GREEN;
+  switch (getLifecyclePhase(status)) {
+    case "pre-submit":          return ACCENT_PURPLE;
+    case "in-flight":           return ACCENT_BLUE;
+    case "response-pending":    return ACCENT_GREEN;
+    case "mas-action-required": return ACCENT_GREEN;
+    case "on-hold":             return ACCENT_AMBER;
+    case "closed":              return ACCENT_GREEN; // Resolved already handled above
+    default:                    return ACCENT_PURPLE;
+  }
 }
 
 /* ----------------------- D2 leg + context primitives ----------------------- */
@@ -559,11 +623,15 @@ function Kpi({ label, value, sub, tone = "neutral", testId }: {
     tone === "good" ? "var(--cc-success)" :
     tone === "warn" ? "var(--cc-warning)" :
     tone === "bad"  ? "var(--cc-destructive)" : "var(--cc-fg)";
+  // Task #767 — D2 polish. Tiles render as flush cells inside the
+  // outer divide-x strip (no per-tile border / card frame). Padding
+  // is intentionally larger than the old boxed version so the row
+  // reads as a proper band of money summary, not a thin toolbar.
   return (
-    <div className="cc-card p-3" data-testid={testId}>
+    <div className="flex-1 px-4 py-3" data-testid={testId} style={{ borderColor: "var(--cc-border)" }}>
       <div className="text-[10px] uppercase tracking-wide font-semibold mb-1"
            style={{ color: "var(--cc-muted-fg)" }}>{label}</div>
-      <div className="text-xl font-bold mono" style={{ color: c }}>{value}</div>
+      <div className="text-2xl font-bold mono leading-tight" style={{ color: c }}>{value}</div>
       {sub && <div className="text-[11px] mt-0.5" style={{ color: "var(--cc-muted-fg)" }}>{sub}</div>}
     </div>
   );
@@ -1161,7 +1229,12 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3 min-w-0">
-              <div className="w-1 h-12 rounded" style={{ background: "var(--cc-purple-fg)" }} />
+              {/* Task #767 — accent bar color reflects the group's
+                  status tone so operators can scan the header in one
+                  glance (green = verdict in hand, blue = in-flight,
+                  amber = blocked / on hold, red = denied / withdrawn,
+                  purple = pre-submit drafting). */}
+              <div className="w-1 h-12 rounded" style={{ background: statusAccent(group.status).fg }} />
               <div className="min-w-0">
                 <div className="text-[11px] uppercase tracking-wide font-semibold mb-0.5"
                      style={{ color: "var(--cc-muted-fg)" }}>
@@ -1467,8 +1540,12 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
           </a>
         )}
 
-        {/* KPI strip — money tiles hidden for clerks (sums of nulls would otherwise leak as $0.00) */}
-        <div className={isClerk ? "grid grid-cols-1 gap-3" : "grid grid-cols-5 gap-3"}>
+        {/* KPI strip — money tiles hidden for clerks (sums of nulls
+            would otherwise leak as $0.00). D2 polish (Task #767): a
+            single divide-x strip inside one card frame instead of five
+            boxed tiles, so the row reads as one band of summary data
+            instead of competing for attention with the body cards. */}
+        <div className={`cc-card flex ${isClerk ? "" : "divide-x"}`} style={{ borderColor: "var(--cc-border)" }}>
           <HideForClerk>
             <Kpi
               label="Total exposure"
@@ -1538,15 +1615,23 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
               title="Submission summary"
               icon={<FileText className="w-3.5 h-3.5" />}
               testId="group-detail-submission-summary-readonly"
-              action={
-                <span
-                  className="text-[10px] px-2 py-0.5 rounded font-medium"
-                  style={{ background: "var(--cc-muted)", color: "var(--cc-muted-fg)" }}
-                  data-testid="group-detail-submission-summary-status"
-                >
-                  {group.status || "—"}
-                </span>
-              }
+              action={(() => {
+                // Task #767 — status pill picks up the same accent
+                // palette as the header rail bar so the operator's eye
+                // is drawn to "where is this group right now" without
+                // reading the text first (Ready to Review = green pill,
+                // Awaiting Response = blue, On Hold = amber, etc).
+                const tone = statusAccent(group.status);
+                return (
+                  <span
+                    className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border"
+                    style={{ background: tone.bg, color: tone.fg, borderColor: tone.border }}
+                    data-testid="group-detail-submission-summary-status"
+                  >
+                    {group.status || "—"}
+                  </span>
+                );
+              })()}
             >
               <div className="text-[11px] mb-3" style={{ color: "var(--cc-muted-fg)" }}>
                 Read-only snapshot of where this group is in the
@@ -1731,6 +1816,12 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 title="Overrides & admin"
                 icon={<ShieldCheck className="w-3.5 h-3.5" />}
                 testId="group-detail-overrides-card"
+                tone="purple"
+                action={
+                  <span className="text-[9px] uppercase tracking-wider font-bold opacity-70">
+                    Operator only
+                  </span>
+                }
               >
                 <div className="text-[11px] mb-2" style={{ color: "var(--cc-muted-fg)" }}>
                   Operator-only escalations. Audited.
@@ -2010,18 +2101,44 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
 
               {/* Communication thread */}
             <div id="invoice-thread" />
+            {(() => {
+              // Task #767 — Communication card picks up the group's
+              // verdict tone in its header so the operator's eye lands
+              // on the thread when there's a payor verdict in hand
+              // (green for Approved, red for Denied, neutral
+              // otherwise). The pill in the header action mirrors the
+              // D2 "Group verdict · Approved" affordance.
+              const verdict = deriveGroupOutcomeFromLegs(allRides).outcome;
+              const cardTone: CcCardTone =
+                verdict === "Approved" ? "green" :
+                verdict === "Denied"   ? "amber" :
+                                         "default";
+              const messageCount = conversations.reduce((acc, c) => acc + c.messages.length, 0);
+              return (
             <CcCard
               title={
                 <>
                   Communication
-                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                    · {conversations.reduce((acc, c) => acc + c.messages.length, 0)} message{conversations.reduce((acc, c) => acc + c.messages.length, 0) === 1 ? "" : "s"}
+                  <span className="text-xs font-normal ml-1" style={{ color: cardTone === "default" ? "var(--cc-muted-fg)" : "currentColor", opacity: cardTone === "default" ? 1 : 0.75 }}>
+                    · {messageCount} message{messageCount === 1 ? "" : "s"}
                   </span>
                 </>
               }
               icon={<Mail className="w-3.5 h-3.5" />}
               testId="communication-card"
               padded={false}
+              tone={cardTone}
+              action={
+                verdict && verdict !== "Pending" ? (
+                  <span
+                    className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded border bg-white/60"
+                    style={{ borderColor: "currentColor" }}
+                    data-testid="communication-card-verdict-pill"
+                  >
+                    Group verdict · {outcomeLabel(verdict)}
+                  </span>
+                ) : undefined
+              }
             >
               <GroupCommunicationThread
                 bare
@@ -2065,6 +2182,8 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 }}
               />
             </CcCard>
+              );
+            })()}
 
               {/* Post-submit verdict + responses */}
             <CcCard
