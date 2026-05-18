@@ -1750,7 +1750,7 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
               <Link
                 href={`/queue?group=${groupId}`}
                 data-testid="group-detail-cta-process-in-queue"
-                className="mt-3 pt-3 -mx-4 -mb-4 px-4 py-3 flex items-center justify-between gap-3 hover:opacity-90 transition-opacity rounded-b"
+                className="mt-3 pt-3 -mx-3 -mb-3 px-3 py-3 flex items-center justify-between gap-3 hover:opacity-90 transition-opacity rounded-b"
                 style={{ borderTop: "1px solid var(--cc-border)", color: "var(--cc-fg)" }}
               >
                 <div className="flex items-start gap-2 min-w-0">
