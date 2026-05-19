@@ -27174,6 +27174,95 @@ export const DeleteErrorTypeParams = zod.object({
 });
 
 /**
+ * @summary List all SOP library items
+ */
+export const ListSopLibraryItemsResponseItem = zod.object({
+  id: zod.number(),
+  kind: zod.enum(["evidence_requirement", "sub_tree"]),
+  label: zod.string(),
+  description: zod.string().nullish(),
+  payload: zod
+    .object({})
+    .passthrough()
+    .describe(
+      'For kind=\"evidence_requirement\": the EvidenceReq object minus its id.\nFor kind=\"sub_tree\": a full DecisionTree object.\n',
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+export const ListSopLibraryItemsResponse = zod.array(
+  ListSopLibraryItemsResponseItem,
+);
+
+/**
+ * @summary Create SOP library item
+ */
+export const CreateSopLibraryItemBody = zod.object({
+  kind: zod.enum(["evidence_requirement", "sub_tree"]),
+  label: zod.string(),
+  description: zod.string().optional(),
+  payload: zod.object({}).passthrough(),
+});
+
+/**
+ * @summary Get SOP library item
+ */
+export const GetSopLibraryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSopLibraryItemResponse = zod.object({
+  id: zod.number(),
+  kind: zod.enum(["evidence_requirement", "sub_tree"]),
+  label: zod.string(),
+  description: zod.string().nullish(),
+  payload: zod
+    .object({})
+    .passthrough()
+    .describe(
+      'For kind=\"evidence_requirement\": the EvidenceReq object minus its id.\nFor kind=\"sub_tree\": a full DecisionTree object.\n',
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update SOP library item
+ */
+export const UpdateSopLibraryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSopLibraryItemBody = zod.object({
+  kind: zod.enum(["evidence_requirement", "sub_tree"]).optional(),
+  label: zod.string().optional(),
+  description: zod.string().nullish(),
+  payload: zod.object({}).passthrough().optional(),
+});
+
+export const UpdateSopLibraryItemResponse = zod.object({
+  id: zod.number(),
+  kind: zod.enum(["evidence_requirement", "sub_tree"]),
+  label: zod.string(),
+  description: zod.string().nullish(),
+  payload: zod
+    .object({})
+    .passthrough()
+    .describe(
+      'For kind=\"evidence_requirement\": the EvidenceReq object minus its id.\nFor kind=\"sub_tree\": a full DecisionTree object.\n',
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Delete SOP library item
+ */
+export const DeleteSopLibraryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Get all application settings
  */
 export const GetAppSettingsResponse = zod.object({

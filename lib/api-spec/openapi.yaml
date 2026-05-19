@@ -3650,6 +3650,93 @@ paths:
         "204":
           description: Deleted
 
+  /sop-library-items:
+    get:
+      operationId: listSopLibraryItems
+      tags: [sopLibraryItems]
+      summary: List all SOP library items
+      responses:
+        "200":
+          description: SOP library items list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SopLibraryItemResponse"
+    post:
+      operationId: createSopLibraryItem
+      tags: [sopLibraryItems]
+      summary: Create SOP library item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSopLibraryItemBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SopLibraryItemResponse"
+
+  /sop-library-items/{id}:
+    get:
+      operationId: getSopLibraryItem
+      tags: [sopLibraryItems]
+      summary: Get SOP library item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SOP library item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SopLibraryItemResponse"
+    patch:
+      operationId: updateSopLibraryItem
+      tags: [sopLibraryItems]
+      summary: Update SOP library item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSopLibraryItemBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SopLibraryItemResponse"
+    delete:
+      operationId: deleteSopLibraryItem
+      tags: [sopLibraryItems]
+      summary: Delete SOP library item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   /app-settings:
     get:
       operationId: getAppSettings
@@ -8455,6 +8542,63 @@ components:
           type: boolean
         tripOverriding:
           type: boolean
+
+    SopLibraryItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [evidence_requirement, sub_tree]
+        label:
+          type: string
+        description:
+          type: ["string", "null"]
+        payload:
+          type: object
+          description: |
+            For kind="evidence_requirement": the EvidenceReq object minus its id.
+            For kind="sub_tree": a full DecisionTree object.
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - kind
+        - label
+        - payload
+
+    CreateSopLibraryItemBody:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [evidence_requirement, sub_tree]
+        label:
+          type: string
+        description:
+          type: string
+        payload:
+          type: object
+      required:
+        - kind
+        - label
+        - payload
+
+    UpdateSopLibraryItemBody:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [evidence_requirement, sub_tree]
+        label:
+          type: string
+        description:
+          type: ["string", "null"]
+        payload:
+          type: object
 
     AppSettingsResponse:
       type: object

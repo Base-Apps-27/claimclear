@@ -89,6 +89,7 @@ import type {
   CreateInvoiceGroupResponse,
   CreateNoteBody,
   CreatePortalSubmissionBody,
+  CreateSopLibraryItemBody,
   CronRunsResponse,
   DailyBriefDetailResponse,
   DailyBriefResponse,
@@ -208,6 +209,7 @@ import type {
   SetLegContextBody,
   SopAdvanceBody,
   SopJumpBody,
+  SopLibraryItemResponse,
   SopRewindBody,
   SopRewindDraftConflictResponse,
   SopRewindImpactResponse,
@@ -229,6 +231,7 @@ import type {
   UpdateInvoiceGroupStatusBody,
   UpdateNotificationPreferencesBody,
   UpdatePortalSubmissionDraftBody,
+  UpdateSopLibraryItemBody,
   UpdateUserTourStateBody,
   UpgradeReplyDraft200,
   UpgradeReplyDraft400,
@@ -9126,6 +9129,427 @@ export const useDeleteErrorType = <
   TContext
 > => {
   return useMutation(getDeleteErrorTypeMutationOptions(options));
+};
+
+/**
+ * @summary List all SOP library items
+ */
+export const getListSopLibraryItemsUrl = () => {
+  return `/api/sop-library-items`;
+};
+
+export const listSopLibraryItems = async (
+  options?: RequestInit,
+): Promise<SopLibraryItemResponse[]> => {
+  return customFetch<SopLibraryItemResponse[]>(getListSopLibraryItemsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSopLibraryItemsQueryKey = () => {
+  return [`/api/sop-library-items`] as const;
+};
+
+export const getListSopLibraryItemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSopLibraryItems>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSopLibraryItems>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSopLibraryItemsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSopLibraryItems>>
+  > = ({ signal }) => listSopLibraryItems({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSopLibraryItems>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSopLibraryItemsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSopLibraryItems>>
+>;
+export type ListSopLibraryItemsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all SOP library items
+ */
+
+export function useListSopLibraryItems<
+  TData = Awaited<ReturnType<typeof listSopLibraryItems>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSopLibraryItems>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSopLibraryItemsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create SOP library item
+ */
+export const getCreateSopLibraryItemUrl = () => {
+  return `/api/sop-library-items`;
+};
+
+export const createSopLibraryItem = async (
+  createSopLibraryItemBody: CreateSopLibraryItemBody,
+  options?: RequestInit,
+): Promise<SopLibraryItemResponse> => {
+  return customFetch<SopLibraryItemResponse>(getCreateSopLibraryItemUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createSopLibraryItemBody),
+  });
+};
+
+export const getCreateSopLibraryItemMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSopLibraryItem>>,
+    TError,
+    { data: BodyType<CreateSopLibraryItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSopLibraryItem>>,
+  TError,
+  { data: BodyType<CreateSopLibraryItemBody> },
+  TContext
+> => {
+  const mutationKey = ["createSopLibraryItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSopLibraryItem>>,
+    { data: BodyType<CreateSopLibraryItemBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSopLibraryItem(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSopLibraryItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSopLibraryItem>>
+>;
+export type CreateSopLibraryItemMutationBody =
+  BodyType<CreateSopLibraryItemBody>;
+export type CreateSopLibraryItemMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create SOP library item
+ */
+export const useCreateSopLibraryItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSopLibraryItem>>,
+    TError,
+    { data: BodyType<CreateSopLibraryItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSopLibraryItem>>,
+  TError,
+  { data: BodyType<CreateSopLibraryItemBody> },
+  TContext
+> => {
+  return useMutation(getCreateSopLibraryItemMutationOptions(options));
+};
+
+/**
+ * @summary Get SOP library item
+ */
+export const getGetSopLibraryItemUrl = (id: number) => {
+  return `/api/sop-library-items/${id}`;
+};
+
+export const getSopLibraryItem = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SopLibraryItemResponse> => {
+  return customFetch<SopLibraryItemResponse>(getGetSopLibraryItemUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSopLibraryItemQueryKey = (id: number) => {
+  return [`/api/sop-library-items/${id}`] as const;
+};
+
+export const getGetSopLibraryItemQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSopLibraryItem>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSopLibraryItem>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSopLibraryItemQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSopLibraryItem>>
+  > = ({ signal }) => getSopLibraryItem(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSopLibraryItem>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSopLibraryItemQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSopLibraryItem>>
+>;
+export type GetSopLibraryItemQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get SOP library item
+ */
+
+export function useGetSopLibraryItem<
+  TData = Awaited<ReturnType<typeof getSopLibraryItem>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSopLibraryItem>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSopLibraryItemQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update SOP library item
+ */
+export const getUpdateSopLibraryItemUrl = (id: number) => {
+  return `/api/sop-library-items/${id}`;
+};
+
+export const updateSopLibraryItem = async (
+  id: number,
+  updateSopLibraryItemBody: UpdateSopLibraryItemBody,
+  options?: RequestInit,
+): Promise<SopLibraryItemResponse> => {
+  return customFetch<SopLibraryItemResponse>(getUpdateSopLibraryItemUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateSopLibraryItemBody),
+  });
+};
+
+export const getUpdateSopLibraryItemMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSopLibraryItem>>,
+    TError,
+    { id: number; data: BodyType<UpdateSopLibraryItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSopLibraryItem>>,
+  TError,
+  { id: number; data: BodyType<UpdateSopLibraryItemBody> },
+  TContext
+> => {
+  const mutationKey = ["updateSopLibraryItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSopLibraryItem>>,
+    { id: number; data: BodyType<UpdateSopLibraryItemBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateSopLibraryItem(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSopLibraryItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSopLibraryItem>>
+>;
+export type UpdateSopLibraryItemMutationBody =
+  BodyType<UpdateSopLibraryItemBody>;
+export type UpdateSopLibraryItemMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update SOP library item
+ */
+export const useUpdateSopLibraryItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSopLibraryItem>>,
+    TError,
+    { id: number; data: BodyType<UpdateSopLibraryItemBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSopLibraryItem>>,
+  TError,
+  { id: number; data: BodyType<UpdateSopLibraryItemBody> },
+  TContext
+> => {
+  return useMutation(getUpdateSopLibraryItemMutationOptions(options));
+};
+
+/**
+ * @summary Delete SOP library item
+ */
+export const getDeleteSopLibraryItemUrl = (id: number) => {
+  return `/api/sop-library-items/${id}`;
+};
+
+export const deleteSopLibraryItem = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSopLibraryItemUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSopLibraryItemMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSopLibraryItem>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSopLibraryItem>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteSopLibraryItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSopLibraryItem>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSopLibraryItem(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSopLibraryItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSopLibraryItem>>
+>;
+
+export type DeleteSopLibraryItemMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete SOP library item
+ */
+export const useDeleteSopLibraryItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSopLibraryItem>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSopLibraryItem>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteSopLibraryItemMutationOptions(options));
 };
 
 /**

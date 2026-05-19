@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./invoice-groups";
 export * from "./claims";
 export * from "./error-types";
+export * from "./sop-library-items";
 export * from "./notes";
 export * from "./audit-logs";
 export * from "./portal-submissions";

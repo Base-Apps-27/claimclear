@@ -3171,6 +3171,70 @@ export interface UpdateErrorTypeBody {
   tripOverriding?: boolean;
 }
 
+export type SopLibraryItemResponseKind =
+  (typeof SopLibraryItemResponseKind)[keyof typeof SopLibraryItemResponseKind];
+
+export const SopLibraryItemResponseKind = {
+  evidence_requirement: "evidence_requirement",
+  sub_tree: "sub_tree",
+} as const;
+
+/**
+ * For kind="evidence_requirement": the EvidenceReq object minus its id.
+For kind="sub_tree": a full DecisionTree object.
+
+ */
+export type SopLibraryItemResponsePayload = { [key: string]: unknown };
+
+export interface SopLibraryItemResponse {
+  id: number;
+  kind: SopLibraryItemResponseKind;
+  label: string;
+  /** @nullable */
+  description?: string | null;
+  /** For kind="evidence_requirement": the EvidenceReq object minus its id.
+For kind="sub_tree": a full DecisionTree object.
+ */
+  payload: SopLibraryItemResponsePayload;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CreateSopLibraryItemBodyKind =
+  (typeof CreateSopLibraryItemBodyKind)[keyof typeof CreateSopLibraryItemBodyKind];
+
+export const CreateSopLibraryItemBodyKind = {
+  evidence_requirement: "evidence_requirement",
+  sub_tree: "sub_tree",
+} as const;
+
+export type CreateSopLibraryItemBodyPayload = { [key: string]: unknown };
+
+export interface CreateSopLibraryItemBody {
+  kind: CreateSopLibraryItemBodyKind;
+  label: string;
+  description?: string;
+  payload: CreateSopLibraryItemBodyPayload;
+}
+
+export type UpdateSopLibraryItemBodyKind =
+  (typeof UpdateSopLibraryItemBodyKind)[keyof typeof UpdateSopLibraryItemBodyKind];
+
+export const UpdateSopLibraryItemBodyKind = {
+  evidence_requirement: "evidence_requirement",
+  sub_tree: "sub_tree",
+} as const;
+
+export type UpdateSopLibraryItemBodyPayload = { [key: string]: unknown };
+
+export interface UpdateSopLibraryItemBody {
+  kind?: UpdateSopLibraryItemBodyKind;
+  label?: string;
+  /** @nullable */
+  description?: string | null;
+  payload?: UpdateSopLibraryItemBodyPayload;
+}
+
 export interface AppSettingsResponse {
   /** @nullable */
   default_dispute_instructions?: string | null;

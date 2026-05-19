@@ -7,6 +7,7 @@ import claimsRouter from "./claims";
 import notesRouter from "./notes";
 import auditLogsRouter from "./audit-logs";
 import errorTypesRouter from "./error-types";
+import sopLibraryItemsRouter from "./sop-library-items";
 import importRouter from "./import";
 import errorDetailMappingsRouter from "./error-detail-mappings";
 import portalSubmissionsRouter from "./portal-submissions";
@@ -64,6 +65,7 @@ router.use(claimsRouter);
 router.use(notesRouter);
 router.use(auditLogsRouter);
 router.use(errorTypesRouter);
+router.use(sopLibraryItemsRouter);
 router.use(importRouter);
 router.use(errorDetailMappingsRouter);
 // Mount batch-jobs BEFORE portal-submissions so the more-specific
