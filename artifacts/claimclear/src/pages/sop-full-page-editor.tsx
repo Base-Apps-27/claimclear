@@ -673,12 +673,17 @@ function Inspector({
                   className="px-2 pb-2 pt-1 space-y-2 border-t"
                   style={{ borderColor: "hsl(var(--cc-amber-border))" }}
                 >
-                  {/* Required + accepts toggles — the per-requirement
-                      details the inspector previously hid. The runner
-                      uses `required` to gate the SOP advance, and
-                      `acceptsImage` / `acceptsText` to decide which
-                      upload affordances to render. */}
-                  <div className="flex items-center gap-3 flex-wrap">
+                  {/* File upload is the default mode for every
+                      evidence row (operators attach images, PDFs, or
+                      CSV/Excel exports), so we don't expose an
+                      "accepts image" toggle — the runner renders the
+                      Upload + Paste affordance whenever
+                      `acceptsImage !== false`, and we keep that
+                      default true. The only meaningful per-row choice
+                      is whether the operator can ALSO satisfy the
+                      requirement by typing a note (e.g. "brief
+                      written explanation"). */}
+                  <div className="flex items-center gap-4 flex-wrap">
                     <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
                       <Switch
                         checked={req.required !== false}
@@ -688,29 +693,21 @@ function Inspector({
                         data-testid={`inspector-evidence-required-${idx}`}
                         aria-label="Required"
                       />
-                      <span>Required</span>
+                      <span>Required to advance</span>
                     </label>
-                    <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
-                      <Switch
-                        checked={req.acceptsImage !== false}
-                        onCheckedChange={(checked) =>
-                          onChange(setEvidenceReq(tree, node.id, idx, { acceptsImage: checked }))
-                        }
-                        data-testid={`inspector-evidence-accepts-image-${idx}`}
-                        aria-label="Accepts image"
-                      />
-                      <span>Image</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
+                    <label
+                      className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer"
+                      title="Also let the operator satisfy this by typing a note (in addition to uploading)."
+                    >
                       <Switch
                         checked={req.acceptsText === true}
                         onCheckedChange={(checked) =>
                           onChange(setEvidenceReq(tree, node.id, idx, { acceptsText: checked }))
                         }
                         data-testid={`inspector-evidence-accepts-text-${idx}`}
-                        aria-label="Accepts text"
+                        aria-label="Allow typed note"
                       />
-                      <span>Text</span>
+                      <span>Allow typed note</span>
                     </label>
                   </div>
                   {/* Filename template — admin pre-defines the saved
