@@ -25,6 +25,7 @@ import {
   deleteNodeWithReparent,
   validateAppliesPerInvoice,
   TEMPLATES,
+  FILENAME_TEMPLATE_VARIABLES,
 } from "./types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast, successToast } from "@/hooks/use-toast";
@@ -1137,12 +1138,112 @@ function NodeSettingsPopover({
                   <FileText className="h-2.5 w-2.5 text-slate-400" />
                 </div>
               </div>
+              <FilenameTemplateField
+                nodeId={node.id}
+                reqIndex={i}
+                value={req.filenameTemplate ?? ""}
+                onChange={(v) => updateEvidenceReq(i, { filenameTemplate: v })}
+              />
             </div>
             );
           })}
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// Filename template editor — a plain text input with clickable variable
+// chips that insert `{variable}` at the current cursor position. The
+// admin types separators (e.g. underscores) freely around them. Inserts
+// at the END only when the input has never been focused yet; otherwise
+// the last-known cursor position is used so a chip click never blows
+// away the admin's typed prefix/suffix.
+function FilenameTemplateField({
+  nodeId,
+  reqIndex,
+  value,
+  onChange,
+}: {
+  nodeId: string;
+  reqIndex: number;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cursorRef = useRef<{ start: number; end: number }>({
+    start: value.length,
+    end: value.length,
+  });
+
+  const insertVariable = (varKey: string) => {
+    const token = `{${varKey}}`;
+    const cur = inputRef.current;
+    const { start, end } =
+      cur && document.activeElement === cur
+        ? { start: cur.selectionStart ?? value.length, end: cur.selectionEnd ?? value.length }
+        : cursorRef.current;
+    const next = value.slice(0, start) + token + value.slice(end);
+    onChange(next);
+    // Restore caret to AFTER the inserted token on the next paint.
+    const nextPos = start + token.length;
+    cursorRef.current = { start: nextPos, end: nextPos };
+    requestAnimationFrame(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(nextPos, nextPos);
+      }
+    });
+  };
+
+  const updateCursor = () => {
+    const cur = inputRef.current;
+    if (!cur) return;
+    cursorRef.current = {
+      start: cur.selectionStart ?? value.length,
+      end: cur.selectionEnd ?? value.length,
+    };
+  };
+
+  return (
+    <div className="space-y-1.5 pl-4">
+      <Label className="text-[10px] font-medium text-slate-500">
+        Filename template (optional)
+      </Label>
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          updateCursor();
+        }}
+        onKeyUp={updateCursor}
+        onClick={updateCursor}
+        onSelect={updateCursor}
+        onBlur={updateCursor}
+        placeholder="e.g. Inv_{invoice_number}_EOB_{dos}"
+        className="text-xs h-7"
+        data-testid={`sop-evidence-filename-template-${nodeId}-${reqIndex}`}
+      />
+      <div className="flex flex-wrap gap-1">
+        {FILENAME_TEMPLATE_VARIABLES.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => insertVariable(v.key)}
+            className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-slate-600 hover:text-blue-700 transition-colors"
+            data-testid={`sop-evidence-filename-var-${v.key}-${nodeId}-${reqIndex}`}
+            title={`Insert {${v.key}}`}
+          >
+            + {v.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-400 leading-snug">
+        Operators see this as a one-click filename to copy at upload time.
+        Missing variables are dropped.
+      </p>
+    </div>
   );
 }
 

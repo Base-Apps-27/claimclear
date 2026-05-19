@@ -13,6 +13,93 @@ export interface EvidenceReq {
   evidenceTypeId?: number;
   acceptsImage?: boolean;
   acceptsText?: boolean;
+  // Optional filename template the admin pre-defines on the Error Type
+  // SOP. May embed `{variable}` placeholders that the SOP walk resolves
+  // against the current leg's context. When set, the runtime renders a
+  // one-click "copy filename" button so the operator can name the file
+  // they're about to upload without inventing one. Unresolved variables
+  // and their adjacent separator (one of `_ - . space`) are dropped so
+  // the resolved string stays clean — see `resolveFilenameTemplate`.
+  filenameTemplate?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Filename template resolver — admin-authored template like
+//   "Inv_{invoice_number}_EOB_{dos}"
+// gets variables filled from the current claim/leg context. Unknown or
+// missing variables AND a single adjacent separator (_ - . or a space)
+// are dropped so the resolved string stays clean (option B per product).
+// Pure + exported so it's directly unit-testable.
+// ---------------------------------------------------------------------------
+export interface FilenameTemplateContext {
+  claim_id?: string | null;
+  patient_last_name?: string | null;
+  dos?: string | null;
+  leg_number?: string | null;
+  payor?: string | null;
+  doc_type?: string | null;
+  invoice_number?: string | null;
+}
+
+export const FILENAME_TEMPLATE_VARIABLES: ReadonlyArray<{
+  key: keyof FilenameTemplateContext;
+  label: string;
+}> = [
+  { key: "claim_id", label: "Claim ID" },
+  { key: "invoice_number", label: "Invoice #" },
+  { key: "dos", label: "Date of service" },
+  { key: "leg_number", label: "Leg #" },
+  { key: "payor", label: "Payor" },
+  { key: "doc_type", label: "Doc type" },
+  // Note: `patient_last_name` is intentionally NOT in the chip list yet
+  // — the runtime context wired from `inline-group-workspace-mini` does
+  // not yet expose patient identity at the evidence surface, so offering
+  // the chip would be a false affordance. The resolver still honors the
+  // variable if a template authored elsewhere happens to use it.
+];
+
+const FILENAME_VAR_RE = /\{([a-z_]+)\}/g;
+
+function sanitizeFilenameValue(v: string): string {
+  // Strip characters illegal across Windows/macOS filesystems and collapse
+  // whitespace so the resulting filename is safe to paste as-is.
+  return v
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function resolveFilenameTemplate(
+  template: string | null | undefined,
+  ctx: FilenameTemplateContext,
+): string {
+  if (!template) return "";
+  // First pass: replace each `{var}` with either the sanitized value or
+  // a sentinel we can collapse along with its adjacent separator in the
+  // second pass.
+  const SENTINEL = "\u0001";
+  const replaced = template.replace(FILENAME_VAR_RE, (_m, name: string) => {
+    const raw = (ctx as Record<string, unknown>)[name];
+    if (raw == null) return SENTINEL;
+    const str = sanitizeFilenameValue(String(raw));
+    if (!str) return SENTINEL;
+    return str;
+  });
+  // Drop the sentinel and ONE adjacent separator on either side. We
+  // prefer to absorb the separator that follows the placeholder (so
+  // "Inv_{x}_EOB" becomes "Inv_EOB"), but if the sentinel is at the
+  // end we absorb the preceding separator instead.
+  let out = replaced;
+  // Repeat until stable — adjacent unresolved vars collapse together.
+  for (let i = 0; i < 8; i++) {
+    const next = out
+      .replace(new RegExp(`${SENTINEL}[ _\\-.]`, "g"), "")
+      .replace(new RegExp(`[ _\\-.]${SENTINEL}`, "g"), "")
+      .replace(new RegExp(SENTINEL, "g"), "");
+    if (next === out) break;
+    out = next;
+  }
+  return out.trim();
 }
 
 export interface TreeNode {

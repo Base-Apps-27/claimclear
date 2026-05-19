@@ -26,10 +26,12 @@ import {
   type TreeNode,
   type EvidenceReq,
   type OutcomeType,
+  type FilenameTemplateContext,
   OUTCOME_LABELS,
   OUTCOME_COLORS,
   getMaxDepth,
   displayEvidenceTypeName,
+  resolveFilenameTemplate,
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,6 +63,8 @@ import {
   RotateCcw,
   Layers,
   AlertTriangle,
+  Copy,
+  Check,
 } from "lucide-react";
 import {
   terminalKindForLeg,
@@ -151,6 +155,14 @@ interface BaseProps {
    *  `currentNode.appliesPerInvoice === true` AND this is `> 0` AND the
    *  current leg has an invoiceGroupId. Live mode only. */
   bulkSiblingCount?: number;
+  /** Optional context for resolving admin-authored filename templates
+   *  on evidence requirements. When provided, each evidence row that
+   *  has a `filenameTemplate` renders a one-click "Copy filename"
+   *  button so the operator can paste the standard name onto the file
+   *  they're about to upload. Omit (or leave undefined fields) and
+   *  the row falls through to its existing UI — the feature is purely
+   *  additive. */
+  filenameContext?: FilenameTemplateContext;
   /** Task #526 R2 — when provided, the player's demoted "Reclassify"
    *  CTAs (action strip + closed-terminal footnote) delegate to the
    *  parent's existing reclassify flow (e.g. claim-detail-v2's
@@ -253,7 +265,7 @@ function synthesizePreviewLeg(state: {
 }
 
 export function SopAdvancePlayer(props: Props) {
-  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt, bulkSiblingCount = 0, onRequestReclassify } = props;
+  const { tree, disabledReason, onAdvanced, errorType, siblingPrompt, bulkSiblingCount = 0, filenameContext, onRequestReclassify } = props;
   const isPreview = props.mode === "preview";
   const qc = useQueryClient();
   const disabled = !!disabledReason;
@@ -1514,6 +1526,7 @@ export function SopAdvancePlayer(props: Props) {
                     onRemovePending={(itemId) => removePendingItem(currentNode.id, req.key, itemId)}
                     onNotesChange={(notes) => updatePending(currentNode.id, req.key, (cur) => ({ ...cur, notes }))}
                     disabled={disabled || (!isPreview && advanceMutation.isPending)}
+                    filenameContext={filenameContext}
                   />
                 );
               })}
@@ -1745,7 +1758,7 @@ function PreviewOutcomeCard({
 
 function EvidenceReqRow({
   req, showImage, showText, satisfied, pending, persisted,
-  onUpload, onRemovePending, onNotesChange, disabled,
+  onUpload, onRemovePending, onNotesChange, disabled, filenameContext,
 }: {
   req: EvidenceReq;
   showImage: boolean;
@@ -1757,10 +1770,22 @@ function EvidenceReqRow({
   onRemovePending: (itemId: string) => void;
   onNotesChange: (notes: string) => void;
   disabled: boolean;
+  filenameContext?: FilenameTemplateContext;
 }) {
   const persistedImages = persisted.filter((p) => !!p.imageUrl);
   const persistedNote = persisted.find((p) => p.notes && p.notes.trim().length > 0)?.notes ?? "";
   const totalImages = persistedImages.length + pending.items.length;
+
+  // Resolved filename for the operator's one-click copy. The doc_type
+  // variable defaults to this requirement's label when the host hasn't
+  // explicitly set it.
+  const resolvedFilename = useMemo(() => {
+    if (!req.filenameTemplate) return "";
+    return resolveFilenameTemplate(req.filenameTemplate, {
+      doc_type: req.label,
+      ...filenameContext,
+    });
+  }, [req.filenameTemplate, req.label, filenameContext]);
 
   return (
     <div className="space-y-2 bg-white dark:bg-background rounded-md p-2 border" data-testid={`sop-evidence-req-${req.key}`}>
@@ -1774,6 +1799,13 @@ function EvidenceReqRow({
           </span>
         )}
       </div>
+
+      {resolvedFilename && (
+        <CopyFilenameBar
+          filename={resolvedFilename}
+          reqKey={req.key}
+        />
+      )}
 
       {showImage && (
         <div
@@ -1844,6 +1876,58 @@ function EvidenceReqRow({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// Renders the resolved filename + a one-click Copy button. Pure UI:
+// the resolution itself lives in `resolveFilenameTemplate` so this
+// component just shows the result and handles clipboard + the brief
+// "Copied" affordance.
+function CopyFilenameBar({ filename, reqKey }: { filename: string; reqKey: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(filename);
+      setCopied(true);
+      successToast({
+        title: "Filename copied",
+        description: "Paste it as the file's name before uploading.",
+      });
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast({
+        title: "Couldn't copy filename",
+        description: "Select the filename and copy it manually.",
+        variant: "destructive",
+      });
+    }
+  }, [filename]);
+  return (
+    <div
+      className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 px-2 py-1"
+      data-testid={`sop-evidence-req-${reqKey}-filename-bar`}
+    >
+      <FileText className="h-3 w-3 text-blue-700 dark:text-blue-300 shrink-0" />
+      <code
+        className="text-[11px] font-mono text-blue-900 dark:text-blue-100 truncate flex-1"
+        title={filename}
+        data-testid={`sop-evidence-req-${reqKey}-filename-value`}
+      >
+        {filename}
+      </code>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-6 px-2 text-[11px] gap-1 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
+        onClick={copy}
+        data-testid={`sop-evidence-req-${reqKey}-filename-copy-btn`}
+        title="Copy filename"
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? "Copied" : "Copy"}
+      </Button>
     </div>
   );
 }

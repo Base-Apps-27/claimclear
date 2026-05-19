@@ -1160,6 +1160,13 @@ function SopHero({
           tree={tree}
           errorType={errorType}
           bulkSiblingCount={bulkSiblingCount}
+          filenameContext={{
+            claim_id: live.confNumber ?? `CLM-${live.id}`,
+            leg_number: live.confNumber ?? null,
+            invoice_number: live.invoiceNumbers ?? (detail as DetailGroup & { invoiceNumber?: string | null }).invoiceNumber ?? null,
+            dos: live.date ?? null,
+            payor: (detail as DetailGroup & { payorEmail?: string | null }).payorEmail ?? null,
+          }}
           siblingPrompt={
             siblingPromptCandidate
               ? {
