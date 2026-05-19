@@ -15,6 +15,7 @@ import InvoiceNew from "@/pages/invoice-new";
 import Queue from "@/pages/queue";
 import Import from "@/pages/import";
 import ErrorTypes from "@/pages/error-types";
+import SopFullPageEditor from "@/pages/sop-full-page-editor";
 import PortalSubmissions from "@/pages/portal-submissions";
 import Insights from "@/pages/insights";
 import InvoiceGroupsList from "@/pages/invoice-groups";
@@ -127,6 +128,7 @@ function Router() {
         <Route path="/claims/:id" component={ClaimToGroupRedirect} />
         <Route path="/import" component={() => <DenyClerk component={Import} />} />
         <Route path="/error-types" component={() => <DenyClerk component={ErrorTypes} />} />
+        <Route path="/admin/sops/:errorTypeId/edit" component={() => <DenyClerk component={SopFullPageEditor} />} />
         <Route path="/portal-submissions" component={PortalSubmissions} />
         <Route path="/insights" component={Insights} />
         <Route path="/summary" component={() => <Redirect to="/insights" />} />

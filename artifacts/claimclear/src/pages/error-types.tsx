@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link as WouterLink } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListErrorTypes, getListErrorTypesQueryKey,
@@ -542,7 +543,18 @@ export default function ErrorTypes() {
                     {et.category && <Badge variant="outline" className="mt-1">{et.category}</Badge>}
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(et)}>
+                    <WouterLink href={`/admin/sops/${et.id}/edit`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        data-testid={`open-full-page-editor-${et.id}`}
+                        title="Open the new full-page SOP editor"
+                      >
+                        Edit SOP →
+                      </Button>
+                    </WouterLink>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(et)} title="Edit details (modal)">
                       <Edit2 className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(et.id)}>
