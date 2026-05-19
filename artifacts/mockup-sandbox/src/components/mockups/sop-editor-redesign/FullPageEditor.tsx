@@ -3,7 +3,6 @@ import {
   Replace,
   History,
   Eye,
-  Sparkles,
   Save,
   ChevronRight,
   ChevronDown,
@@ -17,7 +16,6 @@ import {
   Mail,
   Phone,
   Globe,
-  Image as ImageIcon,
   Upload,
   Wand2,
   Settings,
@@ -37,39 +35,91 @@ import {
   Pencil,
 } from "lucide-react";
 
+// ---------------------------------------------------------------------------
+// Tokens — mirror the app's cc-* palette (dashboard.tsx, queue.tsx).
+// Centralized so the mockup speaks the same color language as production.
+// ---------------------------------------------------------------------------
+const tone = {
+  amber: {
+    bg: "hsl(var(--cc-amber-bg))",
+    border: "hsl(var(--cc-amber-border))",
+    fg: "hsl(var(--cc-amber-fg))",
+  },
+  purple: {
+    bg: "hsl(var(--cc-purple-bg))",
+    border: "hsl(var(--cc-purple-border))",
+    fg: "hsl(var(--cc-purple-fg))",
+  },
+  green: {
+    bg: "hsl(var(--cc-green-bg))",
+    border: "hsl(var(--cc-green-border))",
+    fg: "hsl(var(--cc-green-fg))",
+  },
+  blue: {
+    bg: "hsl(var(--cc-blue-bg))",
+    border: "hsl(var(--cc-blue-border))",
+    fg: "hsl(var(--cc-blue-fg))",
+  },
+  red: {
+    bg: "hsl(0 84% 96%)",
+    border: "hsl(0 84% 80%)",
+    fg: "hsl(var(--destructive))",
+  },
+};
+
+function StatusPill({
+  variant,
+  children,
+}: {
+  variant: "amber" | "green";
+  children: React.ReactNode;
+}) {
+  const t = tone[variant];
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0"
+      style={{ color: t.fg, background: t.bg, border: `1px solid ${t.border}` }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: t.fg }} />
+      {children}
+    </span>
+  );
+}
+
 function TopBar() {
   return (
-    <div className="h-12 border-b border-border bg-card flex items-center px-3 gap-2 shrink-0">
-      <button className="p-1.5 hover:bg-muted rounded">
-        <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+    <div className="h-14 border-b border-border bg-card flex items-center pl-2 pr-3 gap-3 shrink-0">
+      <button className="p-1.5 hover:bg-muted rounded-md text-muted-foreground">
+        <ChevronLeft className="w-4 h-4" />
       </button>
-      <div className="flex items-center gap-1.5 text-sm">
-        <span className="text-muted-foreground">SOPs</span>
-        <ChevronRight className="w-3 h-3 text-muted-foreground" />
+      <nav className="flex items-center gap-1.5 text-xs min-w-0" aria-label="Breadcrumb">
+        <span className="text-muted-foreground">Error Types</span>
+        <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
         <span className="text-muted-foreground">Denials</span>
-        <ChevronRight className="w-3 h-3 text-muted-foreground" />
-        <span className="font-medium text-foreground">CO-97 — Bundled / Included</span>
-      </div>
-      <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-        Draft · unsaved
-      </span>
+        <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+        <span className="font-semibold text-foreground truncate">CO-97 — Bundled / Included</span>
+      </nav>
+      <StatusPill variant="amber">Draft · unsaved</StatusPill>
       <div className="flex-1" />
-      <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted rounded">
+      <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
         <Search className="w-3.5 h-3.5" /> Find
         <kbd className="ml-1 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘F</kbd>
       </button>
-      <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted rounded">
-        <Replace className="w-3.5 h-3.5" /> Find & Replace across all SOPs
+      <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
+        <Replace className="w-3.5 h-3.5" /> Find &amp; Replace across all SOPs
       </button>
-      <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted rounded">
+      <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
         <History className="w-3.5 h-3.5" /> History
       </button>
-      <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted rounded">
-        <Eye className="w-3.5 h-3.5" /> Preview SOP walk
+      <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
+        <Eye className="w-3.5 h-3.5" /> Preview walk
       </button>
-      <div className="w-px h-5 bg-border mx-1" />
-      <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-foreground text-background hover:opacity-90 rounded">
-        <Save className="w-3.5 h-3.5" /> Save
+      <div className="w-px h-6 bg-border" />
+      <button
+        className="flex items-center gap-1.5 px-3 h-8 text-xs font-semibold rounded-md text-primary-foreground"
+        style={{ background: "hsl(var(--primary))" }}
+      >
+        <Save className="w-3.5 h-3.5" /> Save SOP
       </button>
     </div>
   );
@@ -81,20 +131,20 @@ function LeftPanelTabs({ active }: { active: string }) {
     { key: "palette", label: "Add", icon: Plus },
     { key: "library", label: "Library", icon: Library },
     { key: "settings", label: "Settings", icon: Settings },
-    { key: "ai", label: "AI Builder", icon: Sparkles },
+    { key: "ai", label: "AI Builder", icon: Wand2 },
   ];
   return (
-    <div className="flex border-b border-border bg-card">
+    <div className="flex border-b border-border bg-muted/30">
       {tabs.map((t) => {
         const Icon = t.icon;
         const isActive = t.key === active;
         return (
           <button
             key={t.key}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-medium border-b-2 ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[10px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
               isActive
-                ? "border-foreground text-foreground bg-background"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                ? "border-foreground text-foreground bg-card"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/60"
             }`}
           >
             <Icon className="w-3.5 h-3.5" />
@@ -124,18 +174,24 @@ function OutlineRow({
   evidenceCount?: number;
 }) {
   const iconForType = {
-    q: <HelpCircle className="w-3.5 h-3.5 text-blue-600" />,
-    branch: <GitBranch className="w-3.5 h-3.5 text-violet-600" />,
-    "terminal-approve": <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />,
-    "terminal-deny": <XCircle className="w-3.5 h-3.5 text-red-600" />,
-    evidence: <FileText className="w-3.5 h-3.5 text-amber-600" />,
+    q: <HelpCircle className="w-3.5 h-3.5" style={{ color: tone.blue.fg }} />,
+    branch: <GitBranch className="w-3.5 h-3.5" style={{ color: tone.purple.fg }} />,
+    "terminal-approve": (
+      <CheckCircle2 className="w-3.5 h-3.5" style={{ color: tone.green.fg }} />
+    ),
+    "terminal-deny": <XCircle className="w-3.5 h-3.5" style={{ color: tone.red.fg }} />,
+    evidence: <FileText className="w-3.5 h-3.5" style={{ color: tone.amber.fg }} />,
   }[type];
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-1 text-xs rounded cursor-pointer ${
-        selected ? "bg-blue-50 ring-1 ring-blue-300" : "hover:bg-muted/60"
+      className={`flex items-center gap-1 px-2 py-1 text-xs rounded cursor-pointer transition-colors ${
+        selected ? "" : "hover:bg-muted/60"
       }`}
-      style={{ paddingLeft: 8 + depth * 14 }}
+      style={{
+        paddingLeft: 8 + depth * 14,
+        background: selected ? tone.blue.bg : undefined,
+        boxShadow: selected ? `inset 0 0 0 1px ${tone.blue.border}` : undefined,
+      }}
     >
       {hasChildren ? (
         expanded ? (
@@ -147,11 +203,14 @@ function OutlineRow({
         <span className="w-3 shrink-0" />
       )}
       {iconForType}
-      <span className={`truncate ${selected ? "font-medium text-foreground" : "text-foreground"}`}>
+      <span className={`truncate ${selected ? "font-semibold text-foreground" : "text-foreground"}`}>
         {label}
       </span>
       {typeof evidenceCount === "number" && (
-        <span className="ml-auto px-1.5 py-0 text-[9px] rounded bg-amber-100 text-amber-700 font-medium">
+        <span
+          className="ml-auto px-1.5 py-0.5 text-[9px] rounded font-semibold tabular-nums"
+          style={{ color: tone.amber.fg, background: tone.amber.bg, border: `1px solid ${tone.amber.border}` }}
+        >
           {evidenceCount} ev
         </span>
       )}
@@ -169,7 +228,7 @@ function LeftPanel() {
           <input
             type="text"
             placeholder="Search nodes in this SOP…"
-            className="w-full pl-7 pr-2 py-1.5 text-xs bg-muted/50 border border-border rounded focus:outline-none focus:ring-1 focus:ring-foreground"
+            className="w-full pl-7 pr-2 py-1.5 text-xs bg-muted/50 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground"
           />
         </div>
       </div>
@@ -177,21 +236,34 @@ function LeftPanel() {
         <OutlineRow depth={0} label="Start: Did the payor send a remit?" type="q" hasChildren />
         <OutlineRow depth={1} label="Yes → Is bundling code valid?" type="q" hasChildren />
         <OutlineRow depth={2} label="Yes → Check companion claim" type="q" hasChildren selected evidenceCount={3} />
-        <OutlineRow depth={3} label="📎 EOB page 1" type="evidence" />
-        <OutlineRow depth={3} label="📎 CMS-1500 — companion claim" type="evidence" />
-        <OutlineRow depth={3} label="📎 Medical records — op note" type="evidence" />
+        <OutlineRow depth={3} label="EOB page 1" type="evidence" />
+        <OutlineRow depth={3} label="CMS-1500 — companion claim" type="evidence" />
+        <OutlineRow depth={3} label="Medical records — op note" type="evidence" />
         <OutlineRow depth={3} label="Found companion → Resubmit w/ modifier" type="terminal-approve" />
         <OutlineRow depth={3} label="No companion → Appeal" type="terminal-approve" />
         <OutlineRow depth={2} label="No → Dispute as incorrect bundling" type="terminal-approve" />
         <OutlineRow depth={1} label="No → Call payor for status" type="q" hasChildren expanded={false} />
-        <div className="px-2 mt-2 text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+        <div className="px-2 mt-2 mb-1 text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
           Linked from Library
         </div>
-        <OutlineRow depth={1} label="🔗 EOB page 1 (shared · 8 SOPs)" type="evidence" />
-        <OutlineRow depth={1} label="🔗 Reply to payor — bundling (shared · 4 SOPs)" type="q" />
+        <OutlineRow depth={1} label="EOB page 1 (shared · 8 SOPs)" type="evidence" />
+        <OutlineRow depth={1} label="Reply to payor — bundling (shared · 4 SOPs)" type="q" />
       </div>
-      <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
-        12 nodes · 5 evidence reqs · 2 linked from library
+      <div className="border-t border-border px-3 py-2 text-[10px] text-muted-foreground bg-muted/30 flex items-center gap-3">
+        <span className="flex items-center gap-1">
+          <span className="uppercase tracking-wider font-semibold">Nodes</span>
+          <span className="font-bold tabular-nums text-foreground">12</span>
+        </span>
+        <span className="w-px h-3 bg-border" aria-hidden />
+        <span className="flex items-center gap-1">
+          <span className="uppercase tracking-wider font-semibold">Evidence</span>
+          <span className="font-bold tabular-nums text-foreground">5</span>
+        </span>
+        <span className="w-px h-3 bg-border" aria-hidden />
+        <span className="flex items-center gap-1">
+          <span className="uppercase tracking-wider font-semibold">Linked</span>
+          <span className="font-bold tabular-nums text-foreground">2</span>
+        </span>
       </div>
     </div>
   );
@@ -216,17 +288,19 @@ function NodeCard({
   linked?: boolean;
   className?: string;
 }) {
-  const styles = {
-    question: "bg-white border-blue-300",
-    branch: "bg-white border-violet-300",
-    "terminal-approve": "bg-green-50 border-green-400",
-    "terminal-deny": "bg-red-50 border-red-400",
-  }[type];
+  const palette =
+    type === "question"
+      ? { bg: "hsl(var(--card))", border: tone.blue.border, headerBg: tone.blue.bg, fg: tone.blue.fg, label: "Question" }
+      : type === "branch"
+        ? { bg: "hsl(var(--card))", border: tone.purple.border, headerBg: tone.purple.bg, fg: tone.purple.fg, label: "Branch" }
+        : type === "terminal-approve"
+          ? { bg: tone.green.bg, border: tone.green.border, headerBg: "transparent", fg: tone.green.fg, label: "Outcome" }
+          : { bg: tone.red.bg, border: tone.red.border, headerBg: "transparent", fg: tone.red.fg, label: "Dead-end" };
   const icon = {
-    question: <HelpCircle className="w-3 h-3 text-blue-600" />,
-    branch: <GitBranch className="w-3 h-3 text-violet-600" />,
-    "terminal-approve": <CheckCircle2 className="w-3 h-3 text-green-700" />,
-    "terminal-deny": <XCircle className="w-3 h-3 text-red-700" />,
+    question: <HelpCircle className="w-3 h-3" style={{ color: palette.fg }} />,
+    branch: <GitBranch className="w-3 h-3" style={{ color: palette.fg }} />,
+    "terminal-approve": <CheckCircle2 className="w-3 h-3" style={{ color: palette.fg }} />,
+    "terminal-deny": <XCircle className="w-3 h-3" style={{ color: palette.fg }} />,
   }[type];
   const channelIcon = channelHint
     ? {
@@ -237,17 +311,31 @@ function NodeCard({
     : null;
   return (
     <div
-      className={`absolute rounded-lg border-2 shadow-sm w-52 ${styles} ${
-        selected ? "ring-2 ring-blue-500 ring-offset-2" : ""
-      } ${className}`}
+      className={`absolute rounded-md border-2 shadow-sm w-52 transition-all ${className}`}
+      style={{
+        background: palette.bg,
+        borderColor: selected ? tone.blue.fg : palette.border,
+        boxShadow: selected
+          ? `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${tone.blue.fg}`
+          : undefined,
+      }}
     >
-      <div className="px-2.5 py-1.5 border-b border-current/10 flex items-center gap-1.5">
+      <div
+        className="px-2.5 py-1 border-b border-current/10 flex items-center gap-1.5"
+        style={{ background: palette.headerBg }}
+      >
         {icon}
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-          {type === "question" ? "Question" : type === "branch" ? "Branch" : type === "terminal-approve" ? "Outcome" : "Dead-end"}
+        <span
+          className="text-[10px] uppercase tracking-wider font-semibold"
+          style={{ color: palette.fg }}
+        >
+          {palette.label}
         </span>
         {linked && (
-          <span className="ml-auto flex items-center gap-0.5 text-[9px] text-violet-700 bg-violet-100 px-1 py-0.5 rounded">
+          <span
+            className="ml-auto flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded font-semibold"
+            style={{ color: tone.purple.fg, background: tone.purple.bg, border: `1px solid ${tone.purple.border}` }}
+          >
             <Link2 className="w-2.5 h-2.5" /> linked
           </span>
         )}
@@ -264,7 +352,10 @@ function NodeCard({
               </span>
             )}
             {evidenceCount && (
-              <span className="flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-medium">
+              <span
+                className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold tabular-nums"
+                style={{ color: tone.amber.fg, background: tone.amber.bg, border: `1px solid ${tone.amber.border}` }}
+              >
                 <FileText className="w-2.5 h-2.5" /> {evidenceCount}
               </span>
             )}
@@ -293,22 +384,53 @@ function Edge({
     <>
       <path
         d={`M ${x1} ${y1} C ${c1x} ${c1y} ${c2x} ${c2y} ${x2} ${y2}`}
-        stroke="#94a3b8"
+        stroke="hsl(var(--muted-foreground) / 0.55)"
         strokeWidth="1.5"
         fill="none"
       />
       {label && (
         <g>
-          <rect x={midX - 22} y={midY - 9} width="44" height="18" rx="9" fill="white" stroke="#cbd5e1" />
-          <text x={midX} y={midY + 3} textAnchor="middle" fontSize="10" fill="#475569" fontWeight="500">
+          <rect
+            x={midX - 22}
+            y={midY - 9}
+            width="44"
+            height="18"
+            rx="9"
+            fill="hsl(var(--card))"
+            stroke="hsl(var(--border))"
+          />
+          <text
+            x={midX}
+            y={midY + 3}
+            textAnchor="middle"
+            fontSize="10"
+            fill="hsl(var(--foreground))"
+            fontWeight="600"
+          >
             {label}
           </text>
         </g>
       )}
       {insertHint && (
         <g>
-          <circle cx={midX + 30} cy={midY} r="9" fill="#2563eb" stroke="white" strokeWidth="2" />
-          <text x={midX + 30} y={midY + 3.5} textAnchor="middle" fontSize="12" fill="white" fontWeight="700">+</text>
+          <circle
+            cx={midX + 30}
+            cy={midY}
+            r="9"
+            fill={tone.blue.fg}
+            stroke="hsl(var(--background))"
+            strokeWidth="2"
+          />
+          <text
+            x={midX + 30}
+            y={midY + 3.5}
+            textAnchor="middle"
+            fontSize="12"
+            fill="white"
+            fontWeight="700"
+          >
+            +
+          </text>
         </g>
       )}
     </>
@@ -317,7 +439,14 @@ function Edge({
 
 function CanvasArea() {
   return (
-    <div className="flex-1 relative bg-[radial-gradient(circle,#e5e7eb_1px,transparent_1px)] [background-size:18px_18px] overflow-hidden">
+    <div
+      className="flex-1 relative overflow-hidden"
+      style={{
+        backgroundImage:
+          "radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)",
+        backgroundSize: "18px 18px",
+      }}
+    >
       <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
         <Edge x1={205} y1={68} x2={205} y2={140} label="Yes" insertHint />
         <Edge x1={205} y1={222} x2={130} y2={300} label="Yes" />
@@ -383,31 +512,36 @@ function CanvasArea() {
       />
 
       <div className="absolute top-3 left-3 flex items-center gap-1 bg-card border border-border rounded-md shadow-sm">
-        <button className="p-1.5 hover:bg-muted"><PlusIcon className="w-3.5 h-3.5" /></button>
+        <button className="p-1.5 hover:bg-muted rounded-l-md"><PlusIcon className="w-3.5 h-3.5" /></button>
         <button className="p-1.5 hover:bg-muted"><Minus className="w-3.5 h-3.5" /></button>
         <div className="w-px h-4 bg-border" />
         <button className="p-1.5 hover:bg-muted"><Maximize2 className="w-3.5 h-3.5" /></button>
-        <span className="px-2 text-[10px] text-muted-foreground font-medium">100%</span>
+        <span className="px-2 text-[10px] text-muted-foreground font-semibold tabular-nums">100%</span>
       </div>
 
-      <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md text-[10px] text-blue-800 font-medium">
+      <div
+        className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold"
+        style={{ color: tone.blue.fg, background: tone.blue.bg, border: `1px solid ${tone.blue.border}` }}
+      >
         <Filter className="w-3 h-3" />
         Highlighting: nodes with evidence reqs
       </div>
 
-      <div className="absolute bottom-3 right-3 bg-card border border-border rounded shadow-sm overflow-hidden">
-        <div className="px-2 py-0.5 text-[9px] text-muted-foreground bg-muted/40 font-medium">MINIMAP</div>
+      <div className="absolute bottom-3 right-3 bg-card border border-border rounded-md shadow-sm overflow-hidden">
+        <div className="px-2 py-0.5 text-[9px] text-muted-foreground bg-muted/40 font-semibold uppercase tracking-wider">
+          Minimap
+        </div>
         <div className="w-44 h-28 bg-muted/30 relative">
           <div className="absolute inset-2 grid grid-cols-3 gap-1">
-            <div className="bg-blue-300/60 rounded-sm" />
-            <div className="bg-blue-300/60 rounded-sm" />
+            <div className="rounded-sm" style={{ background: tone.blue.border }} />
+            <div className="rounded-sm" style={{ background: tone.blue.border }} />
             <div />
-            <div className="bg-blue-300/60 rounded-sm" />
-            <div className="bg-red-300/60 rounded-sm" />
+            <div className="rounded-sm" style={{ background: tone.blue.border }} />
+            <div className="rounded-sm" style={{ background: tone.red.border }} />
             <div />
-            <div className="bg-green-300/60 rounded-sm" />
-            <div className="bg-green-300/60 rounded-sm" />
-            <div className="bg-red-300/60 rounded-sm" />
+            <div className="rounded-sm" style={{ background: tone.green.border }} />
+            <div className="rounded-sm" style={{ background: tone.green.border }} />
+            <div className="rounded-sm" style={{ background: tone.red.border }} />
           </div>
           <div className="absolute left-1 top-1 w-20 h-12 border-2 border-foreground rounded-sm pointer-events-none" />
         </div>
@@ -419,7 +553,7 @@ function CanvasArea() {
 function InspectorField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div className="px-3 py-2.5 border-b border-border">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
         {label}
       </div>
       {children}
@@ -442,7 +576,10 @@ function ChipRow({ items }: { items: string[] }) {
 
 function AIRewriteButton({ label = "Rewrite with AI" }: { label?: string }) {
   return (
-    <button className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-violet-700 hover:bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
+    <button
+      className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors"
+      style={{ color: tone.purple.fg, background: "transparent", borderColor: tone.purple.border }}
+    >
       <Wand2 className="w-3 h-3" /> {label}
     </button>
   );
@@ -451,26 +588,53 @@ function AIRewriteButton({ label = "Rewrite with AI" }: { label?: string }) {
 function RightInspector() {
   return (
     <div className="w-80 border-l border-border bg-card flex flex-col shrink-0">
-      <div className="h-10 px-3 flex items-center justify-between border-b border-border bg-card">
-        <div className="flex items-center gap-2 text-xs">
-          <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-          <span className="font-medium">Question node</span>
+      {/* Header — icon tile + summary chips, matches editor inspector */}
+      <div className="px-3 pt-3 pb-2 border-b border-border">
+        <div className="flex items-start gap-2">
+          <div
+            className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+            style={{ background: tone.blue.bg, border: `1px solid ${tone.blue.border}` }}
+          >
+            <HelpCircle className="w-3.5 h-3.5" style={{ color: tone.blue.fg }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-none">
+              Question step
+            </div>
+            <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">
+              n_check_companion
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button className="p-1 hover:bg-muted rounded"><Copy className="w-3.5 h-3.5 text-muted-foreground" /></button>
+            <button className="p-1 hover:bg-muted rounded"><Trash2 className="w-3.5 h-3.5 text-muted-foreground" /></button>
+            <button className="p-1 hover:bg-muted rounded"><MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" /></button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button className="p-1 hover:bg-muted rounded"><Copy className="w-3.5 h-3.5 text-muted-foreground" /></button>
-          <button className="p-1 hover:bg-muted rounded"><Trash2 className="w-3.5 h-3.5 text-muted-foreground" /></button>
-          <button className="p-1 hover:bg-muted rounded"><MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" /></button>
+        <div className="flex items-center gap-1 mt-2 text-[10px]">
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold tabular-nums"
+            style={{ color: tone.purple.fg, background: tone.purple.bg, border: `1px solid ${tone.purple.border}` }}
+          >
+            <GitBranch className="w-2.5 h-2.5" /> 2 branches
+          </span>
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold tabular-nums"
+            style={{ color: tone.amber.fg, background: tone.amber.bg, border: `1px solid ${tone.amber.border}` }}
+          >
+            <FileText className="w-2.5 h-2.5" /> 3 ev
+          </span>
         </div>
       </div>
 
-      <div className="flex border-b border-border">
+      <div className="flex border-b border-border bg-muted/30">
         {["Content", "Branches", "Evidence", "Advanced"].map((t, i) => (
           <button
             key={t}
-            className={`flex-1 py-2 text-[11px] font-medium border-b-2 ${
+            className={`flex-1 py-2 text-[10px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
               i === 0
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
+                ? "border-foreground text-foreground bg-card"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/60"
             }`}
           >
             {t}
@@ -483,7 +647,7 @@ function RightInspector() {
           <input
             type="text"
             defaultValue="Check companion claim"
-            className="w-full px-2 py-1.5 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-foreground"
+            className="w-full px-2 py-1.5 text-xs border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground"
           />
         </InspectorField>
 
@@ -491,7 +655,7 @@ function RightInspector() {
           <textarea
             rows={3}
             defaultValue="Search the payor portal for a companion claim billed by the rendering provider on the same date of service. Was one billed separately?"
-            className="w-full px-2 py-1.5 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-foreground resize-none"
+            className="w-full px-2 py-1.5 text-xs border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground resize-none"
           />
           <AIRewriteButton />
         </InspectorField>
@@ -500,7 +664,7 @@ function RightInspector() {
           <textarea
             rows={2}
             defaultValue="Look for the same CPT family on a sibling claim. If found, note the claim ID."
-            className="w-full px-2 py-1.5 text-xs border border-border rounded focus:outline-none focus:ring-1 focus:ring-foreground resize-none"
+            className="w-full px-2 py-1.5 text-xs border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground resize-none"
           />
           <AIRewriteButton label="Tighten with AI" />
         </InspectorField>
@@ -514,7 +678,7 @@ function RightInspector() {
             ].map((c) => (
               <button
                 key={c.l}
-                className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded border ${
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md border transition-colors ${
                   c.on
                     ? "bg-foreground text-background border-foreground"
                     : "bg-card text-muted-foreground border-border hover:bg-muted"
@@ -536,23 +700,36 @@ function RightInspector() {
               { l: "CMS-1500 — companion claim", linked: true, ev: 4 },
               { l: "Medical records — op note", linked: false, ev: 3 },
             ].map((e) => (
-              <div key={e.l} className="p-1.5 border border-border rounded bg-background flex items-center gap-1.5">
-                <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+              <div
+                key={e.l}
+                className="p-1.5 rounded-md flex items-center gap-1.5"
+                style={{
+                  background: "hsl(var(--cc-amber-bg) / 0.4)",
+                  border: `1px solid ${tone.amber.border}`,
+                }}
+              >
+                <FileText className="w-3 h-3 shrink-0" style={{ color: tone.amber.fg }} />
                 <span className="text-[11px] font-medium truncate flex-1">{e.l}</span>
                 {e.linked && (
-                  <span className="flex items-center gap-0.5 text-[9px] text-violet-700 bg-violet-100 px-1 py-0.5 rounded">
+                  <span
+                    className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded font-semibold tabular-nums"
+                    style={{ color: tone.purple.fg, background: tone.purple.bg, border: `1px solid ${tone.purple.border}` }}
+                  >
                     <Link2 className="w-2.5 h-2.5" /> shared · {e.ev}
                   </span>
                 )}
-                <button className="p-0.5 hover:bg-muted rounded">
+                <button className="p-0.5 hover:bg-background/60 rounded">
                   <Pencil className="w-3 h-3 text-muted-foreground" />
                 </button>
               </div>
             ))}
-            <button className="w-full mt-1 flex items-center justify-center gap-1 text-[10px] py-1 border border-dashed border-border rounded text-muted-foreground hover:bg-muted hover:text-foreground">
+            <button className="w-full mt-1 flex items-center justify-center gap-1 text-[10px] py-1 border border-dashed border-border rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
               <Plus className="w-3 h-3" /> Add evidence req
             </button>
-            <button className="w-full flex items-center justify-center gap-1 text-[10px] py-1 border border-dashed border-violet-300 rounded text-violet-700 hover:bg-violet-50">
+            <button
+              className="w-full flex items-center justify-center gap-1 text-[10px] py-1 border border-dashed rounded-md transition-colors"
+              style={{ color: tone.purple.fg, borderColor: tone.purple.border }}
+            >
               <Library className="w-3 h-3" /> Insert from Library
             </button>
           </div>
@@ -562,7 +739,7 @@ function RightInspector() {
           <input
             type="text"
             defaultValue="{claim_id}_companion_{invoice_number}"
-            className="w-full px-2 py-1.5 text-xs font-mono border border-border rounded focus:outline-none focus:ring-1 focus:ring-foreground"
+            className="w-full px-2 py-1.5 text-xs font-mono border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground"
           />
           <div className="mt-1.5">
             <ChipRow items={["{claim_id}", "{invoice_number}", "{dos}", "{leg_number}", "{payor}", "{doc_type}"]} />
@@ -575,12 +752,22 @@ function RightInspector() {
         <InspectorField label="Branches">
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-[11px]">
-              <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-medium">Found</span>
+              <span
+                className="px-1.5 py-0.5 rounded font-semibold"
+                style={{ color: tone.green.fg, background: tone.green.bg, border: `1px solid ${tone.green.border}` }}
+              >
+                Found
+              </span>
               <ArrowRight className="w-3 h-3 text-muted-foreground" />
               <span className="text-foreground truncate">Resubmit with modifier 59</span>
             </div>
             <div className="flex items-center gap-1.5 text-[11px]">
-              <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-800 font-medium">None</span>
+              <span
+                className="px-1.5 py-0.5 rounded font-semibold"
+                style={{ color: tone.red.fg, background: tone.red.bg, border: `1px solid ${tone.red.border}` }}
+              >
+                None
+              </span>
               <ArrowRight className="w-3 h-3 text-muted-foreground" />
               <span className="text-foreground truncate">Submit appeal w/ op note</span>
             </div>
@@ -588,12 +775,14 @@ function RightInspector() {
         </InspectorField>
       </div>
 
-      <div className="border-t border-border p-2.5 bg-amber-50/50">
-        <div className="flex items-start gap-1.5">
-          <Layers className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
-          <div className="text-[10px] text-amber-900">
-            <span className="font-semibold">Heads up:</span> "CMS-1500 — companion claim" is a <span className="font-semibold">Library evidence</span> used by 4 SOPs. Editing it here updates all 4.
-          </div>
+      <div
+        className="border-t border-border px-3 py-2 flex items-start gap-1.5"
+        style={{ background: "hsl(var(--cc-amber-bg) / 0.5)" }}
+      >
+        <Layers className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: tone.amber.fg }} />
+        <div className="text-[10px]" style={{ color: tone.amber.fg }}>
+          <span className="font-semibold">Heads up:</span> &ldquo;CMS-1500 — companion claim&rdquo; is a{" "}
+          <span className="font-semibold">Library evidence</span> used by 4 SOPs. Editing it here updates all 4.
         </div>
       </div>
     </div>
@@ -602,13 +791,34 @@ function RightInspector() {
 
 function StatusBar() {
   return (
-    <div className="h-7 border-t border-border bg-card flex items-center px-3 gap-4 text-[10px] text-muted-foreground shrink-0">
-      <span>12 nodes · 5 evidence reqs · 2 linked from library</span>
-      <span className="text-amber-700">● Unsaved changes</span>
+    <div className="h-8 border-t border-border bg-card flex items-center px-3 gap-4 text-[10px] text-muted-foreground shrink-0">
+      <span className="flex items-center gap-1">
+        <span className="uppercase tracking-wider font-semibold">Nodes</span>
+        <span className="font-bold tabular-nums text-foreground">12</span>
+      </span>
+      <span className="w-px h-3 bg-border" aria-hidden />
+      <span className="flex items-center gap-1">
+        <span className="uppercase tracking-wider font-semibold">Evidence</span>
+        <span className="font-bold tabular-nums text-foreground">5</span>
+      </span>
+      <span className="w-px h-3 bg-border" aria-hidden />
+      <span className="flex items-center gap-1">
+        <span className="uppercase tracking-wider font-semibold">Linked</span>
+        <span className="font-bold tabular-nums text-foreground">2</span>
+      </span>
+      <span className="w-px h-3 bg-border" aria-hidden />
+      <span className="flex items-center gap-1" style={{ color: tone.amber.fg }}>
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone.amber.fg }} />
+        <span className="font-semibold uppercase tracking-wider">Unsaved</span>
+      </span>
       <span>Last saved 2 min ago</span>
       <div className="flex-1" />
-      <span className="flex items-center gap-1"><Bot className="w-3 h-3" /> AI suggestions: 2</span>
-      <span>v23 · edited by you</span>
+      <span className="flex items-center gap-1">
+        <Bot className="w-3 h-3" /> AI suggestions:{" "}
+        <span className="font-bold tabular-nums text-foreground">2</span>
+      </span>
+      <span className="w-px h-3 bg-border" aria-hidden />
+      <span className="font-mono">v23 · edited by you</span>
     </div>
   );
 }
@@ -627,12 +837,26 @@ function Annotation({
   return (
     <div className={`absolute z-30 ${className}`}>
       <div className="flex items-start gap-2">
-        <div className="w-6 h-6 rounded-full bg-amber-400 text-amber-950 text-[11px] font-bold flex items-center justify-center shrink-0 shadow ring-2 ring-amber-200">
+        <div
+          className="w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 shadow tabular-nums"
+          style={{
+            background: tone.amber.fg,
+            color: "hsl(var(--card))",
+            boxShadow: `0 0 0 2px ${tone.amber.border}`,
+          }}
+        >
           {num}
         </div>
-        <div className="bg-amber-50 border border-amber-300 rounded-md p-2 shadow-sm w-56">
-          <div className="text-[11px] font-semibold text-amber-900">{title}</div>
-          <div className="text-[10px] text-amber-800 mt-0.5 leading-snug">{body}</div>
+        <div
+          className="rounded-md p-2 shadow-sm w-56"
+          style={{ background: tone.amber.bg, border: `1px solid ${tone.amber.border}` }}
+        >
+          <div className="text-[11px] font-semibold" style={{ color: tone.amber.fg }}>
+            {title}
+          </div>
+          <div className="text-[10px] mt-0.5 leading-snug" style={{ color: tone.amber.fg }}>
+            {body}
+          </div>
         </div>
       </div>
     </div>

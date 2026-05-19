@@ -84,6 +84,20 @@
   --sidebar-border: 220 13% 91%;
   --sidebar-ring: 240 5.9% 10%;
 
+  --cc-purple-bg: 270 95% 96%;
+  --cc-purple-border: 269 80% 85%;
+  --cc-purple-fg: 272 60% 38%;
+  --cc-amber-bg: 48 96% 95%;
+  --cc-amber-border: 45 93% 80%;
+  --cc-amber-fg: 28 78% 38%;
+  --cc-green-bg: 141 78% 95%;
+  --cc-green-border: 142 70% 80%;
+  --cc-green-fg: 142 71% 30%;
+  --cc-blue-bg: 214 100% 96%;
+  --cc-blue-border: 214 95% 87%;
+  --cc-blue-fg: 217 91% 45%;
+  --cc-success: 142 71% 38%;
+
   --font-sans: 'Inter', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
@@ -93,6 +107,20 @@
 
 /* DARK MODE */
 .dark {
+  --cc-purple-bg: 271 50% 18%;
+  --cc-purple-border: 271 50% 28%;
+  --cc-purple-fg: 271 90% 78%;
+  --cc-amber-bg: 38 60% 16%;
+  --cc-amber-border: 38 60% 26%;
+  --cc-amber-fg: 38 95% 70%;
+  --cc-green-bg: 142 50% 12%;
+  --cc-green-border: 142 50% 22%;
+  --cc-green-fg: 142 70% 65%;
+  --cc-blue-bg: 214 60% 14%;
+  --cc-blue-border: 214 60% 24%;
+  --cc-blue-fg: 217 91% 70%;
+  --cc-success: 142 60% 50%;
+
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
