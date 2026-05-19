@@ -9,9 +9,76 @@ import {
   type TreeOption,
   type OutcomeType,
   type EvidenceReq,
+  type LegacyTreeNode,
   generateNodeId,
+  legacyToTree,
   OUTCOME_LABELS,
 } from "@/components/decision-tree/types";
+
+// Structurally validate a tree object before letting React Flow / dagre /
+// the inspector loose on it. The DB has been seen to hold legacy shapes,
+// `null`, and the occasional malformed object; rendering any of those
+// crashes the editor. Anything we don't recognize returns null so callers
+// can fall back gracefully. Pure + exported so AI Builder and the page
+// loader share one parser.
+export function coerceTree(raw: unknown): DecisionTree | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.rootId === "string" && Array.isArray(r.nodes)) {
+    const nodes = r.nodes as unknown[];
+    const valid = nodes.every(
+      (n) =>
+        n != null &&
+        typeof n === "object" &&
+        typeof (n as Record<string, unknown>).id === "string" &&
+        Array.isArray((n as Record<string, unknown>).options),
+    );
+    if (!valid) return null;
+    const hasRoot = nodes.some(
+      (n) => (n as Record<string, unknown>).id === r.rootId,
+    );
+    if (!hasRoot) return null;
+    return r as unknown as DecisionTree;
+  }
+  if (typeof r.question === "string") {
+    try {
+      return legacyToTree(r as unknown as LegacyTreeNode);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Ask the AI builder to generate a full decision tree from a plain-text
+// SOP description. Mirrors the request shape used by the original
+// AI Builder on error-types.tsx (POST /api/error-types/build-tree-from-text
+// with { description, errorTypeName }) so we share one backend route.
+// Returns a coerced DecisionTree; throws if the response is missing
+// a tree or the tree fails structural validation.
+export async function buildTreeFromText(
+  description: string,
+  errorTypeName?: string,
+): Promise<DecisionTree> {
+  const res = await fetch("/api/error-types/build-tree-from-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ description, errorTypeName }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const data: { decisionTree?: unknown } = await res.json();
+  if (!data.decisionTree) {
+    throw new Error("AI returned no tree");
+  }
+  const coerced = coerceTree(data.decisionTree);
+  if (!coerced) {
+    throw new Error("AI returned an unrecognized tree shape");
+  }
+  return coerced;
+}
 
 export type FlowNodeData = {
   kind: "question" | "outcome";

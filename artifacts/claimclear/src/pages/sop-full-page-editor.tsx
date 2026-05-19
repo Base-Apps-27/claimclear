@@ -35,6 +35,7 @@ import {
   Settings as SettingsIcon,
   Sparkles,
   Loader2,
+  Wand2,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -46,11 +47,9 @@ import { toast } from "@/hooks/use-toast";
 import {
   type DecisionTree,
   type OutcomeType,
-  legacyToTree,
   createEmptyTree,
   OUTCOME_LABELS,
   OUTCOME_AUTHOR_OPTIONS,
-  type LegacyTreeNode,
   validateAppliesPerInvoice,
   findEmptyEvidenceLabels,
 } from "@/components/decision-tree/types";
@@ -63,6 +62,8 @@ import {
   setEvidenceReq,
   removeEvidenceReq,
   simplifyTextField,
+  buildTreeFromText,
+  coerceTree,
   type FlowNodeData,
 } from "./sop-full-page-editor-helpers";
 
@@ -495,38 +496,128 @@ function Inspector({
 // Page
 // ---------------------------------------------------------------------------
 
-// Structurally validate a stored tree before letting React Flow / dagre /
-// the inspector loose on it. The DB has been seen to hold legacy shapes,
-// `null`, and the occasional malformed object (see error_type id=1 in
-// production); rendering any of those crashes the editor. Anything we
-// don't recognize falls back to an empty tree so the page stays loadable.
-function coerceTree(raw: unknown): DecisionTree | null {
-  if (raw == null || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.rootId === "string" && Array.isArray(r.nodes)) {
-    const nodes = r.nodes as unknown[];
-    const valid = nodes.every(
-      (n) =>
-        n != null &&
-        typeof n === "object" &&
-        typeof (n as Record<string, unknown>).id === "string" &&
-        Array.isArray((n as Record<string, unknown>).options),
-    );
-    if (!valid) return null;
-    const hasRoot = nodes.some(
-      (n) => (n as Record<string, unknown>).id === r.rootId,
-    );
-    if (!hasRoot) return null;
-    return r as unknown as DecisionTree;
-  }
-  if (typeof r.question === "string") {
-    try {
-      return legacyToTree(r as unknown as LegacyTreeNode);
-    } catch {
-      return null;
-    }
-  }
-  return null;
+// ---------------------------------------------------------------------------
+// AI Builder left-panel tab — paste an SOP description, get back a full
+// decision tree from the AI. Shows a diff summary (node count + the
+// outgoing tree's root question) before letting the author replace
+// their in-memory tree. The change is NOT auto-saved — the user must
+// still click Save in the top bar.
+// ---------------------------------------------------------------------------
+
+function AiBuilderPanel({
+  currentTree,
+  errorTypeName,
+  onReplace,
+}: {
+  currentTree: DecisionTree;
+  errorTypeName?: string;
+  onReplace: (next: DecisionTree) => void;
+}) {
+  const [text, setText] = useState("");
+  const [proposed, setProposed] = useState<DecisionTree | null>(null);
+  const mutation = useMutation({
+    mutationFn: (description: string) => buildTreeFromText(description, errorTypeName),
+    onSuccess: (tree) => setProposed(tree),
+    onError: (e) => {
+      toast({
+        title: "AI build failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleGenerate = () => {
+    if (!text.trim() || mutation.isPending) return;
+    setProposed(null);
+    mutation.mutate(text);
+  };
+
+  const handleReplace = () => {
+    if (!proposed) return;
+    onReplace(proposed);
+    setProposed(null);
+    toast({
+      title: "Tree replaced",
+      description: "Click Save to persist the new tree.",
+    });
+  };
+
+  const proposedRoot = proposed
+    ? proposed.nodes.find((n) => n.id === proposed.rootId)?.question || "(untitled)"
+    : null;
+
+  return (
+    <div className="flex flex-col h-full p-2 gap-2" data-testid="ai-builder-panel">
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        Describe the workflow
+      </Label>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={8}
+        className="text-xs"
+        placeholder={"Paste the SOP in plain English. Example:\n\nFirst check if GPS data is available. If yes, verify the breadcrumbs match pickup and dropoff. If they match, mark ready. Otherwise place on hold."}
+        data-testid="ai-builder-text"
+        disabled={mutation.isPending}
+      />
+      <Button
+        size="sm"
+        onClick={handleGenerate}
+        disabled={!text.trim() || mutation.isPending}
+        data-testid="ai-builder-generate"
+        className="gap-1"
+      >
+        {mutation.isPending ? (
+          <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+        ) : (
+          <><Wand2 className="w-3 h-3" /> Generate tree</>
+        )}
+      </Button>
+      {proposed && (
+        <div className="border border-border rounded p-2 space-y-2 bg-muted/30" data-testid="ai-builder-diff">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Proposed tree
+          </div>
+          <div className="text-xs space-y-1">
+            <div>
+              <span className="text-muted-foreground">Current:</span>{" "}
+              <span className="font-medium">{currentTree.nodes.length}</span> nodes
+            </div>
+            <div>
+              <span className="text-muted-foreground">Proposed:</span>{" "}
+              <span className="font-medium">{proposed.nodes.length}</span> nodes
+            </div>
+            <div className="text-muted-foreground">
+              Starts with: <span className="text-foreground italic">"{proposedRoot}"</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[11px]"
+              onClick={() => setProposed(null)}
+              data-testid="ai-builder-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-[11px]"
+              onClick={handleReplace}
+              data-testid="ai-builder-replace"
+            >
+              Replace tree
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground italic">
+            Replacing swaps the canvas in memory. Click Save in the top bar to persist.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function SopFullPageEditor() {
@@ -548,7 +639,7 @@ export default function SopFullPageEditor() {
   const [search, setSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [leftTab, setLeftTab] = useState<"outline" | "settings">("outline");
+  const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings">("outline");
 
   // Load tree from server when the error type arrives.
   useEffect(() => {
@@ -689,14 +780,25 @@ export default function SopFullPageEditor() {
               className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
                 leftTab === "outline" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
+              data-testid="left-tab-outline"
             >
               <ListTree className="w-3.5 h-3.5" /> Outline
+            </button>
+            <button
+              onClick={() => setLeftTab("ai")}
+              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
+                leftTab === "ai" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="left-tab-ai"
+            >
+              <Wand2 className="w-3.5 h-3.5" /> AI Builder
             </button>
             <button
               onClick={() => setLeftTab("settings")}
               className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
                 leftTab === "settings" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
+              data-testid="left-tab-settings"
             >
               <SettingsIcon className="w-3.5 h-3.5" /> Settings
             </button>
@@ -722,6 +824,17 @@ export default function SopFullPageEditor() {
                 search={search}
               />
             </>
+          ) : leftTab === "ai" ? (
+            <AiBuilderPanel
+              currentTree={tree}
+              errorTypeName={errorType.name}
+              onReplace={(next) => {
+                setTree(next);
+                setSelectedId(next.rootId);
+                setDirty(true);
+                setLeftTab("outline");
+              }}
+            />
           ) : (
             <div className="p-3 text-xs text-muted-foreground space-y-2">
               <div>

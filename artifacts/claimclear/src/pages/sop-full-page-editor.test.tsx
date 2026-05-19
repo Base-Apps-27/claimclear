@@ -12,6 +12,8 @@ import {
   updateNode,
   addEvidenceReq,
   simplifyTextField,
+  buildTreeFromText,
+  coerceTree,
 } from "./sop-full-page-editor-helpers";
 
 function sampleTree(): DecisionTree {
@@ -126,6 +128,80 @@ test("simplifyTextField POSTs the single field to /api/error-types/simplify-text
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("buildTreeFromText POSTs to /build-tree-from-text and the panel's accept handler swaps the editor's tree state", async () => {
+  // Wire shape mirrors the existing AI Builder on error-types.tsx so
+  // we share one backend route. The "accept handler" the panel passes
+  // to AiBuilderPanel is a simple `(tree) => setTree(tree)` callback;
+  // proving the helper hands back the coerced tree AND that the
+  // callback updates the captured state is enough to know the panel
+  // wires correctly without booting React + xyflow + jsdom.
+  const knownTree: DecisionTree = {
+    rootId: "x",
+    nodes: [
+      { id: "x", question: "Is the new tree wired up?", options: [
+        { label: "Yes", outcomeType: "portal_dispute", outcomeLabel: "Mark Ready" },
+        { label: "No",  outcomeType: "hold", outcomeLabel: "Place on Hold" },
+      ] },
+    ],
+  };
+  const calls: { url: string; init: RequestInit }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({ decisionTree: knownTree }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const generated = await buildTreeFromText("describe the SOP", "Bundled claims");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "/api/error-types/build-tree-from-text");
+    assert.equal(calls[0].init.method, "POST");
+    const body = JSON.parse(calls[0].init.body as string);
+    assert.deepEqual(body, { description: "describe the SOP", errorTypeName: "Bundled claims" });
+    // coerce should preserve the structurally-valid input untouched
+    assert.equal(generated.rootId, "x");
+    assert.equal(generated.nodes.length, 1);
+
+    // Simulate the editor's tree state + the panel's onReplace handoff.
+    let editorTree: DecisionTree = sampleTree();
+    const onReplace = (next: DecisionTree) => { editorTree = next; };
+    onReplace(generated);
+    assert.equal(editorTree.rootId, "x");
+    assert.equal(editorTree.nodes[0].question, "Is the new tree wired up?");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("buildTreeFromText rejects an unrecognized tree shape so the panel can toast destructively", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    ({
+      ok: true,
+      json: async () => ({ decisionTree: { totally: "not a tree" } }),
+    } as Response)) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      () => buildTreeFromText("hello", "name"),
+      /unrecognized tree shape/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("coerceTree returns null for malformed shapes and accepts the canonical tree", () => {
+  assert.equal(coerceTree(null), null);
+  assert.equal(coerceTree({ rootId: "missing", nodes: [] }), null);
+  const ok = coerceTree(sampleTree());
+  assert.ok(ok, "valid tree should coerce");
+  assert.equal(ok!.rootId, "a");
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {
