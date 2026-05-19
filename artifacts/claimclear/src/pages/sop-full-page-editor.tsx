@@ -42,6 +42,7 @@ import {
   Bookmark,
   History,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -67,6 +68,7 @@ import {
   OUTCOME_AUTHOR_OPTIONS,
   validateAppliesPerInvoice,
   findEmptyEvidenceLabels,
+  FILENAME_TEMPLATE_VARIABLES,
 } from "@/components/decision-tree/types";
 import {
   treeToFlow,
@@ -623,9 +625,9 @@ function Inspector({
           </div>
           <div className="space-y-1.5">
             {(node.evidenceRequirements || []).map((req, idx) => (
-              <div
+              <details
                 key={idx}
-                className="rounded p-1.5 flex items-center gap-1.5 border focus-within:ring-2 focus-within:ring-offset-0 transition-shadow"
+                className="group rounded border focus-within:ring-2 focus-within:ring-offset-0 transition-shadow"
                 style={{
                   background: "hsl(var(--cc-amber-bg))",
                   borderColor: "hsl(var(--cc-amber-border))",
@@ -633,31 +635,138 @@ function Inspector({
                 }}
                 data-testid={`inspector-evidence-${idx}`}
               >
-                <FileText className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
-                <Input
-                  value={req.label}
-                  onChange={(e) => onChange(setEvidenceReq(tree, node.id, idx, { label: e.target.value }))}
-                  className="h-6 text-xs flex-1 bg-card"
-                  placeholder="Evidence name"
-                />
-                <button
-                  className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => onSaveEvidenceToLibrary(node.id, idx)}
-                  title="Save to library"
-                  aria-label="Save evidence to library"
-                  data-testid={`inspector-save-evidence-to-library-${idx}`}
+                <summary className="list-none cursor-pointer p-1.5 flex items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+                  <ChevronDown
+                    className="w-3 h-3 shrink-0 text-muted-foreground -rotate-90 group-open:rotate-0 transition-transform"
+                    aria-hidden
+                  />
+                  <FileText className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
+                  <Input
+                    value={req.label}
+                    onChange={(e) => onChange(setEvidenceReq(tree, node.id, idx, { label: e.target.value }))}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-6 text-xs flex-1 bg-card"
+                    placeholder="Evidence name"
+                  />
+                  <button
+                    type="button"
+                    className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={(e) => { e.preventDefault(); onSaveEvidenceToLibrary(node.id, idx); }}
+                    title="Save to library"
+                    aria-label="Save evidence to library"
+                    data-testid={`inspector-save-evidence-to-library-${idx}`}
+                  >
+                    <Bookmark className="w-3 h-3 text-muted-foreground" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={(e) => { e.preventDefault(); onChange(removeEvidenceReq(tree, node.id, idx)); }}
+                    title="Remove"
+                    aria-label="Remove evidence requirement"
+                    data-testid={`inspector-remove-evidence-${idx}`}
+                  >
+                    <Trash2 className="w-3 h-3 text-muted-foreground" />
+                  </button>
+                </summary>
+                <div
+                  className="px-2 pb-2 pt-1 space-y-2 border-t"
+                  style={{ borderColor: "hsl(var(--cc-amber-border))" }}
                 >
-                  <Bookmark className="w-3 h-3 text-muted-foreground" />
-                </button>
-                <button
-                  className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => onChange(removeEvidenceReq(tree, node.id, idx))}
-                  title="Remove"
-                  aria-label="Remove evidence requirement"
-                >
-                  <Trash2 className="w-3 h-3 text-muted-foreground" />
-                </button>
-              </div>
+                  {/* Required + accepts toggles — the per-requirement
+                      details the inspector previously hid. The runner
+                      uses `required` to gate the SOP advance, and
+                      `acceptsImage` / `acceptsText` to decide which
+                      upload affordances to render. */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
+                      <Switch
+                        checked={req.required !== false}
+                        onCheckedChange={(checked) =>
+                          onChange(setEvidenceReq(tree, node.id, idx, { required: checked }))
+                        }
+                        data-testid={`inspector-evidence-required-${idx}`}
+                        aria-label="Required"
+                      />
+                      <span>Required</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
+                      <Switch
+                        checked={req.acceptsImage !== false}
+                        onCheckedChange={(checked) =>
+                          onChange(setEvidenceReq(tree, node.id, idx, { acceptsImage: checked }))
+                        }
+                        data-testid={`inspector-evidence-accepts-image-${idx}`}
+                        aria-label="Accepts image"
+                      />
+                      <span>Image</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer">
+                      <Switch
+                        checked={req.acceptsText === true}
+                        onCheckedChange={(checked) =>
+                          onChange(setEvidenceReq(tree, node.id, idx, { acceptsText: checked }))
+                        }
+                        data-testid={`inspector-evidence-accepts-text-${idx}`}
+                        aria-label="Accepts text"
+                      />
+                      <span>Text</span>
+                    </label>
+                  </div>
+                  {/* Filename template — admin pre-defines the saved
+                      file's name so the operator gets a one-click
+                      "copy filename" affordance at runtime. Variable
+                      chips append a `{token}` to the input so authors
+                      don't have to memorize the placeholder syntax.
+                      Resolver and supported variables live in
+                      `decision-tree/types.ts`. */}
+                  <div>
+                    <Label
+                      htmlFor={`evidence-filename-${idx}`}
+                      className="text-[10px] uppercase tracking-wider text-muted-foreground"
+                    >
+                      Filename template
+                    </Label>
+                    <Input
+                      id={`evidence-filename-${idx}`}
+                      value={req.filenameTemplate || ""}
+                      onChange={(e) =>
+                        onChange(
+                          setEvidenceReq(tree, node.id, idx, {
+                            filenameTemplate: e.target.value,
+                          }),
+                        )
+                      }
+                      placeholder="e.g. Inv_{invoice_number}_EOB_{dos}"
+                      className="mt-1 h-6 text-[11px] font-mono bg-card"
+                      data-testid={`inspector-evidence-filename-${idx}`}
+                    />
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {FILENAME_TEMPLATE_VARIABLES.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            onChange(
+                              setEvidenceReq(tree, node.id, idx, {
+                                filenameTemplate: `${req.filenameTemplate || ""}{${v.key}}`,
+                              }),
+                            )
+                          }
+                          title={`Insert ${v.label}`}
+                          data-testid={`inspector-evidence-filename-var-${idx}-${v.key}`}
+                        >
+                          {`{${v.key}}`}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Operator gets a one-click "copy filename" button at runtime. Unknown variables drop out cleanly.
+                    </p>
+                  </div>
+                </div>
+              </details>
             ))}
           </div>
         </div>
