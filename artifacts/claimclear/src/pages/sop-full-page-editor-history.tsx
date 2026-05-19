@@ -25,8 +25,10 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { History, Loader2, RotateCcw } from "lucide-react";
+import { History, Loader2, RotateCcw, Inbox } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 // ---------------------------------------------------------------------------
 // HistoryDrawer — Task #779
@@ -205,28 +207,37 @@ export function HistoryDrawer({
             <div className="w-[300px] border-r border-border flex flex-col">
               <div className="flex-1 overflow-y-auto">
                 {isLoading ? (
-                  <div className="p-4 text-xs text-muted-foreground flex items-center gap-2">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Loading
-                    versions…
+                  <div className="p-3 space-y-2" data-testid="history-loading">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
                   </div>
                 ) : isError ? (
                   <div className="p-4 text-xs text-destructive">
                     Couldn't load version history.
                   </div>
                 ) : versions.length === 0 ? (
-                  <div className="p-4 text-xs text-muted-foreground">
-                    No saved versions yet.
-                  </div>
+                  <EmptyState
+                    icon={Inbox}
+                    title="No saved versions yet"
+                    description="Each time you save the SOP, a snapshot is captured here so you can restore it later."
+                  />
                 ) : (
                   <ul className="divide-y divide-border" data-testid="history-version-list">
                     {versions.map((v) => (
                       <li
                         key={v.id}
-                        className={`p-2 text-xs cursor-pointer hover:bg-muted/60 ${
-                          selectedVersionId === v.id
-                            ? "bg-blue-50 ring-1 ring-blue-200"
-                            : ""
+                        className={`p-2 text-xs cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          selectedVersionId === v.id ? "font-medium" : ""
                         }`}
+                        style={
+                          selectedVersionId === v.id
+                            ? {
+                                background: "hsl(var(--cc-blue-bg))",
+                                boxShadow: "inset 0 0 0 1px hsl(var(--cc-blue-border))",
+                              }
+                            : undefined
+                        }
                         onClick={() => setSelectedVersionId(v.id)}
                         data-testid={`history-version-row-${v.id}`}
                       >
@@ -267,9 +278,11 @@ export function HistoryDrawer({
               {selectedVersion ? (
                 <VersionSummary version={selectedVersion} />
               ) : (
-                <div className="p-4 text-xs text-muted-foreground">
-                  Select a version on the left to preview its summary.
-                </div>
+                <EmptyState
+                  icon={History}
+                  title="Select a version"
+                  description="Pick a snapshot on the left to preview its summary."
+                />
               )}
             </div>
           </div>

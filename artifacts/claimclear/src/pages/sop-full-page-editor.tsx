@@ -41,7 +41,11 @@ import {
   Library,
   Bookmark,
   History,
+  AlertCircle,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
+import { StatusDot } from "@/components/cohesion";
 import { PlainTextEditor } from "@/components/decision-tree/plain-text-editor";
 import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
 import { LibraryDrawer, SaveToLibraryDialog } from "./sop-full-page-editor-library";
@@ -214,25 +218,44 @@ function AiRewriteButton({
 function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
   return (
     <div
-      className={`bg-white border-2 rounded-lg shadow-sm w-[220px] ${
-        data.selected ? "border-blue-500 ring-2 ring-blue-200" : "border-blue-300"
-      }`}
+      className="bg-card rounded-md shadow-sm w-[220px]"
+      style={{
+        border: `1px solid hsl(var(--cc-blue-border))`,
+        boxShadow: data.selected
+          ? `0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--cc-blue-fg))`
+          : undefined,
+      }}
       data-testid={`flow-node-question`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-slate-400" />
-      <div className="px-2.5 py-1 border-b border-blue-100 flex items-center gap-1.5">
-        <HelpCircle className="w-3 h-3 text-blue-600" />
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Question</span>
+      <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
+      <div
+        className="px-2.5 py-1 flex items-center gap-1.5 border-b"
+        style={{ background: "hsl(var(--cc-blue-bg))", borderColor: "hsl(var(--cc-blue-border))" }}
+      >
+        <HelpCircle className="w-3 h-3" style={{ color: "hsl(var(--cc-blue-fg))" }} />
+        <span
+          className="text-[10px] uppercase tracking-wider font-semibold"
+          style={{ color: "hsl(var(--cc-blue-fg))" }}
+        >
+          Question
+        </span>
         {data.evidenceCount ? (
-          <span className="ml-auto flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-medium">
+          <span
+            className="ml-auto inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold tabular-nums"
+            style={{
+              color: "hsl(var(--cc-amber-fg))",
+              background: "hsl(var(--cc-amber-bg))",
+              border: "1px solid hsl(var(--cc-amber-border))",
+            }}
+          >
             <FileText className="w-2.5 h-2.5" /> {data.evidenceCount}
           </span>
         ) : null}
       </div>
-      <div className="px-2.5 py-2 text-xs font-medium leading-snug text-foreground line-clamp-3 min-h-[44px]">
+      <div className="px-2.5 py-2 text-xs font-medium leading-snug text-card-foreground line-clamp-3 min-h-[44px]">
         {data.label}
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-slate-400" />
+      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground" />
     </div>
   );
 }
@@ -240,21 +263,28 @@ function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
 function OutcomeNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
   const isApprove = data.outcomeType === "portal_dispute" || data.outcomeType === "dispute";
   const isHold = data.outcomeType === "hold";
-  const colors = isApprove
-    ? "bg-green-50 border-green-400"
+  const palette = isApprove
+    ? { bg: "hsl(var(--cc-green-bg))", border: "hsl(var(--cc-green-border))", fg: "hsl(var(--cc-green-fg))", label: "Outcome" }
     : isHold
-      ? "bg-amber-50 border-amber-400"
-      : "bg-red-50 border-red-400";
+      ? { bg: "hsl(var(--cc-amber-bg))", border: "hsl(var(--cc-amber-border))", fg: "hsl(var(--cc-amber-fg))", label: "Outcome" }
+      : { bg: "hsl(var(--cc-red-bg))", border: "hsl(var(--cc-red-border))", fg: "hsl(var(--cc-red-fg))", label: "Dead-end" };
   const Icon = isApprove ? CheckCircle2 : isHold ? FileText : XCircle;
-  const iconColor = isApprove ? "text-green-700" : isHold ? "text-amber-700" : "text-red-700";
   return (
-    <div className={`border-2 rounded-lg shadow-sm w-[220px] ${colors}`}>
-      <Handle type="target" position={Position.Top} className="!bg-slate-400" />
+    <div
+      className="rounded-md shadow-sm w-[220px]"
+      style={{ background: palette.bg, border: `1px solid ${palette.border}` }}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
       <div className="px-2.5 py-1 border-b border-current/10 flex items-center gap-1.5">
-        <Icon className={`w-3 h-3 ${iconColor}`} />
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Outcome</span>
+        <Icon className="w-3 h-3" style={{ color: palette.fg }} />
+        <span
+          className="text-[10px] uppercase tracking-wider font-semibold"
+          style={{ color: palette.fg }}
+        >
+          {palette.label}
+        </span>
       </div>
-      <div className="px-2.5 py-2 text-xs font-medium leading-snug min-h-[44px]">{data.label}</div>
+      <div className="px-2.5 py-2 text-xs font-medium leading-snug text-card-foreground min-h-[44px]">{data.label}</div>
     </div>
   );
 }
@@ -274,10 +304,10 @@ function InsertableEdge({
   };
   return (
     <>
-      <path id={id} d={path} fill="none" stroke="#94a3b8" strokeWidth={1.5} />
+      <path id={id} d={path} fill="none" stroke="hsl(var(--border))" strokeWidth={1.5} />
       {label && (
         <foreignObject x={labelX - 24} y={labelY - 12} width={48} height={20} style={{ overflow: "visible" }}>
-          <div className="bg-white border border-slate-300 rounded-full text-[10px] px-1.5 py-0.5 text-center text-slate-600 font-medium shadow-sm select-none">
+          <div className="bg-card border border-border rounded-full text-[10px] px-1.5 py-0.5 text-center text-muted-foreground font-medium shadow-sm select-none">
             {label}
           </div>
         </foreignObject>
@@ -285,8 +315,9 @@ function InsertableEdge({
       <foreignObject x={labelX + 18} y={labelY - 10} width={20} height={20} style={{ overflow: "visible" }}>
         <button
           onClick={onInsert}
-          className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center hover:bg-blue-700 shadow ring-2 ring-white opacity-0 hover:opacity-100 transition-opacity"
+          className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center hover:opacity-90 shadow ring-2 ring-background opacity-0 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity"
           title="Insert step between"
+          aria-label="Insert step between"
           data-testid={`insert-between-${id}`}
         >
           +
@@ -326,17 +357,27 @@ function Outline({
         <button
           key={id}
           onClick={() => onSelect(id)}
-          className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-xs rounded ${
-            selectedId === id ? "bg-blue-50 ring-1 ring-blue-300 font-medium" : "hover:bg-muted/60"
+          className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-xs rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            selectedId === id ? "font-medium" : "hover:bg-muted/60"
           }`}
-          style={{ paddingLeft: 8 + depth * 14 }}
+          style={{
+            paddingLeft: 8 + depth * 14,
+            background: selectedId === id ? "hsl(var(--cc-blue-bg))" : undefined,
+            boxShadow: selectedId === id ? "inset 0 0 0 1px hsl(var(--cc-blue-border))" : undefined,
+          }}
           data-testid={`outline-row-${id}`}
         >
-          <HelpCircle className="w-3 h-3 text-blue-600 shrink-0" />
+          <HelpCircle className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-blue-fg))" }} />
           {branchLabel && <span className="text-[9px] text-muted-foreground">[{branchLabel}]</span>}
           <span className="truncate text-foreground">{label}</span>
           {(node.evidenceRequirements?.length ?? 0) > 0 && (
-            <span className="ml-auto text-[9px] bg-amber-100 text-amber-700 px-1 rounded font-medium">
+            <span
+              className="ml-auto text-[9px] px-1 rounded font-semibold tabular-nums"
+              style={{
+                color: "hsl(var(--cc-amber-fg))",
+                background: "hsl(var(--cc-amber-bg))",
+              }}
+            >
               {node.evidenceRequirements!.length}ev
             </span>
           )}
@@ -377,9 +418,21 @@ function Inspector({
   }
   return (
     <div className="flex flex-col h-full" data-testid="inspector">
-      <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-card">
-        <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-        <span className="text-xs font-medium">Question node</span>
+      <div className="px-3 py-2 flex items-center gap-2 border-b border-border bg-card">
+        <div
+          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+          style={{
+            background: "hsl(var(--cc-blue-bg))",
+            border: "1px solid hsl(var(--cc-blue-border))",
+          }}
+          aria-hidden="true"
+        >
+          <HelpCircle className="w-3.5 h-3.5" style={{ color: "hsl(var(--cc-blue-fg))" }} />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Question node</span>
+          <span className="text-[10px] text-muted-foreground font-mono truncate">{node.id.slice(0, 12)}</span>
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -387,10 +440,10 @@ function Inspector({
           onClick={() => onSaveSubTreeToLibrary(node.id)}
           data-testid="inspector-save-sub-tree-to-library"
           title="Save this node and its descendants to the SOP library"
+          aria-label="Save sub-tree to SOP library"
         >
           <Bookmark className="w-3 h-3 mr-1" /> Save sub-tree
         </Button>
-        <span className="text-[10px] text-muted-foreground font-mono">{node.id.slice(0, 12)}</span>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
@@ -447,7 +500,7 @@ function Inspector({
                   <div className="text-[10px] text-muted-foreground flex items-center justify-between">
                     <span>→ continues to next question</span>
                     <button
-                      className="text-blue-600 hover:underline"
+                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
                       onClick={() => onChange(setOption(tree, node.id, idx, { childId: undefined }))}
                     >
                       Detach
@@ -496,26 +549,35 @@ function Inspector({
           </div>
           <div className="space-y-1.5">
             {(node.evidenceRequirements || []).map((req, idx) => (
-              <div key={idx} className="border border-border rounded p-1.5 bg-background flex items-center gap-1.5">
-                <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+              <div
+                key={idx}
+                className="rounded p-1.5 flex items-center gap-1.5"
+                style={{
+                  background: "hsl(var(--cc-amber-bg))",
+                  border: "1px solid hsl(var(--cc-amber-border))",
+                }}
+              >
+                <FileText className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
                 <Input
                   value={req.label}
                   onChange={(e) => onChange(setEvidenceReq(tree, node.id, idx, { label: e.target.value }))}
-                  className="h-6 text-xs flex-1"
+                  className="h-6 text-xs flex-1 bg-card"
                   placeholder="Evidence name"
                 />
                 <button
-                  className="p-1 hover:bg-muted rounded"
+                  className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => onSaveEvidenceToLibrary(node.id, idx)}
                   title="Save to library"
+                  aria-label="Save evidence to library"
                   data-testid={`inspector-save-evidence-to-library-${idx}`}
                 >
                   <Bookmark className="w-3 h-3 text-muted-foreground" />
                 </button>
                 <button
-                  className="p-1 hover:bg-muted rounded"
+                  className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => onChange(removeEvidenceReq(tree, node.id, idx))}
                   title="Remove"
+                  aria-label="Remove evidence requirement"
                 >
                   <Trash2 className="w-3 h-3 text-muted-foreground" />
                 </button>
@@ -942,6 +1004,31 @@ export default function SopFullPageEditor() {
     setDirty(true);
   }, []);
 
+  // Keyboard shortcuts: ⌘F opens Find & Replace, ⌘S saves.
+  // We listen at the window level so the shortcut works regardless of
+  // which panel currently holds focus. The handlers no-op when no tree
+  // has loaded yet to avoid acting on a half-mounted editor.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === "f") {
+        e.preventDefault();
+        setFindReplaceOpen(true);
+      } else if (key === "s") {
+        e.preventDefault();
+        void handleSaveRef.current?.();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // Stable ref to the latest handleSave so the keydown listener above
+  // can call the current closure without re-binding on every render.
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+
   const flow = useMemo(
     () => (tree ? treeToFlow(tree, selectedIds) : { nodes: [], edges: [] }),
     [tree, selectedIds],
@@ -1085,7 +1172,7 @@ export default function SopFullPageEditor() {
     [],
   );
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     if (!errorType || !tree) return;
     setSaving(true);
     try {
@@ -1105,15 +1192,48 @@ export default function SopFullPageEditor() {
       setSaving(false);
     }
   };
+  handleSaveRef.current = handleSave;
 
   if (isLoading) {
-    return <div className="p-8 text-sm text-muted-foreground">Loading SOP…</div>;
+    return (
+      <div className="h-[calc(100vh-4rem)] -mx-4 -mb-4 flex flex-col bg-background border-t border-border" data-testid="sop-editor-loading">
+        <div className="h-14 px-4 flex items-center gap-3 border-b border-border bg-card">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-6 w-48" />
+          <div className="flex-1" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-28" />
+        </div>
+        <div className="flex-1 flex min-h-0">
+          <div className="w-72 border-r border-border bg-card p-3 space-y-2">
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-7 w-3/4" />
+            <Skeleton className="h-7 w-5/6" />
+          </div>
+          <div className="flex-1 p-6 space-y-3">
+            <Skeleton className="h-24 w-64" />
+            <Skeleton className="h-24 w-64 ml-12" />
+          </div>
+          <div className="w-80 border-l border-border bg-card p-3 space-y-2">
+            <Skeleton className="h-7 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-7 w-full" />
+          </div>
+        </div>
+      </div>
+    );
   }
   if (!errorType) {
     return (
-      <div className="p-8 text-sm">
-        <p className="text-muted-foreground mb-2">Error type not found.</p>
-        <Link href="/error-types" className="text-blue-600 hover:underline">← Back to Error Types</Link>
+      <div className="p-8">
+        <EmptyState
+          icon={AlertCircle}
+          title="Error type not found"
+          description="This SOP may have been deleted or you may not have access to it."
+          primaryAction={{ label: "Back to Error Types", href: "/error-types" }}
+        />
       </div>
     );
   }
@@ -1123,55 +1243,95 @@ export default function SopFullPageEditor() {
 
   return (
     <div className="h-[calc(100vh-4rem)] -mx-4 -mb-4 flex flex-col bg-background border-t border-border" data-testid="sop-full-page-editor">
-      {/* Top bar */}
-      <div className="h-12 px-3 flex items-center gap-2 border-b border-border bg-card shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/error-types")} data-testid="back-to-error-types">
-          <ChevronLeft className="w-4 h-4 mr-1" /> Error Types
-        </Button>
-        <div className="text-sm">
-          <span className="text-muted-foreground">SOP:</span>{" "}
-          <span className="font-medium">{errorType.name}</span>
-        </div>
-        {dirty && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-            Unsaved changes
+      {/* Top bar — PageHeader-rhythm with breadcrumb + status pill */}
+      <div className="h-14 px-4 flex items-center gap-3 border-b border-border bg-card shrink-0">
+        <button
+          onClick={() => navigate("/error-types")}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded px-1 -ml-1"
+          data-testid="back-to-error-types"
+          aria-label="Back to Error Types"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Error Types
+        </button>
+        <span className="text-muted-foreground/60 text-xs" aria-hidden="true">›</span>
+        <h1 className="text-sm font-semibold truncate max-w-md" data-testid="sop-editor-title">
+          {errorType.name}
+        </h1>
+        {dirty ? (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold"
+            style={{
+              color: "hsl(var(--cc-amber-fg))",
+              background: "hsl(var(--cc-amber-bg))",
+              border: "1px solid hsl(var(--cc-amber-border))",
+            }}
+            data-testid="sop-editor-status-pill"
+          >
+            <StatusDot tone="amber" />
+            Draft · unsaved
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold"
+            style={{
+              color: "hsl(var(--cc-green-fg))",
+              background: "hsl(var(--cc-green-bg))",
+              border: "1px solid hsl(var(--cc-green-border))",
+            }}
+            data-testid="sop-editor-status-pill"
+          >
+            <StatusDot tone="green" />
+            Saved
           </span>
         )}
         <div className="flex-1" />
-        <div className="text-[10px] text-muted-foreground">
-          {tree.nodes.length} nodes · {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)} evidence reqs
-        </div>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => setHistoryDrawerOpen(true)}
           data-testid="open-history-drawer"
+          aria-label="Open version history"
+          className="h-8 gap-1"
         >
-          <History className="w-3.5 h-3.5 mr-1" /> History
+          <History className="w-3.5 h-3.5" /> History
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => setLibraryDrawerOpen(true)}
           data-testid="open-library-drawer"
+          aria-label="Open SOP library"
+          className="h-8 gap-1"
         >
-          <Library className="w-3.5 h-3.5 mr-1" /> Library
+          <Library className="w-3.5 h-3.5" /> Library
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => setFindReplaceOpen(true)}
           data-testid="open-find-replace"
+          aria-label="Find and replace across SOPs"
+          className="h-8 gap-1"
         >
-          <Replace className="w-3.5 h-3.5 mr-1" /> Find & Replace
+          <Replace className="w-3.5 h-3.5" /> Find &amp; Replace
+          <kbd className="ml-1 hidden md:inline-flex h-4 items-center rounded border border-border bg-muted/50 px-1 text-[9px] font-mono text-muted-foreground tabular-nums">
+            ⌘F
+          </kbd>
         </Button>
+        <div className="h-6 w-px bg-border mx-1" aria-hidden="true" />
         <Button
           size="sm"
           onClick={handleSave}
           disabled={!dirty || saving}
           data-testid="save-tree"
+          className="h-8 gap-1"
+          aria-label="Save SOP"
         >
-          <Save className="w-3.5 h-3.5 mr-1" /> {saving ? "Saving…" : "Save"}
+          <Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save SOP"}
+          <kbd className="ml-1 hidden md:inline-flex h-4 items-center rounded border border-primary-foreground/30 bg-primary-foreground/10 px-1 text-[9px] font-mono text-primary-foreground/80 tabular-nums">
+            ⌘S
+          </kbd>
         </Button>
       </div>
 
@@ -1179,43 +1339,31 @@ export default function SopFullPageEditor() {
       <div className="flex-1 flex min-h-0">
         {/* Left panel — outline */}
         <div className="w-72 border-r border-border bg-card flex flex-col shrink-0">
-          <div className="flex border-b border-border">
-            <button
-              onClick={() => setLeftTab("outline")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "outline" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-outline"
-            >
-              <ListTree className="w-3.5 h-3.5" /> Outline
-            </button>
-            <button
-              onClick={() => setLeftTab("plaintext")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "plaintext" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-plaintext"
-            >
-              <Type className="w-3.5 h-3.5" /> Plain Text
-            </button>
-            <button
-              onClick={() => setLeftTab("ai")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "ai" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-ai"
-            >
-              <Wand2 className="w-3.5 h-3.5" /> AI Builder
-            </button>
-            <button
-              onClick={() => setLeftTab("settings")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "settings" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-settings"
-            >
-              <SettingsIcon className="w-3.5 h-3.5" /> Settings
-            </button>
+          <div className="flex bg-muted/30 border-b border-border" role="tablist" aria-label="Left panel">
+            {([
+              { id: "outline", label: "Outline", Icon: ListTree },
+              { id: "plaintext", label: "Plain Text", Icon: Type },
+              { id: "ai", label: "AI Builder", Icon: Wand2 },
+              { id: "settings", label: "Settings", Icon: SettingsIcon },
+            ] as const).map(({ id, label, Icon }) => {
+              const active = leftTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setLeftTab(id)}
+                  role="tab"
+                  aria-selected={active}
+                  className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] uppercase tracking-wider font-semibold border-b-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${
+                    active
+                      ? "bg-card border-foreground text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  }`}
+                  data-testid={`left-tab-${id}`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> {label}
+                </button>
+              );
+            })}
           </div>
           {leftTab === "outline" ? (
             <>
@@ -1438,12 +1586,48 @@ export default function SopFullPageEditor() {
               onSaveEvidenceToLibrary={handleSaveEvidenceToLibrary}
               onSaveSubTreeToLibrary={handleSaveSubTreeToLibrary}
             />
-            {selectedNode && (
-              <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
-                Last edit pending save. Press Save in the top bar to persist.
+            {selectedNode && dirty && (
+              <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/30 flex items-center gap-1.5">
+                <StatusDot tone="amber" />
+                Last edit pending save. Press ⌘S to persist.
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Bottom status strip — mirrors the dashboard/queue stat row */}
+      <div
+        className="h-9 px-4 flex items-center gap-3 border-t border-border bg-card text-[11px] text-muted-foreground shrink-0"
+        data-testid="sop-editor-status-strip"
+      >
+        <span className="flex items-center gap-1.5">
+          <span className="uppercase tracking-wider text-[10px] font-semibold">Nodes</span>
+          <span className="tabular-nums font-medium text-foreground">{tree.nodes.length}</span>
+        </span>
+        <span className="border-l border-dotted border-border h-3" aria-hidden="true" />
+        <span className="flex items-center gap-1.5">
+          <span className="uppercase tracking-wider text-[10px] font-semibold">Evidence</span>
+          <span className="tabular-nums font-medium text-foreground">
+            {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)}
+          </span>
+        </span>
+        <span className="border-l border-dotted border-border h-3" aria-hidden="true" />
+        <span className="flex items-center gap-1.5">
+          <span className="uppercase tracking-wider text-[10px] font-semibold">Selected</span>
+          <span className="tabular-nums font-medium text-foreground">{selectedIds.size || (selectedId ? 1 : 0)}</span>
+        </span>
+        <div className="flex-1" />
+        {dirty ? (
+          <span className="flex items-center gap-1.5" data-testid="status-strip-state">
+            <StatusDot tone="amber" />
+            <span className="uppercase tracking-wider text-[10px] font-semibold">Unsaved draft</span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5" data-testid="status-strip-state">
+            <StatusDot tone="green" />
+            <span className="uppercase tracking-wider text-[10px] font-semibold">All changes saved</span>
+          </span>
         )}
       </div>
     </div>

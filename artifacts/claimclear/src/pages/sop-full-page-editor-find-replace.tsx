@@ -429,7 +429,11 @@ function renderMatchHighlight(
   spans.forEach((s, i) => {
     if (s.start > cursor) parts.push(text.slice(cursor, s.start));
     parts.push(
-      <mark key={i} className="bg-yellow-200 text-foreground rounded px-0.5">
+      <mark
+        key={i}
+        className="text-foreground rounded px-0.5"
+        style={{ background: "hsl(var(--cc-amber-bg))", color: "hsl(var(--cc-amber-fg))" }}
+      >
         {text.slice(s.start, s.end)}
       </mark>,
     );
