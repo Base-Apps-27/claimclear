@@ -23,19 +23,24 @@ import {
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   ChevronLeft,
+  ChevronRight,
   Save,
   HelpCircle,
   CheckCircle2,
   XCircle,
+  PauseCircle,
   FileText,
   Plus,
   Trash2,
+  Copy,
   Search,
   ListTree,
   Settings as SettingsIcon,
   Sparkles,
   Loader2,
   Wand2,
+  GitBranch,
+  ArrowRight,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -82,11 +87,13 @@ function AiRewriteButton({
   field,
   onAccept,
   testId,
+  label = "Rewrite with AI",
 }: {
   value: string;
   field: "question" | "instructions";
   onAccept: (next: string) => void;
   testId: string;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const mutation = useSimplifyText(field);
@@ -119,22 +126,27 @@ function AiRewriteButton({
       }}
     >
       <PopoverTrigger asChild>
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-[10px]"
           onClick={handleClick}
           disabled={disabled}
           data-testid={testId}
+          className="inline-flex items-center gap-1 h-6 px-2 text-[10px] font-medium rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            color: "hsl(var(--cc-purple-fg))",
+            background: "transparent",
+            borderColor: "hsl(var(--cc-purple-border))",
+          }}
+          onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "hsl(var(--cc-purple-bg))"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
         >
           {mutation.isPending ? (
-            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            <Loader2 className="w-3 h-3 animate-spin" />
           ) : (
-            <Sparkles className="w-3 h-3 mr-1" />
+            <Wand2 className="w-3 h-3" />
           )}
-          AI rewrite
-        </Button>
+          {label}
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-3 space-y-2" align="end">
         {mutation.isPending ? (
@@ -198,17 +210,34 @@ function AiRewriteButton({
 function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
   return (
     <div
-      className={`bg-white border-2 rounded-lg shadow-sm w-[220px] ${
-        data.selected ? "border-blue-500 ring-2 ring-blue-200" : "border-blue-300"
+      className={`bg-card border-2 rounded-md shadow-sm w-[220px] transition-all ${
+        data.selected
+          ? "ring-2 ring-offset-2 ring-offset-background"
+          : "hover:shadow-md"
       }`}
+      style={{
+        borderColor: data.selected ? "hsl(217 91% 60%)" : "hsl(214 95% 87%)",
+      }}
       data-testid={`flow-node-question`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-slate-400" />
-      <div className="px-2.5 py-1 border-b border-blue-100 flex items-center gap-1.5">
-        <HelpCircle className="w-3 h-3 text-blue-600" />
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Question</span>
+      <Handle type="target" position={Position.Top} className="!bg-slate-400 !w-2 !h-2" />
+      <div
+        className="px-2.5 py-1 border-b flex items-center gap-1.5"
+        style={{ borderColor: "hsl(214 95% 93%)", background: "hsl(214 100% 98%)" }}
+      >
+        <HelpCircle className="w-3 h-3" style={{ color: "hsl(217 91% 45%)" }} />
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Question
+        </span>
         {data.evidenceCount ? (
-          <span className="ml-auto flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-medium">
+          <span
+            className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold tabular-nums"
+            style={{
+              color: "hsl(var(--cc-amber-fg))",
+              background: "hsl(var(--cc-amber-bg))",
+              border: "1px solid hsl(var(--cc-amber-border))",
+            }}
+          >
             <FileText className="w-2.5 h-2.5" /> {data.evidenceCount}
           </span>
         ) : null}
@@ -216,7 +245,7 @@ function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
       <div className="px-2.5 py-2 text-xs font-medium leading-snug text-foreground line-clamp-3 min-h-[44px]">
         {data.label}
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-slate-400" />
+      <Handle type="source" position={Position.Bottom} className="!bg-slate-400 !w-2 !h-2" />
     </div>
   );
 }
@@ -224,21 +253,48 @@ function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
 function OutcomeNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
   const isApprove = data.outcomeType === "portal_dispute" || data.outcomeType === "dispute";
   const isHold = data.outcomeType === "hold";
-  const colors = isApprove
-    ? "bg-green-50 border-green-400"
+  const tokens = isApprove
+    ? {
+        bg: "hsl(var(--cc-green-bg))",
+        border: "hsl(var(--cc-green-border))",
+        fg: "hsl(var(--cc-green-fg))",
+        Icon: CheckCircle2,
+        label: "Outcome",
+      }
     : isHold
-      ? "bg-amber-50 border-amber-400"
-      : "bg-red-50 border-red-400";
-  const Icon = isApprove ? CheckCircle2 : isHold ? FileText : XCircle;
-  const iconColor = isApprove ? "text-green-700" : isHold ? "text-amber-700" : "text-red-700";
+      ? {
+          bg: "hsl(var(--cc-amber-bg))",
+          border: "hsl(var(--cc-amber-border))",
+          fg: "hsl(var(--cc-amber-fg))",
+          Icon: PauseCircle,
+          label: "On hold",
+        }
+      : {
+          bg: "hsl(0 84% 96%)",
+          border: "hsl(0 84% 80%)",
+          fg: "hsl(var(--destructive))",
+          Icon: XCircle,
+          label: "Dead-end",
+        };
+  const Icon = tokens.Icon;
   return (
-    <div className={`border-2 rounded-lg shadow-sm w-[220px] ${colors}`}>
-      <Handle type="target" position={Position.Top} className="!bg-slate-400" />
+    <div
+      className="border-2 rounded-md shadow-sm w-[220px]"
+      style={{ background: tokens.bg, borderColor: tokens.border }}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-slate-400 !w-2 !h-2" />
       <div className="px-2.5 py-1 border-b border-current/10 flex items-center gap-1.5">
-        <Icon className={`w-3 h-3 ${iconColor}`} />
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Outcome</span>
+        <Icon className="w-3 h-3" style={{ color: tokens.fg }} />
+        <span
+          className="text-[10px] uppercase tracking-wider font-semibold"
+          style={{ color: tokens.fg }}
+        >
+          {tokens.label}
+        </span>
       </div>
-      <div className="px-2.5 py-2 text-xs font-medium leading-snug min-h-[44px]">{data.label}</div>
+      <div className="px-2.5 py-2 text-xs font-medium leading-snug min-h-[44px] text-foreground">
+        {data.label}
+      </div>
     </div>
   );
 }
@@ -269,7 +325,8 @@ function InsertableEdge({
       <foreignObject x={labelX + 18} y={labelY - 10} width={20} height={20} style={{ overflow: "visible" }}>
         <button
           onClick={onInsert}
-          className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center hover:bg-blue-700 shadow ring-2 ring-white opacity-0 hover:opacity-100 transition-opacity"
+          className="w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center shadow ring-2 ring-white opacity-0 hover:opacity-100 transition-opacity"
+          style={{ background: "hsl(217 91% 50%)" }}
           title="Insert step between"
           data-testid={`insert-between-${id}`}
         >
@@ -310,18 +367,38 @@ function Outline({
         <button
           key={id}
           onClick={() => onSelect(id)}
-          className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-xs rounded ${
-            selectedId === id ? "bg-blue-50 ring-1 ring-blue-300 font-medium" : "hover:bg-muted/60"
+          className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors ${
+            selectedId === id
+              ? "font-semibold"
+              : "hover:bg-muted/60"
           }`}
-          style={{ paddingLeft: 8 + depth * 14 }}
+          style={{
+            paddingLeft: 8 + depth * 14,
+            background: selectedId === id ? "hsl(214 100% 96%)" : undefined,
+            boxShadow: selectedId === id ? "inset 0 0 0 1px hsl(214 95% 80%)" : undefined,
+          }}
           data-testid={`outline-row-${id}`}
         >
-          <HelpCircle className="w-3 h-3 text-blue-600 shrink-0" />
-          {branchLabel && <span className="text-[9px] text-muted-foreground">[{branchLabel}]</span>}
+          <HelpCircle className="w-3 h-3 shrink-0" style={{ color: "hsl(217 91% 50%)" }} />
+          {branchLabel && (
+            <span
+              className="text-[9px] px-1 rounded font-mono"
+              style={{ color: "hsl(var(--cc-purple-fg))", background: "hsl(var(--cc-purple-bg))" }}
+            >
+              {branchLabel}
+            </span>
+          )}
           <span className="truncate text-foreground">{label}</span>
           {(node.evidenceRequirements?.length ?? 0) > 0 && (
-            <span className="ml-auto text-[9px] bg-amber-100 text-amber-700 px-1 rounded font-medium">
-              {node.evidenceRequirements!.length}ev
+            <span
+              className="ml-auto text-[9px] px-1.5 py-0.5 rounded font-semibold tabular-nums"
+              style={{
+                color: "hsl(var(--cc-amber-fg))",
+                background: "hsl(var(--cc-amber-bg))",
+                border: "1px solid hsl(var(--cc-amber-border))",
+              }}
+            >
+              {node.evidenceRequirements!.length} ev
             </span>
           )}
         </button>,
@@ -357,17 +434,56 @@ function Inspector({
   if (!node) {
     return <div className="p-4 text-xs text-muted-foreground">Node not found.</div>;
   }
+  const branchCount = node.options.length;
+  const evidenceCount = node.evidenceRequirements?.length ?? 0;
   return (
     <div className="flex flex-col h-full" data-testid="inspector">
-      <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-card">
-        <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-        <span className="text-xs font-medium">Question node</span>
-        <span className="ml-auto text-[10px] text-muted-foreground font-mono">{node.id.slice(0, 12)}</span>
+      <div className="px-3 pt-3 pb-2 border-b border-border bg-card">
+        <div className="flex items-center gap-2">
+          <div
+            className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+            style={{ background: "hsl(214 100% 96%)", border: "1px solid hsl(214 95% 87%)" }}
+          >
+            <HelpCircle className="w-3.5 h-3.5" style={{ color: "hsl(217 91% 45%)" }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-none">
+              Question step
+            </div>
+            <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">
+              {node.id.slice(0, 16)}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 mt-2 text-[10px]">
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold tabular-nums"
+            style={{
+              color: "hsl(var(--cc-purple-fg))",
+              background: "hsl(var(--cc-purple-bg))",
+              border: "1px solid hsl(var(--cc-purple-border))",
+            }}
+          >
+            <GitBranch className="w-2.5 h-2.5" /> {branchCount} {branchCount === 1 ? "branch" : "branches"}
+          </span>
+          {evidenceCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold tabular-nums"
+              style={{
+                color: "hsl(var(--cc-amber-fg))",
+                background: "hsl(var(--cc-amber-bg))",
+                border: "1px solid hsl(var(--cc-amber-border))",
+              }}
+            >
+              <FileText className="w-2.5 h-2.5" /> {evidenceCount} ev
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3 space-y-4">
         <div>
-          <div className="flex items-center justify-between">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Question text</Label>
+          <div className="flex items-center justify-between mb-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Question text</Label>
             <AiRewriteButton
               value={node.question}
               field="question"
@@ -380,12 +496,12 @@ function Inspector({
             rows={3}
             value={node.question}
             onChange={(e) => onChange(updateNode(tree, node.id, { question: e.target.value }))}
-            className="mt-1 text-xs"
+            className="text-xs"
           />
         </div>
         <div>
-          <div className="flex items-center justify-between">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Instructions / help</Label>
+          <div className="flex items-center justify-between mb-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Instructions / help</Label>
             <AiRewriteButton
               value={node.instructionText || ""}
               field="instructions"
@@ -397,55 +513,71 @@ function Inspector({
             rows={2}
             value={node.instructionText || ""}
             onChange={(e) => onChange(updateNode(tree, node.id, { instructionText: e.target.value }))}
-            className="mt-1 text-xs"
+            className="text-xs"
             placeholder="Optional guidance shown to the operator."
           />
         </div>
 
         <div>
-          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Branches</Label>
-          <div className="mt-1 space-y-2">
+          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Branches</Label>
+          <div className="mt-1 space-y-1.5">
             {node.options.map((opt, idx) => (
-              <div key={idx} className="border border-border rounded p-2 space-y-1.5 bg-background">
-                <div className="flex items-center gap-1.5">
+              <div key={idx} className="rounded-md border border-border bg-background overflow-hidden">
+                <div
+                  className="px-2 py-1 flex items-center gap-1.5 border-b border-border"
+                  style={{ background: "hsl(var(--muted) / 0.3)" }}
+                >
+                  <span
+                    className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded tabular-nums shrink-0"
+                    style={{
+                      color: "hsl(var(--cc-purple-fg))",
+                      background: "hsl(var(--cc-purple-bg))",
+                    }}
+                  >
+                    #{idx + 1}
+                  </span>
                   <Input
                     value={opt.label}
                     onChange={(e) => onChange(setOption(tree, node.id, idx, { label: e.target.value }))}
-                    className="h-7 text-xs"
+                    className="h-6 text-xs border-0 bg-transparent shadow-none focus-visible:ring-0 px-1"
                     placeholder="Branch label"
                   />
                 </div>
+                <div className="p-1.5">
                 {opt.childId ? (
-                  <div className="text-[10px] text-muted-foreground flex items-center justify-between">
-                    <span>→ continues to next question</span>
+                  <div className="text-[10px] text-muted-foreground flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1">
+                      <ArrowRight className="w-3 h-3" />
+                      Continues to next question
+                    </span>
                     <button
-                      className="text-blue-600 hover:underline"
+                      className="hover:underline font-medium"
+                      style={{ color: "hsl(var(--cc-purple-fg))" }}
                       onClick={() => onChange(setOption(tree, node.id, idx, { childId: undefined }))}
                     >
                       Detach
                     </button>
                   </div>
                 ) : (
-                  <div>
-                    <Select
-                      value={opt.outcomeType || ""}
-                      onValueChange={(val) =>
-                        onChange(setOption(tree, node.id, idx, { outcomeType: val as OutcomeType, outcomeLabel: OUTCOME_LABELS[val as OutcomeType] }))
-                      }
-                    >
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue placeholder="Pick outcome…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {OUTCOME_AUTHOR_OPTIONS.map((o) => (
-                          <SelectItem key={o} value={o} className="text-xs">
-                            {OUTCOME_LABELS[o]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Select
+                    value={opt.outcomeType || ""}
+                    onValueChange={(val) =>
+                      onChange(setOption(tree, node.id, idx, { outcomeType: val as OutcomeType, outcomeLabel: OUTCOME_LABELS[val as OutcomeType] }))
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue placeholder="Pick outcome…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OUTCOME_AUTHOR_OPTIONS.map((o) => (
+                        <SelectItem key={o} value={o} className="text-xs">
+                          {OUTCOME_LABELS[o]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
+                </div>
               </div>
             ))}
           </div>
@@ -453,8 +585,18 @@ function Inspector({
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Evidence requirements ({(node.evidenceRequirements || []).length})
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
+              Evidence requirements
+              <span
+                className="px-1.5 py-0.5 rounded font-semibold tabular-nums normal-case tracking-normal"
+                style={{
+                  color: "hsl(var(--cc-amber-fg))",
+                  background: "hsl(var(--cc-amber-bg))",
+                  border: "1px solid hsl(var(--cc-amber-border))",
+                }}
+              >
+                {(node.evidenceRequirements || []).length}
+              </span>
             </Label>
             <Button
               size="sm"
@@ -468,16 +610,23 @@ function Inspector({
           </div>
           <div className="space-y-1.5">
             {(node.evidenceRequirements || []).map((req, idx) => (
-              <div key={idx} className="border border-border rounded p-1.5 bg-background flex items-center gap-1.5">
-                <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+              <div
+                key={idx}
+                className="rounded-md p-1.5 flex items-center gap-1.5"
+                style={{
+                  background: "hsl(var(--cc-amber-bg) / 0.4)",
+                  border: "1px solid hsl(var(--cc-amber-border))",
+                }}
+              >
+                <FileText className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
                 <Input
                   value={req.label}
                   onChange={(e) => onChange(setEvidenceReq(tree, node.id, idx, { label: e.target.value }))}
-                  className="h-6 text-xs flex-1"
+                  className="h-6 text-xs flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 px-1"
                   placeholder="Evidence name"
                 />
                 <button
-                  className="p-1 hover:bg-muted rounded"
+                  className="p-1 hover:bg-background/60 rounded"
                   onClick={() => onChange(removeEvidenceReq(tree, node.id, idx))}
                   title="Remove"
                 >
@@ -485,6 +634,11 @@ function Inspector({
                 </button>
               </div>
             ))}
+            {(node.evidenceRequirements || []).length === 0 && (
+              <div className="text-[10px] text-muted-foreground italic px-1">
+                No evidence required for this step.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -742,31 +896,102 @@ export default function SopFullPageEditor() {
 
   return (
     <div className="h-[calc(100vh-4rem)] -mx-4 -mb-4 flex flex-col bg-background border-t border-border" data-testid="sop-full-page-editor">
-      {/* Top bar */}
-      <div className="h-12 px-3 flex items-center gap-2 border-b border-border bg-card shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/error-types")} data-testid="back-to-error-types">
-          <ChevronLeft className="w-4 h-4 mr-1" /> Error Types
+      {/* Top bar — breadcrumb + status + actions */}
+      <div className="h-14 pl-2 pr-3 flex items-center gap-3 border-b border-border bg-card shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/error-types")}
+          data-testid="back-to-error-types"
+          className="h-8 px-2 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="w-4 h-4" />
         </Button>
-        <div className="text-sm">
-          <span className="text-muted-foreground">SOP:</span>{" "}
-          <span className="font-medium">{errorType.name}</span>
-        </div>
-        {dirty && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-            Unsaved changes
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-1.5 text-xs min-w-0" aria-label="Breadcrumb">
+          <button
+            onClick={() => navigate("/error-types")}
+            className="text-muted-foreground hover:text-foreground truncate"
+          >
+            Error Types
+          </button>
+          {errorType.category && (
+            <>
+              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground truncate">{errorType.category}</span>
+            </>
+          )}
+          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+          <span
+            className="font-semibold text-foreground truncate"
+            data-testid="breadcrumb-error-type-name"
+          >
+            {errorType.name}
+          </span>
+        </nav>
+        {/* Status pill */}
+        {dirty ? (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0"
+            style={{
+              color: "hsl(var(--cc-amber-fg))",
+              background: "hsl(var(--cc-amber-bg))",
+              border: "1px solid hsl(var(--cc-amber-border))",
+            }}
+            data-testid="status-pill-unsaved"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: "hsl(var(--cc-amber-fg))" }}
+            />
+            Unsaved
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0"
+            style={{
+              color: "hsl(var(--cc-green-fg))",
+              background: "hsl(var(--cc-green-bg))",
+              border: "1px solid hsl(var(--cc-green-border))",
+            }}
+            data-testid="status-pill-saved"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: "hsl(var(--cc-success))" }}
+            />
+            Saved
           </span>
         )}
         <div className="flex-1" />
-        <div className="text-[10px] text-muted-foreground">
-          {tree.nodes.length} nodes · {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)} evidence reqs
+        {/* Tree stats */}
+        <div className="hidden md:flex items-center gap-3 text-[10px] text-muted-foreground shrink-0">
+          <span className="flex items-center gap-1">
+            <span className="uppercase tracking-wider font-semibold">Nodes</span>
+            <span className="font-bold tabular-nums text-foreground">{tree.nodes.length}</span>
+          </span>
+          <span className="w-px h-3 bg-border" aria-hidden />
+          <span className="flex items-center gap-1">
+            <span className="uppercase tracking-wider font-semibold">Evidence</span>
+            <span className="font-bold tabular-nums text-foreground">
+              {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)}
+            </span>
+          </span>
         </div>
+        <div className="w-px h-6 bg-border hidden md:block" aria-hidden />
         <Button
           size="sm"
           onClick={handleSave}
           disabled={!dirty || saving}
           data-testid="save-tree"
+          className="h-8"
         >
-          <Save className="w-3.5 h-3.5 mr-1" /> {saving ? "Saving…" : "Save"}
+          {saving ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Save className="w-3.5 h-3.5 mr-1.5" />
+          )}
+          {saving ? "Saving…" : "Save SOP"}
         </Button>
       </div>
 
@@ -774,34 +999,29 @@ export default function SopFullPageEditor() {
       <div className="flex-1 flex min-h-0">
         {/* Left panel — outline */}
         <div className="w-72 border-r border-border bg-card flex flex-col shrink-0">
-          <div className="flex border-b border-border">
-            <button
-              onClick={() => setLeftTab("outline")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "outline" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-outline"
-            >
-              <ListTree className="w-3.5 h-3.5" /> Outline
-            </button>
-            <button
-              onClick={() => setLeftTab("ai")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "ai" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-ai"
-            >
-              <Wand2 className="w-3.5 h-3.5" /> AI Builder
-            </button>
-            <button
-              onClick={() => setLeftTab("settings")}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
-                leftTab === "settings" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              data-testid="left-tab-settings"
-            >
-              <SettingsIcon className="w-3.5 h-3.5" /> Settings
-            </button>
+          <div className="flex border-b border-border bg-muted/30">
+            {([
+              { id: "outline", label: "Outline", Icon: ListTree },
+              { id: "ai", label: "AI Builder", Icon: Wand2 },
+              { id: "settings", label: "Settings", Icon: SettingsIcon },
+            ] as const).map((tab) => {
+              const active = leftTab === tab.id;
+              const Icon = tab.Icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setLeftTab(tab.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
+                    active
+                      ? "border-foreground text-foreground bg-card"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:bg-card/60"
+                  }`}
+                  data-testid={`left-tab-${tab.id}`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> {tab.label}
+                </button>
+              );
+            })}
           </div>
           {leftTab === "outline" ? (
             <>
@@ -854,7 +1074,14 @@ export default function SopFullPageEditor() {
         </div>
 
         {/* Center canvas */}
-        <div className="flex-1 relative min-w-0">
+        <div
+          className="flex-1 relative min-w-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)",
+            backgroundSize: "18px 18px",
+          }}
+        >
           <ReactFlow
             nodes={flow.nodes}
             edges={flow.edges}
@@ -870,18 +1097,31 @@ export default function SopFullPageEditor() {
             nodesConnectable={false}
             elementsSelectable
           >
-            <Background gap={18} />
-            <Controls showInteractive={false} />
-            <MiniMap pannable zoomable />
+            <Background gap={18} color="transparent" />
+            <Controls
+              showInteractive={false}
+              className="!shadow-md !border !border-border !rounded-md overflow-hidden"
+            />
+            <MiniMap pannable zoomable className="!border !border-border !rounded-md" />
           </ReactFlow>
         </div>
 
         {/* Right inspector */}
         <div className="w-80 border-l border-border bg-card flex flex-col shrink-0">
           <Inspector tree={tree} nodeId={selectedId} onChange={onTreeChange} />
-          {selectedNode && (
-            <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
-              Last edit pending save. Press Save in the top bar to persist.
+          {selectedNode && dirty && (
+            <div
+              className="border-t border-border px-3 py-2 text-[10px] flex items-center gap-1.5"
+              style={{
+                background: "hsl(var(--cc-amber-bg) / 0.5)",
+                color: "hsl(var(--cc-amber-fg))",
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ background: "hsl(var(--cc-amber-fg))" }}
+              />
+              <span className="font-medium">Edit pending — press Save SOP to persist.</span>
             </div>
           )}
         </div>
