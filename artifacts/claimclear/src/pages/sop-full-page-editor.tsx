@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation, Link } from "wouter";
 import {
   ReactFlow,
@@ -37,7 +37,9 @@ import {
   Loader2,
   Wand2,
   Replace,
+  Type,
 } from "lucide-react";
+import { PlainTextEditor } from "@/components/decision-tree/plain-text-editor";
 import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -836,8 +838,16 @@ export default function SopFullPageEditor() {
   const [search, setSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings">("outline");
+  const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings" | "plaintext">("outline");
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  // Bumped on every successful persist so child components (the Plain
+  // Text tab) can reset their unsaved-change baseline regardless of
+  // which Save button triggered the write.
+  const [savedVersion, setSavedVersion] = useState(0);
+  // Snapshot of the last loaded/saved tree+settings; used to recompute
+  // the global dirty flag when an operation (like Plain Text's
+  // Discard) reverts state back to a known baseline.
+  const loadedSnapshotRef = useRef<{ tree: DecisionTree; settings: SopEditorSettings } | null>(null);
   const [settings, setSettings] = useState<SopEditorSettings>({
     name: "",
     category: "",
@@ -854,9 +864,7 @@ export default function SopFullPageEditor() {
   useEffect(() => {
     if (!errorType) return;
     const t = coerceTree(errorType.decisionTree) ?? createEmptyTree();
-    setTree(t);
-    setSelectedId(t.rootId);
-    setSettings({
+    const s: SopEditorSettings = {
       name: errorType.name || "",
       category: errorType.category || "",
       description: errorType.description || "",
@@ -866,8 +874,12 @@ export default function SopFullPageEditor() {
       useGpsControlDeviation: errorType.useGpsControlDeviation === true,
       useDirectEmail: errorType.useDirectEmail === true,
       tripOverriding: errorType.tripOverriding === true,
-    });
+    };
+    setTree(t);
+    setSelectedId(t.rootId);
+    setSettings(s);
     setDirty(false);
+    loadedSnapshotRef.current = { tree: t, settings: s };
   }, [errorType]);
 
   const updateSettings = useCallback((patch: Partial<SopEditorSettings>) => {
@@ -947,53 +959,70 @@ export default function SopFullPageEditor() {
     }
   }, [tree, selectedIds]);
 
-  const handleSave = async () => {
-    if (!errorType || !tree) return;
-    if (!settings.name.trim()) {
-      toast({
-        title: "Can't save — name is required",
-        description: "Open the Settings tab and give this SOP a name before saving.",
-        variant: "destructive",
-      });
-      setLeftTab("settings");
-      return;
-    }
-    // Mirror the same author-time guards the modal save path enforces
-    // (error-types.tsx::handleSave). Without these, the full-page editor
-    // can persist trees the modal explicitly refuses — Task #470
-    // (appliesPerInvoice) and Task #706 (empty evidence labels) — which
-    // breaks the bulk endpoint and the SOP runner downstream.
-    const violations = validateAppliesPerInvoice(tree);
-    if (violations.length > 0) {
-      toast({
-        title: "Can't save — invalid \"same answer for every leg\" step",
-        description:
-          "One or more steps marked \"same answer for every leg\" still collect evidence or require per-leg context. Open the affected step and clear the issue, then save again.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const emptyLabels = findEmptyEvidenceLabels(tree);
-    if (emptyLabels.length > 0) {
-      toast({
-        title: "Can't save — evidence is missing a name",
-        description:
+  // Shared persistence path. Throws on validation or network errors so
+  // callers (the top-bar Save button AND the Plain Text tab's Save All
+  // button) can surface failures consistently. Always operates on the
+  // latest in-memory tree from state, which both the canvas/Inspector
+  // and the Plain Text tab write through.
+  const persistTreeAndSettings = useCallback(
+    async (treeToSave: DecisionTree) => {
+      if (!errorType) throw new Error("Error type not loaded");
+      if (!settings.name.trim()) {
+        setLeftTab("settings");
+        throw new Error("Name is required — open the Settings tab to add one.");
+      }
+      const violations = validateAppliesPerInvoice(treeToSave);
+      if (violations.length > 0) {
+        throw new Error(
+          "One or more steps marked \"same answer for every leg\" still collect evidence or require per-leg context.",
+        );
+      }
+      const emptyLabels = findEmptyEvidenceLabels(treeToSave);
+      if (emptyLabels.length > 0) {
+        setSelectedId(emptyLabels[0].nodeId);
+        throw new Error(
           emptyLabels.length === 1
-            ? "One evidence requirement has an empty name. Open the affected step and give it a clear, human-readable name."
-            : `${emptyLabels.length} evidence requirements have empty names. Open each affected step and give them clear names.`,
-        variant: "destructive",
-      });
-      setSelectedId(emptyLabels[0].nodeId);
-      return;
-    }
-    setSaving(true);
-    try {
+            ? "One evidence requirement has an empty name."
+            : `${emptyLabels.length} evidence requirements have empty names.`,
+        );
+      }
       await updateMutation.mutateAsync({
         id: errorType.id,
-        data: buildSavePayload(tree, settings),
+        data: buildSavePayload(treeToSave, settings),
       });
       await queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
       setDirty(false);
+      loadedSnapshotRef.current = { tree: treeToSave, settings };
+      setSavedVersion((v) => v + 1);
+    },
+    [errorType, settings, updateMutation, queryClient],
+  );
+
+  // Recompute the global dirty flag after a baseline revert (Plain
+  // Text's Discard). Cheap JSON.stringify compare against the
+  // last loaded/saved snapshot — close enough since the editor only
+  // edits the tree + the small SopEditorSettings object.
+  const recomputeDirty = useCallback(
+    (nextTree: DecisionTree, nextSettings: SopEditorSettings) => {
+      const snap = loadedSnapshotRef.current;
+      if (!snap) return;
+      const same =
+        JSON.stringify(nextTree) === JSON.stringify(snap.tree) &&
+        JSON.stringify(nextSettings) === JSON.stringify(snap.settings);
+      setDirty(!same);
+    },
+    [],
+  );
+
+  const handleSave = async () => {
+    if (!errorType || !tree) return;
+    setSaving(true);
+    try {
+      // Single source of truth for saving — also bumps `savedVersion`
+      // and updates `loadedSnapshotRef` so the Plain Text tab's
+      // unsaved-change baseline stays in sync no matter which Save
+      // button triggered the write.
+      await persistTreeAndSettings(tree);
       toast({ title: "Saved", description: "SOP tree updated." });
     } catch (e) {
       toast({
@@ -1074,6 +1103,15 @@ export default function SopFullPageEditor() {
               <ListTree className="w-3.5 h-3.5" /> Outline
             </button>
             <button
+              onClick={() => setLeftTab("plaintext")}
+              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
+                leftTab === "plaintext" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="left-tab-plaintext"
+            >
+              <Type className="w-3.5 h-3.5" /> Plain Text
+            </button>
+            <button
               onClick={() => setLeftTab("ai")}
               className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium border-b-2 ${
                 leftTab === "ai" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1124,6 +1162,34 @@ export default function SopFullPageEditor() {
                 setLeftTab("outline");
               }}
             />
+          ) : leftTab === "plaintext" ? (
+            <div
+              className="flex-1 overflow-y-auto p-3"
+              data-testid="plaintext-panel"
+            >
+              <PlainTextEditor
+                tree={tree}
+                onTreeChange={onTreeChange}
+                savedVersion={savedVersion}
+                onDiscard={(baseline) => {
+                  setTree(baseline);
+                  recomputeDirty(baseline, settings);
+                }}
+                onSave={async (updated) => {
+                  try {
+                    await persistTreeAndSettings(updated);
+                    toast({ title: "Saved", description: "SOP tree updated." });
+                  } catch (e) {
+                    toast({
+                      title: "Save failed",
+                      description: e instanceof Error ? e.message : "Unknown error",
+                      variant: "destructive",
+                    });
+                    throw e;
+                  }
+                }}
+              />
+            </div>
           ) : (
             <SettingsPanel settings={settings} onChange={updateSettings} />
           )}

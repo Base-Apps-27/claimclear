@@ -266,30 +266,79 @@ function applyEditsToTree(
 
 interface PlainTextEditorProps {
   tree: DecisionTree;
+  // Push the updated tree to the parent immediately on every edit so the
+  // Plain Text bulk view and the canvas/Inspector share one in-memory
+  // tree — switching tabs preserves unsaved changes both ways, and a
+  // Save on either side persists every pending edit.
+  onTreeChange: (updated: DecisionTree) => void;
   onSave: (updated: DecisionTree) => void | Promise<void>;
+  // Optional. Bump this number from the parent whenever ANY successful
+  // save persists (top-bar Save or Save All in this view) so the
+  // unsaved-change baseline resets and we don't keep flagging
+  // already-persisted fields as edited.
+  savedVersion?: number;
+  // Optional. If provided, fires when the user confirms Discard with
+  // the baseline tree the editor reverted to. Lets the parent
+  // recompute its global `dirty` flag against the originally loaded
+  // tree (instead of being forced true by a regular onTreeChange).
+  onDiscard?: (baseline: DecisionTree) => void;
 }
 
-export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
-  const [edits, setEdits] = useState<Record<string, string>>({});
+export function PlainTextEditor({
+  tree,
+  onTreeChange,
+  onSave,
+  savedVersion,
+  onDiscard,
+}: PlainTextEditorProps) {
   const [suggestions, setSuggestions] = useState<Record<string, SuggestionState>>({});
   const [isSimplifying, setIsSimplifying] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  // Baseline snapshot for "X unsaved" change tracking. Captured on
+  // mount; reset whenever a different tree (different rootId) is loaded
+  // and after a successful save.
+  const [baselineTree, setBaselineTree] = useState<DecisionTree>(tree);
   const treeKey = tree.rootId;
   const lastTreeKey = useRef<string>(treeKey);
   useEffect(() => {
     if (lastTreeKey.current !== treeKey) {
       lastTreeKey.current = treeKey;
-      setEdits({});
+      setBaselineTree(tree);
       setSuggestions({});
       setError(null);
       setInfo(null);
     }
-  }, [treeKey]);
+  }, [treeKey, tree]);
+
+  // Reset the unsaved baseline whenever the parent reports a successful
+  // save (top-bar Save or Save All here). Without this, persisting via
+  // the top bar leaves Plain Text still flagging fields as unsaved and
+  // a subsequent Discard would revert already-persisted edits.
+  const lastSavedVersion = useRef<number | undefined>(savedVersion);
+  useEffect(() => {
+    if (savedVersion !== undefined && lastSavedVersion.current !== savedVersion) {
+      lastSavedVersion.current = savedVersion;
+      setBaselineTree(tree);
+      setSuggestions(prev => {
+        const next: typeof prev = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (v.status === "pending") next[k] = v;
+        }
+        return next;
+      });
+    }
+  }, [savedVersion, tree]);
 
   const fields = useMemo(() => flattenTree(tree), [tree]);
+  const baselineFields = useMemo(() => flattenTree(baselineTree), [baselineTree]);
+  const baselineById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of baselineFields) m.set(f.id, f.original);
+    return m;
+  }, [baselineFields]);
 
   const fieldsByNode = useMemo(() => {
     const groups: { nodeId: string; nodeNumber: number; breadcrumb: string; items: FlatField[] }[] = [];
@@ -304,12 +353,15 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
     return groups;
   }, [fields]);
 
-  const currentValue = (f: FlatField) => (f.id in edits ? edits[f.id] : f.original);
+  // Current value comes directly from the (shared) tree.
+  const currentValue = (f: FlatField) => f.original;
+  const baselineValue = (id: string) => baselineById.get(id) ?? "";
+  const isFieldChanged = (f: FlatField) => currentValue(f) !== baselineValue(f.id);
 
-  const pendingChangeCount = fields.reduce((acc, f) => {
-    const v = currentValue(f);
-    return acc + (v !== f.original ? 1 : 0);
-  }, 0);
+  const pendingChangeCount = fields.reduce(
+    (acc, f) => acc + (isFieldChanged(f) ? 1 : 0),
+    0,
+  );
 
   const pendingSuggestionCount = Object.values(suggestions).filter(s => s.status === "pending").length;
 
@@ -321,16 +373,19 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
       if (s.status !== "pending") continue;
       const f = fields.find(x => x.id === id);
       if (!f) continue;
-      const cur = f.id in edits ? edits[f.id] : f.original;
       count += 1;
-      totalCurrent += countWords(cur);
+      totalCurrent += countWords(f.original);
       totalSuggested += countWords(s.text);
     }
     return { count, totalCurrent, totalSuggested, wordsCut: totalCurrent - totalSuggested };
-  }, [suggestions, edits, fields]);
+  }, [suggestions, fields]);
 
   const handleEdit = (id: string, value: string) => {
-    setEdits(prev => ({ ...prev, [id]: value }));
+    const field = fields.find(f => f.id === id);
+    if (!field) return;
+    if (value === field.original) return;
+    const next = applyEditsToTree(tree, [field], { [id]: value });
+    onTreeChange(next);
   };
 
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
@@ -342,7 +397,11 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
 
   const confirmDiscard = () => {
     setDiscardConfirmOpen(false);
-    setEdits({});
+    if (onDiscard) {
+      onDiscard(baselineTree);
+    } else {
+      onTreeChange(baselineTree);
+    }
     setSuggestions({});
     setInfo(null);
     setError(null);
@@ -355,9 +414,8 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
     setError(null);
     setInfo(null);
     try {
-      const updated = applyEditsToTree(tree, fields, edits);
-      await onSave(updated);
-      setEdits({});
+      await onSave(tree);
+      setBaselineTree(tree);
       setSuggestions(prev => {
         const next: typeof prev = {};
         for (const [k, v] of Object.entries(prev)) {
@@ -446,7 +504,7 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
   const acceptSuggestion = (id: string) => {
     const s = suggestions[id];
     if (!s) return;
-    setEdits(prev => ({ ...prev, [id]: s.text }));
+    handleEdit(id, s.text);
     setSuggestions(prev => ({ ...prev, [id]: { ...s, status: "accepted" } }));
   };
 
@@ -459,15 +517,28 @@ export function PlainTextEditor({ tree, onSave }: PlainTextEditorProps) {
   };
 
   const acceptAll = () => {
-    const newEdits = { ...edits };
-    const newSuggestions = { ...suggestions };
-    for (const [id, s] of Object.entries(suggestions)) {
-      if (s.status !== "pending") continue;
-      newEdits[id] = s.text;
-      newSuggestions[id] = { ...s, status: "accepted" };
+    const pendingEntries = Object.entries(suggestions).filter(
+      ([, s]) => s.status === "pending",
+    );
+    if (pendingEntries.length === 0) return;
+    const editsMap: Record<string, string> = {};
+    const acceptable: FlatField[] = [];
+    for (const [id, s] of pendingEntries) {
+      const f = fields.find(x => x.id === id);
+      if (!f) continue;
+      editsMap[id] = s.text;
+      acceptable.push(f);
     }
-    setEdits(newEdits);
-    setSuggestions(newSuggestions);
+    if (acceptable.length > 0) {
+      onTreeChange(applyEditsToTree(tree, acceptable, editsMap));
+    }
+    setSuggestions(prev => {
+      const next = { ...prev };
+      for (const [id, s] of pendingEntries) {
+        next[id] = { ...s, status: "accepted" };
+      }
+      return next;
+    });
   };
 
   const rejectAll = () => {

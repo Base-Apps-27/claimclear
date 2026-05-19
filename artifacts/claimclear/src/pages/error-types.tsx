@@ -841,6 +841,9 @@ export default function ErrorTypes() {
               {form.decisionTree ? (
                 <PlainTextEditor
                   tree={form.decisionTree}
+                  onTreeChange={(updated) =>
+                    setForm(prev => ({ ...prev, decisionTree: updated }))
+                  }
                   onSave={async (updated) => {
                     setForm(prev => ({ ...prev, decisionTree: updated }));
                     if (editingId) {
