@@ -291,10 +291,19 @@ function OutcomeNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
 
 function InsertableEdge({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data,
-}: EdgeProps & { label?: React.ReactNode; data?: { parentId: string; optionIndex: number } }) {
+}: EdgeProps & { label?: React.ReactNode; data?: { parentId: string; optionIndex: number; tone?: "blue" | "green" | "muted" } }) {
   const [path, labelX, labelY] = getBezierPath({
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
+  const tone = data?.tone ?? "muted";
+  const strokeVar =
+    tone === "blue" ? "--cc-blue-border" : tone === "green" ? "--cc-green-border" : "--border";
+  const labelBgVar =
+    tone === "blue" ? "--cc-blue-bg" : tone === "green" ? "--cc-green-bg" : null;
+  const labelBorderVar =
+    tone === "blue" ? "--cc-blue-border" : tone === "green" ? "--cc-green-border" : "--border";
+  const labelFgVar =
+    tone === "blue" ? "--cc-blue-fg" : tone === "green" ? "--cc-green-fg" : null;
   const onInsert = (e: React.MouseEvent) => {
     e.stopPropagation();
     const evt = new CustomEvent("sop-editor:insert-between", {
@@ -304,10 +313,25 @@ function InsertableEdge({
   };
   return (
     <>
-      <path id={id} d={path} fill="none" stroke="hsl(var(--border))" strokeWidth={1.5} />
+      <path
+        id={id}
+        d={path}
+        fill="none"
+        stroke={`hsl(var(${strokeVar}))`}
+        strokeWidth={1.5}
+        data-tone={tone}
+      />
       {label && (
         <foreignObject x={labelX - 24} y={labelY - 12} width={48} height={20} style={{ overflow: "visible" }}>
-          <div className="bg-card border border-border rounded-full text-[10px] px-1.5 py-0.5 text-center text-muted-foreground font-medium shadow-sm select-none">
+          <div
+            className="rounded-full text-[10px] px-1.5 py-0.5 text-center font-medium shadow-sm select-none border"
+            style={{
+              background: labelBgVar ? `hsl(var(${labelBgVar}))` : "hsl(var(--card))",
+              borderColor: `hsl(var(${labelBorderVar}))`,
+              color: labelFgVar ? `hsl(var(${labelFgVar}))` : "hsl(var(--muted-foreground))",
+            }}
+            data-tone={tone}
+          >
             {label}
           </div>
         </foreignObject>

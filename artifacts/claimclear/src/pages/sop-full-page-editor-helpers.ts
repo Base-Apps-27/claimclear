@@ -146,7 +146,7 @@ export function treeToFlow(
           target: opt.childId,
           type: "insertable",
           label: opt.label || (idx === 0 ? "Yes" : "No"),
-          data: { parentId: n.id, optionIndex: idx },
+          data: { parentId: n.id, optionIndex: idx, tone: "blue" },
         });
       } else if (opt.outcomeType) {
         const termId = `${n.id}__term${idx}`;
@@ -167,7 +167,7 @@ export function treeToFlow(
           target: termId,
           type: "insertable",
           label: opt.label || (idx === 0 ? "Yes" : "No"),
-          data: { parentId: n.id, optionIndex: idx },
+          data: { parentId: n.id, optionIndex: idx, tone: "green" },
         });
       }
     });
