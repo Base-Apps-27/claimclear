@@ -20,17 +20,16 @@ import {
 } from "@/components/queue-response-review-panel";
 import {
   deriveVerdictMix,
+  deriveWhatsNextSurface,
   pickSuggestedNewInvoiceNumber,
   pickSuggestedNewInvoiceNumberWithSource,
   pickSuggestedPayorDenialReason,
-  isAwaitingPayorAgain,
   canQueueOrCompleteReattest,
   type VerdictDerivation,
 } from "@/lib/whats-next-derivation";
 import { Button } from "@/components/ui/button";
 import {
   ShieldCheck,
-  Send,
   XCircle,
   CheckCircle2,
   ChevronRight,
@@ -40,12 +39,8 @@ import { ReattestModal } from "./reattest-modal";
 import { useMarkAwaitingPayorAgain } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useToast, successToast } from "@/hooks/use-toast";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { NewInvoiceNumberBadge } from "./new-invoice-number-badge";
+import { ReplyOptionRow } from "./reply-option-row";
 
 interface Props {
   group: InvoiceGroupResponse;
@@ -152,10 +147,9 @@ export function WhatsNextCard({
     });
   };
 
-  const showReattest =
-    derivation.mix === "all_approved" || derivation.mix === "mixed";
-  const showCloseOut = derivation.mix === "all_denied";
-  const showAwaitingPayorAgain = !isAwaitingPayorAgain(group);
+  const surface = deriveWhatsNextSurface(derivation, group);
+  const { showReattest, showCloseOut, showReply: showAwaitingPayorAgain } =
+    surface;
   // Server-side bulk-queue / complete-reattest endpoints both reject
   // (HTTP 409) unless the group is in `response-pending`+Needs Review
   // or `mas-action-required`. Mirror that gate here so the operator
@@ -238,9 +232,10 @@ export function WhatsNextCard({
   // The card only enters its "decision time" visual state once every
   // actionable leg has a verdict on file. Before that we render a quiet
   // placeholder so the operator's eye isn't pulled here prematurely.
-  const decisionReady =
-    derivation.allLegsHaveVerdict &&
-    (showReattest || showCloseOut || showAwaitingPayorAgain);
+  // `decisionReady` is sourced from the shared surface derivation so
+  // the early-Reply state stays calm (no header wake-up) — see
+  // `deriveWhatsNextSurface`.
+  const decisionReady = surface.decisionReady;
 
   return (
     <div
@@ -326,7 +321,18 @@ export function WhatsNextCard({
       </div>
 
       <div className="p-3 space-y-2">
-        {derivation.mix === "no_verdicts_yet" && (
+        {/*
+          Task #769 — the Reply row decouples from `decisionReady`. When
+          the group hasn't already been stamped awaiting-payor-again, the
+          "I replied — wait for payor" option is available as soon as an
+          outbound reply lands on the thread, even before per-leg verdicts
+          are picked. Re-attest and Close-out remain gated on verdicts.
+
+          Soften the "verdicts pending" copy when the early Reply row is
+          the only thing rendered — otherwise the operator sees
+          "no options here yet" right above an actual option.
+        */}
+        {derivation.mix === "no_verdicts_yet" && !showAwaitingPayorAgain && (
           <p
             className="text-xs text-muted-foreground italic"
             data-testid="whats-next-empty"
@@ -343,9 +349,18 @@ export function WhatsNextCard({
           >
             {derivation.pendingCount} leg
             {derivation.pendingCount === 1 ? "" : "s"} still need
-            {derivation.pendingCount === 1 ? "s" : ""} a selection — make
-            a pick on every leg above to unlock your options.
+            {derivation.pendingCount === 1 ? "s" : ""} a selection — pick
+            a verdict on every leg above to unlock the rest of your
+            options.
           </p>
+        )}
+
+        {!decisionReady && showAwaitingPayorAgain && (
+          <ReplyOptionRow
+            hasOperatorReply={hasOperatorReply}
+            onClick={handleAwaitingPayorAgain}
+            disabled={markWaiting.isPending}
+          />
         )}
 
         {decisionReady && (
@@ -502,54 +517,6 @@ function OptionRow({
       <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
     </button>
   );
-}
-
-/**
- * The Reply option carries an extra gate (operator must have actually
- * sent an outbound reply on the thread) plus a tooltip explaining the
- * gate, so it gets its own thin wrapper around `OptionRow` rather than
- * a fourth disabled-state branch on every caller.
- */
-function ReplyOptionRow({
-  hasOperatorReply,
-  onClick,
-  disabled,
-}: {
-  hasOperatorReply: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  const row = (
-    <OptionRow
-      tone="blue"
-      icon={<Send className="h-4 w-4" />}
-      title="I replied — wait for payor"
-      description={
-        hasOperatorReply
-          ? "Drop this off the queue until the payor replies again."
-          : "Send a reply on the email thread above to unlock this."
-      }
-      onClick={onClick}
-      disabled={disabled || !hasOperatorReply}
-      testId="button-awaiting-payor-again"
-    />
-  );
-  if (!hasOperatorReply) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="block w-full" tabIndex={0}>
-            {row}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          Send a reply to the payor in the email thread above first —
-          this unlocks once your reply has been sent.
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-  return row;
 }
 
 function VerdictMixSummary({ d }: { d: VerdictDerivation }) {

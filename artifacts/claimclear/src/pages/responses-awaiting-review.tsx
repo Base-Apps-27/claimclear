@@ -2198,7 +2198,7 @@ function ActionRail({
             number={4}
             label="Pick the next step"
             testId="step-pill-4"
-            help="The next-step controls are derived from the verdicts you just recorded — re-attest the approved legs in the portal, capture the payor's reason for any denials, close out, or stamp the group as awaiting another payor reply."
+            help="The 'I replied — wait for payor' option opens up as soon as you send an in-thread reply, so you can drop a mid-conversation group off the queue without recording per-leg verdicts. Re-attest and Close out still wait until every leg has a verdict."
           />
           <WhatsNextCard
             group={group}

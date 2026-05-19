@@ -229,6 +229,54 @@ export function isAwaitingPayorAgain(group: InvoiceGroupResponse): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Task #769 — surface visibility of the four Step-4 options as a pure
+// derivation so the component file and tests share one source of truth.
+//
+// Contract:
+//   - `showReply` (the "I replied — wait for payor" row) is available
+//     whenever the group hasn't already been stamped awaiting-payor-
+//     again. It is INDEPENDENT of `allLegsHaveVerdict`, because the
+//     operator may have replied mid-conversation before per-leg
+//     verdicts apply. The row itself stays disabled when there is no
+//     outbound reply on the thread — that gate lives on the row.
+//   - `showReattest` and `showCloseOut` still require every actionable
+//     leg to carry a verdict (`decisionReady === true`) — the prior
+//     behaviour is preserved.
+//   - `decisionReady` controls the card's "wake-up" visual treatment.
+//     Surfacing only the early Reply row keeps the header in its calm
+//     state — `decisionReady` stays false when nothing but Reply is on.
+// ─────────────────────────────────────────────────────────────────────
+
+export interface WhatsNextSurface {
+  /** True iff the card should switch to its "wake-up" visual state. */
+  decisionReady: boolean;
+  /** Whether the "I replied — wait for payor" row should render. */
+  showReply: boolean;
+  /** Whether the Re-attest row should render (always gated on verdicts). */
+  showReattest: boolean;
+  /** Whether the Close-out row should render (always gated on verdicts). */
+  showCloseOut: boolean;
+}
+
+export function deriveWhatsNextSurface(
+  derivation: VerdictDerivation,
+  group: InvoiceGroupResponse,
+): WhatsNextSurface {
+  const showReattest =
+    derivation.mix === "all_approved" || derivation.mix === "mixed";
+  const showCloseOut = derivation.mix === "all_denied";
+  const showReply = !isAwaitingPayorAgain(group);
+  // The card only "wakes up" once verdicts are in AND something other
+  // than the early Reply row is going to render. Surfacing just Reply
+  // keeps the visual state calm so the operator's eye isn't pulled
+  // prematurely.
+  const decisionReady =
+    derivation.allLegsHaveVerdict &&
+    (showReattest || showCloseOut || showReply);
+  return { decisionReady, showReply, showReattest, showCloseOut };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Re-attest eligibility — client-side mirror of the server gate on
 // `POST /invoice-groups/:id/bulk-queue-reattest` AND
 // `POST /invoice-groups/:id/complete-reattest`. Both endpoints share
