@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -64,7 +65,9 @@ import {
   simplifyTextField,
   buildTreeFromText,
   coerceTree,
+  buildSavePayload,
   type FlowNodeData,
+  type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 
 // ---------------------------------------------------------------------------
@@ -620,6 +623,174 @@ function AiBuilderPanel({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Settings panel — full editable form for the error_types columns that the
+// canvas doesn't already manage (everything but decisionTree,
+// evidenceRequirements, disputeReasonsLibrary, emailTemplate). Mirrors
+// the old modal's "basics" tab so authors never have to bounce back to
+// /error-types just to rename an SOP or flip a channel. Changes go into
+// the editor's `settings` state and ride along with the tree on Save.
+// ---------------------------------------------------------------------------
+
+type SubmissionPath = "portal_other" | "portal_gps" | "direct_email";
+
+function pathFromSettings(
+  s: Pick<SopEditorSettings, "useGpsControlDeviation" | "useDirectEmail">,
+): SubmissionPath {
+  if (s.useDirectEmail) return "direct_email";
+  if (s.useGpsControlDeviation) return "portal_gps";
+  return "portal_other";
+}
+
+function flagsFromPath(
+  p: SubmissionPath,
+): { useGpsControlDeviation: boolean; useDirectEmail: boolean } {
+  return {
+    useGpsControlDeviation: p === "portal_gps",
+    useDirectEmail: p === "direct_email",
+  };
+}
+
+function SettingsPanel({
+  settings,
+  onChange,
+}: {
+  settings: SopEditorSettings;
+  onChange: (patch: Partial<SopEditorSettings>) => void;
+}) {
+  const submissionPath = pathFromSettings(settings);
+  return (
+    <div
+      className="flex-1 overflow-y-auto p-3 space-y-3"
+      data-testid="settings-panel"
+    >
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Name <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          value={settings.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          className="mt-1 h-8 text-xs"
+          placeholder="e.g., No-Show — GPS Confirmed"
+          data-testid="settings-name"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Category
+        </Label>
+        <Input
+          value={settings.category}
+          onChange={(e) => onChange({ category: e.target.value })}
+          className="mt-1 h-8 text-xs"
+          placeholder="e.g., GPS Issues, Scheduling"
+          data-testid="settings-category"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Description
+        </Label>
+        <Textarea
+          value={settings.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+          rows={3}
+          className="mt-1 text-xs"
+          placeholder="When this error type applies…"
+          data-testid="settings-description"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Guidance
+        </Label>
+        <Textarea
+          value={settings.guidance}
+          onChange={(e) => onChange({ guidance: e.target.value })}
+          rows={3}
+          className="mt-1 text-xs"
+          placeholder="High-level guidance shown to staff while reviewing."
+          data-testid="settings-guidance"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Recommended actions
+        </Label>
+        <Textarea
+          value={settings.recommendedActions}
+          onChange={(e) => onChange({ recommendedActions: e.target.value })}
+          rows={3}
+          className="mt-1 text-xs"
+          placeholder="Suggested next steps after the SOP completes."
+          data-testid="settings-recommended-actions"
+        />
+      </div>
+
+      <div className="rounded-md border border-border p-2 space-y-2">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Submission path
+        </Label>
+        <Select
+          value={submissionPath}
+          onValueChange={(v) => onChange(flagsFromPath(v as SubmissionPath))}
+        >
+          <SelectTrigger className="h-8 text-xs" data-testid="settings-submission-path">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="portal_other" className="text-xs">
+              MAS Portal — Other Issue (default)
+            </SelectItem>
+            <SelectItem value="portal_gps" className="text-xs">
+              MAS Portal — GPS Control Deviation
+            </SelectItem>
+            <SelectItem value="direct_email" className="text-xs">
+              Direct Email
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          Pick exactly one. Portal options file a Freshdesk ticket;
+          Direct Email bypasses the portal and emails the dispute to the
+          address configured in Settings → Direct Email.
+        </p>
+      </div>
+
+      <div className="rounded-md border border-border p-2 flex items-start gap-2">
+        <Switch
+          checked={settings.tripOverriding}
+          onCheckedChange={(v) => onChange({ tripOverriding: v })}
+          data-testid="settings-trip-overriding"
+        />
+        <div className="space-y-0.5">
+          <Label className="text-xs">Trip-overriding error</Label>
+          <p className="text-[10px] text-muted-foreground leading-snug">
+            ON when this error invalidates the whole trip (eligibility
+            lapse, time-at-facility). Sibling legs can ride along as
+            <em> Sibling Duplicate</em> instead of running their own SOP.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Dispute instructions
+        </Label>
+        <Textarea
+          value={settings.disputeInstructions}
+          onChange={(e) => onChange({ disputeInstructions: e.target.value })}
+          rows={5}
+          className="mt-1 text-xs"
+          placeholder={"Writing guidelines the AI uses for portal dispute notes.\nLeave blank to use the global default from Settings."}
+          data-testid="settings-dispute-instructions"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function SopFullPageEditor() {
   const params = useParams<{ errorTypeId: string }>();
   const errorTypeId = Number(params.errorTypeId);
@@ -640,15 +811,42 @@ export default function SopFullPageEditor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings">("outline");
+  const [settings, setSettings] = useState<SopEditorSettings>({
+    name: "",
+    category: "",
+    description: "",
+    guidance: "",
+    recommendedActions: "",
+    disputeInstructions: "",
+    useGpsControlDeviation: false,
+    useDirectEmail: false,
+    tripOverriding: false,
+  });
 
-  // Load tree from server when the error type arrives.
+  // Load tree + settings from server when the error type arrives.
   useEffect(() => {
     if (!errorType) return;
     const t = coerceTree(errorType.decisionTree) ?? createEmptyTree();
     setTree(t);
     setSelectedId(t.rootId);
+    setSettings({
+      name: errorType.name || "",
+      category: errorType.category || "",
+      description: errorType.description || "",
+      guidance: errorType.guidance || "",
+      recommendedActions: errorType.recommendedActions || "",
+      disputeInstructions: errorType.disputeInstructions || "",
+      useGpsControlDeviation: errorType.useGpsControlDeviation === true,
+      useDirectEmail: errorType.useDirectEmail === true,
+      tripOverriding: errorType.tripOverriding === true,
+    });
     setDirty(false);
   }, [errorType]);
+
+  const updateSettings = useCallback((patch: Partial<SopEditorSettings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+    setDirty(true);
+  }, []);
 
   // Listen for insert-between events from the custom edge component.
   useEffect(() => {
@@ -675,6 +873,15 @@ export default function SopFullPageEditor() {
 
   const handleSave = async () => {
     if (!errorType || !tree) return;
+    if (!settings.name.trim()) {
+      toast({
+        title: "Can't save — name is required",
+        description: "Open the Settings tab and give this SOP a name before saving.",
+        variant: "destructive",
+      });
+      setLeftTab("settings");
+      return;
+    }
     // Mirror the same author-time guards the modal save path enforces
     // (error-types.tsx::handleSave). Without these, the full-page editor
     // can persist trees the modal explicitly refuses — Task #470
@@ -707,9 +914,7 @@ export default function SopFullPageEditor() {
     try {
       await updateMutation.mutateAsync({
         id: errorType.id,
-        data: {
-          decisionTree: JSON.parse(JSON.stringify(tree)) as unknown as Record<string, unknown>,
-        },
+        data: buildSavePayload(tree, settings),
       });
       await queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
       setDirty(false);
@@ -836,20 +1041,7 @@ export default function SopFullPageEditor() {
               }}
             />
           ) : (
-            <div className="p-3 text-xs text-muted-foreground space-y-2">
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Name</Label>
-                <div className="font-medium text-foreground">{errorType.name}</div>
-              </div>
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Category</Label>
-                <div className="text-foreground">{errorType.category || "—"}</div>
-              </div>
-              <p className="text-[10px] mt-3 italic">
-                Edit full settings (name, category, dispute instructions, channel) from the Error Types page modal.
-                That move into this panel is on the Phase 2 list.
-              </p>
-            </div>
+            <SettingsPanel settings={settings} onChange={updateSettings} />
           )}
         </div>
 

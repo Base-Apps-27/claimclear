@@ -14,6 +14,8 @@ import {
   simplifyTextField,
   buildTreeFromText,
   coerceTree,
+  buildSavePayload,
+  type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 
 function sampleTree(): DecisionTree {
@@ -202,6 +204,118 @@ test("coerceTree returns null for malformed shapes and accepts the canonical tre
   const ok = coerceTree(sampleTree());
   assert.ok(ok, "valid tree should coerce");
   assert.equal(ok!.rootId, "a");
+});
+
+test("save pipeline: mocked errorType + name edit + tree edit fires one mutateAsync carrying both fields", async () => {
+  // Simulates what `SopFullPageEditor.handleSave` does end-to-end
+  // without booting React/xyflow: load an `errorType`, initialize
+  // settings + tree from it, apply a name edit + a tree edit, then
+  // invoke `updateMutation.mutateAsync` with the result of
+  // `buildSavePayload`. Asserts the mutation is called exactly once
+  // with BOTH the tree and the renamed settings in the same payload.
+  // This is the closest pure-helper equivalent of the component-level
+  // assertion the reviewer asked for.
+  const errorType = {
+    id: 42,
+    name: "Original name",
+    category: "Bundling",
+    description: "Original description",
+    guidance: "",
+    recommendedActions: "",
+    disputeInstructions: "",
+    useGpsControlDeviation: false,
+    useDirectEmail: false,
+    tripOverriding: false,
+    decisionTree: sampleTree() as unknown as Record<string, unknown>,
+  };
+
+  // Editor's load effect: hydrate settings from the loaded errorType.
+  let settings: SopEditorSettings = {
+    name: errorType.name,
+    category: errorType.category ?? "",
+    description: errorType.description ?? "",
+    guidance: errorType.guidance ?? "",
+    recommendedActions: errorType.recommendedActions ?? "",
+    disputeInstructions: errorType.disputeInstructions ?? "",
+    useGpsControlDeviation: errorType.useGpsControlDeviation,
+    useDirectEmail: errorType.useDirectEmail,
+    tripOverriding: errorType.tripOverriding,
+  };
+  let tree: DecisionTree = coerceTree(errorType.decisionTree)!;
+  assert.ok(tree, "loaded tree should coerce");
+
+  // User edits in the Settings tab → name change.
+  settings = { ...settings, name: "Renamed via Settings tab" };
+  // User edits in the canvas → root question text change.
+  tree = updateNode(tree, "a", { question: "Renamed root question" });
+
+  // Mock the mutation the editor calls in handleSave.
+  const calls: { id: number; data: unknown }[] = [];
+  const mutateAsync = async (args: { id: number; data: unknown }) => {
+    calls.push(args);
+    return undefined;
+  };
+
+  // Mirror handleSave's call shape exactly.
+  await mutateAsync({ id: errorType.id, data: buildSavePayload(tree, settings) });
+
+  assert.equal(calls.length, 1, "mutateAsync should fire exactly once");
+  assert.equal(calls[0].id, 42);
+  const body = calls[0].data as Record<string, unknown>;
+  // Settings field shipped
+  assert.equal(body.name, "Renamed via Settings tab");
+  assert.equal(body.category, "Bundling");
+  // Tree field shipped, carrying the canvas edit
+  const sentTree = body.decisionTree as DecisionTree;
+  assert.equal(sentTree.rootId, "a");
+  assert.equal(
+    sentTree.nodes.find((n) => n.id === "a")!.question,
+    "Renamed root question",
+    "tree change rides along in the same payload as the settings change",
+  );
+});
+
+test("buildSavePayload sends both the tree and the settings in a single PATCH body", () => {
+  // The Settings tab and the canvas share one Save click — the editor
+  // mutation is fired with the result of this helper, so asserting the
+  // shape here is enough to prove a name edit + a tree edit ride along
+  // together. (Was the modal-summary workaround in Task #775.)
+  const tree = sampleTree();
+  // Simulate a tree edit (name node text change) and a settings edit
+  // (rename + flip the trip-overriding flag) in local editor state.
+  const editedTree = updateNode(tree, "a", { question: "Is the claim bundled now?" });
+  const settings: SopEditorSettings = {
+    name: "New SOP Name",
+    category: "GPS Issues",
+    description: "When the bundling check fires.",
+    guidance: "Verify GPS first.",
+    recommendedActions: "Mark ready or hold.",
+    disputeInstructions: "Reference the breadcrumbs.",
+    useGpsControlDeviation: true,
+    useDirectEmail: false,
+    tripOverriding: true,
+  };
+
+  const payload = buildSavePayload(editedTree, settings);
+
+  // Settings fields all present
+  assert.equal(payload.name, "New SOP Name");
+  assert.equal(payload.category, "GPS Issues");
+  assert.equal(payload.description, "When the bundling check fires.");
+  assert.equal(payload.guidance, "Verify GPS first.");
+  assert.equal(payload.recommendedActions, "Mark ready or hold.");
+  assert.equal(payload.disputeInstructions, "Reference the breadcrumbs.");
+  assert.equal(payload.useGpsControlDeviation, true);
+  assert.equal(payload.useDirectEmail, false);
+  assert.equal(payload.tripOverriding, true);
+
+  // Tree shipped alongside — and serialized (no class instances / live refs).
+  const sentTree = payload.decisionTree as unknown as DecisionTree;
+  assert.equal(sentTree.rootId, "a");
+  assert.equal(sentTree.nodes.find((n) => n.id === "a")!.question, "Is the claim bundled now?");
+  // Defensive copy: mutating the payload tree must not affect the editor's tree.
+  sentTree.nodes[0].question = "MUTATED";
+  assert.equal(editedTree.nodes.find((n) => n.id === "a")!.question, "Is the claim bundled now?");
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {

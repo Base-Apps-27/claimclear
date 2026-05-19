@@ -3,6 +3,10 @@
 // transitively imports a `.css` file that node's loader can't parse).
 import dagre from "@dagrejs/dagre";
 import type { Node, Edge } from "@xyflow/react";
+import type {
+  UpdateErrorTypeBody,
+  UpdateErrorTypeBodyDecisionTree,
+} from "@workspace/api-client-react";
 import {
   type DecisionTree,
   type TreeNode,
@@ -287,4 +291,47 @@ export function removeEvidenceReq(
   if (!node) return tree;
   const reqs = (node.evidenceRequirements || []).filter((_, i) => i !== idx);
   return updateNode(tree, nodeId, { evidenceRequirements: reqs });
+}
+
+// Editable settings fields the full-page editor's Settings tab manages
+// alongside the canvas tree. Mirrors the same columns the old modal in
+// error-types.tsx writes (minus decisionTree, evidenceRequirements,
+// disputeReasonsLibrary, and emailTemplate — those have their own
+// surfaces). Kept in its own type so the Save payload helper and the
+// React state share one shape.
+export interface SopEditorSettings {
+  name: string;
+  category: string;
+  description: string;
+  guidance: string;
+  recommendedActions: string;
+  disputeInstructions: string;
+  useGpsControlDeviation: boolean;
+  useDirectEmail: boolean;
+  tripOverriding: boolean;
+}
+
+// Build the PATCH body for /api/error-types/:id. Sends the tree and the
+// settings together in one call so the user's Save click is a single
+// round-trip. Pulled out as a pure helper so the unit test can prove
+// both halves land in the same payload without booting React or the
+// network mutation.
+export function buildSavePayload(
+  tree: DecisionTree,
+  settings: SopEditorSettings,
+): UpdateErrorTypeBody {
+  return {
+    name: settings.name,
+    category: settings.category,
+    description: settings.description,
+    guidance: settings.guidance,
+    recommendedActions: settings.recommendedActions,
+    disputeInstructions: settings.disputeInstructions,
+    useGpsControlDeviation: settings.useGpsControlDeviation,
+    useDirectEmail: settings.useDirectEmail,
+    tripOverriding: settings.tripOverriding,
+    decisionTree: JSON.parse(
+      JSON.stringify(tree),
+    ) as UpdateErrorTypeBodyDecisionTree,
+  };
 }
