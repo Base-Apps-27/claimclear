@@ -429,6 +429,91 @@ export function bulkToggleAppliesPerInvoice(
   return { tree: next, skipped };
 }
 
+// Task #778 — extract a sub-tree rooted at `nodeId` as a standalone
+// `DecisionTree` (preserving node ids). Used by "Save sub-tree to
+// library" so the saved payload only carries the descendants of the
+// chosen node — not the entire SOP. Pure; ignores unreachable nodes.
+export function extractSubTreeFromEditor(
+  tree: DecisionTree,
+  nodeId: string,
+): DecisionTree {
+  const reachable = new Set<string>();
+  const stack: string[] = [nodeId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (reachable.has(id)) continue;
+    const node = tree.nodes.find((n) => n.id === id);
+    if (!node) continue;
+    reachable.add(id);
+    for (const opt of node.options) {
+      if (opt.childId) stack.push(opt.childId);
+    }
+  }
+  return {
+    rootId: nodeId,
+    nodes: tree.nodes.filter((n) => reachable.has(n.id)),
+  };
+}
+
+// Task #778 — deep-clone a sub-tree rooted at `nodeId` and remap every
+// reachable node id to a freshly minted one. Returns `{ nodes, rootId }`
+// where `nodes` are brand new objects (so editing them never mutates
+// the source) and every internal `childId` pointer has been remapped
+// to the corresponding clone. Used when inserting a library sub-tree
+// into the editor so the inserted ids cannot collide with anything
+// already in the tree.
+export function cloneSubTreeWithFreshIds(
+  tree: DecisionTree,
+  nodeId: string,
+): { nodes: TreeNode[]; rootId: string } {
+  // Walk reachable ids first, mint a new id per old id, then rebuild
+  // each node using the id map to remap childIds.
+  const idMap = new Map<string, string>();
+  const order: string[] = [];
+  const stack: string[] = [nodeId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (idMap.has(id)) continue;
+    const src = tree.nodes.find((n) => n.id === id);
+    if (!src) continue;
+    idMap.set(id, generateNodeId());
+    order.push(id);
+    for (const opt of src.options) {
+      if (opt.childId) stack.push(opt.childId);
+    }
+  }
+  const nodes: TreeNode[] = order.map((oldId) => {
+    const src = tree.nodes.find((n) => n.id === oldId)!;
+    const cloned: TreeNode = {
+      ...src,
+      id: idMap.get(oldId)!,
+      options: src.options.map((opt) => {
+        const next: TreeOption = { ...opt };
+        if (opt.childId) {
+          // Defensive: if the childId is unreachable for some reason
+          // (e.g. dangling pointer in the source), drop it so the
+          // inserted clone doesn't point off into the live tree.
+          const mapped = idMap.get(opt.childId);
+          if (mapped) next.childId = mapped;
+          else delete next.childId;
+        }
+        return next;
+      }),
+      // Evidence requirements get fresh keys so the new copies don't
+      // collide with the source's keys if they ever end up in the same
+      // tree (defensive — pure clone semantics).
+      evidenceRequirements: src.evidenceRequirements
+        ? src.evidenceRequirements.map((req, i) => ({
+            ...req,
+            key: `ev_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`,
+          }))
+        : undefined,
+    };
+    return cloned;
+  });
+  return { nodes, rootId: idMap.get(nodeId)! };
+}
+
 export function removeEvidenceReq(
   tree: DecisionTree,
   nodeId: string,

@@ -20,6 +20,8 @@ import {
   addEvidenceReqToMany,
   bulkSetAppliesPerInvoice,
   bulkToggleAppliesPerInvoice,
+  cloneSubTreeWithFreshIds,
+  extractSubTreeFromEditor,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
@@ -555,6 +557,124 @@ test("bulkSetAppliesPerInvoice with value=false clears the flag on every node wi
   assert.deepEqual(skipped, []);
   assert.equal(next.nodes.find((n) => n.id === "p")!.appliesPerInvoice, false);
   assert.equal(next.nodes.find((n) => n.id === "q")!.appliesPerInvoice, false);
+});
+
+// ---------------------------------------------------------------------------
+// Task #778 — SOP library helper unit tests
+// ---------------------------------------------------------------------------
+
+test("cloneSubTreeWithFreshIds: single node gets a fresh id and no internal pointers", () => {
+  const tree: DecisionTree = {
+    rootId: "only",
+    nodes: [
+      { id: "only", question: "Just me", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const { nodes, rootId } = cloneSubTreeWithFreshIds(tree, "only");
+  assert.equal(nodes.length, 1);
+  assert.notEqual(rootId, "only", "root id must be fresh");
+  assert.equal(nodes[0].id, rootId);
+  assert.equal(nodes[0].question, "Just me");
+  // Terminal outcome preserved
+  assert.equal(nodes[0].options[0].outcomeType, "hold");
+  // Immutability: source untouched
+  assert.equal(tree.nodes[0].id, "only");
+});
+
+test("cloneSubTreeWithFreshIds: nested chain remaps every childId to the new clone", () => {
+  const tree: DecisionTree = {
+    rootId: "a",
+    nodes: [
+      { id: "a", question: "A", options: [{ label: "next", childId: "b" }] },
+      { id: "b", question: "B", options: [{ label: "next", childId: "c" }] },
+      { id: "c", question: "C", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+    ],
+  };
+  const { nodes, rootId } = cloneSubTreeWithFreshIds(tree, "a");
+  assert.equal(nodes.length, 3);
+  const ids = new Set(nodes.map((n) => n.id));
+  // No collision with source ids
+  assert.equal(ids.has("a"), false);
+  assert.equal(ids.has("b"), false);
+  assert.equal(ids.has("c"), false);
+  // Internal pointers all land inside the cloned set
+  const rootNode = nodes.find((n) => n.id === rootId)!;
+  const childId = rootNode.options[0].childId!;
+  assert.ok(ids.has(childId), "child pointer should land inside the cloned set");
+  const child = nodes.find((n) => n.id === childId)!;
+  const grandchildId = child.options[0].childId!;
+  assert.ok(ids.has(grandchildId));
+  // Terminal outcome on the deepest node preserved
+  const grandchild = nodes.find((n) => n.id === grandchildId)!;
+  assert.equal(grandchild.options[0].outcomeType, "portal_dispute");
+});
+
+test("cloneSubTreeWithFreshIds: branching tree clones every reachable node and preserves terminal outcomes", () => {
+  const tree: DecisionTree = {
+    rootId: "root",
+    nodes: [
+      { id: "root", question: "Root", options: [
+        { label: "Yes", childId: "l" },
+        { label: "No", childId: "r" },
+      ] },
+      { id: "l", question: "Left", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+      { id: "r", question: "Right", options: [
+        { label: "Done", outcomeType: "non_issue", outcomeLabel: "Drop" },
+      ] },
+      // Unrelated node — must NOT be cloned.
+      { id: "unrelated", question: "Other", options: [] },
+    ],
+  };
+  const { nodes, rootId } = cloneSubTreeWithFreshIds(tree, "root");
+  assert.equal(nodes.length, 3, "should clone root + two children only");
+  const ids = new Set(nodes.map((n) => n.id));
+  assert.equal(ids.has("unrelated"), false);
+  const root = nodes.find((n) => n.id === rootId)!;
+  assert.equal(root.options.length, 2);
+  assert.ok(root.options[0].childId && ids.has(root.options[0].childId));
+  assert.ok(root.options[1].childId && ids.has(root.options[1].childId));
+  // Outcome labels survive the clone
+  const left = nodes.find((n) => n.id === root.options[0].childId)!;
+  assert.equal(left.options[0].outcomeLabel, "Ready");
+});
+
+test("cloneSubTreeWithFreshIds: cloned ids never collide with the editor's existing tree when inserted", () => {
+  // Simulate: editor has tree T1, library item was extracted from a
+  // similarly-structured tree T2. Clone T2's root and merge into T1 —
+  // there must be zero id collisions.
+  const editor: DecisionTree = sampleTree();
+  const library: DecisionTree = sampleTree(); // identical id namespace ("a","b") on purpose
+  const { nodes: clonedNodes, rootId: clonedRoot } = cloneSubTreeWithFreshIds(library, library.rootId);
+  const existingIds = new Set(editor.nodes.map((n) => n.id));
+  for (const n of clonedNodes) {
+    assert.equal(existingIds.has(n.id), false, `cloned id ${n.id} collided with editor`);
+  }
+  assert.equal(existingIds.has(clonedRoot), false);
+});
+
+test("extractSubTreeFromEditor: returns a tree rooted at the chosen node with only its descendants", () => {
+  const tree: DecisionTree = {
+    rootId: "a",
+    nodes: [
+      { id: "a", question: "A", options: [{ label: "next", childId: "b" }] },
+      { id: "b", question: "B", options: [{ label: "next", childId: "c" }] },
+      { id: "c", question: "C", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      // Unrelated branch — must be excluded.
+      { id: "z", question: "Z", options: [] },
+    ],
+  };
+  const sub = extractSubTreeFromEditor(tree, "b");
+  assert.equal(sub.rootId, "b");
+  const ids = sub.nodes.map((n) => n.id).sort();
+  assert.deepEqual(ids, ["b", "c"]);
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {

@@ -38,9 +38,13 @@ import {
   Wand2,
   Replace,
   Type,
+  Library,
+  Bookmark,
 } from "lucide-react";
 import { PlainTextEditor } from "@/components/decision-tree/plain-text-editor";
 import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
+import { LibraryDrawer, SaveToLibraryDialog } from "./sop-full-page-editor-library";
+import { extractSubTreeFromEditor } from "./sop-full-page-editor-helpers";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -350,11 +354,13 @@ function Outline({
 // ---------------------------------------------------------------------------
 
 function Inspector({
-  tree, nodeId, onChange,
+  tree, nodeId, onChange, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
 }: {
   tree: DecisionTree;
   nodeId: string | null;
   onChange: (tree: DecisionTree) => void;
+  onSaveEvidenceToLibrary: (nodeId: string, index: number) => void;
+  onSaveSubTreeToLibrary: (nodeId: string) => void;
 }) {
   if (!nodeId) {
     return (
@@ -372,7 +378,17 @@ function Inspector({
       <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-card">
         <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
         <span className="text-xs font-medium">Question node</span>
-        <span className="ml-auto text-[10px] text-muted-foreground font-mono">{node.id.slice(0, 12)}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-6 px-2 text-[10px]"
+          onClick={() => onSaveSubTreeToLibrary(node.id)}
+          data-testid="inspector-save-sub-tree-to-library"
+          title="Save this node and its descendants to the SOP library"
+        >
+          <Bookmark className="w-3 h-3 mr-1" /> Save sub-tree
+        </Button>
+        <span className="text-[10px] text-muted-foreground font-mono">{node.id.slice(0, 12)}</span>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
@@ -486,6 +502,14 @@ function Inspector({
                   className="h-6 text-xs flex-1"
                   placeholder="Evidence name"
                 />
+                <button
+                  className="p-1 hover:bg-muted rounded"
+                  onClick={() => onSaveEvidenceToLibrary(node.id, idx)}
+                  title="Save to library"
+                  data-testid={`inspector-save-evidence-to-library-${idx}`}
+                >
+                  <Bookmark className="w-3 h-3 text-muted-foreground" />
+                </button>
                 <button
                   className="p-1 hover:bg-muted rounded"
                   onClick={() => onChange(removeEvidenceReq(tree, node.id, idx))}
@@ -848,6 +872,13 @@ export default function SopFullPageEditor() {
   // the global dirty flag when an operation (like Plain Text's
   // Discard) reverts state back to a known baseline.
   const loadedSnapshotRef = useRef<{ tree: DecisionTree; settings: SopEditorSettings } | null>(null);
+  const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
+  // Pending payload to save to the library; null when no dialog open.
+  const [saveToLibrary, setSaveToLibrary] = useState<
+    | { kind: "evidence_requirement"; payload: Record<string, unknown>; defaultLabel: string }
+    | { kind: "sub_tree"; payload: Record<string, unknown>; defaultLabel: string }
+    | null
+  >(null);
   const [settings, setSettings] = useState<SopEditorSettings>({
     name: "",
     category: "",
@@ -958,6 +989,43 @@ export default function SopFullPageEditor() {
       });
     }
   }, [tree, selectedIds]);
+
+  // Task #778 — open the Save dialog with the right payload for the
+  // chosen evidence row. Captures the EvidenceReq minus id so the
+  // library payload matches the new backend's shape.
+  const handleSaveEvidenceToLibrary = useCallback(
+    (nodeId: string, index: number) => {
+      if (!tree) return;
+      const node = tree.nodes.find((n) => n.id === nodeId);
+      const req = node?.evidenceRequirements?.[index];
+      if (!req) return;
+      // Drop the synthetic `key` from the payload — it's only meaningful
+      // within the editor's local list. The library payload is the
+      // semantic shape (label/required/typeId/etc).
+      const { key: _key, ...rest } = req;
+      void _key;
+      setSaveToLibrary({
+        kind: "evidence_requirement",
+        payload: rest as unknown as Record<string, unknown>,
+        defaultLabel: req.label || "",
+      });
+    },
+    [tree],
+  );
+
+  const handleSaveSubTreeToLibrary = useCallback(
+    (nodeId: string) => {
+      if (!tree) return;
+      const subTree = extractSubTreeFromEditor(tree, nodeId);
+      const root = subTree.nodes.find((n) => n.id === subTree.rootId);
+      setSaveToLibrary({
+        kind: "sub_tree",
+        payload: JSON.parse(JSON.stringify(subTree)) as Record<string, unknown>,
+        defaultLabel: root?.question || "",
+      });
+    },
+    [tree],
+  );
 
   // Shared persistence path. Throws on validation or network errors so
   // callers (the top-bar Save button AND the Plain Text tab's Save All
@@ -1070,6 +1138,14 @@ export default function SopFullPageEditor() {
         <div className="text-[10px] text-muted-foreground">
           {tree.nodes.length} nodes · {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)} evidence reqs
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setLibraryDrawerOpen(true)}
+          data-testid="open-library-drawer"
+        >
+          <Library className="w-3.5 h-3.5 mr-1" /> Library
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -1306,11 +1382,33 @@ export default function SopFullPageEditor() {
           />
         )}
 
+        <LibraryDrawer
+          isOpen={libraryDrawerOpen}
+          onClose={() => setLibraryDrawerOpen(false)}
+          selectedNodeId={selectedId}
+          tree={tree}
+          onTreeChange={onTreeChange}
+        />
+
+        <SaveToLibraryDialog
+          open={saveToLibrary !== null}
+          onOpenChange={(o) => { if (!o) setSaveToLibrary(null); }}
+          kind={saveToLibrary?.kind ?? "evidence_requirement"}
+          payload={saveToLibrary?.payload ?? null}
+          defaultLabel={saveToLibrary?.defaultLabel}
+        />
+
         {/* Right inspector — hidden during multi-select so the bulk
             action bar is the only edit affordance on screen. */}
         {selectedIds.size <= 1 && (
           <div className="w-80 border-l border-border bg-card flex flex-col shrink-0" data-testid="inspector-pane">
-            <Inspector tree={tree} nodeId={selectedId} onChange={onTreeChange} />
+            <Inspector
+              tree={tree}
+              nodeId={selectedId}
+              onChange={onTreeChange}
+              onSaveEvidenceToLibrary={handleSaveEvidenceToLibrary}
+              onSaveSubTreeToLibrary={handleSaveSubTreeToLibrary}
+            />
             {selectedNode && (
               <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
                 Last edit pending save. Press Save in the top bar to persist.
