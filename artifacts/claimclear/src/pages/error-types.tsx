@@ -1,500 +1,60 @@
 import { useState } from "react";
-import { Link as WouterLink } from "wouter";
+import { Link as WouterLink, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListErrorTypes, getListErrorTypesQueryKey,
-  useCreateErrorType, useUpdateErrorType, useDeleteErrorType,
-  useAnalyzeSOPText, useGetAppSettings,
+  useCreateErrorType, useDeleteErrorType,
+  useGetAppSettings,
 } from "@workspace/api-client-react";
-import type { ErrorTypeResponse } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  Plus, Edit2, Trash2, TreeDeciduous, FileText,
-  X, Sparkles, Loader2, Type,
-  MessageSquare, Wand2, Send, ArrowRight, Ban, AlertTriangle, MapPin, Mail
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Plus, Trash2, TreeDeciduous, FileText,
+  AlertTriangle, MapPin, Mail,
 } from "lucide-react";
-import { InfoTooltip } from "@/components/info-tooltip";
 import { EmptyState } from "@/components/empty-state";
-import {
-  TreeEditor, TreePreview, PlainTextEditor,
-  type DecisionTree, type LegacyTreeNode,
-  legacyToTree, generateNodeId,
-} from "@/components/decision-tree";
-import { validateAppliesPerInvoice, findEmptyEvidenceLabels } from "@/components/decision-tree/types";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
-import { toast } from "@/hooks/use-toast";
-import { SopAdvancePlayer } from "@/components/decision-tree/sop-advance-player";
-
-
-function ConversationalWizard({
-  onComplete,
-}: {
-  onComplete: (tree: DecisionTree) => void;
-}) {
-  const [messages, setMessages] = useState<Array<{ role: "system" | "user"; text: string }>>([
-    { role: "system", text: "Let's build a decision tree step by step. What's the first question staff should answer when handling this claim type?" },
-  ]);
-  const [input, setInput] = useState("");
-  const [tree, setTree] = useState<DecisionTree | null>(null);
-  const [wizardState, setWizardState] = useState<"question" | "options" | "option_action" | "sub_question" | "done">("question");
-  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
-  const [pendingOptions, setPendingOptions] = useState<string[]>([]);
-  const [currentOptionIdx, setCurrentOptionIdx] = useState(0);
-
-  const addMessage = (role: "system" | "user", text: string) => {
-    setMessages(prev => [...prev, { role, text }]);
-  };
-
-  const handleSubmit = () => {
-    if (!input.trim()) return;
-    const userText = input.trim();
-    addMessage("user", userText);
-    setInput("");
-
-    if (wizardState === "question") {
-      const nodeId = generateNodeId();
-      const newNode = { id: nodeId, question: userText, options: [] };
-      if (!tree) {
-        setTree({ rootId: nodeId, nodes: [newNode] });
-      } else {
-        setTree({ ...tree, nodes: [...tree.nodes, newNode] });
-      }
-      setCurrentNodeId(nodeId);
-      setWizardState("options");
-      addMessage("system", `Great question: "${userText}"\n\nWhat are the possible answers? Enter them separated by commas (e.g., "Yes, GPS confirmed", "No GPS data", "Partial data")`);
-    } else if (wizardState === "options") {
-      const opts = userText.split(",").map(s => s.trim()).filter(Boolean);
-      if (opts.length < 2) {
-        addMessage("system", "Please provide at least 2 options, separated by commas.");
-        return;
-      }
-      setPendingOptions(opts);
-      setCurrentOptionIdx(0);
-      setWizardState("option_action");
-      addMessage("system", `Got ${opts.length} options. For "${opts[0]}" — choose what happens next:`);
-    }
-  };
-
-  const applyOutcome = (outcomeType: "portal_dispute" | "hold" | "internal" | "dispute") => {
-    if (!tree || !currentNodeId) return;
-    const optionLabel = pendingOptions[currentOptionIdx];
-    const labels = { portal_dispute: "Submit Portal Dispute", hold: "Place on Hold", internal: "Resolve Internally", dispute: "Send Dispute Email" };
-    const updatedTree = { ...tree, nodes: [...tree.nodes] };
-    const nodeIdx = updatedTree.nodes.findIndex(n => n.id === currentNodeId);
-    if (nodeIdx < 0) return;
-    const node = { ...updatedTree.nodes[nodeIdx] };
-    node.options = [...node.options, { label: optionLabel, outcomeType, outcomeLabel: labels[outcomeType] }];
-    updatedTree.nodes[nodeIdx] = node;
-    setTree(updatedTree);
-    addMessage("user", `${optionLabel} → ${labels[outcomeType]}`);
-    advanceToNextOption(updatedTree);
-  };
-
-  const applySubQuestion = () => {
-    setWizardState("sub_question");
-    addMessage("system", `What follow-up question should staff answer for "${pendingOptions[currentOptionIdx]}"?`);
-  };
-
-  const advanceToNextOption = (updatedTree: DecisionTree) => {
-    const nextOptIdx = currentOptionIdx + 1;
-    if (nextOptIdx < pendingOptions.length) {
-      setCurrentOptionIdx(nextOptIdx);
-      setWizardState("option_action");
-      addMessage("system", `For "${pendingOptions[nextOptIdx]}" — choose what happens next:`);
-    } else {
-      const incompleteNodes = updatedTree.nodes.filter(n => n.options.length === 0);
-      if (incompleteNodes.length > 0) {
-        const next = incompleteNodes[0];
-        setCurrentNodeId(next.id);
-        setWizardState("options");
-        addMessage("system", `Now let's handle: "${next.question}"\n\nWhat are the possible answers? (comma separated)`);
-      } else {
-        setWizardState("done");
-        addMessage("system", "The tree is complete! Review it below and click 'Use This Tree' to save it.");
-      }
-    }
-  };
-
-  const handleSubQuestion = () => {
-    if (!input.trim() || !tree || !currentNodeId) return;
-    const question = input.trim();
-    setInput("");
-    addMessage("user", question);
-    const childId = generateNodeId();
-    const childNode = { id: childId, question, options: [] as import("@/components/decision-tree/types").TreeOption[] };
-    const optionLabel = pendingOptions[currentOptionIdx];
-    const updatedTree = { ...tree, nodes: [...tree.nodes] };
-    const nodeIdx = updatedTree.nodes.findIndex(n => n.id === currentNodeId);
-    if (nodeIdx < 0) return;
-    const node = { ...updatedTree.nodes[nodeIdx] };
-    node.options = [...node.options, { label: optionLabel, childId }];
-    updatedTree.nodes[nodeIdx] = node;
-    updatedTree.nodes.push(childNode);
-    setTree(updatedTree);
-    advanceToNextOption(updatedTree);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-muted/30 rounded-lg p-3 max-h-64 overflow-y-auto space-y-2">
-        {messages.map((msg, i) => (
-          <div key={i} className={`text-xs ${msg.role === "system" ? "text-muted-foreground" : "text-foreground font-medium"}`}>
-            <span className="font-semibold">{msg.role === "system" ? "Builder: " : "You: "}</span>
-            <span className="whitespace-pre-line">{msg.text}</span>
-          </div>
-        ))}
-      </div>
-
-      {wizardState === "question" && (
-        <div className="flex gap-2">
-          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Type your question..." onKeyDown={e => e.key === "Enter" && handleSubmit()} className="text-sm" />
-          <Button size="sm" onClick={handleSubmit} className="gap-1"><Send className="h-3 w-3" />Send</Button>
-        </div>
-      )}
-
-      {wizardState === "options" && (
-        <div className="flex gap-2">
-          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Options separated by commas..." onKeyDown={e => e.key === "Enter" && handleSubmit()} className="text-sm" />
-          <Button size="sm" onClick={handleSubmit} className="gap-1"><Send className="h-3 w-3" />Send</Button>
-        </div>
-      )}
-
-      {wizardState === "option_action" && (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">For "<span className="font-medium">{pendingOptions[currentOptionIdx]}</span>" — what happens?</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button size="sm" variant="outline" className="text-xs justify-start text-green-700" onClick={() => applyOutcome("portal_dispute")}>
-              <Send className="h-3 w-3 mr-1" />Portal Dispute
-            </Button>
-            <Button size="sm" variant="outline" className="text-xs justify-start text-amber-700" onClick={() => applyOutcome("hold")}>
-              <span className="mr-1">⏸</span>Place on Hold
-            </Button>
-            <Button size="sm" variant="outline" className="text-xs justify-start text-red-700" onClick={() => applyOutcome("internal")}>
-              <Ban className="h-3 w-3 mr-1" />Resolve Internally
-            </Button>
-            <Button size="sm" variant="outline" className="text-xs justify-start text-blue-700" onClick={() => applyOutcome("dispute")}>
-              <span className="mr-1">📧</span>Email Dispute
-            </Button>
-          </div>
-          <Button size="sm" variant="default" className="w-full text-xs gap-1" onClick={applySubQuestion}>
-            <ArrowRight className="h-3 w-3" />Add a Follow-up Question
-          </Button>
-        </div>
-      )}
-
-      {wizardState === "sub_question" && (
-        <div className="flex gap-2">
-          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Type the follow-up question..." onKeyDown={e => e.key === "Enter" && handleSubQuestion()} className="text-sm" />
-          <Button size="sm" onClick={handleSubQuestion} className="gap-1"><Send className="h-3 w-3" />Send</Button>
-        </div>
-      )}
-
-      {tree && tree.nodes.length > 0 && (
-        <div className="space-y-2">
-          <TreePreview tree={tree} />
-          {wizardState === "done" && (
-            <Button onClick={() => onComplete(tree)} className="w-full gap-1">
-              <ArrowRight className="h-4 w-4" />Use This Tree
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NaturalLanguageBuilder({
-  errorTypeName,
-  onComplete,
-}: {
-  errorTypeName?: string;
-  onComplete: (tree: DecisionTree) => void;
-}) {
-  const [description, setDescription] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<DecisionTree | null>(null);
-
-  const handleGenerate = async () => {
-    if (!description.trim()) return;
-    setIsGenerating(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/error-types/build-tree-from-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, errorTypeName }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Generation failed");
-      }
-      const data = await res.json();
-      if (data.decisionTree) {
-        const rawTree = data.decisionTree as Record<string, unknown>;
-        let converted: DecisionTree | null = null;
-        if ("nodes" in rawTree && "rootId" in rawTree) {
-          converted = rawTree as unknown as DecisionTree;
-        } else if ("question" in rawTree) {
-          converted = legacyToTree(rawTree as unknown as LegacyTreeNode);
-        }
-        if (converted) setPreview(converted);
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to generate tree");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <Textarea
-        value={description}
-        onChange={e => setDescription(e.target.value)}
-        rows={6}
-        placeholder={"Describe the workflow in plain English...\n\nExample:\nFirst check if GPS data is available. If yes, verify the breadcrumbs match the pickup and dropoff locations. If they match, submit a portal dispute. If not, check if there's a reasonable explanation like a detour. If yes, still dispute. If no explanation, deny internally. If no GPS data at all, ask for a driver attestation. If available, dispute. If not, place on hold."}
-        className="text-sm"
-      />
-      <Button
-        onClick={handleGenerate}
-        disabled={isGenerating || !description.trim()}
-        className="gap-2"
-      >
-        {isGenerating ? (
-          <><Loader2 className="h-4 w-4 animate-spin" />Generating Tree...</>
-        ) : (
-          <><Wand2 className="h-4 w-4" />Generate Decision Tree</>
-        )}
-      </Button>
-      {error && <p className="text-xs text-red-600">{error}</p>}
-      {preview && (
-        <div className="space-y-2">
-          <TreePreview tree={preview} />
-          <div className="flex gap-2">
-            <Button onClick={() => onComplete(preview)} className="flex-1 gap-1">
-              <ArrowRight className="h-4 w-4" />Use This Tree
-            </Button>
-            <Button variant="outline" onClick={() => setPreview(null)}>
-              Try Again
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface ErrorTypeFormState {
-  name: string;
-  category: string;
-  description: string;
-  disputeInstructions: string;
-  decisionTree: DecisionTree | null;
-  useGpsControlDeviation: boolean;
-  useDirectEmail: boolean;
-  // Trip-overriding error types (eligibility, time-at-facility) invalidate
-  // the entire trip — once one leg in an invoice has this error, sibling
-  // legs become candidates to be marked as `Sibling Duplicate` so we
-  // don't double-bill the dispute. Surfaces in the SOP picker and the
-  // leg-detail "Mark as duplicate" affordance.
-  tripOverriding: boolean;
-}
-
-// Three mutually-exclusive submission paths. Backed by two independent
-// boolean columns server-side (useGpsControlDeviation, useDirectEmail);
-// the picker enforces "exactly one wins" by writing both flags from the
-// selected option.
-type SubmissionPath = "portal_other" | "portal_gps" | "direct_email";
-
-function pathFromForm(f: Pick<ErrorTypeFormState, "useGpsControlDeviation" | "useDirectEmail">): SubmissionPath {
-  if (f.useDirectEmail) return "direct_email";
-  if (f.useGpsControlDeviation) return "portal_gps";
-  return "portal_other";
-}
-
-function flagsFromPath(p: SubmissionPath): { useGpsControlDeviation: boolean; useDirectEmail: boolean } {
-  return {
-    useGpsControlDeviation: p === "portal_gps",
-    useDirectEmail: p === "direct_email",
-  };
-}
 
 export default function ErrorTypes() {
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const { data: errorTypes, isLoading } = useListErrorTypes();
   const { data: appSettings } = useGetAppSettings();
   const defaultDisputeInstructions = appSettings?.default_dispute_instructions || "";
   const createErrorType = useCreateErrorType();
-  const updateErrorType = useUpdateErrorType();
   const deleteErrorType = useDeleteErrorType();
 
-  const analyzeSOP = useAnalyzeSOPText();
-  const [editingId, setEditingId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [sopText, setSopText] = useState("");
-  const [sopAnalyzing, setSopAnalyzing] = useState(false);
-  const [sopError, setSopError] = useState<string | null>(null);
-  const [testTree, setTestTree] = useState<DecisionTree | null>(null);
-
-  const emptyForm: ErrorTypeFormState = {
-    name: "", category: "", description: "", disputeInstructions: "",
-    decisionTree: null,
-    useGpsControlDeviation: false,
-    useDirectEmail: false,
-    tripOverriding: false,
-  };
-
-  const [form, setForm] = useState<ErrorTypeFormState>(emptyForm);
-
-  const handleAnalyzeSOP = async () => {
-    if (!sopText.trim()) return;
-    setSopAnalyzing(true);
-    setSopError(null);
-    try {
-      const result = await analyzeSOP.mutateAsync({
-        data: { sopText, errorTypeName: form.name || undefined },
-      });
-      const rawTree = result.decisionTree as Record<string, unknown> | null;
-      let convertedTree: DecisionTree | null = null;
-      if (rawTree) {
-        if ("nodes" in rawTree && "rootId" in rawTree) {
-          convertedTree = rawTree as unknown as DecisionTree;
-        } else if ("question" in rawTree) {
-          convertedTree = legacyToTree(rawTree as unknown as LegacyTreeNode);
-        }
-      }
-      setForm({
-        name: result.name || form.name || "",
-        category: result.category || "",
-        description: result.description || "",
-        disputeInstructions: form.disputeInstructions,
-        decisionTree: convertedTree,
-        useGpsControlDeviation: form.useGpsControlDeviation,
-        useDirectEmail: form.useDirectEmail,
-        tripOverriding: form.tripOverriding,
-      });
-    } catch (err: unknown) {
-      setSopError(err instanceof Error ? err.message : "Analysis failed");
-    } finally {
-      setSopAnalyzing(false);
-    }
-  };
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListErrorTypesQueryKey() });
 
-  const openEdit = (et: ErrorTypeResponse) => {
-    const rawTree = et.decisionTree as Record<string, unknown> | null;
-    let convertedTree: DecisionTree | null = null;
-    if (rawTree) {
-      if ("nodes" in rawTree && "rootId" in rawTree) {
-        convertedTree = rawTree as unknown as DecisionTree;
-      } else if ("question" in rawTree) {
-        convertedTree = legacyToTree(rawTree as unknown as LegacyTreeNode);
-      }
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const created = await createErrorType.mutateAsync({ data: { name } });
+      invalidate();
+      setShowCreate(false);
+      setNewName("");
+      setLocation(`/admin/sops/${created.id}/edit`);
+    } finally {
+      setCreating(false);
     }
-    setForm({
-      name: et.name || "",
-      category: et.category || "",
-      description: et.description || "",
-      disputeInstructions: et.disputeInstructions || "",
-      decisionTree: convertedTree,
-      useGpsControlDeviation: et.useGpsControlDeviation === true,
-      useDirectEmail: et.useDirectEmail === true,
-      tripOverriding: (et as { tripOverriding?: boolean }).tripOverriding === true,
-    });
-    setEditingId(et.id);
-  };
-
-  const handleSave = async () => {
-    // Task #470 — author-time guard. Refuse to persist a tree whose
-    // `appliesPerInvoice` annotations conflict with same-step or
-    // immediate-next-step evidence / per-leg-context. The popover
-    // already surfaces the same violations inline, but operators may
-    // collapse it before clicking Save — re-checking here keeps the
-    // database from ever holding a tree the bulk endpoint will refuse.
-    if (form.decisionTree) {
-      const violations = validateAppliesPerInvoice(form.decisionTree);
-      if (violations.length > 0) {
-        toast({
-          title: "Can't save — invalid \"same answer for every leg\" step",
-          description:
-            "One or more steps marked \"same answer for every leg\" still collect evidence or require per-leg context. Open the affected step's settings to clear the issue, then save again.",
-          variant: "destructive",
-        });
-        return;
-      }
-      // Task #706 — every evidence requirement must carry a non-empty
-      // label; the SOP runner persists that label as the row's
-      // human-readable name (`claim_evidence.evidence_type_name`).
-      // Allowing an empty label would silently regress new rows back to
-      // the opaque `ev_<digits>` key downstream.
-      const emptyLabels = findEmptyEvidenceLabels(form.decisionTree);
-      if (emptyLabels.length > 0) {
-        toast({
-          title: "Can't save — evidence is missing a name",
-          description:
-            emptyLabels.length === 1
-              ? "One evidence requirement has an empty name. Open the affected step and give it a clear, human-readable name."
-              : `${emptyLabels.length} evidence requirements have empty names. Open each affected step and give them clear, human-readable names.`,
-          variant: "destructive",
-        });
-        // Best-effort focus: scroll the first offending input into view
-        // and focus it so the operator lands on the empty field.
-        requestAnimationFrame(() => {
-          const first = emptyLabels[0];
-          const el = document.querySelector<HTMLInputElement>(
-            `[data-testid="sop-evidence-label-${first.nodeId}-${first.index}"]`,
-          );
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-            el.focus();
-          }
-        });
-        return;
-      }
-    }
-
-    const payload = {
-      name: form.name,
-      category: form.category,
-      description: form.description,
-      disputeInstructions: form.disputeInstructions,
-      decisionTree: form.decisionTree
-        ? (JSON.parse(JSON.stringify(form.decisionTree)) as unknown as Record<string, unknown>)
-        : undefined,
-      useGpsControlDeviation: form.useGpsControlDeviation,
-      useDirectEmail: form.useDirectEmail,
-      tripOverriding: form.tripOverriding,
-    };
-
-    if (editingId) {
-      await updateErrorType.mutateAsync({ id: editingId, data: payload });
-    } else {
-      await createErrorType.mutateAsync({ data: payload });
-    }
-    setEditingId(null);
-    setShowCreate(false);
-    setForm(emptyForm);
-    invalidate();
   };
 
   const handleDelete = async (id: number) => {
     await deleteErrorType.mutateAsync({ id });
     invalidate();
   };
-
-  const isDialogOpen = showCreate || editingId !== null;
 
   return (
     <div className="space-y-6">
@@ -503,7 +63,7 @@ export default function ErrorTypes() {
           <h2 className="text-2xl font-bold tracking-tight">Error Types & SOPs</h2>
           <p className="text-muted-foreground">Configure error classifications, evidence requirements, and decision workflows</p>
         </div>
-        <Button onClick={() => { setForm(emptyForm); setShowCreate(true); }}>
+        <Button onClick={() => { setNewName(""); setShowCreate(true); }}>
           <Plus className="h-4 w-4 mr-1" />Add Error Type
         </Button>
       </div>
@@ -527,7 +87,7 @@ export default function ErrorTypes() {
               description="Error types classify denials and drive the dispute workflow. Create one to get started."
               primaryAction={{
                 label: "Add error type",
-                onClick: () => { setForm(emptyForm); setShowCreate(true); },
+                onClick: () => { setNewName(""); setShowCreate(true); },
               }}
             />
           </CardContent>
@@ -549,14 +109,11 @@ export default function ErrorTypes() {
                         size="sm"
                         className="h-8 text-xs"
                         data-testid={`open-full-page-editor-${et.id}`}
-                        title="Open the new full-page SOP editor"
+                        title="Open the full-page SOP editor"
                       >
                         Edit SOP →
                       </Button>
                     </WouterLink>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(et)} title="Edit details (modal)">
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(et.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -589,295 +146,31 @@ export default function ErrorTypes() {
       )}
       </SkeletonSwap>
 
-      <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setEditingId(null); setShowCreate(false); } }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+      <Dialog open={showCreate} onOpenChange={(open) => { if (!open) { setShowCreate(false); setNewName(""); } }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Error Type" : "Create Error Type"}</DialogTitle>
+            <DialogTitle>Create Error Type</DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="workflow">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="workflow" className="gap-1"><TreeDeciduous className="h-3 w-3" />Workflow Tree</TabsTrigger>
-              <TabsTrigger value="plain-text" className="gap-1" disabled={!form.decisionTree}><Type className="h-3 w-3" />Plain Text</TabsTrigger>
-              <TabsTrigger value="basics">Details</TabsTrigger>
-              <TabsTrigger value="ai-analyzer" className="gap-1"><Sparkles className="h-3 w-3" />AI Builder</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="ai-analyzer" className="space-y-4 mt-4">
-              <Tabs defaultValue="sop-analyzer">
-                <TabsList className="w-full grid grid-cols-3">
-                  <TabsTrigger value="sop-analyzer" className="text-xs gap-1"><Sparkles className="h-3 w-3" />SOP Analyzer</TabsTrigger>
-                  <TabsTrigger value="nl-builder" className="text-xs gap-1"><Wand2 className="h-3 w-3" />Describe Workflow</TabsTrigger>
-                  <TabsTrigger value="wizard" className="text-xs gap-1"><MessageSquare className="h-3 w-3" />Guided Builder</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="sop-analyzer" className="mt-3">
-                  <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      Paste your Standard Operating Procedure text and the AI will generate a workflow tree with embedded evidence collection, plus the name, category, and description.
-                      <InfoTooltip content="The SOP Analyzer uses AI to parse your procedure document and generate a decision tree workflow. The tree captures the full SOP logic — questions, branching, evidence collection at each step, and outcomes. Paste the full SOP text for best results." />
-                    </p>
-                    <Textarea
-                      value={sopText}
-                      onChange={e => setSopText(e.target.value)}
-                      rows={8}
-                      placeholder="Paste your SOP text here..."
-                      className="font-mono text-xs bg-white dark:bg-background"
-                    />
-                    <div className="flex items-center gap-3">
-                      <Button
-                        onClick={handleAnalyzeSOP}
-                        disabled={sopAnalyzing || !sopText.trim()}
-                        className="gap-2"
-                      >
-                        {sopAnalyzing ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" />Analyzing...</>
-                        ) : (
-                          <><Sparkles className="h-4 w-4" />Analyze & Build Workflow</>
-                        )}
-                      </Button>
-                      {sopAnalyzing && <span className="text-xs text-muted-foreground">This may take 10-20 seconds...</span>}
-                    </div>
-                    {sopError && <p className="text-sm text-red-600">{sopError}</p>}
-                    {form.name && sopText && !sopAnalyzing && (
-                      <p className="text-xs text-green-600">Analysis complete. Review the workflow tree and details, then save.</p>
-                    )}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="nl-builder" className="mt-3">
-                  <div className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/30 dark:to-green-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      Describe the decision workflow in plain English and the AI will build a decision tree for you.
-                      <InfoTooltip content="Write out the decision workflow as you would explain it to a new employee. Describe the questions, possible answers, and what action to take for each scenario." />
-                    </p>
-                    <NaturalLanguageBuilder
-                      errorTypeName={form.name}
-                      onComplete={(tree) => setForm({ ...form, decisionTree: tree })}
-                    />
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="wizard" className="mt-3">
-                  <div className="bg-gradient-to-r from-green-50 to-amber-50 dark:from-green-950/30 dark:to-amber-950/30 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      Build a tree step-by-step through a guided conversation. Answer questions and the tree builds itself.
-                      <InfoTooltip content="The guided builder walks you through creating a decision tree interactively. You provide questions and answer options, and choose what action to take for each branch." />
-                    </p>
-                    <ConversationalWizard
-                      onComplete={(tree) => setForm({ ...form, decisionTree: tree })}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </TabsContent>
-
-            <TabsContent value="basics" className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="flex items-center gap-1">
-                    Name *
-                    <InfoTooltip content="A short, recognizable name for this error type (e.g., 'No-Show — GPS Confirmed'). This is how staff will identify the error in claim lists and queues." />
-                  </Label>
-                  <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-                </div>
-                <div>
-                  <Label className="flex items-center gap-1">
-                    Category
-                    <InfoTooltip content="Group related error types together (e.g., 'GPS Issues', 'Scheduling'). Categories help staff filter and find relevant error types faster." />
-                  </Label>
-                  <Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="e.g., GPS Issues, Scheduling" />
-                </div>
-              </div>
-              <div>
-                <Label className="flex items-center gap-1">
-                  Description
-                  <InfoTooltip content="Explain when this error type applies and what circumstances trigger it. This description is shown to staff when reviewing claims." />
-                </Label>
-                <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Describe when this error type applies..." />
-              </div>
-              <Separator />
-              <div className="rounded-lg border p-3 space-y-3">
-                <div className="space-y-0.5">
-                  <Label className="flex items-center gap-1">
-                    Submission Path
-                    <InfoTooltip content="How disputes for this error type are filed. Pick exactly one. The two portal options open a Freshdesk ticket via the MAS portal. The Direct Email option bypasses the portal and emails the dispute (with attachments) to the address configured in Settings → Direct Email." />
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Choose how the batch processor files disputes for this error type.
-                  </p>
-                </div>
-                <RadioGroup
-                  value={pathFromForm(form)}
-                  onValueChange={(val) => setForm({ ...form, ...flagsFromPath(val as SubmissionPath) })}
-                  className="space-y-2"
-                >
-                  <label
-                    htmlFor="path-portal-other"
-                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
-                  >
-                    <RadioGroupItem id="path-portal-other" value="portal_other" className="mt-0.5" />
-                    <div className="space-y-0.5">
-                      <div className="text-sm font-medium flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5" />
-                        MAS Portal — Other Issue or Question
-                        <Badge variant="outline" className="text-[10px] px-1 py-0">default</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Files a Freshdesk ticket on the generic form. Use for most non-GPS, non-email issues.
-                      </p>
-                    </div>
-                  </label>
-                  <label
-                    htmlFor="path-portal-gps"
-                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
-                  >
-                    <RadioGroupItem id="path-portal-gps" value="portal_gps" className="mt-0.5" />
-                    <div className="space-y-0.5">
-                      <div className="text-sm font-medium flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5" />
-                        MAS Portal — GPS Control Deviation
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Files under the GPS Control Deviation form (includes the GPS Breadcrumbs Available field).
-                        Use for location/GPS-based denials only.
-                      </p>
-                    </div>
-                  </label>
-                  <label
-                    htmlFor="path-direct-email"
-                    className="flex items-start gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50"
-                  >
-                    <RadioGroupItem id="path-direct-email" value="direct_email" className="mt-0.5" />
-                    <div className="space-y-0.5">
-                      <div className="text-sm font-medium flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5" />
-                        Direct Email
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Bypasses the MAS portal. Emails the dispute (with evidence as attachments) to the address
-                        configured in Settings → Direct Email. Use for issues MAS handles over email
-                        (e.g. Attesting too Soon, Invoice Number not in System).
-                      </p>
-                    </div>
-                  </label>
-                </RadioGroup>
-              </div>
-              <Separator />
-              {/*
-                Trip-overriding toggle. When ON, this error type signals
-                the entire trip is invalid (e.g. eligibility lapse,
-                time-at-facility) — sibling legs in the same invoice can
-                be marked as `Sibling Duplicate` of the leg carrying this
-                error so we don't double-bill the dispute. The flag is
-                read by the SOP completion path and by the leg-detail
-                "Mark as duplicate" affordance.
-              */}
-              <div className="rounded-lg border p-3 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="trip-overriding-toggle" className="flex items-center gap-1">
-                      Trip-overriding error
-                      <InfoTooltip content="ON when this error invalidates the whole trip (e.g. driver eligibility lapse, time-at-facility violation). When ON, sibling legs on the same invoice can be marked as 'Sibling Duplicate' so the dispute isn't double-billed. Leave OFF for per-leg errors that don't override siblings (most error types)." />
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Lets siblings on the same invoice ride along as <em>Sibling Duplicate</em> instead of running their own SOP.
-                    </p>
-                  </div>
-                  <Switch
-                    id="trip-overriding-toggle"
-                    checked={form.tripOverriding}
-                    onCheckedChange={(checked) => setForm({ ...form, tripOverriding: checked })}
-                  />
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <Label className="flex items-center gap-1">
-                  Dispute Instructions
-                  <InfoTooltip content="General writing guidelines the AI uses when generating dispute notes for portal submissions. The AI combines these with the specific dispute reason from the workflow tree to write unique, human-sounding notes each time." />
-                </Label>
-                {form.disputeInstructions ? (
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="secondary" className="text-xs">Custom Override</Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto py-0.5 px-2 text-xs text-muted-foreground hover:text-destructive"
-                      onClick={() => setForm({ ...form, disputeInstructions: "" })}
-                    >
-                      Revert to default
-                    </Button>
-                  </div>
-                ) : defaultDisputeInstructions ? (
-                  <p className="text-xs text-muted-foreground mb-1">Using default instructions from Settings. Add text below to override for this error type.</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground mb-1">No default instructions set. Add custom instructions below or set defaults in Settings.</p>
-                )}
-                <Textarea
-                  value={form.disputeInstructions}
-                  onChange={e => setForm({ ...form, disputeInstructions: e.target.value })}
-                  rows={5}
-                  className="text-xs"
-                  placeholder={defaultDisputeInstructions || "Always reference GPS breadcrumb data when available.\nEmphasize that the trip was completed as scheduled.\nKeep tone professional but assertive.\nMention specific evidence documents by name."}
-                />
-                {!form.disputeInstructions && defaultDisputeInstructions && (
-                  <details className="mt-2">
-                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Show default instructions</summary>
-                    <pre className="mt-1 p-2 bg-muted rounded text-xs whitespace-pre-wrap">{defaultDisputeInstructions}</pre>
-                  </details>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="workflow" className="mt-4">
-              <TreeEditor
-                tree={form.decisionTree}
-                onChange={(tree) => setForm({ ...form, decisionTree: tree })}
-                onTest={(tree) => setTestTree(tree)}
-              />
-            </TabsContent>
-
-            <TabsContent value="plain-text" className="mt-4">
-              {form.decisionTree ? (
-                <PlainTextEditor
-                  tree={form.decisionTree}
-                  onTreeChange={(updated) =>
-                    setForm(prev => ({ ...prev, decisionTree: updated }))
-                  }
-                  onSave={async (updated) => {
-                    setForm(prev => ({ ...prev, decisionTree: updated }));
-                    if (editingId) {
-                      await updateErrorType.mutateAsync({
-                        id: editingId,
-                        data: {
-                          decisionTree: JSON.parse(JSON.stringify(updated)) as unknown as Record<string, unknown>,
-                        },
-                      });
-                      invalidate();
-                    }
-                  }}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Build a workflow tree first, then come here to bulk-edit the wording.</p>
-              )}
-            </TabsContent>
-          </Tabs>
-
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => { setEditingId(null); setShowCreate(false); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!form.name}>{editingId ? "Update" : "Create"}</Button>
+          <div className="space-y-2">
+            <Label htmlFor="new-error-type-name">Name</Label>
+            <Input
+              id="new-error-type-name"
+              autoFocus
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && newName.trim() && !creating) handleCreate(); }}
+              placeholder="e.g., No-Show — GPS Confirmed"
+            />
+            <p className="text-xs text-muted-foreground">
+              You'll land in the full-page SOP editor next, where you can fill in the details, submission path, and workflow tree.
+            </p>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!testTree} onOpenChange={(open) => { if (!open) setTestTree(null); }}>
-        <DialogContent className="max-w-lg overflow-x-hidden">
-          <DialogHeader>
-            <DialogTitle>Test Decision Tree</DialogTitle>
-          </DialogHeader>
-          {testTree && (
-            <SopAdvancePlayer mode="preview" tree={testTree} />
-          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setNewName(""); }}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
+              {creating ? "Creating…" : "Create & open editor"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
