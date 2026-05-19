@@ -517,15 +517,36 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <BatchStatusPill />
             </div>
           </header>
-          <main className="flex-1 overflow-auto p-6 md:p-8" data-tour="page-main">
-            <div className="max-w-7xl mx-auto h-full">
-              {children}
-            </div>
-          </main>
+          <FullBleedAwareMain>{children}</FullBleedAwareMain>
         </div>
         <SessionCountdown />
       </div>
     </SidebarProvider>
+  );
+}
+
+// Workspace-style pages (the SOP full-page editor) need to span the
+// full viewport width and height — no max-w cap, no outer padding —
+// because they manage their own multi-pane chrome. Every other route
+// keeps the centered, padded container that the rest of the app reads
+// as "content page". Match on the route prefix instead of asking pages
+// to opt in, so we never miss a sibling route added later under the
+// same workspace umbrella.
+const FULL_BLEED_PREFIXES = ["/admin/sops/"];
+function FullBleedAwareMain({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const isFullBleed = FULL_BLEED_PREFIXES.some((p) => location.startsWith(p));
+  if (isFullBleed) {
+    return (
+      <main className="flex-1 overflow-hidden min-h-0" data-tour="page-main">
+        {children}
+      </main>
+    );
+  }
+  return (
+    <main className="flex-1 overflow-auto p-6 md:p-8" data-tour="page-main">
+      <div className="max-w-7xl mx-auto h-full">{children}</div>
+    </main>
   );
 }
 

@@ -1272,7 +1272,7 @@ export default function SopFullPageEditor() {
 
   if (isLoading) {
     return (
-      <div className="h-[calc(100vh-4rem)] -mx-4 -mb-4 flex flex-col bg-background border-t border-border" data-testid="sop-editor-loading">
+      <div className="h-full w-full flex flex-col bg-background" data-testid="sop-editor-loading">
         <div className="h-14 px-4 flex items-center gap-3 border-b border-border bg-card">
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-6 w-48" />
@@ -1318,7 +1318,7 @@ export default function SopFullPageEditor() {
   const selectedNode = selectedId ? tree.nodes.find((n) => n.id === selectedId) : null;
 
   return (
-    <div className="h-[calc(100vh-4rem)] -mx-4 -mb-4 flex flex-col bg-background border-t border-border" data-testid="sop-full-page-editor">
+    <div className="h-full w-full flex flex-col bg-background" data-testid="sop-full-page-editor">
       {/* Top bar — PageHeader-rhythm with breadcrumb + status pill */}
       <div className="h-14 px-4 flex items-center gap-3 border-b border-border bg-card shrink-0">
         <button
