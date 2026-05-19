@@ -713,6 +713,36 @@ export function applyReplacements(
   };
 }
 
+// Task #779 — deep structural equality on two DecisionTree values.
+// Used by the History drawer to compute `hasUnsavedChanges` against
+// the loaded errorType snapshot so the Restore confirmation can warn
+// when an unsaved edit is about to be discarded. Pure + small so the
+// unit test can exercise it directly. Accepts `null`/`undefined`
+// because the editor's tree state is nullable while loading.
+export function treesEqual(
+  a: DecisionTree | null | undefined,
+  b: DecisionTree | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Task #779 — deep equality for the SopEditorSettings struct. Mirrors
+// `treesEqual` so the History drawer's "unsaved changes" warning can
+// detect drift in either half (tree or settings) without falling back
+// to the noisier `dirty` bit. Pure JSON compare — every field on
+// SopEditorSettings is a primitive (string/boolean), so JSON.stringify
+// is total and order-stable.
+export function settingsEqual(
+  a: SopEditorSettings | null | undefined,
+  b: SopEditorSettings | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 // Editable settings fields the full-page editor's Settings tab manages
 // alongside the canvas tree. Mirrors the same columns the old modal in
 // error-types.tsx writes (minus decisionTree, evidenceRequirements,

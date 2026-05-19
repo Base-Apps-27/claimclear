@@ -22,6 +22,8 @@ import {
   bulkToggleAppliesPerInvoice,
   cloneSubTreeWithFreshIds,
   extractSubTreeFromEditor,
+  treesEqual,
+  settingsEqual,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
@@ -440,6 +442,58 @@ test("applyReplacements ignores matches whose errorTypeId does not match the tre
 // ---------------------------------------------------------------------------
 // Task #777 — Multi-select + bulk apply helper unit tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Task #779 — treesEqual unit test
+// ---------------------------------------------------------------------------
+
+test("treesEqual recognizes structurally identical trees and rejects any drift", () => {
+  const a = sampleTree();
+  const b = sampleTree();
+  assert.equal(treesEqual(a, b), true);
+  assert.equal(treesEqual(a, a), true);
+  // null/undefined handling — editor's tree state is nullable during load
+  assert.equal(treesEqual(null, null), true);
+  assert.equal(treesEqual(undefined, undefined), true);
+  assert.equal(treesEqual(a, null), false);
+  assert.equal(treesEqual(null, a), false);
+  // Any mutation flips equality
+  const edited = updateNode(a, "a", { question: "Different question" });
+  assert.equal(treesEqual(a, edited), false);
+  // Adding a node also flips it
+  const withExtra: DecisionTree = {
+    ...a,
+    nodes: [...a.nodes, { id: "c", question: "Extra", options: [] }],
+  };
+  assert.equal(treesEqual(a, withExtra), false);
+});
+
+test("settingsEqual recognizes identical settings and rejects any field drift", () => {
+  const base: SopEditorSettings = {
+    name: "Test SOP",
+    category: "cat",
+    description: "desc",
+    guidance: "g",
+    recommendedActions: "ra",
+    disputeInstructions: "di",
+    useGpsControlDeviation: false,
+    useDirectEmail: true,
+    tripOverriding: false,
+  };
+  const copy: SopEditorSettings = { ...base };
+  assert.equal(settingsEqual(base, copy), true);
+  assert.equal(settingsEqual(base, base), true);
+  // nullable
+  assert.equal(settingsEqual(null, null), true);
+  assert.equal(settingsEqual(undefined, undefined), true);
+  assert.equal(settingsEqual(base, null), false);
+  // any field flip
+  assert.equal(settingsEqual(base, { ...base, name: "Other" }), false);
+  assert.equal(
+    settingsEqual(base, { ...base, useGpsControlDeviation: true }),
+    false,
+  );
+});
 
 test("treeToFlow accepts a Set of selected ids and highlights every member", () => {
   const { nodes } = treeToFlow(sampleTree(), new Set(["a", "b"]));

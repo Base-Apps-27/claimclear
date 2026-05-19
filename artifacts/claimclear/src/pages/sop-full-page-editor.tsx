@@ -40,11 +40,13 @@ import {
   Type,
   Library,
   Bookmark,
+  History,
 } from "lucide-react";
 import { PlainTextEditor } from "@/components/decision-tree/plain-text-editor";
 import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
 import { LibraryDrawer, SaveToLibraryDialog } from "./sop-full-page-editor-library";
-import { extractSubTreeFromEditor } from "./sop-full-page-editor-helpers";
+import { HistoryDrawer } from "./sop-full-page-editor-history";
+import { extractSubTreeFromEditor, treesEqual, settingsEqual } from "./sop-full-page-editor-helpers";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -873,6 +875,7 @@ export default function SopFullPageEditor() {
   // Discard) reverts state back to a known baseline.
   const loadedSnapshotRef = useRef<{ tree: DecisionTree; settings: SopEditorSettings } | null>(null);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   // Pending payload to save to the library; null when no dialog open.
   const [saveToLibrary, setSaveToLibrary] = useState<
     | { kind: "evidence_requirement"; payload: Record<string, unknown>; defaultLabel: string }
@@ -1141,6 +1144,14 @@ export default function SopFullPageEditor() {
         <Button
           variant="outline"
           size="sm"
+          onClick={() => setHistoryDrawerOpen(true)}
+          data-testid="open-history-drawer"
+        >
+          <History className="w-3.5 h-3.5 mr-1" /> History
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setLibraryDrawerOpen(true)}
           data-testid="open-library-drawer"
         >
@@ -1388,6 +1399,24 @@ export default function SopFullPageEditor() {
           selectedNodeId={selectedId}
           tree={tree}
           onTreeChange={onTreeChange}
+        />
+
+        <HistoryDrawer
+          isOpen={historyDrawerOpen}
+          onClose={() => setHistoryDrawerOpen(false)}
+          errorTypeId={errorType.id}
+          hasUnsavedChanges={
+            // Task #779 — explicit deep equality vs the loaded snapshot
+            // for BOTH halves (tree + settings) so the confirmation
+            // dialog's "unsaved changes will be lost" warning reflects
+            // the actual on-disk vs in-memory state. `dirty` is kept
+            // only as a defensive fallback for the brief loading
+            // window before `loadedSnapshotRef` is populated.
+            loadedSnapshotRef.current
+              ? !treesEqual(tree, loadedSnapshotRef.current.tree) ||
+                !settingsEqual(settings, loadedSnapshotRef.current.settings)
+              : dirty
+          }
         />
 
         <SaveToLibraryDialog
