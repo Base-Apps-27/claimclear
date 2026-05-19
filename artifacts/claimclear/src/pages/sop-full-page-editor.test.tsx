@@ -11,6 +11,7 @@ import {
   insertBetween,
   updateNode,
   addEvidenceReq,
+  simplifyTextField,
 } from "./sop-full-page-editor-helpers";
 
 function sampleTree(): DecisionTree {
@@ -96,4 +97,52 @@ test("addEvidenceReq appends a default evidence req carrying a label so it passe
   assert.equal(reqs.length, 1);
   assert.ok(reqs[0].label.trim().length > 0, "new evidence must have a non-empty label");
   assert.ok(reqs[0].key.startsWith("ev_"), "key uses the editor's synthetic prefix");
+});
+
+test("simplifyTextField POSTs the single field to /api/error-types/simplify-text and returns the suggestion", async () => {
+  // Capture the request the helper builds so we can prove the wire shape
+  // matches what /api/error-types/simplify-text accepts (the `items` path
+  // in artifacts/api-server/src/routes/sop-analyzer.ts).
+  const calls: { url: string; init: RequestInit }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({ suggestions: [{ id: "field", text: "Shorter, clearer rewrite." }] }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const out = await simplifyTextField("Please rewrite this very long question text.", "question");
+    assert.equal(out, "Shorter, clearer rewrite.");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "/api/error-types/simplify-text");
+    assert.equal(calls[0].init.method, "POST");
+    const body = JSON.parse(calls[0].init.body as string);
+    assert.deepEqual(body, {
+      items: [{ id: "field", field: "question", text: "Please rewrite this very long question text." }],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "AI is down" }),
+    } as Response)) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      () => simplifyTextField("hi", "instructions"),
+      /AI is down/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

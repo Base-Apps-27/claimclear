@@ -20,7 +20,7 @@ import {
   getListErrorTypesQueryKey,
   type ErrorTypeResponse,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Save,
@@ -33,7 +33,10 @@ import {
   Search,
   ListTree,
   Settings as SettingsIcon,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,8 +62,133 @@ import {
   addEvidenceReq,
   setEvidenceReq,
   removeEvidenceReq,
+  simplifyTextField,
   type FlowNodeData,
 } from "./sop-full-page-editor-helpers";
+
+// ---------------------------------------------------------------------------
+// AI rewrite hook + inline accept/reject popover
+// ---------------------------------------------------------------------------
+
+function useSimplifyText(field: "question" | "instructions") {
+  return useMutation({
+    mutationFn: (text: string) => simplifyTextField(text, field),
+  });
+}
+
+function AiRewriteButton({
+  value,
+  field,
+  onAccept,
+  testId,
+}: {
+  value: string;
+  field: "question" | "instructions";
+  onAccept: (next: string) => void;
+  testId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const mutation = useSimplifyText(field);
+  const disabled = !value.trim() || mutation.isPending;
+
+  const handleClick = () => {
+    if (disabled) return;
+    setOpen(true);
+    mutation.mutate(value, {
+      onError: (e) => {
+        setOpen(false);
+        toast({
+          title: "AI rewrite failed",
+          description: e instanceof Error ? e.message : "Unknown error",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
+  const suggestion = mutation.data;
+  const unchanged = suggestion !== undefined && suggestion.trim() === value.trim();
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) mutation.reset();
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-[10px]"
+          onClick={handleClick}
+          disabled={disabled}
+          data-testid={testId}
+        >
+          {mutation.isPending ? (
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+          ) : (
+            <Sparkles className="w-3 h-3 mr-1" />
+          )}
+          AI rewrite
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3 space-y-2" align="end">
+        {mutation.isPending ? (
+          <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" /> Rewriting…
+          </div>
+        ) : suggestion !== undefined ? (
+          <>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Suggestion
+            </div>
+            <div
+              className="text-xs whitespace-pre-wrap border border-border rounded p-2 bg-muted/30 max-h-48 overflow-y-auto"
+              data-testid={`${testId}-suggestion`}
+            >
+              {suggestion}
+            </div>
+            {unchanged && (
+              <div className="text-[10px] text-muted-foreground italic">
+                AI returned no changes.
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[11px]"
+                onClick={() => {
+                  setOpen(false);
+                  mutation.reset();
+                }}
+                data-testid={`${testId}-reject`}
+              >
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 text-[11px]"
+                disabled={unchanged}
+                onClick={() => {
+                  onAccept(suggestion);
+                  setOpen(false);
+                  mutation.reset();
+                }}
+                data-testid={`${testId}-accept`}
+              >
+                Accept
+              </Button>
+            </div>
+          </>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Custom React Flow node + edge components
@@ -237,7 +365,15 @@ function Inspector({
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
-          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Question text</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Question text</Label>
+            <AiRewriteButton
+              value={node.question}
+              field="question"
+              testId="inspector-question-ai-rewrite"
+              onAccept={(next) => onChange(updateNode(tree, node.id, { question: next }))}
+            />
+          </div>
           <Textarea
             data-testid="inspector-question"
             rows={3}
@@ -247,7 +383,15 @@ function Inspector({
           />
         </div>
         <div>
-          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Instructions / help</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Instructions / help</Label>
+            <AiRewriteButton
+              value={node.instructionText || ""}
+              field="instructions"
+              testId="inspector-instructions-ai-rewrite"
+              onAccept={(next) => onChange(updateNode(tree, node.id, { instructionText: next }))}
+            />
+          </div>
           <Textarea
             rows={2}
             value={node.instructionText || ""}

@@ -183,6 +183,34 @@ export function setEvidenceReq(
   return updateNode(tree, nodeId, { evidenceRequirements: reqs });
 }
 
+// Ask the AI rewrite endpoint to simplify a single field's text.
+// Uses the legacy `items` shape (one row per call) so we can request a
+// rewrite of just the question or just the instructions field without
+// having to assemble the full step context. The server normalizes
+// `items` into the same grouped prompt shape internally.
+export async function simplifyTextField(
+  text: string,
+  field: "question" | "instructions",
+): Promise<string> {
+  const res = await fetch("/api/error-types/simplify-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      items: [{ id: "field", field, text }],
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const data: { suggestions?: { id: string; text: string }[] } = await res.json();
+  const suggestion = (data.suggestions || []).find((s) => s.id === "field");
+  if (!suggestion || typeof suggestion.text !== "string") {
+    throw new Error("AI returned no suggestion");
+  }
+  return suggestion.text;
+}
+
 export function removeEvidenceReq(
   tree: DecisionTree,
   nodeId: string,
