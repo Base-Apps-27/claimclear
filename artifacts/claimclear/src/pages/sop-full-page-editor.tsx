@@ -68,9 +68,12 @@ import {
   buildTreeFromText,
   coerceTree,
   buildSavePayload,
+  addEvidenceReqToMany,
+  bulkToggleAppliesPerInvoice,
   type FlowNodeData,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
+import { Card } from "@/components/ui/card";
 
 // ---------------------------------------------------------------------------
 // AI rewrite hook + inline accept/reject popover
@@ -808,7 +811,28 @@ export default function SopFullPageEditor() {
   );
 
   const [tree, setTree] = useState<DecisionTree | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Task #777 — selection is now a Set so the canvas can shift-click
+  // multiple question nodes. The Outline + Inspector still treat the
+  // single-selection case (size === 1) exactly as before; the bulk
+  // action bar appears only when size > 1.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedId =
+    selectedIds.size === 1
+      ? (selectedIds.values().next().value as string)
+      : null;
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectedIds(id == null ? new Set() : new Set([id]));
+  }, []);
+  const toggleSelectedId = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const [bulkEvidenceOpen, setBulkEvidenceOpen] = useState(false);
+  const [bulkEvidenceLabel, setBulkEvidenceLabel] = useState("");
   const [search, setSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -872,7 +896,56 @@ export default function SopFullPageEditor() {
     setDirty(true);
   }, []);
 
-  const flow = useMemo(() => (tree ? treeToFlow(tree, selectedId) : { nodes: [], edges: [] }), [tree, selectedId]);
+  const flow = useMemo(
+    () => (tree ? treeToFlow(tree, selectedIds) : { nodes: [], edges: [] }),
+    [tree, selectedIds],
+  );
+
+  // Task #777 — bulk: append the same evidence requirement to every
+  // selected question node, then close the popover + clear the input.
+  const handleBulkAddEvidence = useCallback(() => {
+    if (!tree) return;
+    const label = bulkEvidenceLabel.trim();
+    if (!label || selectedIds.size < 2) return;
+    setTree(addEvidenceReqToMany(tree, selectedIds, label));
+    setDirty(true);
+    setBulkEvidenceOpen(false);
+    setBulkEvidenceLabel("");
+    toast({
+      title: "Evidence requirement added",
+      description: `Added "${label}" to ${selectedIds.size} nodes.`,
+    });
+  }, [tree, selectedIds, bulkEvidenceLabel]);
+
+  // Task #777 — per-node flip of the "applies per invoice" flag. Each
+  // selected node is independently inverted; nodes whose `false→true`
+  // flip would create a save-time validation error are skipped and
+  // reported in the toast.
+  const handleBulkToggleAppliesPerInvoice = useCallback(() => {
+    if (!tree || selectedIds.size < 2) return;
+    const { tree: nextTree, skipped } = bulkToggleAppliesPerInvoice(
+      tree,
+      selectedIds,
+    );
+    setTree(nextTree);
+    setDirty(true);
+    const appliedCount = selectedIds.size - skipped.length;
+    if (skipped.length > 0) {
+      toast({
+        title:
+          appliedCount > 0
+            ? `Flipped ${appliedCount} of ${selectedIds.size} nodes`
+            : "No nodes flipped",
+        description:
+          `${skipped.length} node${skipped.length === 1 ? "" : "s"} skipped — turning "applies per invoice" on there would conflict with evidence or per-leg context on the node or its immediate next step.`,
+        variant: appliedCount === 0 ? "destructive" : undefined,
+      });
+    } else {
+      toast({
+        title: `Flipped "applies per invoice" on ${appliedCount} nodes`,
+      });
+    }
+  }, [tree, selectedIds]);
 
   const handleSave = async () => {
     if (!errorType || !tree) return;
@@ -1063,8 +1136,12 @@ export default function SopFullPageEditor() {
             edges={flow.edges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodeClick={(_, n) => {
-              if ((n.data as FlowNodeData).kind === "question") setSelectedId(n.id);
+            onNodeClick={(ev, n) => {
+              // Outcome (synthetic terminal) nodes are not selectable
+              // — only question nodes participate in selection.
+              if ((n.data as FlowNodeData).kind !== "question") return;
+              if (ev.shiftKey) toggleSelectedId(n.id);
+              else setSelectedId(n.id);
             }}
             fitView
             fitViewOptions={{ padding: 0.2 }}
@@ -1077,6 +1154,81 @@ export default function SopFullPageEditor() {
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable />
           </ReactFlow>
+
+          {selectedIds.size > 1 && (
+            <Card
+              className="absolute left-1/2 -translate-x-1/2 bottom-4 z-10 px-3 py-2 flex items-center gap-2 shadow-lg border-border"
+              data-testid="bulk-action-bar"
+            >
+              <span className="text-xs font-medium">
+                {selectedIds.size} nodes selected
+              </span>
+              <div className="h-4 w-px bg-border mx-1" />
+              <Popover
+                open={bulkEvidenceOpen}
+                onOpenChange={(o) => {
+                  setBulkEvidenceOpen(o);
+                  if (!o) setBulkEvidenceLabel("");
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    data-testid="bulk-add-evidence-trigger"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add evidence req…
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3 space-y-2" align="center">
+                  <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Evidence label
+                  </Label>
+                  <Input
+                    value={bulkEvidenceLabel}
+                    onChange={(e) => setBulkEvidenceLabel(e.target.value)}
+                    placeholder="e.g., Driver's GPS log screenshot"
+                    className="h-8 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleBulkAddEvidence();
+                    }}
+                    data-testid="bulk-add-evidence-input"
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-end">
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={handleBulkAddEvidence}
+                      disabled={!bulkEvidenceLabel.trim()}
+                      data-testid="bulk-add-evidence-save"
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={handleBulkToggleAppliesPerInvoice}
+                data-testid="bulk-toggle-applies-per-invoice"
+              >
+                Toggle "applies per invoice"
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => setSelectedIds(new Set())}
+                data-testid="bulk-clear-selection"
+              >
+                Clear selection
+              </Button>
+            </Card>
+          )}
         </div>
 
         {findReplaceOpen && (
@@ -1088,15 +1240,18 @@ export default function SopFullPageEditor() {
           />
         )}
 
-        {/* Right inspector */}
-        <div className="w-80 border-l border-border bg-card flex flex-col shrink-0">
-          <Inspector tree={tree} nodeId={selectedId} onChange={onTreeChange} />
-          {selectedNode && (
-            <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
-              Last edit pending save. Press Save in the top bar to persist.
-            </div>
-          )}
-        </div>
+        {/* Right inspector — hidden during multi-select so the bulk
+            action bar is the only edit affordance on screen. */}
+        {selectedIds.size <= 1 && (
+          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0" data-testid="inspector-pane">
+            <Inspector tree={tree} nodeId={selectedId} onChange={onTreeChange} />
+            {selectedNode && (
+              <div className="border-t border-border p-2 text-[10px] text-muted-foreground bg-muted/30">
+                Last edit pending save. Press Save in the top bar to persist.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

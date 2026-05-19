@@ -17,8 +17,12 @@ import {
   buildSavePayload,
   findMatches,
   applyReplacements,
+  addEvidenceReqToMany,
+  bulkSetAppliesPerInvoice,
+  bulkToggleAppliesPerInvoice,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
+import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
 
 function sampleTree(): DecisionTree {
   return {
@@ -429,6 +433,128 @@ test("applyReplacements ignores matches whose errorTypeId does not match the tre
   const next = applyReplacements(tree, 7, matches, "ride log");
   // No errorTypeId 7 matches → tree returned unchanged (same reference is fine).
   assert.equal(next.nodes.find((n) => n.id === "n1")!.question, tree.nodes[0].question);
+});
+
+// ---------------------------------------------------------------------------
+// Task #777 — Multi-select + bulk apply helper unit tests
+// ---------------------------------------------------------------------------
+
+test("treeToFlow accepts a Set of selected ids and highlights every member", () => {
+  const { nodes } = treeToFlow(sampleTree(), new Set(["a", "b"]));
+  const a = nodes.find((n) => n.id === "a")!;
+  const b = nodes.find((n) => n.id === "b")!;
+  assert.equal((a.data as { selected?: boolean }).selected, true);
+  assert.equal((b.data as { selected?: boolean }).selected, true);
+});
+
+test("addEvidenceReqToMany appends a fresh evidence req to every targeted node, immutably", () => {
+  const t = sampleTree();
+  const next = addEvidenceReqToMany(t, ["a", "b"], "Driver GPS log");
+  const a = next.nodes.find((n) => n.id === "a")!;
+  const b = next.nodes.find((n) => n.id === "b")!;
+  assert.equal(a.evidenceRequirements?.length, 1);
+  assert.equal(b.evidenceRequirements?.length, 1);
+  assert.equal(a.evidenceRequirements![0].label, "Driver GPS log");
+  assert.equal(b.evidenceRequirements![0].label, "Driver GPS log");
+  assert.equal(a.evidenceRequirements![0].required, true);
+  // Distinct keys per row so they don't collide as a list key
+  assert.notEqual(a.evidenceRequirements![0].key, b.evidenceRequirements![0].key);
+  // Source untouched
+  assert.equal(t.nodes.find((n) => n.id === "a")!.evidenceRequirements, undefined);
+});
+
+test("addEvidenceReqToMany ignores nodes not in the id list and refuses empty labels", () => {
+  const t = sampleTree();
+  const next = addEvidenceReqToMany(t, ["a"], "Photo");
+  assert.equal(next.nodes.find((n) => n.id === "b")!.evidenceRequirements, undefined);
+  // Empty label is a no-op (returns the same tree reference for free)
+  assert.equal(addEvidenceReqToMany(t, ["a"], "   "), t);
+  // Empty id list is a no-op
+  assert.equal(addEvidenceReqToMany(t, [], "Photo"), t);
+});
+
+test("bulkSetAppliesPerInvoice flips eligible nodes and skips any whose flip would fail validation", () => {
+  // Tree: root "p" is a pure decision (no evidence, no per-leg context,
+  // child "c1" also pristine). "q" has evidence on its own node, so
+  // flipping appliesPerInvoice to true on "q" must be skipped.
+  const tree: DecisionTree = {
+    rootId: "p",
+    nodes: [
+      { id: "p", question: "Pure decision?", options: [
+        { label: "Yes", childId: "c1" },
+        { label: "No",  outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      { id: "c1", question: "Clean child", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+      { id: "q", question: "Has evidence", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ], evidenceRequirements: [{ key: "ev1", label: "Photo", required: true }] },
+    ],
+  };
+  const { tree: next, skipped } = bulkSetAppliesPerInvoice(tree, ["p", "q"], true);
+  assert.deepEqual(skipped, ["q"]);
+  assert.equal(next.nodes.find((n) => n.id === "p")!.appliesPerInvoice, true);
+  assert.notEqual(next.nodes.find((n) => n.id === "q")!.appliesPerInvoice, true);
+  // The resulting tree must itself be valid — proves we never wrote a
+  // violation through.
+  assert.deepEqual(validateAppliesPerInvoice(next), []);
+  // Immutability: source tree untouched.
+  assert.notEqual(tree.nodes.find((n) => n.id === "p")!.appliesPerInvoice, true);
+});
+
+test("bulkToggleAppliesPerInvoice flips each selected node independently for mixed selections", () => {
+  // Mixed selection: one node currently true, one currently false/undef,
+  // plus one that would fail the validator if flipped to true. The
+  // toggle must invert each node independently — NOT route the whole
+  // batch to a single target value.
+  const tree: DecisionTree = {
+    rootId: "p",
+    nodes: [
+      // currently true → expect flip to false
+      { id: "p", question: "Already on", appliesPerInvoice: true, options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      // currently false → expect flip to true (clean → eligible)
+      { id: "q", question: "Currently off, clean", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+      // currently false but has evidence → expect SKIP
+      { id: "r", question: "Currently off, dirty", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ], evidenceRequirements: [{ key: "ev1", label: "Photo", required: true }] },
+    ],
+  };
+  const { tree: next, skipped } = bulkToggleAppliesPerInvoice(tree, ["p", "q", "r"]);
+  assert.deepEqual(skipped, ["r"]);
+  assert.equal(next.nodes.find((n) => n.id === "p")!.appliesPerInvoice, false);
+  assert.equal(next.nodes.find((n) => n.id === "q")!.appliesPerInvoice, true);
+  // r untouched (no flip applied because the false→true direction
+  // would create a new violation)
+  assert.notEqual(next.nodes.find((n) => n.id === "r")!.appliesPerInvoice, true);
+  // Tree must validate clean afterwards.
+  assert.deepEqual(validateAppliesPerInvoice(next), []);
+  // Immutability: source tree untouched.
+  assert.equal(tree.nodes.find((n) => n.id === "p")!.appliesPerInvoice, true);
+  assert.notEqual(tree.nodes.find((n) => n.id === "q")!.appliesPerInvoice, true);
+});
+
+test("bulkSetAppliesPerInvoice with value=false clears the flag on every node without invoking the validator skip", () => {
+  const tree: DecisionTree = {
+    rootId: "p",
+    nodes: [
+      { id: "p", question: "Pure decision?", appliesPerInvoice: true, options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      { id: "q", question: "Also flagged", appliesPerInvoice: true, options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const { tree: next, skipped } = bulkSetAppliesPerInvoice(tree, ["p", "q"], false);
+  assert.deepEqual(skipped, []);
+  assert.equal(next.nodes.find((n) => n.id === "p")!.appliesPerInvoice, false);
+  assert.equal(next.nodes.find((n) => n.id === "q")!.appliesPerInvoice, false);
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {

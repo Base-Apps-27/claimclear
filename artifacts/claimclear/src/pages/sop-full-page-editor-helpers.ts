@@ -17,6 +17,7 @@ import {
   generateNodeId,
   legacyToTree,
   OUTCOME_LABELS,
+  validateAppliesPerInvoice,
 } from "@/components/decision-tree/types";
 
 // Structurally validate a tree object before letting React Flow / dagre /
@@ -114,10 +115,15 @@ export function layoutWithDagre(
 
 export function treeToFlow(
   tree: DecisionTree,
-  selectedId: string | null,
+  selection: string | null | ReadonlySet<string>,
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
   const flowNodes: Node<FlowNodeData>[] = [];
   const flowEdges: Edge[] = [];
+  const isSelected = (id: string): boolean => {
+    if (selection == null) return false;
+    if (typeof selection === "string") return id === selection;
+    return selection.has(id);
+  };
 
   for (const n of tree.nodes) {
     flowNodes.push({
@@ -129,7 +135,7 @@ export function treeToFlow(
         label: n.question || "(untitled question)",
         question: n.question,
         evidenceCount: n.evidenceRequirements?.length ?? 0,
-        selected: n.id === selectedId,
+        selected: isSelected(n.id),
       },
     });
     n.options.forEach((opt, idx) => {
@@ -280,6 +286,147 @@ export async function simplifyTextField(
     throw new Error("AI returned no suggestion");
   }
   return suggestion.text;
+}
+
+// Task #777 — bulk evidence-requirement append. Returns a fresh tree
+// with the same evidence row (new opaque `key`, caller-supplied label,
+// default `required: true`) appended to every node in `nodeIds`. Pure
+// + immutable so the editor's setState() picks it up and the unit
+// test can exercise it without React/xyflow.
+export function addEvidenceReqToMany(
+  tree: DecisionTree,
+  nodeIds: ReadonlyArray<string> | ReadonlySet<string>,
+  label: string,
+): DecisionTree {
+  const ids = nodeIds instanceof Set ? nodeIds : new Set(nodeIds);
+  if (ids.size === 0) return tree;
+  const trimmed = label.trim();
+  if (!trimmed) return tree;
+  // One synthetic key for the whole batch so the rows are
+  // identifiable as a group later if we ever need that, but each row
+  // is still a fresh object (immutability).
+  const baseKey = `ev_${Date.now()}`;
+  let counter = 0;
+  return {
+    ...tree,
+    nodes: tree.nodes.map((n) => {
+      if (!ids.has(n.id)) return n;
+      const next: EvidenceReq = {
+        key: `${baseKey}_${++counter}`,
+        label: trimmed,
+        required: true,
+      };
+      return {
+        ...n,
+        evidenceRequirements: [...(n.evidenceRequirements || []), next],
+      };
+    }),
+  };
+}
+
+// Task #777 — bulk-flip the `appliesPerInvoice` flag. We can't just
+// set it on every node: `validateAppliesPerInvoice` refuses any node
+// that (when the flag is true) carries evidence/per-leg context on
+// itself or on any immediate child. So we tentatively flip each id,
+// re-run the validator on the candidate tree, and back out any node
+// whose flip introduces a NEW violation (versus the pre-flip
+// baseline — we don't want to "fix" existing bad states here, just
+// avoid causing new ones). Returns `{ tree, skipped }` so the caller
+// can toast the user about skipped nodes.
+export function bulkSetAppliesPerInvoice(
+  tree: DecisionTree,
+  nodeIds: ReadonlyArray<string> | ReadonlySet<string>,
+  value: boolean,
+): { tree: DecisionTree; skipped: string[] } {
+  const ids = nodeIds instanceof Set
+    ? new Set(nodeIds)
+    : new Set<string>(nodeIds);
+  if (ids.size === 0) return { tree, skipped: [] };
+
+  // Pre-existing violations on the un-touched tree — anything in here
+  // is NOT our fault, so we don't count it as "skipped".
+  const baselineKeys = new Set(
+    validateAppliesPerInvoice(tree).map(
+      (v) => `${v.nodeId}|${v.reason}|${v.offendingNodeId}`,
+    ),
+  );
+
+  const skipped: string[] = [];
+  const accepted = new Set<string>();
+  for (const id of ids) {
+    const candidate: DecisionTree = {
+      ...tree,
+      nodes: tree.nodes.map((n) =>
+        n.id === id ? { ...n, appliesPerInvoice: value } : n,
+      ),
+    };
+    if (value === false) {
+      // Turning the flag OFF can never introduce a violation — the
+      // validator only flags nodes with `appliesPerInvoice === true`.
+      accepted.add(id);
+      continue;
+    }
+    const candidateViolations = validateAppliesPerInvoice(candidate);
+    const newViolation = candidateViolations.some(
+      (v) =>
+        v.nodeId === id &&
+        !baselineKeys.has(`${v.nodeId}|${v.reason}|${v.offendingNodeId}`),
+    );
+    if (newViolation) skipped.push(id);
+    else accepted.add(id);
+  }
+
+  if (accepted.size === 0) return { tree, skipped };
+
+  return {
+    tree: {
+      ...tree,
+      nodes: tree.nodes.map((n) =>
+        accepted.has(n.id) ? { ...n, appliesPerInvoice: value } : n,
+      ),
+    },
+    skipped,
+  };
+}
+
+// Task #777 — per-node flip of `appliesPerInvoice` for a bulk
+// selection. Each selected node is independently inverted (true ↔
+// false / undefined). Any node whose flip would introduce a NEW
+// `validateAppliesPerInvoice` violation (versus the un-touched tree)
+// is skipped and surfaced via the returned `skipped` list. Built on
+// `bulkSetAppliesPerInvoice` so the skip rules stay in one place.
+export function bulkToggleAppliesPerInvoice(
+  tree: DecisionTree,
+  nodeIds: ReadonlyArray<string> | ReadonlySet<string>,
+): { tree: DecisionTree; skipped: string[] } {
+  const ids = nodeIds instanceof Set ? Array.from(nodeIds) : Array.from(nodeIds);
+  if (ids.length === 0) return { tree, skipped: [] };
+  // Partition by their current value so we can route through the
+  // existing setter (which already validates the true direction and
+  // short-circuits the false direction).
+  const toTrue: string[] = [];
+  const toFalse: string[] = [];
+  for (const id of ids) {
+    const cur = tree.nodes.find((n) => n.id === id);
+    if (!cur) continue;
+    if (cur.appliesPerInvoice === true) toFalse.push(id);
+    else toTrue.push(id);
+  }
+  // Turning OFF can never introduce a violation; run it first so
+  // turning ON afterwards sees the cleanest baseline (though the
+  // validator only inspects nodes flagged true, so order is
+  // semantically irrelevant — this is just defensive).
+  let next = tree;
+  if (toFalse.length > 0) {
+    next = bulkSetAppliesPerInvoice(next, toFalse, false).tree;
+  }
+  let skipped: string[] = [];
+  if (toTrue.length > 0) {
+    const r = bulkSetAppliesPerInvoice(next, toTrue, true);
+    next = r.tree;
+    skipped = r.skipped;
+  }
+  return { tree: next, skipped };
 }
 
 export function removeEvidenceReq(
