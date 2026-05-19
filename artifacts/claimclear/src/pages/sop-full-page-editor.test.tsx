@@ -15,6 +15,8 @@ import {
   buildTreeFromText,
   coerceTree,
   buildSavePayload,
+  findMatches,
+  applyReplacements,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 
@@ -316,6 +318,117 @@ test("buildSavePayload sends both the tree and the settings in a single PATCH bo
   // Defensive copy: mutating the payload tree must not affect the editor's tree.
   sentTree.nodes[0].question = "MUTATED";
   assert.equal(editedTree.nodes.find((n) => n.id === "a")!.question, "Is the claim bundled now?");
+});
+
+// ---------------------------------------------------------------------------
+// Task #776 — Find & Replace helper unit tests
+// ---------------------------------------------------------------------------
+
+function frTree(): DecisionTree {
+  return {
+    rootId: "n1",
+    nodes: [
+      {
+        id: "n1",
+        question: "Has the GPS log been uploaded?",
+        instructionText: "Open the GPS log viewer and confirm.",
+        options: [
+          { label: "GPS log present", childId: "n2" },
+          { label: "No GPS log", outcomeType: "hold", outcomeLabel: "Hold for GPS log" },
+        ],
+        evidenceRequirements: [
+          { key: "ev1", label: "Driver's GPS log screenshot", required: true },
+        ],
+      },
+      {
+        id: "n2",
+        question: "Plain text without the needle.",
+        options: [
+          { label: "Yes", outcomeType: "portal_dispute", outcomeLabel: "Mark Ready" },
+        ],
+      },
+    ],
+  };
+}
+
+test("findMatches walks all five supported fields and skips everything else", () => {
+  const matches = findMatches(frTree(), 7, "GPS log", "ride log");
+  // Should hit: question (n1), instructions (n1), optionLabel (n1, idx 0 and 1),
+  // outcomeLabel (n1 idx 1), evidenceLabel (n1 idx 0). Not n2.
+  const fields = matches.map((m) => `${m.nodeId}:${m.field}:${m.index}`).sort();
+  assert.deepEqual(fields, [
+    "n1:evidenceLabel:0",
+    "n1:instructions:-1",
+    "n1:optionLabel:0",
+    "n1:optionLabel:1",
+    "n1:outcomeLabel:1",
+    "n1:question:-1",
+  ]);
+  // Every match carries the errorTypeId and a precomputed afterText.
+  assert.ok(matches.every((m) => m.errorTypeId === 7));
+  const q = matches.find((m) => m.field === "question")!;
+  assert.equal(q.afterText, "Has the ride log been uploaded?");
+});
+
+test("findMatches is case-insensitive by default and respects the matchCase flag", () => {
+  const tree: DecisionTree = {
+    rootId: "x",
+    nodes: [
+      { id: "x", question: "GPS log vs gps log vs Gps Log", options: [
+        { label: "ok", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const insensitive = findMatches(tree, 1, "gps log", "ride log");
+  const q1 = insensitive.find((m) => m.field === "question")!;
+  assert.equal(q1.matchSpans.length, 3);
+  assert.equal(q1.afterText, "ride log vs ride log vs ride log");
+
+  const sensitive = findMatches(tree, 1, "gps log", "ride log", { matchCase: true });
+  const q2 = sensitive.find((m) => m.field === "question")!;
+  assert.equal(q2.matchSpans.length, 1);
+  assert.equal(q2.afterText, "GPS log vs ride log vs Gps Log");
+});
+
+test("findMatches returns nothing for an empty needle", () => {
+  assert.deepEqual(findMatches(frTree(), 1, "", "x"), []);
+});
+
+test("applyReplacements rewrites every matched field immutably without touching unrelated nodes/fields", () => {
+  const tree = frTree();
+  const matches = findMatches(tree, 7, "GPS log", "ride log");
+  const next = applyReplacements(tree, 7, matches, "ride log");
+
+  // Source tree untouched (immutability — required by the existing
+  // updateNode tests' invariant + the React render path).
+  assert.equal(tree.nodes[0].question, "Has the GPS log been uploaded?");
+  assert.equal(tree.nodes[0].instructionText, "Open the GPS log viewer and confirm.");
+  assert.equal(tree.nodes[0].options[0].label, "GPS log present");
+  assert.equal(tree.nodes[0].evidenceRequirements![0].label, "Driver's GPS log screenshot");
+
+  // New tree carries every substitution.
+  const n1 = next.nodes.find((n) => n.id === "n1")!;
+  assert.equal(n1.question, "Has the ride log been uploaded?");
+  assert.equal(n1.instructionText, "Open the ride log viewer and confirm.");
+  assert.equal(n1.options[0].label, "ride log present");
+  assert.equal(n1.options[1].label, "No ride log");
+  assert.equal(n1.options[1].outcomeLabel, "Hold for ride log");
+  assert.equal(n1.evidenceRequirements![0].label, "Driver's ride log screenshot");
+
+  // Unrelated node is byte-identical.
+  const n2 = next.nodes.find((n) => n.id === "n2")!;
+  assert.equal(n2.question, "Plain text without the needle.");
+
+  // The `rootId` and unrelated fields stay intact (no schema drift).
+  assert.equal(next.rootId, "n1");
+});
+
+test("applyReplacements ignores matches whose errorTypeId does not match the tree", () => {
+  const tree = frTree();
+  const matches = findMatches(tree, 99, "GPS log", "ride log");
+  const next = applyReplacements(tree, 7, matches, "ride log");
+  // No errorTypeId 7 matches → tree returned unchanged (same reference is fine).
+  assert.equal(next.nodes.find((n) => n.id === "n1")!.question, tree.nodes[0].question);
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {

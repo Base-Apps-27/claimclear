@@ -36,7 +36,9 @@ import {
   Sparkles,
   Loader2,
   Wand2,
+  Replace,
 } from "lucide-react";
+import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -811,6 +813,7 @@ export default function SopFullPageEditor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings">("outline");
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [settings, setSettings] = useState<SopEditorSettings>({
     name: "",
     category: "",
@@ -966,6 +969,14 @@ export default function SopFullPageEditor() {
           {tree.nodes.length} nodes · {tree.nodes.reduce((s, n) => s + (n.evidenceRequirements?.length ?? 0), 0)} evidence reqs
         </div>
         <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setFindReplaceOpen(true)}
+          data-testid="open-find-replace"
+        >
+          <Replace className="w-3.5 h-3.5 mr-1" /> Find & Replace
+        </Button>
+        <Button
           size="sm"
           onClick={handleSave}
           disabled={!dirty || saving}
@@ -1067,6 +1078,15 @@ export default function SopFullPageEditor() {
             <MiniMap pannable zoomable />
           </ReactFlow>
         </div>
+
+        {findReplaceOpen && (
+          <FindReplaceDialog
+            open={findReplaceOpen}
+            onOpenChange={setFindReplaceOpen}
+            currentErrorType={errorType}
+            allErrorTypes={errorTypes || []}
+          />
+        )}
 
         {/* Right inspector */}
         <div className="w-80 border-l border-border bg-card flex flex-col shrink-0">

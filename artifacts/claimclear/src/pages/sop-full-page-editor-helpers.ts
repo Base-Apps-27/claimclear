@@ -293,6 +293,194 @@ export function removeEvidenceReq(
   return updateNode(tree, nodeId, { evidenceRequirements: reqs });
 }
 
+// ---------------------------------------------------------------------------
+// Find & Replace — Task #776
+//
+// Pure helpers for the cross-SOP Find & Replace dialog. Kept here so the
+// unit tests can exercise them without booting React Flow or jsdom.
+//
+// Scope of matchable fields (locked by the task spec): each tree node's
+//   - question
+//   - instructionText           (the "instructions" field in the spec)
+//   - options[].label
+//   - options[].outcomeLabel
+//   - evidenceRequirements[].label
+// Anything else is intentionally NOT touched.
+// ---------------------------------------------------------------------------
+
+export type FindMatchField =
+  | "question"
+  | "instructions"
+  | "optionLabel"
+  | "outcomeLabel"
+  | "evidenceLabel";
+
+export interface FindMatch {
+  errorTypeId: number;
+  nodeId: string;
+  field: FindMatchField;
+  // Index into options[] or evidenceRequirements[] when relevant. `-1`
+  // for node-level fields (question/instructions).
+  index: number;
+  beforeText: string;
+  afterText: string;
+  matchSpans: Array<{ start: number; end: number }>;
+}
+
+export interface FindOptions {
+  matchCase?: boolean;
+}
+
+function computeSpans(
+  haystack: string,
+  needle: string,
+  matchCase: boolean,
+): Array<{ start: number; end: number }> {
+  if (!needle) return [];
+  const hay = matchCase ? haystack : haystack.toLowerCase();
+  const nee = matchCase ? needle : needle.toLowerCase();
+  const out: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i <= hay.length - nee.length) {
+    const idx = hay.indexOf(nee, i);
+    if (idx === -1) break;
+    out.push({ start: idx, end: idx + nee.length });
+    i = idx + nee.length;
+  }
+  return out;
+}
+
+function applyToString(
+  text: string,
+  spans: Array<{ start: number; end: number }>,
+  replacement: string,
+): string {
+  if (spans.length === 0) return text;
+  let out = "";
+  let cursor = 0;
+  for (const s of spans) {
+    out += text.slice(cursor, s.start) + replacement;
+    cursor = s.end;
+  }
+  out += text.slice(cursor);
+  return out;
+}
+
+// Walk a tree and collect every match of `needle` in the five
+// supported fields. Returns one entry per (node × field × index)
+// combination that has at least one hit. `afterText` is precomputed
+// so callers can render the diff without re-running the replace.
+export function findMatches(
+  tree: DecisionTree,
+  errorTypeId: number,
+  needle: string,
+  replacement: string,
+  opts: FindOptions = {},
+): FindMatch[] {
+  const matchCase = opts.matchCase === true;
+  if (!needle) return [];
+  const out: FindMatch[] = [];
+
+  const push = (
+    nodeId: string,
+    field: FindMatchField,
+    index: number,
+    text: string | undefined,
+  ) => {
+    if (typeof text !== "string" || text.length === 0) return;
+    const spans = computeSpans(text, needle, matchCase);
+    if (spans.length === 0) return;
+    out.push({
+      errorTypeId,
+      nodeId,
+      field,
+      index,
+      beforeText: text,
+      afterText: applyToString(text, spans, replacement),
+      matchSpans: spans,
+    });
+  };
+
+  for (const node of tree.nodes) {
+    push(node.id, "question", -1, node.question);
+    push(node.id, "instructions", -1, node.instructionText);
+    node.options.forEach((opt, idx) => {
+      push(node.id, "optionLabel", idx, opt.label);
+      push(node.id, "outcomeLabel", idx, opt.outcomeLabel);
+    });
+    (node.evidenceRequirements || []).forEach((req, idx) => {
+      push(node.id, "evidenceLabel", idx, req.label);
+    });
+  }
+
+  return out;
+}
+
+// Apply the given matches to `tree` immutably, returning a new tree.
+// Only matches with the same errorTypeId are considered; callers
+// typically pre-filter per error-type but we guard here too.
+export function applyReplacements(
+  tree: DecisionTree,
+  errorTypeId: number,
+  matches: FindMatch[],
+  replacement: string,
+): DecisionTree {
+  const relevant = matches.filter((m) => m.errorTypeId === errorTypeId);
+  if (relevant.length === 0) return tree;
+
+  // Group by node for a single pass.
+  const byNode = new Map<string, FindMatch[]>();
+  for (const m of relevant) {
+    const list = byNode.get(m.nodeId);
+    if (list) list.push(m);
+    else byNode.set(m.nodeId, [m]);
+  }
+
+  return {
+    ...tree,
+    nodes: tree.nodes.map((n) => {
+      const ms = byNode.get(n.id);
+      if (!ms) return n;
+      let nextQuestion = n.question;
+      let nextInstructions = n.instructionText;
+      let nextOptions = n.options;
+      let nextEvidence = n.evidenceRequirements;
+      for (const m of ms) {
+        if (m.field === "question") {
+          nextQuestion = applyToString(nextQuestion, m.matchSpans, replacement);
+        } else if (m.field === "instructions") {
+          if (typeof nextInstructions === "string") {
+            nextInstructions = applyToString(nextInstructions, m.matchSpans, replacement);
+          }
+        } else if (m.field === "optionLabel") {
+          nextOptions = nextOptions.map((o, i) =>
+            i === m.index ? { ...o, label: applyToString(o.label, m.matchSpans, replacement) } : o,
+          );
+        } else if (m.field === "outcomeLabel") {
+          nextOptions = nextOptions.map((o, i) =>
+            i === m.index && typeof o.outcomeLabel === "string"
+              ? { ...o, outcomeLabel: applyToString(o.outcomeLabel, m.matchSpans, replacement) }
+              : o,
+          );
+        } else if (m.field === "evidenceLabel") {
+          if (nextEvidence) {
+            nextEvidence = nextEvidence.map((r, i) =>
+              i === m.index ? { ...r, label: applyToString(r.label, m.matchSpans, replacement) } : r,
+            );
+          }
+        }
+      }
+      return {
+        ...n,
+        question: nextQuestion,
+        instructionText: nextInstructions,
+        options: nextOptions,
+        evidenceRequirements: nextEvidence,
+      };
+    }),
+  };
+}
+
 // Editable settings fields the full-page editor's Settings tab manages
 // alongside the canvas tree. Mirrors the same columns the old modal in
 // error-types.tsx writes (minus decisionTree, evidenceRequirements,
