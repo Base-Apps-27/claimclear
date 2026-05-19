@@ -416,34 +416,56 @@ function Inspector({
   if (!node) {
     return <div className="p-4 text-xs text-muted-foreground">Node not found.</div>;
   }
+  const branchCount = node.options.length;
+  const evidenceCount = (node.evidenceRequirements || []).length;
+  const outcomeCount = node.options.filter((o) => !o.childId && o.outcomeType).length;
   return (
     <div className="flex flex-col h-full" data-testid="inspector">
-      <div className="px-3 py-2 flex items-center gap-2 border-b border-border bg-card">
-        <div
-          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-          style={{
-            background: "hsl(var(--cc-blue-bg))",
-            border: "1px solid hsl(var(--cc-blue-border))",
-          }}
-          aria-hidden="true"
-        >
-          <HelpCircle className="w-3.5 h-3.5" style={{ color: "hsl(var(--cc-blue-fg))" }} />
+      <div className="px-3 py-2 border-b border-border bg-card flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div
+            className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+            style={{
+              background: "hsl(var(--cc-blue-bg))",
+              border: "1px solid hsl(var(--cc-blue-border))",
+            }}
+            aria-hidden="true"
+          >
+            <HelpCircle className="w-3.5 h-3.5" style={{ color: "hsl(var(--cc-blue-fg))" }} />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Question node</span>
+            <span className="text-[10px] text-muted-foreground font-mono truncate">{node.id.slice(0, 12)}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 px-2 text-[10px]"
+            onClick={() => onSaveSubTreeToLibrary(node.id)}
+            data-testid="inspector-save-sub-tree-to-library"
+            title="Save this node and its descendants to the SOP library"
+            aria-label="Save sub-tree to SOP library"
+          >
+            <Bookmark className="w-3 h-3 mr-1" /> Save sub-tree
+          </Button>
         </div>
-        <div className="flex flex-col min-w-0">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Question node</span>
-          <span className="text-[10px] text-muted-foreground font-mono truncate">{node.id.slice(0, 12)}</span>
+        <div className="flex items-center gap-2 flex-wrap" data-testid="inspector-chip-row">
+          <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
+            <StatusDot tone="blue" />
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Branches</span>
+            <span className="text-[10px] tabular-nums font-medium text-foreground">{branchCount}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
+            <StatusDot tone={outcomeCount > 0 ? "green" : "muted"} />
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Outcomes</span>
+            <span className="text-[10px] tabular-nums font-medium text-foreground">{outcomeCount}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
+            <StatusDot tone={evidenceCount > 0 ? "amber" : "muted"} />
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Evidence</span>
+            <span className="text-[10px] tabular-nums font-medium text-foreground">{evidenceCount}</span>
+          </span>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto h-6 px-2 text-[10px]"
-          onClick={() => onSaveSubTreeToLibrary(node.id)}
-          data-testid="inspector-save-sub-tree-to-library"
-          title="Save this node and its descendants to the SOP library"
-          aria-label="Save sub-tree to SOP library"
-        >
-          <Bookmark className="w-3 h-3 mr-1" /> Save sub-tree
-        </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
@@ -486,49 +508,77 @@ function Inspector({
         <div>
           <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Branches</Label>
           <div className="mt-1 space-y-2">
-            {node.options.map((opt, idx) => (
-              <div key={idx} className="border border-border rounded p-2 space-y-1.5 bg-background">
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    value={opt.label}
-                    onChange={(e) => onChange(setOption(tree, node.id, idx, { label: e.target.value }))}
-                    className="h-7 text-xs"
-                    placeholder="Branch label"
-                  />
+            {node.options.map((opt, idx) => {
+              const isContinuation = !!opt.childId;
+              const tone: "blue" | "green" | "amber" | "muted" = isContinuation
+                ? "blue"
+                : opt.outcomeType
+                  ? "green"
+                  : "muted";
+              const bgVar = isContinuation
+                ? "--cc-blue-bg"
+                : opt.outcomeType
+                  ? "--cc-green-bg"
+                  : null;
+              const borderVar = isContinuation
+                ? "--cc-blue-border"
+                : opt.outcomeType
+                  ? "--cc-green-border"
+                  : null;
+              return (
+                <div
+                  key={idx}
+                  className="rounded p-2 space-y-1.5 border focus-within:ring-2 focus-within:ring-offset-0 transition-shadow"
+                  style={{
+                    background: bgVar ? `hsl(var(${bgVar}))` : "hsl(var(--background))",
+                    borderColor: borderVar ? `hsl(var(${borderVar}))` : "hsl(var(--border))",
+                    ["--tw-ring-color" as string]: "hsl(var(--cc-blue-border))",
+                  }}
+                  data-testid={`inspector-branch-${idx}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <StatusDot tone={tone} />
+                    <Input
+                      value={opt.label}
+                      onChange={(e) => onChange(setOption(tree, node.id, idx, { label: e.target.value }))}
+                      className="h-7 text-xs bg-card"
+                      placeholder="Branch label"
+                    />
+                  </div>
+                  {isContinuation ? (
+                    <div className="text-[10px] flex items-center justify-between" style={{ color: "hsl(var(--cc-blue-fg))" }}>
+                      <span className="uppercase tracking-wider font-semibold">→ Continues</span>
+                      <button
+                        className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                        onClick={() => onChange(setOption(tree, node.id, idx, { childId: undefined }))}
+                      >
+                        Detach
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <Select
+                        value={opt.outcomeType || ""}
+                        onValueChange={(val) =>
+                          onChange(setOption(tree, node.id, idx, { outcomeType: val as OutcomeType, outcomeLabel: OUTCOME_LABELS[val as OutcomeType] }))
+                        }
+                      >
+                        <SelectTrigger className="h-7 text-xs bg-card">
+                          <SelectValue placeholder="Pick outcome…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OUTCOME_AUTHOR_OPTIONS.map((o) => (
+                            <SelectItem key={o} value={o} className="text-xs">
+                              {OUTCOME_LABELS[o]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
-                {opt.childId ? (
-                  <div className="text-[10px] text-muted-foreground flex items-center justify-between">
-                    <span>→ continues to next question</span>
-                    <button
-                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-                      onClick={() => onChange(setOption(tree, node.id, idx, { childId: undefined }))}
-                    >
-                      Detach
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <Select
-                      value={opt.outcomeType || ""}
-                      onValueChange={(val) =>
-                        onChange(setOption(tree, node.id, idx, { outcomeType: val as OutcomeType, outcomeLabel: OUTCOME_LABELS[val as OutcomeType] }))
-                      }
-                    >
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue placeholder="Pick outcome…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {OUTCOME_AUTHOR_OPTIONS.map((o) => (
-                          <SelectItem key={o} value={o} className="text-xs">
-                            {OUTCOME_LABELS[o]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -551,11 +601,13 @@ function Inspector({
             {(node.evidenceRequirements || []).map((req, idx) => (
               <div
                 key={idx}
-                className="rounded p-1.5 flex items-center gap-1.5"
+                className="rounded p-1.5 flex items-center gap-1.5 border focus-within:ring-2 focus-within:ring-offset-0 transition-shadow"
                 style={{
                   background: "hsl(var(--cc-amber-bg))",
-                  border: "1px solid hsl(var(--cc-amber-border))",
+                  borderColor: "hsl(var(--cc-amber-border))",
+                  ["--tw-ring-color" as string]: "hsl(var(--cc-blue-border))",
                 }}
+                data-testid={`inspector-evidence-${idx}`}
               >
                 <FileText className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-amber-fg))" }} />
                 <Input
@@ -1458,13 +1510,16 @@ export default function SopFullPageEditor() {
 
           {selectedIds.size > 1 && (
             <Card
-              className="absolute left-1/2 -translate-x-1/2 bottom-4 z-10 px-3 py-2 flex items-center gap-2 shadow-lg border-border"
+              className="absolute left-1/2 -translate-x-1/2 bottom-4 z-10 h-14 px-4 flex items-center gap-3 shadow-lg border-border bg-card"
               data-testid="bulk-action-bar"
             >
-              <span className="text-xs font-medium">
-                {selectedIds.size} nodes selected
+              <span className="inline-flex items-center gap-1.5">
+                <StatusDot tone="blue" />
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Selected</span>
+                <span className="text-xs tabular-nums font-medium text-foreground">{selectedIds.size}</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">nodes</span>
               </span>
-              <div className="h-4 w-px bg-border mx-1" />
+              <div className="h-6 w-px bg-border mx-1" aria-hidden="true" />
               <Popover
                 open={bulkEvidenceOpen}
                 onOpenChange={(o) => {
