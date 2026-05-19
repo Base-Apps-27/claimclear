@@ -27174,6 +27174,79 @@ export const DeleteErrorTypeParams = zod.object({
 });
 
 /**
+ * Returns the 50 most-recent snapshots of an error type, newest
+first. One row is written after every successful POST or PATCH on
+`/error-types[/:id]`, including the initial create. The full
+snapshot blob is NOT returned here — only cheap columns for the
+list UI — to keep responses small.
+
+ * @summary List SOP version history for an error type (Task
+ */
+export const ListErrorTypeVersionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListErrorTypeVersionsResponseItem = zod
+  .object({
+    id: zod.number(),
+    createdAt: zod.string(),
+    createdBy: zod.string().nullish(),
+    comment: zod.string().nullish(),
+    treeNodeCount: zod.number(),
+  })
+  .describe(
+    "Task #772 — summary row for the SOP version-history list. The\nfull snapshot blob is intentionally omitted to keep listings cheap.\n",
+  );
+export const ListErrorTypeVersionsResponse = zod.array(
+  ListErrorTypeVersionsResponseItem,
+);
+
+/**
+ * Loads the snapshot and writes it back through the same internal
+update path the PATCH handler uses, so all guards (e.g. the
+`appliesPerInvoice` validator) still run. The restore itself
+produces a fresh snapshot row, so the post-restore state is also
+captured in the version history. Returns the updated error type.
+
+ * @summary Restore a snapshot via the standard update path (Task
+ */
+export const RestoreErrorTypeVersionParams = zod.object({
+  id: zod.coerce.number(),
+  versionId: zod.coerce.number(),
+});
+
+export const RestoreErrorTypeVersionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  category: zod.string().nullish(),
+  description: zod.string().nullish(),
+  guidance: zod.string().nullish(),
+  recommendedActions: zod.string().nullish(),
+  disputeReasonsLibrary: zod.object({}).passthrough().nullish(),
+  evidenceRequirements: zod.object({}).passthrough().nullish(),
+  decisionTree: zod.object({}).passthrough().nullish(),
+  emailTemplate: zod.string().nullish(),
+  disputeInstructions: zod.string().nullish(),
+  useGpsControlDeviation: zod
+    .boolean()
+    .describe(
+      'When true, portal submissions for claims with this error type are\nrouted to the MAS \"GPS Control Deviation\" Freshdesk form (which\nrequires the GPS Breadcrumbs Available field). When false, they\nare routed to the generic \"Other Issue or Question\" form.\n',
+    ),
+  useDirectEmail: zod
+    .boolean()
+    .describe(
+      'When true, disputes for this error type bypass the MAS portal\nentirely and are sent as emails to the global \"direct email\nrecipient\" address configured in app settings (intended for\nissue classes that MAS resolves over email rather than via the\nportal — e.g. \"Attesting too Soon\" or \"Invoice Number not in\nSystem\"). When true, useGpsControlDeviation is ignored.\n',
+    ),
+  tripOverriding: zod
+    .boolean()
+    .describe(
+      "When true, this error invalidates the entire trip (e.g.\neligibility lapse, time-at-facility violation). Sibling legs\non the same invoice can be marked as `Sibling Duplicate` of\nthe leg carrying this error so the dispute isn't double-billed.\n",
+    ),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
  * @summary List all SOP library items
  */
 export const ListSopLibraryItemsResponseItem = zod.object({

@@ -3650,6 +3650,65 @@ paths:
         "204":
           description: Deleted
 
+  /error-types/{id}/versions:
+    get:
+      operationId: listErrorTypeVersions
+      tags: [errorTypes]
+      summary: List SOP version history for an error type (Task #772)
+      description: |
+        Returns the 50 most-recent snapshots of an error type, newest
+        first. One row is written after every successful POST or PATCH on
+        `/error-types[/:id]`, including the initial create. The full
+        snapshot blob is NOT returned here — only cheap columns for the
+        list UI — to keep responses small.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Snapshots, newest first (max 50)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ErrorTypeVersionSummary"
+
+  /error-types/{id}/versions/{versionId}/restore:
+    post:
+      operationId: restoreErrorTypeVersion
+      tags: [errorTypes]
+      summary: Restore a snapshot via the standard update path (Task #772)
+      description: |
+        Loads the snapshot and writes it back through the same internal
+        update path the PATCH handler uses, so all guards (e.g. the
+        `appliesPerInvoice` validator) still run. The restore itself
+        produces a fresh snapshot row, so the post-restore state is also
+        captured in the version history. Returns the updated error type.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated error type after restore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTypeResponse"
+        "404":
+          description: Error type or version not found
+
   /sop-library-items:
     get:
       operationId: listSopLibraryItems
@@ -8512,6 +8571,27 @@ components:
           type: boolean
       required:
         - name
+
+    ErrorTypeVersionSummary:
+      type: object
+      description: |
+        Task #772 — summary row for the SOP version-history list. The
+        full snapshot blob is intentionally omitted to keep listings cheap.
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+        createdBy:
+          type: ["string", "null"]
+        comment:
+          type: ["string", "null"]
+        treeNodeCount:
+          type: integer
+      required:
+        - id
+        - createdAt
+        - treeNodeCount
 
     UpdateErrorTypeBody:
       type: object

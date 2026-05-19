@@ -106,6 +106,7 @@ import type {
   EmailThreadMessage,
   EmailThreadResponse,
   ErrorTypeResponse,
+  ErrorTypeVersionSummary,
   EvidenceTypeBody,
   EvidenceTypeResponse,
   ExcludeLegBody,
@@ -9129,6 +9130,200 @@ export const useDeleteErrorType = <
   TContext
 > => {
   return useMutation(getDeleteErrorTypeMutationOptions(options));
+};
+
+/**
+ * Returns the 50 most-recent snapshots of an error type, newest
+first. One row is written after every successful POST or PATCH on
+`/error-types[/:id]`, including the initial create. The full
+snapshot blob is NOT returned here — only cheap columns for the
+list UI — to keep responses small.
+
+ * @summary List SOP version history for an error type (Task
+ */
+export const getListErrorTypeVersionsUrl = (id: number) => {
+  return `/api/error-types/${id}/versions`;
+};
+
+export const listErrorTypeVersions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ErrorTypeVersionSummary[]> => {
+  return customFetch<ErrorTypeVersionSummary[]>(
+    getListErrorTypeVersionsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListErrorTypeVersionsQueryKey = (id: number) => {
+  return [`/api/error-types/${id}/versions`] as const;
+};
+
+export const getListErrorTypeVersionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listErrorTypeVersions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listErrorTypeVersions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListErrorTypeVersionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listErrorTypeVersions>>
+  > = ({ signal }) => listErrorTypeVersions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listErrorTypeVersions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListErrorTypeVersionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listErrorTypeVersions>>
+>;
+export type ListErrorTypeVersionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List SOP version history for an error type (Task
+ */
+
+export function useListErrorTypeVersions<
+  TData = Awaited<ReturnType<typeof listErrorTypeVersions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listErrorTypeVersions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListErrorTypeVersionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Loads the snapshot and writes it back through the same internal
+update path the PATCH handler uses, so all guards (e.g. the
+`appliesPerInvoice` validator) still run. The restore itself
+produces a fresh snapshot row, so the post-restore state is also
+captured in the version history. Returns the updated error type.
+
+ * @summary Restore a snapshot via the standard update path (Task
+ */
+export const getRestoreErrorTypeVersionUrl = (
+  id: number,
+  versionId: number,
+) => {
+  return `/api/error-types/${id}/versions/${versionId}/restore`;
+};
+
+export const restoreErrorTypeVersion = async (
+  id: number,
+  versionId: number,
+  options?: RequestInit,
+): Promise<ErrorTypeResponse> => {
+  return customFetch<ErrorTypeResponse>(
+    getRestoreErrorTypeVersionUrl(id, versionId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRestoreErrorTypeVersionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreErrorTypeVersion>>,
+    TError,
+    { id: number; versionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreErrorTypeVersion>>,
+  TError,
+  { id: number; versionId: number },
+  TContext
+> => {
+  const mutationKey = ["restoreErrorTypeVersion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreErrorTypeVersion>>,
+    { id: number; versionId: number }
+  > = (props) => {
+    const { id, versionId } = props ?? {};
+
+    return restoreErrorTypeVersion(id, versionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreErrorTypeVersionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreErrorTypeVersion>>
+>;
+
+export type RestoreErrorTypeVersionMutationError = ErrorType<void>;
+
+/**
+ * @summary Restore a snapshot via the standard update path (Task
+ */
+export const useRestoreErrorTypeVersion = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreErrorTypeVersion>>,
+    TError,
+    { id: number; versionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreErrorTypeVersion>>,
+  TError,
+  { id: number; versionId: number },
+  TContext
+> => {
+  return useMutation(getRestoreErrorTypeVersionMutationOptions(options));
 };
 
 /**

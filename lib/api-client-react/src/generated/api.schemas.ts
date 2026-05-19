@@ -3145,6 +3145,21 @@ export interface CreateErrorTypeBody {
   tripOverriding?: boolean;
 }
 
+/**
+ * Task #772 — summary row for the SOP version-history list. The
+full snapshot blob is intentionally omitted to keep listings cheap.
+
+ */
+export interface ErrorTypeVersionSummary {
+  id: number;
+  createdAt: string;
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  comment?: string | null;
+  treeNodeCount: number;
+}
+
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
   [key: string]: unknown;
 };
