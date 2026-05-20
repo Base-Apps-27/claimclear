@@ -47,6 +47,7 @@ import {
   XCircle,
   Inbox,
   Info,
+  Repeat,
 } from "lucide-react";
 
 // Per-claim Classification Inbox panel.
@@ -138,6 +139,19 @@ export function QueueNeedsReviewPanel({
   }, [groupDetail]);
 
   const inboxClaims = inboxGroup.claims;
+  // Task #797 — when the dialog is opened on a single leg (Queue row,
+  // detail-page Classify / Change, leg-conclusion row, gauntlet
+  // reclassify), surface a banner BEFORE the operator clicks Classify
+  // that explains the implicit pre-step Task #795 added (/include or
+  // /reclassify before /classify). Suppressed for needs_classification
+  // since no pre-step runs there.
+  const highlightedLiveSubStatus = useMemo(() => {
+    if (highlightLegId === undefined) return null;
+    const live = liveClaimById.get(highlightLegId);
+    if (!live) return null;
+    return deriveLegSubStatus(live);
+  }, [highlightLegId, liveClaimById]);
+
   const remainingNeedsClassification = useMemo(() => {
     return inboxClaims.filter((c) => {
       // Single-leg mode (Task #412): when an entry point opened the
@@ -396,6 +410,35 @@ export function QueueNeedsReviewPanel({
             order to define what the correct error type is.
           </span>
         </div>
+        {/* Task #797 — re-route banner. When the dialog is opened on a
+            single leg that's excluded or already classified, make the
+            implicit pre-step (Task #795: /include or /reclassify before
+            /classify) visible BEFORE the operator clicks Classify so
+            there's no surprise. Suppressed for needs_classification. */}
+        {highlightLegId !== undefined &&
+          (highlightedLiveSubStatus === "excluded" ||
+            highlightedLiveSubStatus === "investigating" ||
+            highlightedLiveSubStatus === "ready" ||
+            highlightedLiveSubStatus === "dropped" ||
+            highlightedLiveSubStatus === "blocked") && (
+            <div
+              className="rounded-md border p-3 text-xs flex items-start gap-2"
+              style={{
+                background: "hsl(var(--cc-amber-bg))",
+                borderColor: "hsl(var(--cc-amber-border))",
+                color: "hsl(var(--cc-amber-fg))",
+              }}
+              data-testid="classify-reroute-banner"
+              role="note"
+            >
+              <Repeat className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>
+                {highlightedLiveSubStatus === "excluded"
+                  ? "This leg is excluded — classifying will re-include it first."
+                  : "This leg is already classified — classifying will replace the current Error Type."}
+              </span>
+            </div>
+          )}
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div>
             <Label className="text-xs text-muted-foreground">Status</Label>
