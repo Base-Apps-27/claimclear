@@ -4,6 +4,8 @@ import {
   useListErrorTypes,
   useClassifyLeg,
   useExcludeLeg,
+  useIncludeLeg,
+  useReclassifyLeg,
   useCreateErrorType,
   useGetInvoiceGroup,
   getListInvoiceGroupsQueryKey,
@@ -99,6 +101,13 @@ export function QueueNeedsReviewPanel({
 
   const classifyLeg = useClassifyLeg();
   const excludeLeg = useExcludeLeg();
+  // Task #795 — single-leg Classify entry points (Queue row, claim-detail
+  // Classify / Change, leg-conclusion row, gauntlet reclassify) can be
+  // opened on legs that are excluded or already classified. POSTing
+  // /classify in either state returns 409, so we route through the
+  // correct pre-step (/include or /reclassify) before classifying.
+  const includeLeg = useIncludeLeg();
+  const reclassifyLeg = useReclassifyLeg();
   const createErrorType = useCreateErrorType();
 
   // Bulk-mode toggle for allBlank groups: when on, a single click marks
@@ -347,16 +356,62 @@ export function QueueNeedsReviewPanel({
                 onClassify={async (errorTypeId) => {
                   const et = errorTypes.find((t) => String(t.id) === errorTypeId);
                   if (!et) return;
+                  // Task #795 — single-leg entry points may be opened
+                  // on a leg that is excluded or already classified.
+                  // /classify only accepts `needs_classification`, so
+                  // we route through /include or /reclassify first
+                  // when needed. The inbox-cohort path (no
+                  // highlightLegId) already filters to
+                  // needs_classification rows, but we still inspect
+                  // the live sub-status as a defensive guard in case
+                  // a row flipped state mid-render.
+                  const live = liveClaimById.get(c.id);
+                  const liveSubStatus = live
+                    ? deriveLegSubStatus(live)
+                    : "needs_classification";
+                  let preStepRan = false;
+                  try {
+                    if (liveSubStatus === "excluded") {
+                      await includeLeg.mutateAsync({ id: c.id, data: {} });
+                      preStepRan = true;
+                    } else if (
+                      liveSubStatus === "investigating" ||
+                      liveSubStatus === "ready" ||
+                      liveSubStatus === "dropped" ||
+                      liveSubStatus === "blocked"
+                    ) {
+                      await reclassifyLeg.mutateAsync({ id: c.id });
+                      preStepRan = true;
+                    }
+                  } catch (e) {
+                    // Surface the pre-step server error verbatim so
+                    // phase / submission / MAS guards stay legible to
+                    // the operator (e.g. "Cannot re-include a leg
+                    // after the group leaves pre-submit").
+                    toast({
+                      title:
+                        liveSubStatus === "excluded"
+                          ? "Re-include failed"
+                          : "Reclassify failed",
+                      description: e instanceof Error ? e.message : String(e),
+                      variant: "destructive",
+                    });
+                    return;
+                  }
                   try {
                     await classifyLeg.mutateAsync({
                       id: c.id,
                       data: { errorTypeId: String(et.id) },
                     });
                     invalidateAll();
-                    onCompleted(`Claim ${c.confNumber || `#${c.id}`} classified as "${et.name}"`);
+                    onCompleted(
+                      preStepRan
+                        ? `Claim ${c.confNumber || `#${c.id}`} reclassified as "${et.name}"`
+                        : `Claim ${c.confNumber || `#${c.id}`} classified as "${et.name}"`,
+                    );
                   } catch (e) {
                     toast({
-                      title: "Classify failed",
+                      title: preStepRan ? "Reclassify failed" : "Classify failed",
                       description: e instanceof Error ? e.message : String(e),
                       variant: "destructive",
                     });

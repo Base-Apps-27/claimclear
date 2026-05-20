@@ -1868,8 +1868,30 @@ router.post("/claims/:id/classify", asyncHandler(async (req, res): Promise<void>
 
   const subStatus = deriveLegSubStatus(leg);
   if (subStatus !== "needs_classification") {
+    // Task #795 — state-aware 409 copy. The previous blanket
+    // "Leg already classified" line misled operators when the leg
+    // was actually excluded (re-include first) or when they were
+    // trying to change an already-classified leg (use reclassify).
+    // The expectedState / actualState fields stay identical so
+    // existing clients keep parsing the response shape; only the
+    // human-readable `error` string is refined.
+    let error: string;
+    if (subStatus === "excluded") {
+      error = "Leg is excluded — re-include before classifying";
+    } else if (
+      subStatus === "investigating" ||
+      subStatus === "ready" ||
+      subStatus === "dropped" ||
+      subStatus === "blocked"
+    ) {
+      error = "Leg is already classified — use reclassify to change it";
+    } else if (subStatus === "duplicate") {
+      error = "Leg is marked as a duplicate — clear the duplicate link before classifying";
+    } else {
+      error = `Leg cannot be classified from state '${subStatus}'`;
+    }
     res.status(409).json({
-      error: "Leg already classified",
+      error,
       expectedState: "needs_classification",
       actualState: subStatus,
     });

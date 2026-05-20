@@ -256,6 +256,67 @@ test("POST /claims/:id/classify on already-classified leg returns 409 with expec
     assert.equal(res.status, 409);
     assert.equal(res.json.expectedState, "needs_classification");
     assert.equal(res.json.actualState, "investigating");
+    // Task #795 — refined state-aware copy: an already-classified leg
+    // (investigating / ready / dropped / blocked) must be told to use
+    // reclassify, not the legacy blanket "Leg already classified".
+    assert.equal(
+      res.json.error,
+      "Leg is already classified — use reclassify to change it",
+    );
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/classify on excluded leg returns 409 directing operator to re-include", async () => {
+  const errType = await createSeedErrorType();
+  // Exclude the leg by flipping includedInDispute=false so deriveLegSubStatus → "excluded".
+  const claim = await createSeedClaim({ includedInDispute: false });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/classify`, {
+      method: "POST",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "needs_classification");
+    assert.equal(res.json.actualState, "excluded");
+    assert.equal(
+      res.json.error,
+      "Leg is excluded — re-include before classifying",
+    );
+  } finally {
+    await cleanupClaim(claim.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /claims/:id/classify on ready leg returns 409 directing operator to reclassify", async () => {
+  // Build a leg that derives to `ready`: classified + SOP terminal that
+  // stamps readyAt. Seeding readyAt directly via a follow-up update
+  // keeps this test independent of the SOP walker contract.
+  const errType = await createSeedErrorType();
+  const claim = await createSeedClaim({
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "portal_dispute",
+  });
+  await db
+    .update(claimsTable)
+    .set({ readyAt: new Date() })
+    .where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/classify`, {
+      method: "POST",
+      body: { errorTypeId: String(errType.id) },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.expectedState, "needs_classification");
+    assert.equal(res.json.actualState, "ready");
+    assert.equal(
+      res.json.error,
+      "Leg is already classified — use reclassify to change it",
+    );
   } finally {
     await cleanupClaim(claim.id);
     await cleanupErrorType(errType.id);
