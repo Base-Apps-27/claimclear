@@ -113,7 +113,13 @@ export function QueueNeedsReviewPanel({
   // Bulk-mode toggle for allBlank groups: when on, a single click marks
   // every needs_classification leg as `non_issue`. Disabled while any
   // mutation is in flight to avoid double-firing on impatient clicks.
+  // Shared with the Task #796 bulk reclassify control so a no-issue
+  // sweep and a reclassify sweep can't run simultaneously.
   const [bulkPending, setBulkPending] = useState(false);
+  // Task #796 — bulk reclassify control (bulk mode only). The picker
+  // lets the operator apply one error type to every visible leg in a
+  // single pass, with per-leg pre-step routing.
+  const [bulkErrorTypeId, setBulkErrorTypeId] = useState<string>("");
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
@@ -145,6 +151,56 @@ export function QueueNeedsReviewPanel({
       return deriveLegSubStatus(live) === "needs_classification";
     });
   }, [inboxClaims, liveClaimById, highlightLegId]);
+
+  // Task #796 — bulk-mode visible legs. The inbox payload only carries
+  // `needs_classification` legs, but operators legitimately want to
+  // retag legs that are already classified or excluded from the same
+  // panel (instead of one row at a time from the detail page). For
+  // bulk/inbox-cohort mode we additionally surface every reclassify-
+  // eligible leg from the live group fetch. Single-leg mode still
+  // renders only the highlighted row.
+  const RECLASSIFY_ELIGIBLE_STATES = useMemo(
+    () =>
+      new Set([
+        "needs_classification",
+        "investigating",
+        "ready",
+        "dropped",
+        "blocked",
+        "excluded",
+      ]),
+    [],
+  );
+  const bulkVisibleClaims = useMemo<NeedsClassificationInboxClaim[]>(() => {
+    if (highlightLegId !== undefined) return [];
+    const seen = new Set<number>();
+    const rows: NeedsClassificationInboxClaim[] = [];
+    // Inbox payload first so needs_classification rows lead.
+    for (const c of inboxClaims) {
+      rows.push(c);
+      seen.add(c.id);
+    }
+    for (const r of groupDetail?.rides ?? []) {
+      if (seen.has(r.id)) continue;
+      const sub = deriveLegSubStatus(r);
+      if (!RECLASSIFY_ELIGIBLE_STATES.has(sub)) continue;
+      rows.push({
+        id: r.id,
+        confNumber: r.confNumber ?? null,
+        date: r.date ?? null,
+        claimAmount: r.claimAmount ?? null,
+        errorDetails: r.errorDetails ?? null,
+        isBlank: !(
+          typeof r.errorDetails === "string" && r.errorDetails.trim().length > 0
+        ),
+      } as NeedsClassificationInboxClaim);
+      seen.add(r.id);
+    }
+    return rows;
+  }, [highlightLegId, inboxClaims, groupDetail, RECLASSIFY_ELIGIBLE_STATES]);
+
+  const displayedClaims =
+    highlightLegId !== undefined ? remainingNeedsClassification : bulkVisibleClaims;
 
   // When everything in the inbox payload has been resolved, fire the
   // completion handler so the parent can drop its triage selection.
@@ -205,6 +261,68 @@ export function QueueNeedsReviewPanel({
       title: `Bulk no-issue partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
       description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
       variant: skipped.length === remainingNeedsClassification.length ? "destructive" : "default",
+    });
+  }
+
+  // Task #796 — bulk reclassify pass. Mirrors handleBulkExcludeAll: runs
+  // legs sequentially so the audit trail reads in order, captures
+  // succeeded/skipped per leg, and surfaces a single summary toast on
+  // partial failure. Per-leg routing matches the single-leg path —
+  // excluded → /include first, classified (investigating/ready/dropped/
+  // blocked) → /reclassify first, needs_classification → /classify
+  // directly — so retagging works regardless of where each leg started.
+  async function handleBulkReclassifyAll() {
+    if (bulkPending) return;
+    const et = errorTypes.find((t) => String(t.id) === bulkErrorTypeId);
+    if (!et) return;
+    setBulkPending(true);
+    const succeeded: { id: string; ref: string }[] = [];
+    const skipped: { id: string; ref: string; reason: string }[] = [];
+    for (const c of bulkVisibleClaims) {
+      const idStr = String(c.id);
+      const ref = c.confNumber ? String(c.confNumber) : idStr;
+      const live = liveClaimById.get(c.id);
+      const sub = live ? deriveLegSubStatus(live) : "needs_classification";
+      try {
+        if (sub === "excluded") {
+          await includeLeg.mutateAsync({ id: c.id, data: {} });
+        } else if (
+          sub === "investigating" ||
+          sub === "ready" ||
+          sub === "dropped" ||
+          sub === "blocked"
+        ) {
+          await reclassifyLeg.mutateAsync({ id: c.id });
+        }
+        await classifyLeg.mutateAsync({
+          id: c.id,
+          data: { errorTypeId: String(et.id) },
+        });
+        succeeded.push({ id: idStr, ref });
+      } catch (e) {
+        skipped.push({
+          id: idStr,
+          ref,
+          reason: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    invalidateAll();
+    setBulkPending(false);
+    setBulkErrorTypeId("");
+
+    if (skipped.length === 0) {
+      onCompleted(
+        `Reclassified ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as "${et.name}"`,
+      );
+      return;
+    }
+    const skippedPreview = skipped.slice(0, 5).map((s) => s.ref).join(", ");
+    const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
+    toast({
+      title: `Bulk reclassify partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
+      description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
+      variant: skipped.length === bulkVisibleClaims.length ? "destructive" : "default",
     });
   }
 
@@ -293,6 +411,92 @@ export function QueueNeedsReviewPanel({
           </div>
         </div>
 
+        {/* Task #796 — bulk-mode help note. Explains that the bulk
+            controls below operate across every reclassify-eligible
+            leg in the group (needs-classification, classified, and
+            excluded), and that legs whose group has reached MAS /
+            payout / closed phases will surface as skipped failures
+            since the server-side guards forbid retagging them. */}
+        {highlightLegId === undefined && bulkVisibleClaims.length > 0 && (
+          <div
+            className="rounded-md border bg-muted/40 p-3 text-xs flex items-start gap-2"
+            data-testid="needs-review-bulk-help"
+            role="note"
+          >
+            <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+            <span className="text-muted-foreground">
+              Bulk actions sweep every leg shown below — including legs
+              that are already classified (they'll be reclassified) or
+              excluded (they'll be re-included and reclassified). Legs
+              in groups past pre-submit (MAS / payout / closed) or already
+              on a submission will be reported as skipped.
+            </span>
+          </div>
+        )}
+
+        {/* Task #796 — bulk reclassify control. Bulk mode only. Lets
+            the operator pick one error type and apply it to every
+            visible leg in a single pass. Per-leg routing (/include or
+            /reclassify before /classify) matches the single-leg path,
+            and a single summary toast surfaces partial failures. */}
+        {highlightLegId === undefined && bulkVisibleClaims.length > 0 && (
+          <div
+            className="rounded-md border p-3 space-y-2"
+            style={{
+              background: "hsl(var(--cc-blue-bg))",
+              borderColor: "hsl(var(--cc-blue-border))",
+              color: "hsl(var(--cc-blue-fg))",
+            }}
+            data-testid="needs-review-bulk-reclassify"
+          >
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Tag className="h-4 w-4" />
+              Bulk reclassify
+            </div>
+            <p className="text-xs">
+              Apply one error type to every leg listed below. Each leg
+              is routed through the right pre-step first; failures are
+              summarised in a single toast.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Select value={bulkErrorTypeId} onValueChange={setBulkErrorTypeId}>
+                <SelectTrigger
+                  className="bg-white sm:flex-1"
+                  data-testid="select-bulk-reclassify-error-type"
+                >
+                  <SelectValue placeholder="Choose error type for all legs…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {errorTypes.map((et) => (
+                    <SelectItem key={et.id} value={String(et.id)}>
+                      <div>
+                        <span>{et.name}</span>
+                        {et.category && (
+                          <span className="text-muted-foreground ml-2 text-xs">({et.category})</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={handleBulkReclassifyAll}
+                disabled={!bulkErrorTypeId || bulkPending}
+                data-testid="button-bulk-reclassify"
+                className="bg-white text-foreground hover:bg-white/90"
+                variant="outline"
+              >
+                {bulkPending ? (
+                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Applying…</>
+                ) : (
+                  <><Tag className="h-3.5 w-3.5 mr-1" /> Apply to all {bulkVisibleClaims.length} leg{bulkVisibleClaims.length === 1 ? "" : "s"}</>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {inboxGroup.allBlank && remainingNeedsClassification.length > 0 && (
           <div
             className="rounded-md border p-3 space-y-2"
@@ -331,13 +535,19 @@ export function QueueNeedsReviewPanel({
         <Separator />
 
         <div className="space-y-3" data-testid="needs-review-claims-list">
-          {remainingNeedsClassification.length === 0 ? (
-            <div className="rounded-md border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
-              Finishing up — group is moving to Build Case…
-            </div>
+          {displayedClaims.length === 0 ? (
+            highlightLegId === undefined && remainingNeedsClassification.length === 0 && inboxClaims.length === 0 ? (
+              <div className="rounded-md border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                Nothing to retag in this group.
+              </div>
+            ) : (
+              <div className="rounded-md border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                Finishing up — group is moving to Build Case…
+              </div>
+            )
           ) : (
-            remainingNeedsClassification.map((c) => (
+            displayedClaims.map((c) => (
               <NeedsReviewClaimRow
                 key={c.id}
                 claim={c}
