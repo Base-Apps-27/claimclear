@@ -1,19 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Classic JSX runtime fallback (used when tests run without the
+// project tsconfig that enables the automatic runtime) needs
+// `React` in module scope.
+void React;
 import { useParams, useLocation, Link } from "wouter";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   Handle,
   Position,
+  useReactFlow,
   type Node,
   type Edge,
   type NodeProps,
   type EdgeProps,
   getBezierPath,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import "./sop-full-page-editor-xyflow-styles";
 import {
   useListErrorTypes,
   useListEvidenceTypes,
@@ -119,7 +132,13 @@ import {
   setInstructionImage,
   attachChildQuestion,
   addBranchWithSuggestion,
+  getHoverHighlightIds,
+  addChildQuestion,
+  outcomeTone,
+  NODE_W,
+  NODE_H,
   type FlowNodeData,
+  type CanvasTone,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 import { Card } from "@/components/ui/card";
@@ -263,17 +282,43 @@ function AiRewriteButton({
 // Custom React Flow node + edge components
 // ---------------------------------------------------------------------------
 
-function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
+function QuestionNodeView({ id, data }: NodeProps<Node<FlowNodeData>>) {
+  // Inline rename (Task #818): double-click swaps the title for a
+  // textarea bound to the same node-text setter the inspector uses.
+  // We dispatch a CustomEvent (matches the existing
+  // sop-editor:insert-between idiom) so the node component stays a
+  // pure render and the page owns tree state.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(data.label);
+  useEffect(() => {
+    if (!editing) setDraft(data.label);
+  }, [data.label, editing]);
+
+  const commit = useCallback(() => {
+    const next = draft.trim();
+    if (next && next !== data.label) {
+      window.dispatchEvent(
+        new CustomEvent("sop-editor:rename-node", {
+          detail: { nodeId: id, text: next },
+        }),
+      );
+    }
+    setEditing(false);
+  }, [draft, data.label, id]);
+
   return (
     <div
-      className="bg-card rounded-md shadow-sm w-[220px]"
+      className="bg-card rounded-md shadow-sm w-[220px] transition-opacity duration-200"
       style={{
         border: `1px solid hsl(var(--cc-blue-border))`,
         boxShadow: data.selected
           ? `0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--cc-blue-fg))`
           : undefined,
+        opacity: data.dimmed ? 0.25 : 1,
       }}
       data-testid={`flow-node-question`}
+      data-node-kind="question"
+      data-dimmed={data.dimmed ? "true" : "false"}
     >
       <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
       <div
@@ -300,9 +345,41 @@ function QuestionNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
           </span>
         ) : null}
       </div>
-      <div className="px-2.5 py-2 text-xs font-medium leading-snug text-card-foreground line-clamp-3 min-h-[44px]">
-        {data.label}
-      </div>
+      {editing ? (
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setDraft(data.label);
+              setEditing(false);
+            }
+            e.stopPropagation();
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="w-full px-2.5 py-2 text-xs font-medium leading-snug text-card-foreground bg-card border-0 outline-none resize-none min-h-[44px] focus-visible:ring-2 focus-visible:ring-inset"
+          style={{ ["--tw-ring-color" as string]: "hsl(var(--cc-blue-border))" }}
+          data-testid={`flow-node-rename-input`}
+        />
+      ) : (
+        <div
+          className="px-2.5 py-2 text-xs font-medium leading-snug text-card-foreground line-clamp-3 min-h-[44px] cursor-text"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setEditing(true);
+          }}
+          title="Double-click to rename"
+        >
+          {data.label}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground" />
     </div>
   );
@@ -319,8 +396,10 @@ function OutcomeNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
   const Icon = isApprove ? CheckCircle2 : isHold ? FileText : XCircle;
   return (
     <div
-      className="rounded-md shadow-sm w-[220px]"
-      style={{ background: palette.bg, border: `1px solid ${palette.border}` }}
+      className="rounded-md shadow-sm w-[220px] transition-opacity duration-200"
+      style={{ background: palette.bg, border: `1px solid ${palette.border}`, opacity: data.dimmed ? 0.25 : 1 }}
+      data-node-kind="outcome"
+      data-dimmed={data.dimmed ? "true" : "false"}
     >
       <Handle type="target" position={Position.Top} className="!bg-muted-foreground" />
       <div className="px-2.5 py-1 border-b border-current/10 flex items-center gap-1.5">
@@ -339,19 +418,40 @@ function OutcomeNodeView({ data }: NodeProps<Node<FlowNodeData>>) {
 
 function InsertableEdge({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data,
-}: EdgeProps & { label?: React.ReactNode; data?: { parentId: string; optionIndex: number; tone?: "blue" | "green" | "muted" } }) {
+}: EdgeProps & { label?: React.ReactNode; data?: { parentId: string; optionIndex: number; tone?: CanvasTone; dimmed?: boolean } }) {
   const [path, labelX, labelY] = getBezierPath({
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
-  const tone = data?.tone ?? "muted";
+  const tone: CanvasTone = data?.tone ?? "muted";
+  const dimmed = data?.dimmed === true;
+  // Tone → CSS var map. Outcome edges get the inspector chip palette
+  // (green for approve, amber for hold, red for dead-end) so the
+  // shape of a tree's outcomes is legible at a glance (Task #818).
   const strokeVar =
-    tone === "blue" ? "--cc-blue-border" : tone === "green" ? "--cc-green-border" : "--border";
+    tone === "blue" ? "--cc-blue-border"
+    : tone === "green" ? "--cc-green-border"
+    : tone === "amber" ? "--cc-amber-border"
+    : tone === "red" ? "--cc-red-border"
+    : "--border";
   const labelBgVar =
-    tone === "blue" ? "--cc-blue-bg" : tone === "green" ? "--cc-green-bg" : null;
-  const labelBorderVar =
-    tone === "blue" ? "--cc-blue-border" : tone === "green" ? "--cc-green-border" : "--border";
+    tone === "blue" ? "--cc-blue-bg"
+    : tone === "green" ? "--cc-green-bg"
+    : tone === "amber" ? "--cc-amber-bg"
+    : tone === "red" ? "--cc-red-bg"
+    : null;
+  const labelBorderVar = strokeVar;
   const labelFgVar =
-    tone === "blue" ? "--cc-blue-fg" : tone === "green" ? "--cc-green-fg" : null;
+    tone === "blue" ? "--cc-blue-fg"
+    : tone === "green" ? "--cc-green-fg"
+    : tone === "amber" ? "--cc-amber-fg"
+    : tone === "red" ? "--cc-red-fg"
+    : null;
+  // Long branch labels would overflow the canvas; cap the visible
+  // text and rely on the native title tooltip for the full string.
+  const labelStr = typeof label === "string" ? label : "";
+  const MAX_LABEL = 18;
+  const truncated = labelStr.length > MAX_LABEL ? labelStr.slice(0, MAX_LABEL - 1) + "…" : labelStr;
+  const labelWidth = Math.min(Math.max(labelStr.length * 6 + 16, 36), 132);
   const onInsert = (e: React.MouseEvent) => {
     e.stopPropagation();
     const evt = new CustomEvent("sop-editor:insert-between", {
@@ -368,19 +468,29 @@ function InsertableEdge({
         stroke={`hsl(var(${strokeVar}))`}
         strokeWidth={1.5}
         data-tone={tone}
+        data-dimmed={dimmed ? "true" : "false"}
+        style={{ opacity: dimmed ? 0.18 : 1, transition: "opacity 200ms" }}
       />
       {label && (
-        <foreignObject x={labelX - 24} y={labelY - 12} width={48} height={20} style={{ overflow: "visible" }}>
+        <foreignObject
+          x={labelX - labelWidth / 2}
+          y={labelY - 12}
+          width={labelWidth}
+          height={22}
+          style={{ overflow: "visible", opacity: dimmed ? 0.25 : 1, transition: "opacity 200ms" }}
+        >
           <div
-            className="rounded-full text-[10px] px-1.5 py-0.5 text-center font-medium shadow-sm select-none border"
+            className="rounded-full text-[10px] px-1.5 py-0.5 text-center font-medium shadow-sm select-none border truncate"
             style={{
               background: labelBgVar ? `hsl(var(${labelBgVar}))` : "hsl(var(--card))",
               borderColor: `hsl(var(${labelBorderVar}))`,
               color: labelFgVar ? `hsl(var(${labelFgVar}))` : "hsl(var(--muted-foreground))",
+              maxWidth: labelWidth,
             }}
             data-tone={tone}
+            title={labelStr}
           >
-            {label}
+            {truncated}
           </div>
         </foreignObject>
       )}
@@ -401,6 +511,250 @@ function InsertableEdge({
 
 const nodeTypes = { question: QuestionNodeView, outcome: OutcomeNodeView };
 const edgeTypes = { insertable: InsertableEdge };
+
+// Task #818 — MiniMap node fill driven by FlowNodeData. Question
+// nodes get the inspector blue; outcomes pick up their own tone via
+// `outcomeTone`. Keeps the mini-map glanceable when the canvas is
+// zoomed out.
+function miniMapNodeColor(n: Node): string {
+  const d = n.data as FlowNodeData | undefined;
+  if (!d) return "hsl(var(--muted-foreground))";
+  if (d.kind === "outcome") {
+    const tone = outcomeTone(d.outcomeType);
+    if (tone === "green") return "hsl(var(--cc-green-fg))";
+    if (tone === "amber") return "hsl(var(--cc-amber-fg))";
+    if (tone === "red") return "hsl(var(--cc-red-fg))";
+    return "hsl(var(--muted-foreground))";
+  }
+  return "hsl(var(--cc-blue-fg))";
+}
+
+// Task #818 — central canvas. Lives inside <ReactFlowProvider> so it
+// can use the imperative `setCenter` API for smooth pan/zoom-to
+// selection, and owns hover state for the path-on-hover dimming.
+// Everything tree-mutating still bubbles up via the parent's
+// dispatched CustomEvents / passed callbacks; this component is
+// purely the viewport.
+type ContextMenuTarget = { id: string; kind: "question" | "outcome" };
+
+function SopCanvas({
+  flow,
+  selectedIds,
+  selectedId,
+  setSelectedId,
+  toggleSelectedId,
+  onContextAction,
+  tree,
+}: {
+  flow: { nodes: Node<FlowNodeData>[]; edges: Edge[] };
+  selectedIds: Set<string>;
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  toggleSelectedId: (id: string) => void;
+  onContextAction: (
+    action: "add" | "delete" | "save" | "copy_tree" | "copy_id",
+    target: ContextMenuTarget,
+  ) => void;
+  tree: DecisionTree;
+}) {
+  const rootId = tree.rootId;
+  const rf = useReactFlow();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [menuTarget, setMenuTarget] = useState<ContextMenuTarget | null>(null);
+
+  // Decorate flow with hover dimming. Cheap O(n) over nodes/edges —
+  // we deliberately avoid re-running dagre because layout is stable.
+  const decoratedFlow = useMemo(() => {
+    if (!hoveredId) return flow;
+    const highlighted = getHoverHighlightIds(tree, hoveredId);
+    return {
+      nodes: flow.nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, dimmed: !highlighted.has(n.id) },
+      })),
+      edges: flow.edges.map((e) => ({
+        ...e,
+        data: {
+          ...(e.data as object),
+          dimmed: !(highlighted.has(e.source) && highlighted.has(e.target)),
+        },
+      })),
+    };
+  }, [flow, hoveredId, tree]);
+
+  // Smooth pan/zoom to the currently-selected node. Use setCenter so
+  // the user keeps spatial context — fitView would yank the whole
+  // viewport every time. Skipped for multi-select (selection bar
+  // handles that case) and on first paint (the ReactFlow `fitView`
+  // prop frames the initial layout).
+  //
+  // IMPORTANT: depend on the UN-decorated `flow.nodes` (stable across
+  // hover changes), not `decoratedFlow.nodes` — otherwise hovering a
+  // node would silently re-center the viewport on the selection.
+  const firstSelectionRef = useRef(true);
+  useEffect(() => {
+    if (firstSelectionRef.current) {
+      firstSelectionRef.current = false;
+      return;
+    }
+    if (!selectedId || selectedIds.size !== 1) return;
+    const node = flow.nodes.find((n) => n.id === selectedId);
+    if (!node) return;
+    const cx = node.position.x + NODE_W / 2;
+    const cy = node.position.y + NODE_H / 2;
+    rf.setCenter(cx, cy, { duration: 600, zoom: Math.max(rf.getZoom(), 0.9) });
+  }, [selectedId, selectedIds.size, flow.nodes, rf]);
+
+  // Task #818 a11y — keyboard users can focus nodes (xyflow makes
+  // them tabbable); when focus moves to a node we mirror the hover
+  // path-highlight so the same affordance is available without a
+  // mouse. Nodes dispatch this CustomEvent via their wrapper div.
+  useEffect(() => {
+    const onFocus = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { nodeId: string | null };
+      setHoveredId(detail?.nodeId ?? null);
+    };
+    window.addEventListener("sop-editor:node-focus", onFocus as EventListener);
+    return () => window.removeEventListener("sop-editor:node-focus", onFocus as EventListener);
+  }, []);
+
+  // Drag-from-handle to create child. xyflow v12 fires
+  // onConnectEnd with the originating node/handle even when the
+  // user drops on empty pane. We delegate creation up via a
+  // CustomEvent so the parent stays the source of truth for the
+  // tree state.
+  const onConnectEnd = useCallback((_evt: unknown, conn: { fromNode?: Node | null; toNode?: Node | null; isValid?: boolean | null }) => {
+    if (!conn) return;
+    if (conn.toNode) return; // landed on a real node — leave linking to a future task
+    const from = conn.fromNode;
+    if (!from) return;
+    const d = from.data as FlowNodeData | undefined;
+    if (d?.kind !== "question") return;
+    window.dispatchEvent(
+      new CustomEvent("sop-editor:add-child", { detail: { parentId: from.id } }),
+    );
+  }, []);
+
+  return (
+    <ContextMenu
+      onOpenChange={(open) => {
+        if (!open) setMenuTarget(null);
+      }}
+    >
+      <ContextMenuTrigger asChild>
+        <div
+          className="w-full h-full"
+          data-testid="sop-canvas-root"
+          // Keyboard a11y: when focus moves into / out of a node
+          // wrapper (xyflow makes nodes tabbable), mirror the hover
+          // path-highlight by dispatching the same focus event the
+          // parent listens for. We use focusin/focusout on the
+          // container so we don't have to thread a callback into
+          // every node component.
+          onFocusCapture={(e) => {
+            const t = e.target as HTMLElement;
+            const nodeEl = t.closest<HTMLElement>(".react-flow__node");
+            const id = nodeEl?.getAttribute("data-id");
+            if (id) {
+              window.dispatchEvent(
+                new CustomEvent("sop-editor:node-focus", { detail: { nodeId: id } }),
+              );
+            }
+          }}
+          onBlurCapture={(e) => {
+            const next = e.relatedTarget as HTMLElement | null;
+            const stillOnNode = next?.closest?.(".react-flow__node");
+            if (!stillOnNode) {
+              window.dispatchEvent(
+                new CustomEvent("sop-editor:node-focus", { detail: { nodeId: null } }),
+              );
+            }
+          }}
+        >
+          <ReactFlow
+            nodes={decoratedFlow.nodes}
+            edges={decoratedFlow.edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodeClick={(ev, n) => {
+              const data = n.data as FlowNodeData;
+              const targetId = data.kind === "outcome"
+                ? n.id.split("__term")[0]
+                : n.id;
+              if (ev.shiftKey && data.kind === "question") toggleSelectedId(targetId);
+              else setSelectedId(targetId);
+            }}
+            onNodeMouseEnter={(_e, n) => setHoveredId(n.id)}
+            onNodeMouseLeave={() => setHoveredId(null)}
+            onNodeContextMenu={(e, n) => {
+              // Resolve outcome → parent question (mirrors onNodeClick).
+              const data = n.data as FlowNodeData;
+              const targetId = data.kind === "outcome"
+                ? n.id.split("__term")[0]
+                : n.id;
+              setMenuTarget({ id: targetId, kind: data.kind });
+              // Don't preventDefault — we want the ContextMenuTrigger
+              // wrapper to receive the native event and open the menu.
+              e.stopPropagation();
+            }}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            proOptions={{ hideAttribution: true }}
+            nodesDraggable={false}
+            nodesConnectable
+            onConnectEnd={onConnectEnd}
+            elementsSelectable
+          >
+            <Background gap={18} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
+          </ReactFlow>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-52" data-testid="sop-canvas-menu">
+        <ContextMenuItem
+          disabled={!menuTarget || menuTarget.kind !== "question"}
+          onSelect={() => menuTarget && onContextAction("add", menuTarget)}
+          data-testid="ctx-add-branch"
+        >
+          Add branch
+        </ContextMenuItem>
+        <ContextMenuItem
+          // Parity with the inspector's Delete: only enabled on a
+          // question node that ISN'T the tree root (deleting the root
+          // is unsupported and would only surface a toast later).
+          disabled={!menuTarget || menuTarget.kind !== "question" || menuTarget.id === rootId}
+          onSelect={() => menuTarget && onContextAction("delete", menuTarget)}
+          data-testid="ctx-delete"
+        >
+          Delete
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          disabled={!menuTarget || menuTarget.kind !== "question"}
+          onSelect={() => menuTarget && onContextAction("save", menuTarget)}
+          data-testid="ctx-save-subtree"
+        >
+          Save sub-tree to library…
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!menuTarget || menuTarget.kind !== "question"}
+          onSelect={() => menuTarget && onContextAction("copy_tree", menuTarget)}
+          data-testid="ctx-copy-subtree"
+        >
+          Copy sub-tree
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!menuTarget}
+          onSelect={() => menuTarget && onContextAction("copy_id", menuTarget)}
+          data-testid="ctx-copy-id"
+        >
+          Copy node id
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Outline (left panel)
@@ -1903,6 +2257,46 @@ export default function SopFullPageEditor() {
     return () => window.removeEventListener("sop-editor:insert-between", handler as EventListener);
   }, []);
 
+  // Task #818 — inline rename. The QuestionNodeView dispatches this
+  // event when the user commits a textarea edit. We funnel it through
+  // updateNode so it goes through the same validation/dirty path the
+  // inspector uses.
+  useEffect(() => {
+    function handler(ev: Event) {
+      const detail = (ev as CustomEvent).detail as { nodeId: string; text: string };
+      if (!detail?.nodeId || !detail.text) return;
+      setTree((cur) => {
+        if (!cur) return cur;
+        const next = updateNode(cur, detail.nodeId, { question: detail.text });
+        setDirty(true);
+        return next;
+      });
+    }
+    window.addEventListener("sop-editor:rename-node", handler as EventListener);
+    return () => window.removeEventListener("sop-editor:rename-node", handler as EventListener);
+  }, []);
+
+  // Task #818 — drag-from-handle child creation. The canvas's
+  // onConnectEnd handler fires this when the user drops a connection
+  // onto empty pane; we append a new "New branch" option + question.
+  useEffect(() => {
+    function handler(ev: Event) {
+      const detail = (ev as CustomEvent).detail as { parentId: string };
+      if (!detail?.parentId) return;
+      setTree((cur) => {
+        if (!cur) return cur;
+        const { tree: next, newId } = addChildQuestion(cur, detail.parentId);
+        if (newId) {
+          setSelectedId(newId);
+          setDirty(true);
+        }
+        return next;
+      });
+    }
+    window.addEventListener("sop-editor:add-child", handler as EventListener);
+    return () => window.removeEventListener("sop-editor:add-child", handler as EventListener);
+  }, []);
+
   const onTreeChange = useCallback((next: DecisionTree) => {
     setTree(next);
     setDirty(true);
@@ -2241,6 +2635,70 @@ export default function SopFullPageEditor() {
       return empties.length === 1 ? empties[0] : null;
     },
   };
+  // Task #818 — right-click context menu actions. The canvas only
+  // surfaces user intent; all tree mutation, persistence, and toast
+  // surfaces still live here so the inspector / outline / canvas stay
+  // in lock-step. Sub-tree copy writes JSON to the system clipboard
+  // for now; when the cross-SOP paste task lands it will swap this
+  // out for a shared in-memory clipboard store.
+  const handleCanvasContextAction = useCallback(
+    (
+      action: "add" | "delete" | "save" | "copy_tree" | "copy_id",
+      target: { id: string; kind: "question" | "outcome" },
+    ) => {
+      if (!tree) return;
+      const nodeId = target.id;
+      if (action === "add") {
+        const { tree: next, newId } = addChildQuestion(tree, nodeId);
+        if (!newId) return;
+        setTree(next);
+        setSelectedId(newId);
+        setDirty(true);
+        return;
+      }
+      if (action === "delete") {
+        const res = deleteNode(tree, nodeId);
+        if (!res.ok) {
+          toast({
+            title: "Couldn't delete",
+            description:
+              res.reason === "root"
+                ? "Root step can't be deleted."
+                : res.reason === "no_parent"
+                  ? "Step has no parent to re-parent onto."
+                  : "Delete failed.",
+            variant: "destructive",
+          });
+          return;
+        }
+        setTree(res.tree);
+        setSelectedId(res.tree.rootId);
+        setDirty(true);
+        return;
+      }
+      if (action === "save") {
+        handleSaveSubTreeToLibrary(nodeId);
+        return;
+      }
+      if (action === "copy_tree") {
+        const subTree = extractSubTreeFromEditor(tree, nodeId);
+        const json = JSON.stringify(subTree);
+        void navigator.clipboard?.writeText(json).then(
+          () => toast({ title: "Sub-tree copied", description: "JSON copied to clipboard." }),
+          () => toast({ title: "Copy failed", variant: "destructive" }),
+        );
+        return;
+      }
+      if (action === "copy_id") {
+        void navigator.clipboard?.writeText(nodeId).then(
+          () => toast({ title: "Node id copied" }),
+          () => toast({ title: "Copy failed", variant: "destructive" }),
+        );
+        return;
+      }
+    },
+    [tree, handleSaveSubTreeToLibrary, toast, setSelectedId],
+  );
 
   // Shared persistence path. Throws on validation or network errors so
   // callers (the top-bar Save button AND the Plain Text tab's Save All
@@ -2608,35 +3066,17 @@ export default function SopFullPageEditor() {
 
         {/* Center canvas */}
         <div className="flex-1 relative min-w-0">
-          <ReactFlow
-            nodes={flow.nodes}
-            edges={flow.edges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodeClick={(ev, n) => {
-              // Task #784 — outcome (synthetic terminal) nodes are
-              // clickable: select the parent question so the operator
-              // can edit the branch that produced this outcome. The
-              // synthetic id is `${parentId}__term${optionIndex}` (see
-              // treeToFlow); split off the suffix to get the parent.
-              const data = n.data as FlowNodeData;
-              const targetId = data.kind === "outcome"
-                ? n.id.split("__term")[0]
-                : n.id;
-              if (ev.shiftKey && data.kind === "question") toggleSelectedId(targetId);
-              else setSelectedId(targetId);
-            }}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            proOptions={{ hideAttribution: true }}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable
-          >
-            <Background gap={18} />
-            <Controls showInteractive={false} />
-            <MiniMap pannable zoomable />
-          </ReactFlow>
+          <ReactFlowProvider>
+            <SopCanvas
+              flow={flow}
+              selectedIds={selectedIds}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              toggleSelectedId={toggleSelectedId}
+              tree={tree}
+              onContextAction={handleCanvasContextAction}
+            />
+          </ReactFlowProvider>
 
           {selectedIds.size > 1 && (
             <Card
@@ -2888,3 +3328,9 @@ export default function SopFullPageEditor() {
     </div>
   );
 }
+
+
+// Test-only export. Exposes file-local components so the canvas
+// component test file can render them in isolation without spinning
+// up the full page (which pulls in React Query, wouter, etc).
+export const __test = { QuestionNodeView, OutcomeNodeView, InsertableEdge, SopCanvas };

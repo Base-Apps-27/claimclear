@@ -94,7 +94,27 @@ export type FlowNodeData = {
   outcomeType?: OutcomeType;
   evidenceCount?: number;
   selected?: boolean;
+  // Hover dimming (Task #818): true when this node is NOT part of the
+  // currently-hovered path and should fade. Driven by the canvas
+  // component via getHoverHighlightIds; never persisted.
+  dimmed?: boolean;
 };
+
+// Task #818 — canvas tone palette. Question / continuation edges stay
+// neutral blue; outcome edges adopt the inspector chip color matching
+// the outcome type so authors can spot dead-ends and approvals at a
+// glance. Pure function so the edge component AND the MiniMap callback
+// share one source of truth.
+export type CanvasTone = "blue" | "green" | "amber" | "red" | "muted";
+
+export function outcomeTone(t: OutcomeType | undefined): CanvasTone {
+  if (!t) return "muted";
+  if (t === "portal_dispute" || t === "dispute") return "green";
+  if (t === "hold") return "amber";
+  // internal, cannot_dispute, non_issue — every "drop / can't dispute"
+  // shape uses the red palette, matching OutcomeNodeView.
+  return "red";
+}
 
 export const NODE_W = 220;
 export const NODE_H = 96;
@@ -169,12 +189,126 @@ export function treeToFlow(
           target: termId,
           type: "insertable",
           label: opt.label || (idx === 0 ? "Yes" : "No"),
-          data: { parentId: n.id, optionIndex: idx, tone: "green" },
+          data: { parentId: n.id, optionIndex: idx, tone: outcomeTone(opt.outcomeType) },
         });
       }
     });
   }
   return { nodes: layoutWithDagre(flowNodes, flowEdges), edges: flowEdges };
+}
+
+// Task #818 — collect every node id that has a forward path to
+// `targetId`. For a pure tree this is just the root-to-target chain;
+// for a DAG (orphan re-attach can let two parents reference the same
+// sub-tree) this includes every parent on every path. Pure + iterative
+// so the unit tests can exercise it without React.
+export function getAncestorIds(
+  tree: DecisionTree,
+  targetId: string,
+): Set<string> {
+  // Build reverse adjacency: child -> parents
+  const parents = new Map<string, string[]>();
+  for (const n of tree.nodes) {
+    for (const opt of n.options) {
+      if (!opt.childId) continue;
+      const arr = parents.get(opt.childId);
+      if (arr) arr.push(n.id);
+      else parents.set(opt.childId, [n.id]);
+    }
+  }
+  const out = new Set<string>();
+  const stack = [targetId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    const ps = parents.get(id);
+    if (!ps) continue;
+    for (const p of ps) {
+      if (out.has(p)) continue;
+      out.add(p);
+      stack.push(p);
+    }
+  }
+  return out;
+}
+
+// Task #818 — descendant set rooted at `nodeId` (defensive against
+// cycles by visit tracking). Used by leaf hover to highlight every
+// path leading to an outcome leaf — though for a synthetic outcome
+// terminal, "every path" is captured by getAncestorIds on the parent.
+export function getDescendantIds(
+  tree: DecisionTree,
+  nodeId: string,
+): Set<string> {
+  const out = new Set<string>();
+  const stack = [nodeId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (out.has(id)) continue;
+    out.add(id);
+    const node = tree.nodes.find((n) => n.id === id);
+    if (!node) continue;
+    for (const opt of node.options) {
+      if (opt.childId) stack.push(opt.childId);
+    }
+  }
+  return out;
+}
+
+// Task #818 — set of REAL node ids (question + synthetic outcome
+// terminals) to keep highlighted while hovering `hoveredId`. The
+// canvas dims everything else. Accepts the synthetic outcome id form
+// `${parentId}__term${idx}` and resolves it back to the parent
+// question for path computation.
+export function getHoverHighlightIds(
+  tree: DecisionTree,
+  hoveredId: string,
+): Set<string> {
+  const out = new Set<string>();
+  const termMatch = hoveredId.match(/^(.+)__term(\d+)$/);
+  if (termMatch) {
+    const parentId = termMatch[1];
+    out.add(hoveredId);
+    out.add(parentId);
+    for (const id of getAncestorIds(tree, parentId)) out.add(id);
+    return out;
+  }
+  // Hovering a question node: highlight root-to-node ancestors AND the
+  // node itself. We intentionally do NOT highlight descendants —
+  // the spec is "root-to-node path".
+  out.add(hoveredId);
+  for (const id of getAncestorIds(tree, hoveredId)) out.add(id);
+  return out;
+}
+
+// Task #818 — drag-from-handle to create a child. Appends a fresh
+// option labeled "New branch" on the parent and a new empty question
+// node, wired together. Returns the new ids so the canvas can scroll
+// to + select the new node. Mirrors `insertBetween` style.
+export function addChildQuestion(
+  tree: DecisionTree,
+  parentId: string,
+): { tree: DecisionTree; newId: string; optionIndex: number } {
+  const parent = tree.nodes.find((n) => n.id === parentId);
+  if (!parent) return { tree, newId: "", optionIndex: -1 };
+  const newId = generateNodeId();
+  const newNode: TreeNode = {
+    id: newId,
+    question: "New step",
+    options: [{ label: "Yes" }, { label: "No" }],
+  };
+  const optionIndex = parent.options.length;
+  const nextTree: DecisionTree = {
+    ...tree,
+    nodes: [
+      ...tree.nodes.map((n) =>
+        n.id === parentId
+          ? { ...n, options: [...n.options, { label: "New branch", childId: newId }] }
+          : n,
+      ),
+      newNode,
+    ],
+  };
+  return { tree: nextTree, newId, optionIndex };
 }
 
 export function updateNode(

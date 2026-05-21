@@ -33,6 +33,11 @@ import {
   scanAmbiguity,
   checkCoverage,
   ingestDocument,
+  outcomeTone,
+  getAncestorIds,
+  getDescendantIds,
+  getHoverHighlightIds,
+  addChildQuestion,
   type SopEditorSettings,
   type SubtreePayload,
 } from "./sop-full-page-editor-helpers";
@@ -1412,4 +1417,94 @@ test("addBranchWithSuggestion appends a question branch when nextQuestion is giv
   assert.equal(parent.options[1].childId, newId);
   const child = next.nodes.find((n) => n.id === newId)!;
   assert.equal(child.question, "Is the claim flagged?");
+});
+// ---------------------------------------------------------------------------
+// Task #818 — canvas polish helpers
+// ---------------------------------------------------------------------------
+
+test("outcomeTone maps approve types to green, hold to amber, drop-types to red", () => {
+  assert.equal(outcomeTone("portal_dispute"), "green");
+  assert.equal(outcomeTone("dispute"), "green");
+  assert.equal(outcomeTone("hold"), "amber");
+  assert.equal(outcomeTone("non_issue"), "red");
+  assert.equal(outcomeTone("cannot_dispute"), "red");
+  assert.equal(outcomeTone("internal"), "red");
+  assert.equal(outcomeTone(undefined), "muted");
+});
+
+test("treeToFlow stamps outcome-specific tones on terminal edges (not all green)", () => {
+  // sampleTree has: a-NO -> non_issue (red), b-Found -> portal_dispute (green), b-None -> hold (amber)
+  const { edges } = treeToFlow(sampleTree(), null);
+  const noEdge = edges.find((e) => e.source === "a" && e.target === "a__term1");
+  const foundEdge = edges.find((e) => e.source === "b" && e.target === "b__term0");
+  const holdEdge = edges.find((e) => e.source === "b" && e.target === "b__term1");
+  assert.equal((noEdge!.data as { tone: string }).tone, "red");
+  assert.equal((foundEdge!.data as { tone: string }).tone, "green");
+  assert.equal((holdEdge!.data as { tone: string }).tone, "amber");
+});
+
+test("getAncestorIds walks reverse adjacency and handles DAGs with multiple parents", () => {
+  // Two parents both point to "c"; ancestors of "c" must include both + root.
+  const dag: DecisionTree = {
+    rootId: "root",
+    nodes: [
+      { id: "root", question: "?", options: [
+        { label: "L", childId: "a" },
+        { label: "R", childId: "b" },
+      ] },
+      { id: "a", question: "?", options: [{ label: "go", childId: "c" }] },
+      { id: "b", question: "?", options: [{ label: "go", childId: "c" }] },
+      { id: "c", question: "?", options: [] },
+    ],
+  };
+  const got = getAncestorIds(dag, "c");
+  assert.deepEqual([...got].sort(), ["a", "b", "root"]);
+});
+
+test("getAncestorIds returns an empty set for the root node", () => {
+  assert.equal(getAncestorIds(sampleTree(), "a").size, 0);
+});
+
+test("getDescendantIds collects the node + every reachable child", () => {
+  const got = getDescendantIds(sampleTree(), "a");
+  assert.deepEqual([...got].sort(), ["a", "b"]);
+});
+
+test("getHoverHighlightIds for a question yields the root-to-node chain plus the node itself", () => {
+  const got = getHoverHighlightIds(sampleTree(), "b");
+  assert.deepEqual([...got].sort(), ["a", "b"]);
+});
+
+test("getHoverHighlightIds for a synthetic outcome terminal includes the terminal, its parent, and all ancestors", () => {
+  // Hovering b's "Found" terminal => b__term0 (synthetic). Highlight must include
+  // the terminal itself, its parent question b, and a (the root path to b).
+  const got = getHoverHighlightIds(sampleTree(), "b__term0");
+  assert.deepEqual([...got].sort(), ["a", "b", "b__term0"]);
+});
+
+test("addChildQuestion appends a new option + question, returns the new id, and leaves the source tree untouched", () => {
+  const tree = sampleTree();
+  const before = JSON.parse(JSON.stringify(tree));
+  const { tree: next, newId, optionIndex } = addChildQuestion(tree, "a");
+  // Source tree is unchanged (immutable contract).
+  assert.deepEqual(tree, before);
+  // New id is non-empty and the option index is the next slot.
+  assert.ok(newId);
+  assert.equal(optionIndex, 2);
+  // Parent gained an option pointing at the new node.
+  const parent = next.nodes.find((n) => n.id === "a")!;
+  assert.equal(parent.options.length, 3);
+  assert.equal(parent.options[2].childId, newId);
+  assert.equal(parent.options[2].label, "New branch");
+  // New node exists with no children (a fresh leaf question).
+  const child = next.nodes.find((n) => n.id === newId)!;
+  assert.ok(child);
+  assert.equal(child.options.length, 2);
+});
+
+test("addChildQuestion on an unknown parent is a no-op", () => {
+  const tree = sampleTree();
+  const { tree: next, newId } = addChildQuestion(tree, "nope");
+  assert.equal(newId, "");
+  assert.equal(next, tree);
 });
