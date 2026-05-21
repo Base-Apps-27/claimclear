@@ -1151,21 +1151,134 @@ async function processViaExternalBot(
       message: `Dry run screenshot saved: ${result.screenshotPath}`,
     });
   } else {
-    await db.update(portalSubmissionsTable).set({
-      status: "submitted",
-      portalTicketId: result.ticketId || null,
-      submittedAt: new Date().toISOString(),
-      // Persist the originating batch run so other rows on the same invoice
-      // group can render an "Already submitted in run #N" pill. Set once on
-      // the pending → submitted transition; never cleared.
-      submittedInBatchId: batchId ?? null,
-      // Clear any leftover error from a previous failed attempt so the row
-      // does not keep showing a stale red error pill after success.
-      errorMessage: null,
-      legs: persistedLegs,
-    }).where(eq(portalSubmissionsTable.id, sub.id));
-
+    const newTicketId = result.ticketId || null;
     const submittedAtIso = new Date().toISOString();
+
+    // Task #805 — retry must never overwrite a portal_ticket_id that is
+    // already on the row. The submit-bot can legitimately produce a new
+    // ticket on each retry (when the prior portal-side submit succeeded
+    // but our DB write didn't, or when an operator/sandbox bounced a
+    // 'submitted' row back to pending). Overwriting the prior id orphans
+    // that earlier ticket on MAS — including any DENIED responses we
+    // would never see again. Three paths below cover the cases.
+    let idempotentRowId: number | null = null;
+    if (newTicketId) {
+      // Path A — idempotent: a row already exists for this invoice group
+      // with this portal_ticket_id (the bot is re-reporting a submission
+      // we already tracked). Update that row in place.
+      const dup = await db.select({ id: portalSubmissionsTable.id })
+        .from(portalSubmissionsTable)
+        .where(and(
+          eq(portalSubmissionsTable.invoiceGroupId, sub.invoiceGroupId),
+          eq(portalSubmissionsTable.portalTicketId, newTicketId),
+        ))
+        .limit(1);
+      if (dup.length > 0) idempotentRowId = dup[0].id;
+    }
+
+    const priorTicketId = sub.portalTicketId;
+    const isNewDistinctTicket = !!newTicketId
+      && !!priorTicketId
+      && priorTicketId !== newTicketId
+      && idempotentRowId === null;
+
+    if (idempotentRowId !== null && idempotentRowId !== sub.id) {
+      // Idempotent retry against a DIFFERENT row. Refresh that row's
+      // submitted state and mark the current (duplicate) row as
+      // cancelled so we don't keep retrying it. Preserve the duplicate
+      // row's prior history (attempts, portal_ticket_id, submittedAt).
+      await db.update(portalSubmissionsTable).set({
+        status: "submitted",
+        portalTicketId: newTicketId,
+        submittedAt: submittedAtIso,
+        submittedInBatchId: batchId ?? null,
+        errorMessage: null,
+        legs: persistedLegs,
+      }).where(eq(portalSubmissionsTable.id, idempotentRowId));
+      await db.update(portalSubmissionsTable).set({
+        status: "cancelled",
+        errorMessage: `Idempotent retry: portal ticket ${newTicketId} already tracked on row ${idempotentRowId}`,
+        legs: persistedLegs,
+      }).where(eq(portalSubmissionsTable.id, sub.id));
+    } else if (isNewDistinctTicket) {
+      // Path B — bot returned a brand-new portal ticket id while the
+      // existing row already carries a different one. INSERT a new
+      // portal_submissions row for the new ticket so the scrape cron
+      // (which picks up rows with last_scraped_at IS NULL) can pull
+      // any response on it. The existing row is left as-is for
+      // portal_ticket_id / submittedAt / attempts — its history of
+      // the earlier ticket stays intact. We only flip its status off
+      // 'in_progress' so it reaches a clean terminal state ('submitted'
+      // because the earlier portal ticket DID land on MAS at some point)
+      // and persist any updated per-leg outcomes.
+      await db.insert(portalSubmissionsTable).values({
+        invoiceGroupId: sub.invoiceGroupId,
+        status: "submitted",
+        issueType: sub.issueType,
+        subject: sub.subject,
+        requesterEmail: sub.requesterEmail,
+        transportationProviderName: sub.transportationProviderName,
+        phoneNumber: sub.phoneNumber,
+        invoiceNumber: sub.invoiceNumber,
+        gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable,
+        descriptionHtml: sub.descriptionHtml,
+        descriptionEditorEmail: sub.descriptionEditorEmail,
+        descriptionEditorName: sub.descriptionEditorName,
+        descriptionHistory: sub.descriptionHistory ?? [],
+        attachmentUrls: sub.attachmentUrls ?? null,
+        legs: persistedLegs,
+        confNumber: sub.confNumber,
+        serviceDate: sub.serviceDate,
+        refNumber: sub.refNumber,
+        clientNumber: sub.clientNumber,
+        carNumber: sub.carNumber,
+        claimAmount: sub.claimAmount,
+        errorTypeName: sub.errorTypeName,
+        errorDetails: sub.errorDetails,
+        disputeReason: sub.disputeReason,
+        specialCircumstances: sub.specialCircumstances,
+        understandingReadback: sub.understandingReadback,
+        understandingReadbackAt: sub.understandingReadbackAt,
+        evidenceNotes: sub.evidenceNotes,
+        evidenceFiles: sub.evidenceFiles ?? null,
+        portalTicketId: newTicketId,
+        errorMessage: null,
+        submittedAt: submittedAtIso,
+        attempts: 0,
+        maxAttempts: sub.maxAttempts,
+        submittedInBatchId: batchId ?? null,
+        lastScrapedAt: null,
+        lastScrapeOutcome: null,
+        lastScrapeError: null,
+      });
+      await db.update(portalSubmissionsTable).set({
+        status: "submitted",
+        errorMessage: null,
+        legs: persistedLegs,
+      }).where(eq(portalSubmissionsTable.id, sub.id));
+      logger.info(
+        { submissionId: sub.id, invoiceGroupId: sub.invoiceGroupId, priorTicketId, newTicketId, batchId },
+        "processViaExternalBot: bot returned a new portal ticket id on retry — inserted a new portal_submissions row to preserve the prior ticket id",
+      );
+    } else {
+      // Path C — first-time submission OR idempotent retry on the same
+      // row (current row had no prior portalTicketId, or the bot
+      // returned the same id it already has). Update in place.
+      await db.update(portalSubmissionsTable).set({
+        status: "submitted",
+        portalTicketId: newTicketId,
+        submittedAt: submittedAtIso,
+        // Persist the originating batch run so other rows on the same invoice
+        // group can render an "Already submitted in run #N" pill. Set once on
+        // the pending → submitted transition; never cleared.
+        submittedInBatchId: batchId ?? null,
+        // Clear any leftover error from a previous failed attempt so the row
+        // does not keep showing a stale red error pill after success.
+        errorMessage: null,
+        legs: persistedLegs,
+      }).where(eq(portalSubmissionsTable.id, sub.id));
+    }
+
     await transitionGroupStatus({
       groupId: sub.invoiceGroupId,
       newStatus: "Awaiting Response",
