@@ -864,8 +864,17 @@ function Outline({
             <span className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           )}
           <HelpCircle className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-blue-fg))" }} />
-          {branchLabel && <span className="text-[9px] text-muted-foreground">[{branchLabel}]</span>}
-          <span className="truncate text-foreground">{label}</span>
+          <span className="flex-1 min-w-0 flex flex-col">
+            {branchLabel && (
+              <span
+                className="text-[9px] text-muted-foreground leading-tight break-words"
+                title={branchLabel}
+              >
+                [{branchLabel}]
+              </span>
+            )}
+            <span className="text-foreground leading-snug break-words">{label}</span>
+          </span>
           {(node.evidenceRequirements?.length ?? 0) > 0 && (
             <span
               className="ml-auto text-[9px] px-1 rounded font-semibold tabular-nums"
@@ -1228,7 +1237,7 @@ function Inspector({
           nodeId={node.id}
           onSelectNode={onSelectNode}
         />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <div
             className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
             style={{
@@ -1239,14 +1248,20 @@ function Inspector({
           >
             <HelpCircle className="w-3.5 h-3.5" style={{ color: "hsl(var(--cc-blue-fg))" }} />
           </div>
-          <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0 flex-1">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Question node</span>
             <span className="text-[10px] text-muted-foreground font-mono truncate">{node.id.slice(0, 12)}</span>
           </div>
+        </div>
+        {/* Action buttons live on their own row so Copy / Save sub-tree /
+            Delete never have to fight the title cluster for horizontal
+            room — they wrap onto a second visual line on narrow
+            inspector widths instead of truncating. */}
+        <div className="flex items-center flex-wrap gap-1" data-testid="inspector-action-row">
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-6 px-2 text-[10px]"
+            className="h-6 px-2 text-[10px]"
             onClick={() => onCopySubTree(node.id)}
             disabled={node.id === tree.rootId}
             data-testid="inspector-copy-sub-tree"
@@ -3064,7 +3079,7 @@ export default function SopFullPageEditor() {
           <Skeleton className="h-8 w-28" />
         </div>
         <div className="flex-1 flex min-h-0">
-          <div className="w-72 border-r border-border bg-card p-3 space-y-2">
+          <div className="w-72 lg:w-80 xl:w-96 border-r border-border bg-card p-3 space-y-2">
             <Skeleton className="h-7 w-full" />
             <Skeleton className="h-7 w-full" />
             <Skeleton className="h-7 w-3/4" />
@@ -3074,7 +3089,7 @@ export default function SopFullPageEditor() {
             <Skeleton className="h-24 w-64" />
             <Skeleton className="h-24 w-64 ml-12" />
           </div>
-          <div className="w-80 border-l border-border bg-card p-3 space-y-2">
+          <div className="w-80 lg:w-96 xl:w-[28rem] border-l border-border bg-card p-3 space-y-2">
             <Skeleton className="h-7 w-full" />
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-7 w-full" />
@@ -3218,9 +3233,9 @@ export default function SopFullPageEditor() {
       {/* Three-panel body */}
       <div className="flex-1 flex min-h-0">
         {/* Left panel — outline */}
-        <div className="w-72 border-r border-border bg-card flex flex-col shrink-0">
+        <div className="w-72 lg:w-80 xl:w-96 border-r border-border bg-card flex flex-col shrink-0">
           <div
-            className="flex items-center gap-1 px-2 py-1.5 bg-muted/30 border-b border-border"
+            className="flex items-center flex-wrap gap-1 px-2 py-1.5 bg-muted/30 border-b border-border"
             role="tablist"
             aria-label="Left panel"
           >
@@ -3593,7 +3608,7 @@ export default function SopFullPageEditor() {
         {/* Right inspector — hidden during multi-select so the bulk
             action bar is the only edit affordance on screen. */}
         {selectedIds.size <= 1 && (
-          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0" data-testid="inspector-pane">
+          <div className="w-80 lg:w-96 xl:w-[28rem] border-l border-border bg-card flex flex-col shrink-0" data-testid="inspector-pane">
             <Inspector
               tree={tree}
               originalTree={loadedSnapshotRef.current?.tree ?? null}
