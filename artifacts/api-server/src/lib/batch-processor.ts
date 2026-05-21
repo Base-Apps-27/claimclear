@@ -1,4 +1,4 @@
-import { eq, and, or, isNull, isNotNull, lte, inArray, desc } from "drizzle-orm";
+import { eq, and, or, isNull, isNotNull, lte, gte, inArray, desc, count } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable, portalBatchRunsTable } from "@workspace/db";
 import { logger } from "./logger";
@@ -10,6 +10,11 @@ import { scheduleRetryOrFail } from "./submission-retry";
 import { createWorkerGate } from "./worker-gate";
 import { portalBrowserGate } from "./portal-browser-gate";
 import { primaryClaimIdForGroup } from "./group-claims";
+import {
+  readPortalIndexPage as defaultReadPortalIndexPage,
+  type PortalIndexPageResult,
+  type ReadPortalIndexOpts,
+} from "../bot/portal-index-reader";
 
 function resolveGps(value: string, issueType: string): string {
   if (["Yes", "No", "Unknown"].includes(value)) return value;
@@ -761,6 +766,87 @@ async function processSequentially(job: BatchJob): Promise<void> {
       const errMsg = err instanceof Error ? err.message : String(err);
       logger.error({ err, submissionId: subId, batchId: job.id }, "Batch submission processing failed");
 
+      // Task #809 — pre-retry portal-index dedupe guard. Before letting
+      // `scheduleRetryOrFail` reschedule (which would create a duplicate
+      // MAS ticket on the next sweep), read page 1 of the portal ticket
+      // list and adopt any matching open/recent ticket. Bounded: one page,
+      // one network call per failed attempt; the helper logs + returns
+      // null if the lookup itself throws so this never blocks the retry
+      // path forever.
+      try {
+        const [freshSub] = await db.select().from(portalSubmissionsTable)
+          .where(eq(portalSubmissionsTable.id, subId));
+        if (freshSub) {
+          const adopted = await tryAdoptExistingPortalTicket(freshSub);
+          if (adopted) {
+            logger.info(
+              { submissionId: subId, batchId: job.id, adoptedTicketId: adopted.adoptedTicketId },
+              "Portal-index guard: adopted existing portal ticket — skipping retry",
+            );
+            await persistPortalSubmissionSuccess({
+              sub: freshSub,
+              batchId: job.id,
+              ticketId: adopted.adoptedTicketId,
+              persistedLegs: [],
+              submittedAtIso: new Date().toISOString(),
+            });
+            await transitionGroupStatus({
+              groupId: freshSub.invoiceGroupId,
+              newStatus: "Awaiting Response",
+              source: "batch_processor",
+              reason: `Portal-index guard adopted existing ticket ${adopted.adoptedTicketId}`,
+              actor: { userEmail: null, userName: "Batch Processor" },
+              systemOverride: true,
+              extraFields: {
+                disputeEmailSent: true,
+                disputeEmailSentAt: new Date().toISOString(),
+              },
+              childFields: { submittedVia: "portal" },
+            }).catch((transitionErr) => {
+              logger.warn({ err: transitionErr, submissionId: subId }, "Portal-index guard: group transition failed (non-fatal)");
+            });
+            await db.insert(botActivityLogTable).values({
+              submissionId: subId,
+              botInstanceId: null,
+              action: "retry_suppressed_existing_ticket",
+              success: true,
+              message: `guard=portal_index_lookup adopted_ticket=${adopted.adoptedTicketId} subject=${(adopted.subject ?? "").slice(0, 120)} after: ${errMsg}`,
+            }).catch(() => {});
+
+            if (subClaimId) {
+              broadcastPresenceEvent({
+                type: "bot_completed",
+                resourceType: "claim", resourceId: subClaimId,
+                userName: "Batch Processor",
+                userEmail: null,
+                botProcess: "portal_submission",
+                timestamp: new Date().toISOString(),
+              });
+            }
+            broadcastBatchEvent({
+              type: "row_status_changed",
+              batchId: job.id,
+              submissionId: subId,
+              newStatus: "submitted",
+            });
+            job.results.push({ submissionId: subId, status: "success", message: `Adopted existing portal ticket ${adopted.adoptedTicketId}` });
+            job.succeeded++;
+            job.processed++;
+            broadcastBatchEvent({
+              type: "batch_progress",
+              batchId: job.id,
+              processed: job.processed,
+              succeeded: job.succeeded,
+              failed: job.failed,
+              total: job.total,
+            });
+            continue;
+          }
+        }
+      } catch (guardErr) {
+        logger.warn({ err: guardErr, submissionId: subId }, "Portal-index guard threw — falling through to normal retry path");
+      }
+
       const retryResult = await scheduleRetryOrFail({
         submissionId: subId,
         errorMessage: errMsg,
@@ -918,6 +1004,20 @@ export function __setBatchWorkerForTests(
   fn: typeof __batchWorkerOverride,
 ): void {
   __batchWorkerOverride = fn;
+}
+
+// Task #809 — test seam for the pre-retry portal-index dedupe lookup. The
+// production code path acquires `portalBrowserGate` and calls Playwright;
+// tests substitute an in-process stub that returns canned index rows so we
+// can drive the dedupe logic without launching a browser. Cleared via
+// __setPortalIndexReaderForTests(null).
+type PortalIndexReaderFn = (
+  pageNum: number,
+  opts?: ReadPortalIndexOpts,
+) => Promise<PortalIndexPageResult>;
+let __portalIndexReaderOverride: PortalIndexReaderFn | null = null;
+export function __setPortalIndexReaderForTests(fn: PortalIndexReaderFn | null): void {
+  __portalIndexReaderOverride = fn;
 }
 
 async function processDirectEmail(
@@ -1113,15 +1213,20 @@ async function processViaExternalBot(
   logger.info({ submissionId: sub.id, groupId: sub.invoiceGroupId, issueType, legCount: workerSub.legs.length, attachmentCount: workerSub.attachmentUrls.length }, "processViaExternalBot: resolved submission data");
 
   const dryRun = process.env.BOT_DRY_RUN === "true";
-  const result = await runBatchWorker(workerSub, dryRun);
+  // Task #809 — capture `result` into an outer variable so the catch block
+  // can tell whether the bot returned a ticketId before throwing. If a
+  // post-success step (per-leg failure check, DB write, transition) throws
+  // AFTER the portal-side submit landed a ticket, treat the row as
+  // success-with-late-failure and route through the task-#805 insert path
+  // instead of letting `scheduleRetryOrFail` create a duplicate MAS ticket
+  // on the next retry.
+  let result: Awaited<ReturnType<typeof runBatchWorker>> | null = null;
+  let persistedLegs: Array<{ legId: number; confNumber: string | null; ticked: boolean; error: string | null }> = [];
+  try {
+    result = await runBatchWorker(workerSub, dryRun);
 
-  // Persist per-leg outcomes (legId, confNumber, ticked, error) onto the
-  // group submission's `legs` JSONB so the drawer can render the per-leg
-  // breakdown. If any leg failed (`ticked: false`) we still surface it as
-  // a submission-level failure so the existing retry path runs — partial
-  // success is captured in JSONB for forensic review either way.
-  const persistedLegs = workerSub.legs.map((leg) => {
-    const r = result.perLeg.find((p) => p.legId === leg.id);
+  persistedLegs = workerSub.legs.map((leg) => {
+    const r = result!.perLeg.find((p) => p.legId === leg.id);
     return {
       legId: leg.id,
       confNumber: leg.confNumber || null,
@@ -1154,130 +1259,17 @@ async function processViaExternalBot(
     const newTicketId = result.ticketId || null;
     const submittedAtIso = new Date().toISOString();
 
-    // Task #805 — retry must never overwrite a portal_ticket_id that is
-    // already on the row. The submit-bot can legitimately produce a new
-    // ticket on each retry (when the prior portal-side submit succeeded
-    // but our DB write didn't, or when an operator/sandbox bounced a
-    // 'submitted' row back to pending). Overwriting the prior id orphans
-    // that earlier ticket on MAS — including any DENIED responses we
-    // would never see again. Three paths below cover the cases.
-    let idempotentRowId: number | null = null;
-    if (newTicketId) {
-      // Path A — idempotent: a row already exists for this invoice group
-      // with this portal_ticket_id (the bot is re-reporting a submission
-      // we already tracked). Update that row in place.
-      const dup = await db.select({ id: portalSubmissionsTable.id })
-        .from(portalSubmissionsTable)
-        .where(and(
-          eq(portalSubmissionsTable.invoiceGroupId, sub.invoiceGroupId),
-          eq(portalSubmissionsTable.portalTicketId, newTicketId),
-        ))
-        .limit(1);
-      if (dup.length > 0) idempotentRowId = dup[0].id;
-    }
-
-    const priorTicketId = sub.portalTicketId;
-    const isNewDistinctTicket = !!newTicketId
-      && !!priorTicketId
-      && priorTicketId !== newTicketId
-      && idempotentRowId === null;
-
-    if (idempotentRowId !== null && idempotentRowId !== sub.id) {
-      // Idempotent retry against a DIFFERENT row. Refresh that row's
-      // submitted state and mark the current (duplicate) row as
-      // cancelled so we don't keep retrying it. Preserve the duplicate
-      // row's prior history (attempts, portal_ticket_id, submittedAt).
-      await db.update(portalSubmissionsTable).set({
-        status: "submitted",
-        portalTicketId: newTicketId,
-        submittedAt: submittedAtIso,
-        submittedInBatchId: batchId ?? null,
-        errorMessage: null,
-        legs: persistedLegs,
-      }).where(eq(portalSubmissionsTable.id, idempotentRowId));
-      await db.update(portalSubmissionsTable).set({
-        status: "cancelled",
-        errorMessage: `Idempotent retry: portal ticket ${newTicketId} already tracked on row ${idempotentRowId}`,
-        legs: persistedLegs,
-      }).where(eq(portalSubmissionsTable.id, sub.id));
-    } else if (isNewDistinctTicket) {
-      // Path B — bot returned a brand-new portal ticket id while the
-      // existing row already carries a different one. INSERT a new
-      // portal_submissions row for the new ticket so the scrape cron
-      // (which picks up rows with last_scraped_at IS NULL) can pull
-      // any response on it. The existing row is left as-is for
-      // portal_ticket_id / submittedAt / attempts — its history of
-      // the earlier ticket stays intact. We only flip its status off
-      // 'in_progress' so it reaches a clean terminal state ('submitted'
-      // because the earlier portal ticket DID land on MAS at some point)
-      // and persist any updated per-leg outcomes.
-      await db.insert(portalSubmissionsTable).values({
-        invoiceGroupId: sub.invoiceGroupId,
-        status: "submitted",
-        issueType: sub.issueType,
-        subject: sub.subject,
-        requesterEmail: sub.requesterEmail,
-        transportationProviderName: sub.transportationProviderName,
-        phoneNumber: sub.phoneNumber,
-        invoiceNumber: sub.invoiceNumber,
-        gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable,
-        descriptionHtml: sub.descriptionHtml,
-        descriptionEditorEmail: sub.descriptionEditorEmail,
-        descriptionEditorName: sub.descriptionEditorName,
-        descriptionHistory: sub.descriptionHistory ?? [],
-        attachmentUrls: sub.attachmentUrls ?? null,
-        legs: persistedLegs,
-        confNumber: sub.confNumber,
-        serviceDate: sub.serviceDate,
-        refNumber: sub.refNumber,
-        clientNumber: sub.clientNumber,
-        carNumber: sub.carNumber,
-        claimAmount: sub.claimAmount,
-        errorTypeName: sub.errorTypeName,
-        errorDetails: sub.errorDetails,
-        disputeReason: sub.disputeReason,
-        specialCircumstances: sub.specialCircumstances,
-        understandingReadback: sub.understandingReadback,
-        understandingReadbackAt: sub.understandingReadbackAt,
-        evidenceNotes: sub.evidenceNotes,
-        evidenceFiles: sub.evidenceFiles ?? null,
-        portalTicketId: newTicketId,
-        errorMessage: null,
-        submittedAt: submittedAtIso,
-        attempts: 0,
-        maxAttempts: sub.maxAttempts,
-        submittedInBatchId: batchId ?? null,
-        lastScrapedAt: null,
-        lastScrapeOutcome: null,
-        lastScrapeError: null,
-      });
-      await db.update(portalSubmissionsTable).set({
-        status: "submitted",
-        errorMessage: null,
-        legs: persistedLegs,
-      }).where(eq(portalSubmissionsTable.id, sub.id));
-      logger.info(
-        { submissionId: sub.id, invoiceGroupId: sub.invoiceGroupId, priorTicketId, newTicketId, batchId },
-        "processViaExternalBot: bot returned a new portal ticket id on retry — inserted a new portal_submissions row to preserve the prior ticket id",
-      );
-    } else {
-      // Path C — first-time submission OR idempotent retry on the same
-      // row (current row had no prior portalTicketId, or the bot
-      // returned the same id it already has). Update in place.
-      await db.update(portalSubmissionsTable).set({
-        status: "submitted",
-        portalTicketId: newTicketId,
-        submittedAt: submittedAtIso,
-        // Persist the originating batch run so other rows on the same invoice
-        // group can render an "Already submitted in run #N" pill. Set once on
-        // the pending → submitted transition; never cleared.
-        submittedInBatchId: batchId ?? null,
-        // Clear any leftover error from a previous failed attempt so the row
-        // does not keep showing a stale red error pill after success.
-        errorMessage: null,
-        legs: persistedLegs,
-      }).where(eq(portalSubmissionsTable.id, sub.id));
-    }
+    // Task #805 / Task #809 — paths A/B/C now live in
+    // `persistPortalSubmissionSuccess` so the late-failure recovery
+    // and the portal-index dedupe guard share the same idempotent write
+    // logic with this normal success path.
+    await persistPortalSubmissionSuccess({
+      sub,
+      batchId: batchId ?? null,
+      ticketId: newTicketId,
+      persistedLegs,
+      submittedAtIso,
+    });
 
     await transitionGroupStatus({
       groupId: sub.invoiceGroupId,
@@ -1306,6 +1298,237 @@ async function processViaExternalBot(
   }
 
   logger.info({ submissionId: sub.id, ticketId: result.ticketId, dryRun }, "Batch worker completed successfully");
+  } catch (err) {
+    // Task #809 — late-failure-with-ticket. If the bot returned a
+    // ticketId before the throw, the portal-side submit landed: any
+    // retry would create a duplicate MAS ticket. Route through the
+    // task-#805 dedupe insert path so the row reaches a clean
+    // `submitted` state, and swallow the error so the outer loop
+    // treats this row as success and never calls scheduleRetryOrFail.
+    if (!dryRun && result?.ticketId) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { submissionId: sub.id, ticketId: result.ticketId, err: errMsg },
+        "processViaExternalBot: late failure after bot returned ticketId — routing through dedupe insert path",
+      );
+      try {
+        await persistPortalSubmissionSuccess({
+          sub,
+          batchId: batchId ?? null,
+          ticketId: result.ticketId,
+          persistedLegs,
+          submittedAtIso: new Date().toISOString(),
+        });
+        await transitionGroupStatus({
+          groupId: sub.invoiceGroupId,
+          newStatus: "Awaiting Response",
+          source: "batch_processor",
+          reason: `Portal ticket submitted successfully (recovered from late failure) - Ticket ID: ${result.ticketId}`,
+          actor: { userEmail: null, userName: "Batch Processor" },
+          systemOverride: true,
+          extraFields: {
+            disputeEmailSent: true,
+            disputeEmailSentAt: new Date().toISOString(),
+          },
+          childFields: { submittedVia: "portal" },
+        }).catch((transitionErr) => {
+          logger.warn({ err: transitionErr, submissionId: sub.id }, "Late-failure recovery: group transition failed (non-fatal)");
+        });
+        await db.insert(botActivityLogTable).values({
+          submissionId: sub.id,
+          botInstanceId: null,
+          action: "retry_suppressed_existing_ticket",
+          success: true,
+          message: `guard=late_failure_with_ticket adopted_ticket=${result.ticketId} after post-submit error: ${errMsg}`,
+        }).catch(() => {});
+        return;
+      } catch (recoverErr) {
+        logger.error(
+          { err: recoverErr, submissionId: sub.id, ticketId: result.ticketId },
+          "Late-failure recovery itself threw — falling back to normal retry path",
+        );
+      }
+    }
+    throw err;
+  }
+}
+
+// Task #805 / Task #809 — paths A/B/C: never overwrite a portal_ticket_id
+// that is already on the row. Extracted so both the normal success path
+// inside `processViaExternalBot` AND the late-failure / portal-index-
+// adoption recovery paths use the same idempotent write logic.
+async function persistPortalSubmissionSuccess(args: {
+  sub: typeof portalSubmissionsTable.$inferSelect;
+  batchId?: string | null;
+  ticketId: string | null;
+  persistedLegs: Array<{ legId: number; confNumber: string | null; ticked: boolean; error: string | null }>;
+  submittedAtIso: string;
+}): Promise<void> {
+  const { sub, batchId, ticketId, persistedLegs, submittedAtIso } = args;
+
+  let idempotentRowId: number | null = null;
+  if (ticketId) {
+    const dup = await db.select({ id: portalSubmissionsTable.id })
+      .from(portalSubmissionsTable)
+      .where(and(
+        eq(portalSubmissionsTable.invoiceGroupId, sub.invoiceGroupId),
+        eq(portalSubmissionsTable.portalTicketId, ticketId),
+      ))
+      .limit(1);
+    if (dup.length > 0) idempotentRowId = dup[0].id;
+  }
+
+  const priorTicketId = sub.portalTicketId;
+  const isNewDistinctTicket = !!ticketId
+    && !!priorTicketId
+    && priorTicketId !== ticketId
+    && idempotentRowId === null;
+
+  if (idempotentRowId !== null && idempotentRowId !== sub.id) {
+    await db.update(portalSubmissionsTable).set({
+      status: "submitted",
+      portalTicketId: ticketId,
+      submittedAt: submittedAtIso,
+      submittedInBatchId: batchId ?? null,
+      errorMessage: null,
+      legs: persistedLegs,
+    }).where(eq(portalSubmissionsTable.id, idempotentRowId));
+    await db.update(portalSubmissionsTable).set({
+      status: "cancelled",
+      errorMessage: `Idempotent retry: portal ticket ${ticketId} already tracked on row ${idempotentRowId}`,
+      legs: persistedLegs,
+    }).where(eq(portalSubmissionsTable.id, sub.id));
+  } else if (isNewDistinctTicket) {
+    await db.insert(portalSubmissionsTable).values({
+      invoiceGroupId: sub.invoiceGroupId,
+      status: "submitted",
+      issueType: sub.issueType,
+      subject: sub.subject,
+      requesterEmail: sub.requesterEmail,
+      transportationProviderName: sub.transportationProviderName,
+      phoneNumber: sub.phoneNumber,
+      invoiceNumber: sub.invoiceNumber,
+      gpsBreadcrumbsAvailable: sub.gpsBreadcrumbsAvailable,
+      descriptionHtml: sub.descriptionHtml,
+      descriptionEditorEmail: sub.descriptionEditorEmail,
+      descriptionEditorName: sub.descriptionEditorName,
+      descriptionHistory: sub.descriptionHistory ?? [],
+      attachmentUrls: sub.attachmentUrls ?? null,
+      legs: persistedLegs,
+      confNumber: sub.confNumber,
+      serviceDate: sub.serviceDate,
+      refNumber: sub.refNumber,
+      clientNumber: sub.clientNumber,
+      carNumber: sub.carNumber,
+      claimAmount: sub.claimAmount,
+      errorTypeName: sub.errorTypeName,
+      errorDetails: sub.errorDetails,
+      disputeReason: sub.disputeReason,
+      specialCircumstances: sub.specialCircumstances,
+      understandingReadback: sub.understandingReadback,
+      understandingReadbackAt: sub.understandingReadbackAt,
+      evidenceNotes: sub.evidenceNotes,
+      evidenceFiles: sub.evidenceFiles ?? null,
+      portalTicketId: ticketId,
+      errorMessage: null,
+      submittedAt: submittedAtIso,
+      attempts: 0,
+      maxAttempts: sub.maxAttempts,
+      submittedInBatchId: batchId ?? null,
+      lastScrapedAt: null,
+      lastScrapeOutcome: null,
+      lastScrapeError: null,
+    });
+    await db.update(portalSubmissionsTable).set({
+      status: "submitted",
+      errorMessage: null,
+      legs: persistedLegs,
+    }).where(eq(portalSubmissionsTable.id, sub.id));
+    logger.info(
+      { submissionId: sub.id, invoiceGroupId: sub.invoiceGroupId, priorTicketId, newTicketId: ticketId, batchId },
+      "persistPortalSubmissionSuccess: bot/index returned a new portal ticket id — inserted a new portal_submissions row to preserve the prior ticket id",
+    );
+  } else {
+    await db.update(portalSubmissionsTable).set({
+      status: "submitted",
+      portalTicketId: ticketId,
+      submittedAt: submittedAtIso,
+      submittedInBatchId: batchId ?? null,
+      errorMessage: null,
+      legs: persistedLegs,
+    }).where(eq(portalSubmissionsTable.id, sub.id));
+  }
+}
+
+// Task #809 — pre-retry portal-index dedupe. Read page 1 of the MAS
+// customer-portal ticket list (behind `portalBrowserGate`) and look for
+// a ticket whose subject contains this invoice number and was created
+// at or after the row's earliest attempt timestamp. If found, the bot
+// adopts that ticket: writes through `persistPortalSubmissionSuccess`
+// and the caller skips `scheduleRetryOrFail`. Bounded: at most ONE
+// page, at most ONE network call per failed attempt. If the lookup
+// itself throws (login expired, portal down) we log and return null
+// so the caller falls back to the existing retry behavior — the
+// dedupe path must NEVER block the retry path forever.
+async function tryAdoptExistingPortalTicket(
+  sub: typeof portalSubmissionsTable.$inferSelect,
+): Promise<{ adoptedTicketId: string; subject: string | null } | null> {
+  const invoiceNumber = sub.invoiceNumber;
+  if (!invoiceNumber) return null;
+
+  const earliestAttemptAt = sub.createdAt instanceof Date
+    ? sub.createdAt
+    : (sub.createdAt ? new Date(sub.createdAt as unknown as string) : null);
+
+  const reader = __portalIndexReaderOverride ?? defaultReadPortalIndexPage;
+
+  // Both call sites (processViaExternalBot's late-failure catch and
+  // processSequentially's pre-retry catch) already run INSIDE
+  // `workerGate.run(...)` (== portalBrowserGate). Re-acquiring it here
+  // would self-deadlock with `kind: "skipped"`. We call the reader
+  // directly; the caller's gate hold already serialises us against the
+  // read bot per the same critical constraint that wraps the submit
+  // worker.
+  let parsedResult: PortalIndexPageResult;
+  try {
+    parsedResult = await reader(1);
+  } catch (err) {
+    logger.warn(
+      { err, submissionId: sub.id, invoiceNumber },
+      "tryAdoptExistingPortalTicket: portal-index lookup threw — falling through to retry",
+    );
+    return null;
+  }
+
+  const needle = `Invoice #${invoiceNumber}`.toLowerCase();
+  const candidates = parsedResult.rows.filter((r) => {
+    if (!r.subject) return false;
+    if (!r.subject.toLowerCase().includes(needle)) return false;
+    if (earliestAttemptAt && r.lastUpdatedRaw) {
+      const ts = Date.parse(r.lastUpdatedRaw);
+      if (Number.isFinite(ts) && ts < earliestAttemptAt.getTime()) return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) return null;
+
+  const adopted = candidates[0];
+  return { adoptedTicketId: adopted.ticketId, subject: adopted.subject };
+}
+
+// Task #809 — count `bot_activity_log` rows where action is
+// `retry_suppressed_existing_ticket` since `sinceTs`. Surfaced through
+// the system-health rollup so we can verify in prod that the dedupe
+// fix is actually firing.
+export async function getRetriesSuppressedCount(sinceTs: Date): Promise<number> {
+  const [row] = await db.select({ value: count() })
+    .from(botActivityLogTable)
+    .where(and(
+      eq(botActivityLogTable.action, "retry_suppressed_existing_ticket"),
+      gte(botActivityLogTable.createdAt, sinceTs),
+    ));
+  return row?.value ?? 0;
 }
 
 export async function runSandboxForSubmission(subId: number): Promise<typeof portalSubmissionsTable.$inferSelect> {

@@ -17,6 +17,7 @@ import {
   getLastWorkerRun,
   getRecentWorkerRuns,
   isWorkerRunInProgress,
+  getRetriesSuppressedCount,
 } from "../lib/batch-processor";
 import { computeRollup, type CronRunRow } from "../lib/system-health-rollup";
 import { safeRunServiceDateDriftCheck } from "../lib/group-service-date";
@@ -509,6 +510,17 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
 
   const lastPortalScrape = await buildLastPortalScrapeSummary();
 
+  // Task #809 — surface the dedupe-guard hit count so admins can verify
+  // in prod that the late-failure / portal-index guards are actually
+  // firing. 24h window matches the worker-activity drill-down's
+  // "recent activity" framing.
+  const retriesSuppressed24h = await getRetriesSuppressedCount(
+    new Date(now.getTime() - 24 * 60 * 60 * 1000),
+  ).catch((err) => {
+    logger.warn({ err }, "worker-activity: getRetriesSuppressedCount failed");
+    return 0;
+  });
+
   res.json({
     isRunning: isWorkerRunInProgress(),
     lastRun: getLastWorkerRun(),
@@ -519,6 +531,7 @@ router.get("/admin/system-health/worker-activity", requireAdmin, asyncHandler(as
     nextSweepAt: nextSweepFire?.toISOString() ?? null,
     lastSweepAt: prevSweepFire?.toISOString() ?? null,
     lastPortalScrape,
+    retriesSuppressed24h,
     lastSuccessfulSubmission: lastSuccess
       ? {
           submissionId: lastSuccess.id,
@@ -666,6 +679,16 @@ router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(a
 
   const lastPortalScrape = await buildLastPortalScrapeSummary();
 
+  // Task #809 — expose the count of retries the dedupe guards suppressed
+  // in the last 24h. Read-only count; if it throws we report 0 rather
+  // than fail the whole rollup.
+  const retriesSuppressed24h = await getRetriesSuppressedCount(
+    new Date(now.getTime() - 24 * 60 * 60 * 1000),
+  ).catch((err) => {
+    logger.warn({ err }, "rollup: getRetriesSuppressedCount failed");
+    return 0;
+  });
+
   res.json({
     overall,
     components,
@@ -676,6 +699,7 @@ router.get("/admin/system-health/rollup", requireAuth, denyClerk, asyncHandler(a
     nextSweepAt: nextSweepFire?.toISOString() ?? null,
     lastSweepAt: prevSweepFire?.toISOString() ?? null,
     lastPortalScrape,
+    retriesSuppressed24h,
     generatedAt: now.toISOString(),
     bootedAt: bootTime.toISOString(),
   });
