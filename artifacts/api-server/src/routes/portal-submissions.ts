@@ -514,7 +514,6 @@ Invoice details:
 - Invoice number: ${group.invoiceNumber}
 - Client number: ${group.clientNumber || "N/A"}
 - Error type: ${group.errorTypeName || "N/A"}
-- Group-level error details: ${group.errorDetails || "N/A"}
 
 Affected rides on this invoice:
 ${ridesBlock}`;
