@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 // Classic JSX runtime fallback (used when tests run without the
 // project tsconfig that enables the automatic runtime) needs
 // `React` in module scope.
@@ -142,6 +143,9 @@ import {
   getHoverHighlightIds,
   addChildQuestion,
   outcomeTone,
+  treeShapeSignature,
+  isUntouchedRoot,
+  prefersReducedMotion,
   NODE_W,
   NODE_H,
   type FlowNodeData,
@@ -609,7 +613,10 @@ function SopCanvas({
     if (!node) return;
     const cx = node.position.x + NODE_W / 2;
     const cy = node.position.y + NODE_H / 2;
-    rf.setCenter(cx, cy, { duration: 600, zoom: Math.max(rf.getZoom(), 0.9) });
+    // Task #820 — honor prefers-reduced-motion. setCenter with
+    // duration: 0 still re-centers, just without the tween.
+    const reduce = prefersReducedMotion();
+    rf.setCenter(cx, cy, { duration: reduce ? 0 : 600, zoom: Math.max(rf.getZoom(), 0.9) });
   }, [selectedId, selectedIds.size, flow.nodes, rf]);
 
   // Task #818 a11y — keyboard users can focus nodes (xyflow makes
@@ -797,10 +804,8 @@ function Outline({
     if (!selectedId) return;
     const el = refMap.get(selectedId);
     if (!el) return;
-    // Honor prefers-reduced-motion — skip the smooth easing when set.
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    // Task #820 — single source of truth for the motion preference.
+    const reduce = prefersReducedMotion();
     el.scrollIntoView({
       block: "nearest",
       behavior: reduce ? "auto" : "smooth",
@@ -1053,10 +1058,8 @@ function AnimatedCount({ value, testId }: { value: number; testId?: string }) {
   useEffect(() => {
     if (prev.current === value) return;
     prev.current = value;
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
+    // Task #820 — single source of truth for the motion preference.
+    if (prefersReducedMotion()) return;
     setFlash(true);
     const t = window.setTimeout(() => setFlash(false), 320);
     return () => window.clearTimeout(t);
@@ -1162,6 +1165,193 @@ export function fieldEdited(
 ): boolean {
   if (!hasSnapshot) return false;
   return (original ?? "") !== (current ?? "");
+}
+
+// Task #820 — React hook wrapper around the pure
+// `prefersReducedMotion()` helper. Subscribes to the underlying
+// media query so changes (e.g. user toggles their OS setting) flip
+// the value live. Used by every editor animation that would
+// otherwise tween/spring/flash; consumers should respect the
+// returned boolean by skipping or shortening the motion.
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => prefersReducedMotion());
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReduced(mql.matches);
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+    // Safari < 14 fallback.
+    mql.addListener(onChange);
+    return () => mql.removeListener(onChange);
+  }, []);
+  return reduced;
+}
+
+// Task #820 — text inputs that buffer locally and only commit on
+// blur or after a short idle. Earlier the inspector dispatched a
+// whole-tree update on every keystroke, which made each character
+// rebuild the flow, run dagre (until #820 cached layout), and bump
+// the dirty flag. The debounced variants below keep typing snappy
+// — the React tree only sees one commit per pause/blur — while
+// still flushing eagerly enough that ⌘S right after typing picks
+// up the latest text. The signature matches our shadcn primitives
+// (controlled value + onChange string) so consumers swap one for
+// one.
+// Task #820 — flush registry. Every debounced inspector field
+// registers a `flush()` closure here on mount; handleSave (and the
+// ⌘S keydown path) calls flushAllPendingEdits() before persisting
+// so any in-flight keystrokes are committed first. Without this,
+// a user who types and immediately hits ⌘S could persist stale
+// tree state — the saved-keystrokes-trust bug the task calls out.
+type FlushRegistry = {
+  register: (flush: () => void) => () => void;
+  flushAll: () => void;
+  // Each debounced field owns a token; it calls setPending(true)
+  // on the first uncommitted keystroke and setPending(false) on
+  // commit/flush/unmount. The page subscribes to changes and
+  // OR-folds the result into the canonical "effectiveDirty" flag
+  // so the leave guards, save chip, and Save button all account
+  // for buffered edits that haven't bumped page-level dirty yet.
+  setPending: (token: symbol, pending: boolean) => void;
+  hasPending: () => boolean;
+  subscribe: (cb: () => void) => () => void;
+};
+const FlushRegistryContext = React.createContext<FlushRegistry | null>(null);
+
+function DebouncedTextarea({
+  value, onCommit, debounceMs = 300, ...rest
+}: Omit<React.ComponentProps<typeof Textarea>, "value" | "onChange"> & {
+  value: string;
+  onCommit: (next: string) => void;
+  debounceMs?: number;
+}) {
+  const [local, setLocal] = useState(value);
+  const lastExternal = useRef(value);
+  const localRef = useRef(local);
+  useEffect(() => { localRef.current = local; }, [local]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
+  useEffect(() => {
+    // Sync down from props only when the canonical value really
+    // changed under us (e.g. AI rewrite replaced the text). Avoids
+    // clobbering the user's in-flight typing.
+    if (value !== lastExternal.current) {
+      lastExternal.current = value;
+      setLocal(value);
+    }
+  }, [value]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const commit = useCallback((next: string) => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    lastExternal.current = next;
+    onCommitRef.current(next);
+  }, []);
+  // Register a flush() with the page-level registry so handleSave
+  // can drain any pending edit before persisting.
+  const registry = React.useContext(FlushRegistryContext);
+  const tokenRef = useRef<symbol>(Symbol("DebouncedTextarea"));
+  useEffect(() => {
+    if (!registry) return;
+    const token = tokenRef.current;
+    const unregister = registry.register(() => {
+      if (timer.current) commit(localRef.current);
+    });
+    return () => {
+      registry.setPending(token, false);
+      unregister();
+    };
+  }, [registry, commit]);
+  const markPending = useCallback((pending: boolean) => {
+    if (registry) registry.setPending(tokenRef.current, pending);
+  }, [registry]);
+  const commitAndClear = useCallback((next: string) => {
+    commit(next);
+    markPending(false);
+  }, [commit, markPending]);
+  return (
+    <Textarea
+      {...rest}
+      value={local}
+      onChange={(e) => {
+        const next = e.target.value;
+        setLocal(next);
+        // Mark dirty IMMEDIATELY (before the debounce fires) so a
+        // user who types and instantly closes the tab or hits Back
+        // still trips the leave guards. The actual tree-level dirty
+        // catches up when the debounce or flush commits.
+        markPending(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => commitAndClear(next), debounceMs);
+      }}
+      onBlur={(e) => { commitAndClear(local); rest.onBlur?.(e); }}
+    />
+  );
+}
+
+function DebouncedInput({
+  value, onCommit, debounceMs = 300, ...rest
+}: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & {
+  value: string;
+  onCommit: (next: string) => void;
+  debounceMs?: number;
+}) {
+  const [local, setLocal] = useState(value);
+  const lastExternal = useRef(value);
+  const localRef = useRef(local);
+  useEffect(() => { localRef.current = local; }, [local]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
+  useEffect(() => {
+    if (value !== lastExternal.current) {
+      lastExternal.current = value;
+      setLocal(value);
+    }
+  }, [value]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const commit = useCallback((next: string) => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    lastExternal.current = next;
+    onCommitRef.current(next);
+  }, []);
+  const registry = React.useContext(FlushRegistryContext);
+  const tokenRef = useRef<symbol>(Symbol("DebouncedInput"));
+  useEffect(() => {
+    if (!registry) return;
+    const token = tokenRef.current;
+    const unregister = registry.register(() => {
+      if (timer.current) commit(localRef.current);
+    });
+    return () => {
+      registry.setPending(token, false);
+      unregister();
+    };
+  }, [registry, commit]);
+  const markPending = useCallback((pending: boolean) => {
+    if (registry) registry.setPending(tokenRef.current, pending);
+  }, [registry]);
+  const commitAndClear = useCallback((next: string) => {
+    commit(next);
+    markPending(false);
+  }, [commit, markPending]);
+  return (
+    <Input
+      {...rest}
+      value={local}
+      onChange={(e) => {
+        const next = e.target.value;
+        setLocal(next);
+        markPending(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => commitAndClear(next), debounceMs);
+      }}
+      onBlur={(e) => { commitAndClear(local); rest.onBlur?.(e); }}
+    />
+  );
 }
 
 function Inspector({
@@ -1358,11 +1548,11 @@ function Inspector({
               onAccept={(next) => onChange(updateNode(tree, node.id, { question: next }))}
             />
           </div>
-          <Textarea
+          <DebouncedTextarea
             data-testid="inspector-question"
             rows={3}
             value={node.question}
-            onChange={(e) => onChange(updateNode(tree, node.id, { question: e.target.value }))}
+            onCommit={(next) => onChange(updateNode(tree, node.id, { question: next }))}
             className="mt-1 text-xs"
           />
         </div>
@@ -1381,10 +1571,10 @@ function Inspector({
               onAccept={(next) => onChange(updateNode(tree, node.id, { instructionText: next }))}
             />
           </div>
-          <Textarea
+          <DebouncedTextarea
             rows={2}
             value={node.instructionText || ""}
-            onChange={(e) => onChange(updateNode(tree, node.id, { instructionText: e.target.value }))}
+            onCommit={(next) => onChange(updateNode(tree, node.id, { instructionText: next }))}
             className="mt-1 text-xs"
             placeholder="Optional guidance shown to the operator."
           />
@@ -1470,9 +1660,9 @@ function Inspector({
                         <ArrowDown className="w-2.5 h-2.5 text-muted-foreground" />
                       </button>
                     </div>
-                    <Input
+                    <DebouncedInput
                       value={opt.label}
-                      onChange={(e) => onChange(setOption(tree, node.id, idx, { label: e.target.value }))}
+                      onCommit={(next) => onChange(setOption(tree, node.id, idx, { label: next }))}
                       className="h-7 text-xs bg-card"
                       placeholder="Branch label"
                     />
@@ -2441,6 +2631,14 @@ export default function SopFullPageEditor() {
   );
 
   const [tree, setTree] = useState<DecisionTree | null>(null);
+  // Task #820 — synchronous mirror of `tree`. Updated via an
+  // effect after every render so it always reflects the most
+  // recently *committed* React state. handleSave reads from this
+  // ref (after flushSync-ing pending debounced commits) so a save
+  // triggered immediately after typing always serializes the
+  // post-flush tree, not the stale closure value.
+  const treeRef = useRef<DecisionTree | null>(null);
+  useEffect(() => { treeRef.current = tree; }, [tree]);
   // Task #777 — selection is now a Set so the canvas can shift-click
   // multiple question nodes. The Outline + Inspector still treat the
   // single-selection case (size === 1) exactly as before; the bulk
@@ -2472,6 +2670,77 @@ export default function SopFullPageEditor() {
   );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Task #820 — Save button flashes a green checkmark for ~1.5s after
+  // a successful persist so the user gets an immediate, optimistic
+  // affordance even before the toast lands.
+  const [justSaved, setJustSaved] = useState(false);
+  // Task #820 — Dirty-navigation guard. When the back button is
+  // clicked, the browser pops history, or any other in-app route
+  // change happens while dirty, we stash the intent here and pop an
+  // AlertDialog. `kind: "route"` is an explicit wouter navigation
+  // (with `dest` URL); `kind: "back"` is a browser back/forward we
+  // intercepted via popstate (we re-pushed a sentinel state so the
+  // user stays put until they choose).
+  type PendingLeave =
+    | { kind: "route"; dest: string }
+    | { kind: "back" };
+  const [pendingLeave, setPendingLeave] = useState<PendingLeave | null>(null);
+  // Back-compat alias preserved for the rest of this file; legacy
+  // call sites set a string destination and we wrap them.
+  const setPendingNav = useCallback((dest: string | null) => {
+    setPendingLeave(dest === null ? null : { kind: "route", dest });
+  }, []);
+  const pendingNav = pendingLeave?.kind === "route" ? pendingLeave.dest : null;
+
+  // Task #820 — flush registry for debounced inspector fields.
+  // Built once per page mount; every DebouncedTextarea/Input
+  // register()s a flush closure on mount and the page's handleSave
+  // (plus the ⌘S keydown path) calls flushAll() before persisting.
+  const pendingFlushesRef = useRef<Set<() => void>>(new Set());
+  const pendingTokensRef = useRef<Set<symbol>>(new Set());
+  const flushSubscribersRef = useRef<Set<() => void>>(new Set());
+  const flushRegistry = useMemo<FlushRegistry>(() => {
+    const notify = () => flushSubscribersRef.current.forEach((cb) => { try { cb(); } catch { /* ignore */ } });
+    return {
+      register(flush) {
+        pendingFlushesRef.current.add(flush);
+        return () => { pendingFlushesRef.current.delete(flush); };
+      },
+      flushAll() {
+        pendingFlushesRef.current.forEach((f) => { try { f(); } catch { /* ignore */ } });
+      },
+      setPending(token, pending) {
+        const had = pendingTokensRef.current.size > 0;
+        if (pending) pendingTokensRef.current.add(token);
+        else pendingTokensRef.current.delete(token);
+        const has = pendingTokensRef.current.size > 0;
+        if (had !== has) notify();
+      },
+      hasPending() { return pendingTokensRef.current.size > 0; },
+      subscribe(cb) {
+        flushSubscribersRef.current.add(cb);
+        return () => { flushSubscribersRef.current.delete(cb); };
+      },
+    };
+  }, []);
+  // Mirror has-pending into React state so the leave guards, save
+  // chip, and Save button can re-render when buffered edits arrive
+  // or drain.
+  const [hasPendingEdits, setHasPendingEdits] = useState(false);
+  useEffect(() => {
+    return flushRegistry.subscribe(() => setHasPendingEdits(flushRegistry.hasPending()));
+  }, [flushRegistry]);
+  // Canonical "is the editor unsaved?" flag — used by every leave
+  // guard, the save chip, and the Save button. OR-folds tree-level
+  // dirty (committed edits the server hasn't seen) with the buffered
+  // keystrokes still inside debounced inspector fields.
+  const effectiveDirty = dirty || hasPendingEdits;
+  // Task #820 — Stale-tab detection. We snapshot `updatedAt` at load
+  // time, then poll the list endpoint every ~30s while the tab is
+  // visible. When the server-side updatedAt advances past our
+  // snapshot we show a banner so the user can Reload / Continue.
+  const baselineUpdatedAtRef = useRef<string | null>(null);
+  const [staleAt, setStaleAt] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings" | "plaintext">("outline");
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   // Bumped on every successful persist so child components (the Plain
@@ -2524,6 +2793,10 @@ export default function SopFullPageEditor() {
     setSettings(s);
     setDirty(false);
     loadedSnapshotRef.current = { tree: t, settings: s };
+    // Task #820 — snapshot the server's updatedAt so the stale-tab
+    // poller can tell when another session has overwritten this row.
+    baselineUpdatedAtRef.current = (errorType as { updatedAt?: string }).updatedAt ?? null;
+    setStaleAt(null);
   }, [errorType]);
 
   const updateSettings = useCallback((patch: Partial<SopEditorSettings>) => {
@@ -2672,12 +2945,32 @@ export default function SopFullPageEditor() {
 
   // Stable ref to the latest handleSave so the keydown listener above
   // can call the current closure without re-binding on every render.
-  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const handleSaveRef = useRef<(() => Promise<boolean>) | null>(null);
 
-  const flow = useMemo(
-    () => (tree ? treeToFlow(tree, selectedIds) : { nodes: [], edges: [] }),
-    [tree, selectedIds],
-  );
+  // Task #820 — cache dagre positions by tree-shape signature.
+  // Selection-only changes and text edits (question, instructions,
+  // branch labels, evidence) do NOT change the signature, so we skip
+  // the expensive dagre layout and just stamp the cached positions
+  // onto the rebuilt flow nodes. Structural changes (add/delete
+  // nodes, rewire options, swap childId/outcomeType) bump the
+  // signature and trigger a fresh layout pass.
+  const layoutCacheRef = useRef<{ sig: string; positions: Map<string, { x: number; y: number }> } | null>(null);
+  const shapeSig = tree ? treeShapeSignature(tree) : "";
+  const flow = useMemo(() => {
+    if (!tree) return { nodes: [], edges: [] };
+    const cache =
+      layoutCacheRef.current && layoutCacheRef.current.sig === shapeSig
+        ? layoutCacheRef.current.positions
+        : undefined;
+    const f = treeToFlow(tree, selectedIds, cache);
+    if (!cache) {
+      layoutCacheRef.current = {
+        sig: shapeSig,
+        positions: new Map(f.nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }])),
+      };
+    }
+    return f;
+  }, [tree, selectedIds, shapeSig]);
 
   // Task #777 — bulk: append the same evidence requirement to every
   // selected question node, then close the popover + clear the input.
@@ -3045,27 +3338,143 @@ export default function SopFullPageEditor() {
     [],
   );
 
-  const handleSave = async (): Promise<void> => {
-    if (!errorType || !tree) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!errorType) return false;
+    // Task #820 — drain debounced inspector edits BEFORE the save
+    // request goes out. flushSync forces React to commit the setTree
+    // calls triggered by the flush callbacks AND run effects (so
+    // treeRef is updated) before this function continues. Without
+    // flushSync the local `tree` closure would still be the stale
+    // pre-flush value and we'd persist the prior keystrokes.
+    try {
+      flushSync(() => { flushRegistry.flushAll(); });
+    } catch {
+      // flushSync throws if called inside an existing React render
+      // path; in that case the flush already happened synchronously.
+    }
+    const treeToSave = treeRef.current ?? tree;
+    if (!treeToSave) return false;
     setSaving(true);
     try {
       // Single source of truth for saving — also bumps `savedVersion`
       // and updates `loadedSnapshotRef` so the Plain Text tab's
       // unsaved-change baseline stays in sync no matter which Save
       // button triggered the write.
-      await persistTreeAndSettings(tree);
-      toast({ title: "Saved", description: "SOP tree updated." });
+      await persistTreeAndSettings(treeToSave);
+      // Task #820 — refresh baseline updatedAt so the stale-tab
+      // poller doesn't immediately flag our own write as a conflict.
+      try {
+        const updated = await queryClient.fetchQuery({ queryKey: getListErrorTypesQueryKey() }) as ErrorTypeResponse[] | undefined;
+        const fresh = (updated || []).find((et) => et.id === errorType.id);
+        if (fresh?.updatedAt) baselineUpdatedAtRef.current = fresh.updatedAt;
+      } catch {
+        // Non-fatal — next poll cycle will reconcile.
+      }
+      setStaleAt(null);
+      // Optimistic checkmark — flashes for ~1.5s so the user gets
+      // immediate visual confirmation even before the toast lands.
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 1500);
+      toast({ title: "SOP saved", description: "Your changes are persisted." });
+      return true;
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
       toast({
-        title: "Save failed",
-        description: e instanceof Error ? e.message : "Unknown error",
+        title: "Couldn't save SOP",
+        description: msg,
         variant: "destructive",
+        action: (
+          <button
+            type="button"
+            onClick={() => { void handleSave(); }}
+            className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="save-retry"
+          >
+            Retry
+          </button>
+        ),
       });
+      return false;
     } finally {
       setSaving(false);
     }
   };
   handleSaveRef.current = handleSave;
+
+  // Task #820 — beforeunload guard. Browsers will only honor this
+  // listener if it's registered while dirty; we toggle it on/off
+  // based on the dirty flag so clean tabs close without prompt.
+  useEffect(() => {
+    if (!effectiveDirty) return;
+    const onBeforeUnload = (ev: BeforeUnloadEvent) => {
+      ev.preventDefault();
+      // Required by some browsers for the confirmation dialog to fire.
+      ev.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [effectiveDirty]);
+
+  // Task #820 — popstate (browser back/forward) guard. The
+  // top-bar back button is already gated via setPendingNav, but
+  // the browser's own back/forward arrow goes around it. We push a
+  // sentinel state entry while dirty so the first back press lands
+  // back on our URL; the popstate handler then re-pushes the
+  // sentinel (so the user stays put) and opens the dirty-nav
+  // dialog with kind:"back". The dialog's Discard / Save & leave
+  // actions call history.back() to honor the original intent.
+  useEffect(() => {
+    if (!effectiveDirty) return;
+    if (typeof window === "undefined") return;
+    const sentinel = { sopDirtyGuard: true };
+    window.history.pushState(sentinel, "");
+    const onPop = () => {
+      window.history.pushState(sentinel, "");
+      setPendingLeave({ kind: "back" });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // Clean the sentinel on the way out so we don't strand the
+      // user's history with an extra entry.
+      if (typeof window !== "undefined" && (window.history.state as { sopDirtyGuard?: boolean } | null)?.sopDirtyGuard) {
+        window.history.back();
+      }
+    };
+  }, [effectiveDirty]);
+
+  // Task #820 — stale-tab poller. Every ~30s, while the document is
+  // visible AND we have a baseline updatedAt to compare against,
+  // refetch the list endpoint and surface a banner if the server's
+  // updatedAt advanced past our baseline (another session saved).
+  // The banner is a *conflict* warning, so we only surface it when
+  // the local copy is actually dirty — a clean tab that's just been
+  // open in the background should silently reconcile on next load
+  // rather than nag the user.
+  const dirtyRef = useRef(effectiveDirty);
+  useEffect(() => { dirtyRef.current = effectiveDirty; }, [effectiveDirty]);
+  useEffect(() => {
+    if (!errorType) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const baseline = baselineUpdatedAtRef.current;
+      if (!baseline) return;
+      try {
+        const fresh = await queryClient.fetchQuery({ queryKey: getListErrorTypesQueryKey() }) as ErrorTypeResponse[] | undefined;
+        const row = (fresh || []).find((et) => et.id === errorType.id);
+        const serverAt = row?.updatedAt;
+        if (serverAt && serverAt !== baseline && dirtyRef.current) {
+          if (!cancelled) setStaleAt(serverAt);
+        }
+      } catch {
+        // Network blip — try again next cycle.
+      }
+    };
+    const id = window.setInterval(tick, 30000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [errorType, queryClient]);
 
   if (isLoading) {
     return (
@@ -3115,11 +3524,18 @@ export default function SopFullPageEditor() {
   const selectedNode = selectedId ? tree.nodes.find((n) => n.id === selectedId) : null;
 
   return (
+    <FlushRegistryContext.Provider value={flushRegistry}>
     <div className="h-full w-full flex flex-col bg-background" data-testid="sop-full-page-editor">
       {/* Top bar — PageHeader-rhythm with breadcrumb + status pill */}
       <div className="h-14 px-4 flex items-center gap-3 border-b border-border bg-card shrink-0">
         <button
-          onClick={() => navigate("/error-types")}
+          onClick={() => {
+            // Task #820 — dirty-nav guard. When there are unsaved
+            // edits, stash the intent and open the confirm dialog
+            // instead of leaving immediately.
+            if (effectiveDirty) setPendingNav("/error-types");
+            else navigate("/error-types");
+          }}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded px-1 -ml-1"
           data-testid="back-to-error-types"
           aria-label="Back to Error Types"
@@ -3131,7 +3547,26 @@ export default function SopFullPageEditor() {
         <h1 className="text-sm font-semibold truncate max-w-md" data-testid="sop-editor-title">
           {errorType.name}
         </h1>
-        {dirty ? (
+        {/* Task #820 — single 3-state save chip. The legacy
+            "Draft · unsaved" / "Saved" pair collapses into one
+            element that toggles between Saving / Unsaved / All saved
+            so users have one canonical place to read the save state. */}
+        {saving ? (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold"
+            style={{
+              color: "hsl(var(--cc-blue-fg))",
+              background: "hsl(var(--cc-blue-bg))",
+              border: "1px solid hsl(var(--cc-blue-border))",
+            }}
+            data-testid="sop-editor-status-pill"
+            data-state="saving"
+            aria-live="polite"
+          >
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving…
+          </span>
+        ) : effectiveDirty ? (
           <span
             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold"
             style={{
@@ -3140,9 +3575,11 @@ export default function SopFullPageEditor() {
               border: "1px solid hsl(var(--cc-amber-border))",
             }}
             data-testid="sop-editor-status-pill"
+            data-state="unsaved"
+            aria-live="polite"
           >
             <StatusDot tone="amber" />
-            Draft · unsaved
+            Unsaved
           </span>
         ) : (
           <span
@@ -3153,9 +3590,11 @@ export default function SopFullPageEditor() {
               border: "1px solid hsl(var(--cc-green-border))",
             }}
             data-testid="sop-editor-status-pill"
+            data-state="saved"
+            aria-live="polite"
           >
-            <StatusDot tone="green" />
-            Saved
+            <CheckCircle2 className="w-3 h-3" />
+            All saved
           </span>
         )}
         <div className="flex-1" />
@@ -3218,17 +3657,94 @@ export default function SopFullPageEditor() {
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={!dirty || saving}
+          disabled={(!effectiveDirty && !justSaved) || saving}
           data-testid="save-tree"
           className="h-8 gap-1"
           aria-label="Save SOP"
+          data-state={saving ? "saving" : justSaved ? "saved" : effectiveDirty ? "dirty" : "idle"}
         >
-          <Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save SOP"}
+          {saving ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
+            </>
+          ) : justSaved ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5" /> Saved
+            </>
+          ) : (
+            <>
+              <Save className="w-3.5 h-3.5" /> Save SOP
+            </>
+          )}
           <kbd className="ml-1 hidden md:inline-flex h-4 items-center rounded border border-primary-foreground/30 bg-primary-foreground/10 px-1 text-[9px] font-mono text-primary-foreground/80 tabular-nums">
             ⌘S
           </kbd>
         </Button>
       </div>
+
+      {/* Task #820 — Stale-tab banner. Shown when the poller detects
+          that another session saved this row since we loaded it.
+          Three actions: Reload (refetch + reset baseline) / Continue
+          (dismiss this notice, keep my edits) / View diff — for now
+          we just route View diff to Reload since we don't yet have a
+          dedicated diff modal. */}
+      {staleAt && (
+        <div
+          className="px-4 py-2 flex items-center gap-3 border-b border-border"
+          style={{
+            background: "hsl(var(--cc-amber-bg))",
+            color: "hsl(var(--cc-amber-fg))",
+            borderBottomColor: "hsl(var(--cc-amber-border))",
+          }}
+          data-testid="sop-editor-stale-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="text-xs">
+            This SOP was updated in another session.
+            {effectiveDirty ? " Your unsaved edits would overwrite it." : ""}
+          </span>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => {
+              // Task #820 — surface the version history drawer as
+              // the diff entry point. It already renders each saved
+              // version of this SOP so the user can compare the
+              // newest server version with what they have locally.
+              setHistoryDrawerOpen(true);
+            }}
+            data-testid="sop-editor-stale-view-diff"
+          >
+            View diff
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => {
+              void queryClient
+                .invalidateQueries({ queryKey: getListErrorTypesQueryKey() })
+                .then(() => setStaleAt(null));
+            }}
+            data-testid="sop-editor-stale-reload"
+          >
+            Reload
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setStaleAt(null)}
+            data-testid="sop-editor-stale-dismiss"
+          >
+            Continue editing
+          </Button>
+        </div>
+      )}
 
       {/* Three-panel body */}
       <div className="flex-1 flex min-h-0">
@@ -3390,10 +3906,24 @@ export default function SopFullPageEditor() {
                     await persistTreeAndSettings(updated);
                     toast({ title: "Saved", description: "SOP tree updated." });
                   } catch (e) {
+                    // Task #820 — match the editor's standardized
+                    // catch-path pattern: action-named title, server
+                    // error message, and a Retry action wired back
+                    // to the same persist path.
                     toast({
-                      title: "Save failed",
+                      title: "Couldn't save SOP",
                       description: e instanceof Error ? e.message : "Unknown error",
                       variant: "destructive",
+                      action: (
+                        <button
+                          type="button"
+                          onClick={() => { void persistTreeAndSettings(updated); }}
+                          className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          data-testid="plain-text-save-retry"
+                        >
+                          Retry
+                        </button>
+                      ),
                     });
                     throw e;
                   }
@@ -3418,6 +3948,75 @@ export default function SopFullPageEditor() {
               onContextAction={handleCanvasContextAction}
             />
           </ReactFlowProvider>
+
+          {/* Task #820 — First-load empty-state overlay. Appears only
+              when the tree is the untouched default root (single
+              blank question, empty option slots) so existing SOPs
+              never see it. Three CTAs match the spec: Generate from
+              prompt → AI Builder, Paste sub-tree (enabled only when
+              the clipboard has something), Pick template → SOP
+              Library. */}
+          {isUntouchedRoot(tree) && !effectiveDirty && (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
+              data-testid="sop-editor-empty-overlay"
+              aria-live="polite"
+            >
+              <div className="pointer-events-auto rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur-sm px-6 py-5 max-w-md w-[90%]">
+                <div className="text-sm font-semibold text-foreground">Start your SOP</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Pick a starting point — you can always edit, mix, and match later.
+                </div>
+                <div className="mt-4 grid gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-8 justify-start gap-2"
+                    onClick={() => setLeftTab("ai")}
+                    data-testid="sop-editor-empty-cta-prompt"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Generate from a prompt
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 justify-start gap-2"
+                    onClick={() => {
+                      // Reuse the paste-picker which lists every
+                      // empty branch in the tree (here that's the
+                      // root's slots).
+                      setPastePickerOpen(true);
+                    }}
+                    disabled={!clipboard}
+                    data-testid="sop-editor-empty-cta-paste"
+                    title={clipboard ? "Paste the sub-tree from your clipboard" : "Copy a sub-tree from any SOP to enable paste"}
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    Paste a sub-tree
+                    {clipboard ? (
+                      <span className="ml-auto text-[10px] text-muted-foreground">
+                        {clipboard.nodeCount} node{clipboard.nodeCount === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 justify-start gap-2"
+                    onClick={() => setLibraryDrawerOpen(true)}
+                    data-testid="sop-editor-empty-cta-template"
+                  >
+                    <Library className="w-3.5 h-3.5" />
+                    Pick a template from the library
+                  </Button>
+                </div>
+                <div className="mt-3 text-[10px] text-muted-foreground">
+                  Or just start typing in the canvas — this card will dismiss itself.
+                </div>
+              </div>
+            </div>
+          )}
 
           {selectedIds.size > 1 && (
             <Card
@@ -3529,7 +4128,7 @@ export default function SopFullPageEditor() {
             loadedSnapshotRef.current
               ? !treesEqual(tree, loadedSnapshotRef.current.tree) ||
                 !settingsEqual(settings, loadedSnapshotRef.current.settings)
-              : dirty
+              : effectiveDirty
           }
         />
 
@@ -3623,12 +4222,9 @@ export default function SopFullPageEditor() {
               errorTypeName={errorType.name}
               sourceSopText={settings.sourceSopText}
             />
-            {selectedNode && dirty && (
-              <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/30 flex items-center gap-1.5">
-                <StatusDot tone="amber" />
-                Last edit pending save. Press ⌘S to persist.
-              </div>
-            )}
+            {/* Task #820 — removed redundant per-inspector pending-save
+                indicator. The top-bar save-state chip is now the single
+                canonical place to read the dirty/saving/saved state. */}
           </div>
         )}
       </div>
@@ -3655,7 +4251,7 @@ export default function SopFullPageEditor() {
           <span className="tabular-nums font-medium text-foreground">{selectedIds.size || (selectedId ? 1 : 0)}</span>
         </span>
         <div className="flex-1" />
-        {dirty ? (
+        {effectiveDirty ? (
           <span className="flex items-center gap-1.5" data-testid="status-strip-state">
             <StatusDot tone="amber" />
             <span className="uppercase tracking-wider text-[10px] font-semibold">Unsaved draft</span>
@@ -3667,7 +4263,68 @@ export default function SopFullPageEditor() {
           </span>
         )}
       </div>
+
+      {/* Task #820 — Dirty-navigation confirm. Opened when the user
+          clicks the back button while there are unsaved edits. Save
+          & leave runs the same persist path as ⌘S; Discard & leave
+          drops the changes and routes; Cancel keeps them on the
+          page. */}
+      <AlertDialog open={pendingLeave !== null} onOpenChange={(o) => { if (!o) setPendingLeave(null); }}>
+        <AlertDialogContent data-testid="sop-editor-dirty-nav-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave with unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved edits to this SOP. Save them before leaving, or discard and leave anyway.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="sop-editor-dirty-nav-cancel">Stay here</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const intent = pendingLeave;
+                setPendingLeave(null);
+                if (!intent) return;
+                if (intent.kind === "back") {
+                  // Honor the original browser back: the sentinel
+                  // we re-pushed is currently on top, so going back
+                  // once pops the sentinel AND the editor URL.
+                  window.history.go(-2);
+                } else if (intent.dest) {
+                  navigate(intent.dest);
+                }
+              }}
+              data-testid="sop-editor-dirty-nav-discard"
+            >
+              Discard &amp; leave
+            </Button>
+            <AlertDialogAction
+              onClick={async () => {
+                const intent = pendingLeave;
+                setPendingLeave(null);
+                if (!intent) return;
+                // Task #820 — handleSave swallows its own errors and
+                // surfaces a Retry toast, so we can't rely on catch().
+                // Gate the leave on the explicit success return so a
+                // failed save keeps the user on the page with their
+                // edits intact.
+                const ok = await handleSave();
+                if (!ok) return;
+                if (intent.kind === "back") {
+                  window.history.go(-2);
+                } else if (intent.dest) {
+                  navigate(intent.dest);
+                }
+              }}
+              data-testid="sop-editor-dirty-nav-save"
+            >
+              Save &amp; leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+    </FlushRegistryContext.Provider>
   );
 }
 

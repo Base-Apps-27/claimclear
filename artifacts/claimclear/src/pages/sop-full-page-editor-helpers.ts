@@ -138,6 +138,13 @@ export function layoutWithDagre(
 export function treeToFlow(
   tree: DecisionTree,
   selection: string | null | ReadonlySet<string>,
+  // Task #820 — optional cache of pre-computed dagre positions keyed
+  // by node id. When supplied AND every flow node id is present in
+  // the cache, we skip dagre entirely and just stamp the cached
+  // positions onto the rebuilt nodes. Callers in the editor key this
+  // by `treeShapeSignature(tree)` so text-only edits and selection
+  // changes never invalidate the layout.
+  cachedPositions?: ReadonlyMap<string, { x: number; y: number }>,
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
   const flowNodes: Node<FlowNodeData>[] = [];
   const flowEdges: Edge[] = [];
@@ -193,6 +200,15 @@ export function treeToFlow(
         });
       }
     });
+  }
+  if (cachedPositions && cachedPositions.size > 0) {
+    let allCached = true;
+    const laid = flowNodes.map((n) => {
+      const p = cachedPositions.get(n.id);
+      if (!p) { allCached = false; return n; }
+      return { ...n, position: { x: p.x, y: p.y } };
+    });
+    if (allCached) return { nodes: laid, edges: flowEdges };
   }
   return { nodes: layoutWithDagre(flowNodes, flowEdges), edges: flowEdges };
 }
@@ -1562,4 +1578,181 @@ export function addBranchWithSuggestion(
     ],
   };
   return { tree: nextTree, newId };
+}
+
+// ---------------------------------------------------------------------------
+// Task #820 — SOP editor robustness helpers
+// ---------------------------------------------------------------------------
+
+// A compact signature of a tree's STRUCTURE — node ids, their option
+// counts, and what each option points at (childId / outcomeType). Pure
+// text edits (question, instructions, branch labels, evidence labels)
+// do NOT affect the signature, so a useMemo keyed on this string only
+// re-runs dagre when the layout actually needs to change. Sorting the
+// node ids keeps the signature stable across array re-orderings that
+// don't reflect a real shape change.
+export function treeShapeSignature(tree: DecisionTree | null | undefined): string {
+  if (!tree) return "";
+  const ids = tree.nodes.map((n) => n.id).slice().sort();
+  const byId = new Map(tree.nodes.map((n) => [n.id, n]));
+  const parts: string[] = [`root=${tree.rootId}`];
+  for (const id of ids) {
+    const n = byId.get(id)!;
+    const opts = n.options.map((o) => {
+      if (o.childId) return `c:${o.childId}`;
+      if (o.outcomeType) return `o:${o.outcomeType}`;
+      return "e";
+    });
+    parts.push(`${id}[${opts.join(",")}]`);
+  }
+  return parts.join("|");
+}
+
+// Detects the "untouched root" state the first-load empty overlay
+// keys on: a tree with exactly one node whose question text is blank
+// and whose options are still empty (no childId, no outcomeType, no
+// evidence, no instructions). We accept any pair of empty option
+// slots so a slight relabel by the AI Builder before the user has
+// typed anything still qualifies as "untouched" — the spirit is
+// "nothing real is here yet".
+export function isUntouchedRoot(tree: DecisionTree | null | undefined): boolean {
+  if (!tree) return false;
+  if (tree.nodes.length !== 1) return false;
+  const root = tree.nodes[0];
+  if (root.id !== tree.rootId) return false;
+  if ((root.question || "").trim().length > 0) return false;
+  if (root.evidenceRequirements && root.evidenceRequirements.length > 0) return false;
+  if (root.instructionText && root.instructionText.trim().length > 0) return false;
+  return root.options.every((o) => !o.childId && !o.outcomeType);
+}
+
+// Pure read of the prefers-reduced-motion media query. Returns false
+// on SSR / non-browser contexts so callers default to "motion allowed"
+// (the original behavior before this helper landed). Kept as a plain
+// function so the editor's existing one-off matchMedia checks can
+// migrate to one source of truth.
+export function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false;
+  if (typeof window.matchMedia !== "function") return false;
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+// Task #820 — small pure helpers that drive UI state. Extracted so
+// the editor's behavioral expectations (chip transitions, button
+// state, beforeunload gating, stale-tab detection, empty overlay
+// lifecycle, debounce timing) are each verifiable as a unit without
+// rendering React. The editor itself calls these from JSX.
+
+export type SavePillState = "saving" | "unsaved" | "saved";
+export function computeSavePillState(
+  saving: boolean,
+  dirty: boolean,
+  _justSaved: boolean,
+): SavePillState {
+  if (saving) return "saving";
+  if (dirty) return "unsaved";
+  return "saved";
+}
+
+export type SaveButtonState = "saving" | "saved" | "dirty" | "idle";
+export function computeSaveButtonState(
+  saving: boolean,
+  dirty: boolean,
+  justSaved: boolean,
+): SaveButtonState {
+  if (saving) return "saving";
+  if (justSaved) return "saved";
+  if (dirty) return "dirty";
+  return "idle";
+}
+
+// Whether to keep the beforeunload listener registered. We only
+// want the browser's native "unsaved changes" prompt when there
+// are actually unsaved edits.
+export function shouldRegisterBeforeUnload(dirty: boolean): boolean {
+  return dirty === true;
+}
+
+// The stale-tab poller compares the server's latest updatedAt
+// against the snapshot taken at load (or refreshed on save). The
+// banner is a conflict warning, so it should appear if and only
+// if both timestamps exist, they differ, AND the local copy is
+// dirty (a clean tab can silently reconcile on next load).
+export function shouldShowStaleBanner(
+  baselineUpdatedAt: string | null | undefined,
+  serverUpdatedAt: string | null | undefined,
+  dirty: boolean,
+): boolean {
+  if (!dirty) return false;
+  if (!baselineUpdatedAt || !serverUpdatedAt) return false;
+  return baselineUpdatedAt !== serverUpdatedAt;
+}
+
+// Decide whether a pending route change should proceed after a
+// "Save & leave" attempt. Centralized so the editor's dialog can
+// stay a one-liner: navigate iff the save reported success AND
+// we still have a destination.
+export function shouldNavigateAfterSave(
+  saveSucceeded: boolean,
+  destination: string | null | undefined,
+): boolean {
+  return saveSucceeded === true && !!destination;
+}
+
+// The first-load empty overlay is shown when the tree is the
+// untouched default root AND the user hasn't dirtied anything.
+// Saving a tree clears `dirty` but doesn't reset the tree, so
+// real SOPs (multi-node, populated) never trip this even after a
+// fresh load.
+export function shouldShowEmptyOverlay(
+  tree: DecisionTree | null | undefined,
+  dirty: boolean,
+): boolean {
+  if (dirty) return false;
+  return isUntouchedRoot(tree);
+}
+
+// Debounce factory used by DebouncedTextarea/Input. Returns
+// `schedule(value)` that defers `onCommit(value)` by `debounceMs`,
+// and `flush(value)` that commits immediately (used on blur). The
+// commit only fires once per pause/blur — repeated schedule()
+// calls reset the timer. Pure + side-effect-free aside from
+// setTimeout, so node:test can drive it with mock.timers.
+export function createDebouncedCommit<T>(
+  onCommit: (next: T) => void,
+  debounceMs: number,
+): { schedule: (next: T) => void; flush: (next: T) => void; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const cancel = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+  return {
+    schedule(next: T) {
+      cancel();
+      timer = setTimeout(() => { timer = null; onCommit(next); }, debounceMs);
+    },
+    flush(next: T) {
+      cancel();
+      onCommit(next);
+    },
+    cancel,
+  };
+}
+
+// Task #820 — single source of truth for "is the editor unsaved?".
+// OR-folds tree-level dirty (committed edits the server hasn't
+// seen) with the buffered keystrokes still inside debounced
+// inspector fields. Used by every leave guard, the save chip, and
+// the Save button. Without folding hasPendingEdits in, a user who
+// types and instantly hits Back / closes the tab would skate past
+// the confirm dialog.
+export function computeEffectiveDirty(
+  treeDirty: boolean,
+  hasPendingEdits: boolean,
+): boolean {
+  return treeDirty === true || hasPendingEdits === true;
 }

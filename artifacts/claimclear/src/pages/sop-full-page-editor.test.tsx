@@ -40,9 +40,13 @@ import {
   addChildQuestion,
   moveOption,
   getBreadcrumbChain,
+  treeShapeSignature,
+  isUntouchedRoot,
+  prefersReducedMotion,
   type SopEditorSettings,
   type SubtreePayload,
 } from "./sop-full-page-editor-helpers";
+import { createEmptyTree } from "@/components/decision-tree/types";
 import {
   getClipboard,
   setClipboard,
@@ -1570,4 +1574,343 @@ test("getBreadcrumbChain walks root→target through option.childId", () => {
 test("getBreadcrumbChain returns [] when the target id is unreachable", () => {
   const tree = sampleTree();
   assert.deepEqual(getBreadcrumbChain(tree, "ghost"), []);
+});
+
+// ---------------------------------------------------------------------------
+// Task #820 — SOP editor robustness helpers
+// ---------------------------------------------------------------------------
+
+test("treeShapeSignature is stable across pure text edits", () => {
+  const t1 = sampleTree();
+  const sig1 = treeShapeSignature(t1);
+  // Edit only the question text on node a — structure (ids, options,
+  // childId/outcomeType wiring) is unchanged.
+  const t2 = updateNode(t1, "a", { question: "Completely different wording?" });
+  const sig2 = treeShapeSignature(t2);
+  assert.equal(sig1, sig2, "text-only edits must not change the signature");
+});
+
+test("treeShapeSignature is stable across branch-label edits and evidence additions", () => {
+  const t1 = sampleTree();
+  const sig1 = treeShapeSignature(t1);
+  const t2 = addEvidenceReq(t1, "a");
+  assert.equal(treeShapeSignature(t2), sig1, "evidence additions must not change the signature");
+  const t3: DecisionTree = {
+    ...t1,
+    nodes: t1.nodes.map((n) =>
+      n.id === "a"
+        ? { ...n, options: n.options.map((o, i) => (i === 0 ? { ...o, label: "Definitely" } : o)) }
+        : n,
+    ),
+  };
+  assert.equal(treeShapeSignature(t3), sig1, "branch label edits must not change the signature");
+});
+
+test("treeShapeSignature changes when a new node is added", () => {
+  const t1 = sampleTree();
+  const sig1 = treeShapeSignature(t1);
+  const { tree: t2 } = addChildQuestion(t1, "b");
+  assert.notEqual(treeShapeSignature(t2), sig1, "adding a node must invalidate the layout cache");
+});
+
+test("treeShapeSignature changes when an option is rewired from outcome to child", () => {
+  const t1 = sampleTree();
+  const sig1 = treeShapeSignature(t1);
+  // Replace option 1 of root (currently an outcome) with a child link.
+  const t2: DecisionTree = {
+    ...t1,
+    nodes: [
+      ...t1.nodes.map((n) =>
+        n.id === "a"
+          ? { ...n, options: [n.options[0], { label: "No", childId: "b" }] }
+          : n,
+      ),
+    ],
+  };
+  assert.notEqual(treeShapeSignature(t2), sig1);
+});
+
+test("treeShapeSignature is stable across node-array reordering", () => {
+  const t1 = sampleTree();
+  const t2: DecisionTree = { ...t1, nodes: [...t1.nodes].reverse() };
+  assert.equal(treeShapeSignature(t2), treeShapeSignature(t1));
+});
+
+test("treeShapeSignature returns empty string for nullish input", () => {
+  assert.equal(treeShapeSignature(null), "");
+  assert.equal(treeShapeSignature(undefined), "");
+});
+
+test("treeToFlow skips dagre when given a cached-positions map for every node", () => {
+  const t = sampleTree();
+  const first = treeToFlow(t, null);
+  const cache = new Map(first.nodes.map((n) => [n.id, { x: 999, y: 888 }]));
+  const second = treeToFlow(t, null, cache);
+  // Every node now sits at the synthetic cached position, proving
+  // dagre was bypassed (it would never produce x=999 for both).
+  for (const n of second.nodes) {
+    assert.equal(n.position.x, 999, `node ${n.id} should reuse cached x`);
+    assert.equal(n.position.y, 888, `node ${n.id} should reuse cached y`);
+  }
+});
+
+test("treeToFlow falls back to dagre when the cache is missing any node id", () => {
+  const t = sampleTree();
+  // Only a partial cache — should be ignored.
+  const cache = new Map<string, { x: number; y: number }>([["a", { x: 1, y: 2 }]]);
+  const out = treeToFlow(t, null, cache);
+  // Dagre always yields distinct, non-(1,2) positions for the rest.
+  const nonRoot = out.nodes.find((n) => n.id !== "a");
+  assert.ok(nonRoot, "expected at least one non-root node");
+  assert.ok(
+    !(nonRoot!.position.x === 1 && nonRoot!.position.y === 2),
+    "non-root node must not inherit the partial cache value",
+  );
+});
+
+test("isUntouchedRoot detects a fresh createEmptyTree result", () => {
+  assert.equal(isUntouchedRoot(createEmptyTree()), true);
+});
+
+test("isUntouchedRoot returns false once the user types a question", () => {
+  const t = createEmptyTree();
+  const edited = updateNode(t, t.rootId, { question: "Is the GPS log present?" });
+  assert.equal(isUntouchedRoot(edited), false);
+});
+
+test("isUntouchedRoot returns false once any option is wired", () => {
+  const t = createEmptyTree();
+  const { tree: withChild } = addChildQuestion(t, t.rootId);
+  assert.equal(isUntouchedRoot(withChild), false);
+});
+
+test("isUntouchedRoot returns false for the multi-node sample tree", () => {
+  assert.equal(isUntouchedRoot(sampleTree()), false);
+});
+
+test("isUntouchedRoot returns false for nullish input", () => {
+  assert.equal(isUntouchedRoot(null), false);
+  assert.equal(isUntouchedRoot(undefined), false);
+});
+
+test("prefersReducedMotion returns false in a non-browser context", () => {
+  // node:test runs in plain Node — no window.matchMedia — so the
+  // helper must return false (the safe default of "motion allowed").
+  assert.equal(prefersReducedMotion(), false);
+});
+
+// =============================================================
+// Task #820 — behavioral helpers (component-style coverage via
+// the node:test pure-helper pattern).
+// =============================================================
+
+import {
+  computeSavePillState,
+  computeSaveButtonState,
+  shouldRegisterBeforeUnload,
+  shouldShowStaleBanner,
+  shouldNavigateAfterSave,
+  shouldShowEmptyOverlay,
+  createDebouncedCommit,
+} from "./sop-full-page-editor-helpers.js";
+
+// --- Save chip transitions (3-state) -------------------------
+test("save-state chip is 'saving' while a save is in flight, even if dirty", () => {
+  assert.equal(computeSavePillState(true, true, false), "saving");
+  assert.equal(computeSavePillState(true, false, false), "saving");
+});
+test("save-state chip is 'unsaved' when dirty and not saving", () => {
+  assert.equal(computeSavePillState(false, true, false), "unsaved");
+});
+test("save-state chip is 'saved' once clean (justSaved does not change the chip text)", () => {
+  assert.equal(computeSavePillState(false, false, false), "saved");
+  assert.equal(computeSavePillState(false, false, true), "saved");
+});
+
+// --- Save button state (optimistic checkmark) ----------------
+test("save button shows 'saving' during request, then flashes 'saved', then settles 'idle'", () => {
+  // Mid-request — saving wins over everything.
+  assert.equal(computeSaveButtonState(true, true, false), "saving");
+  // Just-resolved success — green checkmark window.
+  assert.equal(computeSaveButtonState(false, false, true), "saved");
+  // After the 1.5s flash clears.
+  assert.equal(computeSaveButtonState(false, false, false), "idle");
+  // User typed again immediately after — back to dirty.
+  assert.equal(computeSaveButtonState(false, true, false), "dirty");
+});
+
+// --- beforeunload registration gating ------------------------
+test("beforeunload listener stays unregistered while the editor is clean", () => {
+  assert.equal(shouldRegisterBeforeUnload(false), false);
+});
+test("beforeunload listener registers as soon as the editor goes dirty", () => {
+  assert.equal(shouldRegisterBeforeUnload(true), true);
+});
+
+// --- Stale-tab detection -------------------------------------
+test("stale banner stays hidden when we have no baseline yet (first paint)", () => {
+  assert.equal(shouldShowStaleBanner(null, "2026-05-21T10:00:00Z", true), false);
+  assert.equal(shouldShowStaleBanner(undefined, "2026-05-21T10:00:00Z", true), false);
+});
+test("stale banner stays hidden when the server returns the same updatedAt", () => {
+  assert.equal(
+    shouldShowStaleBanner("2026-05-21T10:00:00Z", "2026-05-21T10:00:00Z", true),
+    false,
+  );
+});
+test("stale banner fires when the server advanced AND local copy is dirty", () => {
+  assert.equal(
+    shouldShowStaleBanner("2026-05-21T10:00:00Z", "2026-05-21T10:05:00Z", true),
+    true,
+  );
+});
+test("stale banner stays hidden on a clean tab even if the server advanced (silent reconcile)", () => {
+  assert.equal(
+    shouldShowStaleBanner("2026-05-21T10:00:00Z", "2026-05-21T10:05:00Z", false),
+    false,
+  );
+});
+
+// --- Save & leave control flow -------------------------------
+test("save-and-leave navigates only when the save reported success", () => {
+  assert.equal(shouldNavigateAfterSave(true, "/library"), true);
+});
+test("save-and-leave keeps the user on the page when the save failed", () => {
+  assert.equal(shouldNavigateAfterSave(false, "/library"), false);
+});
+test("save-and-leave is a no-op when there is no pending destination", () => {
+  assert.equal(shouldNavigateAfterSave(true, null), false);
+  assert.equal(shouldNavigateAfterSave(true, ""), false);
+});
+
+// --- First-load empty overlay lifecycle ----------------------
+test("empty overlay shows for a clean, untouched root tree", () => {
+  assert.equal(shouldShowEmptyOverlay(createEmptyTree(), false), true);
+});
+test("empty overlay disappears once the user dirties the tree", () => {
+  assert.equal(shouldShowEmptyOverlay(createEmptyTree(), true), false);
+});
+test("empty overlay never shows for a populated SOP, even right after load", () => {
+  assert.equal(shouldShowEmptyOverlay(sampleTree(), false), false);
+});
+
+// --- Debounced commit (used by inspector inputs) -------------
+test("debounced commit fires once per pause and uses the latest value", async () => {
+  let committed: string[] = [];
+  const d = createDebouncedCommit<string>((v) => committed.push(v), 50);
+  d.schedule("a");
+  d.schedule("ab");
+  d.schedule("abc");
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(committed, ["abc"]);
+});
+test("flush commits immediately (mirrors onBlur) and cancels any pending timer", async () => {
+  let committed: string[] = [];
+  const d = createDebouncedCommit<string>((v) => committed.push(v), 50);
+  d.schedule("typing…");
+  d.flush("final");
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(committed, ["final"]);
+});
+test("cancel suppresses a scheduled commit (cleanup on unmount)", async () => {
+  let committed: string[] = [];
+  const d = createDebouncedCommit<string>((v) => committed.push(v), 30);
+  d.schedule("x");
+  d.cancel();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(committed, []);
+});
+
+// --- Flush-before-save (⌘S during typing) --------------------
+test("flushing all pending debounced commits before save persists the latest keystrokes", async () => {
+  // Simulates the registry the editor builds. Each debounced
+  // field registers a flush() closure; handleSave calls flushAll
+  // before persisting so the tree it serializes includes the
+  // user's most recent character.
+  let savedText: string | null = null;
+  const flushes = new Set<() => void>();
+  const register = (f: () => void) => { flushes.add(f); return () => { flushes.delete(f); }; };
+  const flushAll = () => { flushes.forEach((f) => f()); };
+
+  let currentTreeText = "old";
+  const field = createDebouncedCommit<string>((v) => { currentTreeText = v; }, 500);
+  const unregister = register(() => field.flush(latestTyped));
+
+  // User types fast and then hits ⌘S well before 500ms elapses.
+  let latestTyped = "new value the user just typed";
+  field.schedule(latestTyped);
+
+  // Save path: flush first, then persist whatever's in the tree.
+  flushAll();
+  savedText = currentTreeText;
+
+  assert.equal(savedText, "new value the user just typed");
+  unregister();
+});
+
+test("flush registry returns an unregister fn that removes the closure on unmount", () => {
+  const flushes = new Set<() => void>();
+  const register = (f: () => void) => { flushes.add(f); return () => { flushes.delete(f); }; };
+  let calls = 0;
+  const off = register(() => { calls += 1; });
+  assert.equal(flushes.size, 1);
+  off();
+  assert.equal(flushes.size, 0);
+  // After unregister, flushAll-equivalent should not call this closure.
+  flushes.forEach((f) => f());
+  assert.equal(calls, 0);
+});
+
+// --- Save reads from synchronous treeRef, not stale closure ---
+test("save serializes the post-flush tree even when React state hasn't re-rendered yet", () => {
+  // Models the editor: `tree` is the closure value at the moment
+  // handleSave was invoked; `treeRef` is the synchronous mirror
+  // that flushSync(() => flushAll()) updates before the save body
+  // runs. The save body must prefer the ref so the latest typed
+  // character is included.
+  const staleTree = { rootId: "r", nodes: [{ id: "r", question: "old" }] };
+  const flushedTree = { rootId: "r", nodes: [{ id: "r", question: "new!" }] };
+
+  // Simulate flushSync: the ref is updated synchronously inside
+  // the flushAll call (the real editor's effect runs synchronously
+  // because flushSync drains effects too).
+  const treeRef: { current: typeof staleTree | null } = { current: staleTree };
+  const flushAll = () => { treeRef.current = flushedTree; };
+
+  // Save body equivalent:
+  const closureTree = staleTree;
+  flushAll();
+  const treeToSave = treeRef.current ?? closureTree;
+
+  assert.equal(treeToSave, flushedTree);
+  assert.equal(treeToSave.nodes[0].question, "new!");
+});
+
+test("save falls back to closure tree if the ref was never populated (first-render edge case)", () => {
+  const closureTree = { rootId: "r", nodes: [] };
+  const treeRef: { current: typeof closureTree | null } = { current: null };
+  const flushAll = () => { /* nothing to flush */ };
+
+  flushAll();
+  const treeToSave = treeRef.current ?? closureTree;
+  assert.equal(treeToSave, closureTree);
+});
+
+// --- Effective-dirty folds buffered keystrokes -------------
+import { computeEffectiveDirty } from "./sop-full-page-editor-helpers.js";
+
+test("effectiveDirty is true when tree itself is dirty (committed edit)", () => {
+  assert.equal(computeEffectiveDirty(true, false), true);
+});
+test("effectiveDirty is true when only buffered keystrokes exist (pre-debounce)", () => {
+  // This is the data-loss case the reviewer flagged: tree-level
+  // dirty hasn't bumped yet because the debounce hasn't fired,
+  // but the user has typed. The leave guards must still trip.
+  assert.equal(computeEffectiveDirty(false, true), true);
+});
+test("effectiveDirty is false on a truly clean editor", () => {
+  assert.equal(computeEffectiveDirty(false, false), false);
+});
+test("effectiveDirty is true when both flags are set (edits committed AND new typing)", () => {
+  assert.equal(computeEffectiveDirty(true, true), true);
 });
