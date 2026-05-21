@@ -100,6 +100,14 @@ import {
   removeEvidenceReq,
   simplifyTextField,
   buildTreeFromText,
+  ingestDocument,
+  scanAmbiguity,
+  checkCoverage,
+  suggestNextQuestion,
+  suggestBranchFromClaim,
+  type AmbiguityFlag,
+  type CoverageReport,
+  type SuggestedNextQuestion,
   coerceTree,
   buildSavePayload,
   addEvidenceReqToMany,
@@ -109,6 +117,8 @@ import {
   deleteNode,
   getOrphanQuestionIds,
   setInstructionImage,
+  attachChildQuestion,
+  addBranchWithSuggestion,
   type FlowNodeData,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
@@ -458,8 +468,137 @@ function Outline({
 // Right inspector
 // ---------------------------------------------------------------------------
 
+// Task #817 — per-branch "Suggest next question" affordance.
+// Renders a small button on every empty option slot in the Inspector.
+// Clicking it asks the model for 1–3 candidate follow-up questions and
+// shows them in a popover; picking one calls `onPick` which is wired to
+// `attachChildQuestion` so the new question node is created and the
+// slot is connected to it.
+function InspectorSuggestNextButton({
+  parentQuestion,
+  optionLabel,
+  errorTypeName,
+  sourceSopText,
+  onPick,
+}: {
+  parentQuestion: string;
+  optionLabel: string;
+  errorTypeName?: string;
+  sourceSopText?: string;
+  onPick: (question: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [candidates, setCandidates] = useState<SuggestedNextQuestion[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async () => {
+    setLoading(true);
+    setErr(null);
+    setCandidates(null);
+    try {
+      const res = await suggestNextQuestion({
+        parentQuestion,
+        optionLabel,
+        errorTypeName,
+        sourceSopText,
+      });
+      setCandidates(res.candidates || []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && candidates === null && !loading) void run();
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[10px] w-full justify-start"
+          data-testid="inspector-suggest-next"
+        >
+          <Sparkles className="w-3 h-3 mr-1" />
+          Suggest next question
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="left"
+        align="start"
+        className="w-72 p-2 space-y-1.5"
+        data-testid="inspector-suggest-next-popover"
+      >
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          AI suggestions
+        </div>
+        {loading && (
+          <div className="text-[11px] text-muted-foreground italic">Thinking…</div>
+        )}
+        {err && (
+          <div className="text-[11px] text-destructive">{err}</div>
+        )}
+        {!loading && !err && candidates && candidates.length === 0 && (
+          <div className="text-[11px] text-muted-foreground italic">
+            No suggestions.
+          </div>
+        )}
+        {!loading && !err && candidates && candidates.length > 0 && (
+          <div className="space-y-1">
+            {candidates.map((c, i) => (
+              <button
+                key={i}
+                type="button"
+                className="w-full text-left rounded border border-border bg-card hover:bg-muted/40 px-2 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid={`inspector-suggest-next-candidate-${i}`}
+                onClick={() => {
+                  onPick(c.question);
+                  setOpen(false);
+                }}
+              >
+                <div className="font-medium">{c.question}</div>
+                {c.rationale && (
+                  <div className="text-muted-foreground mt-0.5">{c.rationale}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between pt-1">
+          <button
+            type="button"
+            className="text-[10px] text-muted-foreground hover:underline"
+            onClick={() => setOpen(false)}
+            data-testid="inspector-suggest-next-dismiss"
+          >
+            Dismiss
+          </button>
+          <button
+            type="button"
+            className="text-[10px] text-primary hover:underline"
+            onClick={() => void run()}
+            disabled={loading}
+          >
+            {loading ? "…" : "Retry"}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Inspector({
-  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary, onCopySubTree, onPasteSubTree, clipboardNodeCount,
+  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
+  onCopySubTree, onPasteSubTree, clipboardNodeCount,
+  errorTypeName, sourceSopText,
 }: {
   tree: DecisionTree;
   nodeId: string | null;
@@ -470,6 +609,8 @@ function Inspector({
   onCopySubTree: (nodeId: string) => void;
   onPasteSubTree: (parentId: string, optionIndex: number) => void;
   clipboardNodeCount: number | null;
+  errorTypeName?: string;
+  sourceSopText?: string;
 }) {
   if (!nodeId) {
     return (
@@ -743,6 +884,23 @@ function Inspector({
                           Paste sub-tree ({clipboardNodeCount} node{clipboardNodeCount === 1 ? "" : "s"})
                         </Button>
                       )}
+                      <InspectorSuggestNextButton
+                        parentQuestion={node.question}
+                        optionLabel={opt.label}
+                        errorTypeName={errorTypeName}
+                        sourceSopText={sourceSopText}
+                        onPick={(question) => {
+                          const { tree: next, newId } = attachChildQuestion(
+                            tree,
+                            node.id,
+                            idx,
+                            question,
+                          );
+                          if (!newId) return;
+                          onChange(next);
+                          onSelectNode(newId);
+                        }}
+                      />
                       <Select
                         value={opt.outcomeType || ""}
                         onValueChange={(val) =>
@@ -988,12 +1146,16 @@ function Inspector({
 
 function AiBuilderPanel({
   currentTree,
+  errorTypeId,
   errorTypeName,
   initialText,
   onTextChange,
   onReplace,
+  onApplyRewrite,
+  onSelectNode,
 }: {
   currentTree: DecisionTree;
+  errorTypeId?: number;
   errorTypeName?: string;
   // Task #784 — last-saved plain-text SOP description; rehydrated from
   // the error type so the panel doesn't reset every time the editor
@@ -1002,6 +1164,8 @@ function AiBuilderPanel({
   initialText: string;
   onTextChange: (next: string) => void;
   onReplace: (next: DecisionTree) => void;
+  onApplyRewrite: (nodeId: string, nextQuestion: string) => void;
+  onSelectNode: (nodeId: string) => void;
 }) {
   const [text, setText] = useState(initialText);
   // Keep local text in sync if the parent reloads a different SOP.
@@ -1041,8 +1205,65 @@ function AiBuilderPanel({
     ? proposed.nodes.find((n) => n.id === proposed.rootId)?.question || "(untitled)"
     : null;
 
+  // Document ingest — PDF/PNG/JPG → extracted text fills the textarea.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const ingestMutation = useMutation({
+    mutationFn: (file: File) => ingestDocument(file),
+    onSuccess: (extracted) => {
+      setText(extracted);
+      onTextChange(extracted);
+      toast({
+        title: "Document ingested",
+        description: "Review the extracted text, then click Generate tree.",
+      });
+    },
+    onError: (e) => {
+      toast({
+        title: "Ingest failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Ambiguity scan — flag unclear question wording.
+  const [ambiguityFlags, setAmbiguityFlags] = useState<AmbiguityFlag[] | null>(null);
+  const ambiguityMutation = useMutation({
+    mutationFn: () => scanAmbiguity({ tree: currentTree, errorTypeName }),
+    onSuccess: (flags) => {
+      setAmbiguityFlags(flags);
+      toast({
+        title: flags.length === 0 ? "No ambiguities found" : `Found ${flags.length} flag${flags.length === 1 ? "" : "s"}`,
+      });
+    },
+    onError: (e) => {
+      toast({
+        title: "Clarity scan failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Coverage check — walk recent claims through current tree.
+  const [coverage, setCoverage] = useState<CoverageReport | null>(null);
+  const coverageMutation = useMutation({
+    mutationFn: () => {
+      if (!errorTypeId) throw new Error("Save the SOP once before running coverage.");
+      return checkCoverage({ errorTypeId, tree: currentTree, sampleSize: 200 });
+    },
+    onSuccess: (report) => setCoverage(report),
+    onError: (e) => {
+      toast({
+        title: "Coverage check failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
-    <div className="flex flex-col h-full p-2 gap-2" data-testid="ai-builder-panel">
+    <div className="flex flex-col h-full p-2 gap-2 overflow-y-auto" data-testid="ai-builder-panel">
       <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
         Describe the workflow
       </Label>
@@ -1056,21 +1277,58 @@ function AiBuilderPanel({
         className="text-xs"
         placeholder={"Paste the SOP in plain English. Example:\n\nFirst check if GPS data is available. If yes, verify the breadcrumbs match pickup and dropoff. If they match, mark ready. Otherwise place on hold."}
         data-testid="ai-builder-text"
-        disabled={mutation.isPending}
+        disabled={mutation.isPending || ingestMutation.isPending}
       />
-      <Button
-        size="sm"
-        onClick={handleGenerate}
-        disabled={!text.trim() || mutation.isPending}
-        data-testid="ai-builder-generate"
-        className="gap-1"
-      >
-        {mutation.isPending ? (
-          <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
-        ) : (
-          <><Wand2 className="w-3 h-3" /> Generate tree</>
-        )}
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          onClick={handleGenerate}
+          disabled={!text.trim() || mutation.isPending}
+          data-testid="ai-builder-generate"
+          className="gap-1 flex-1"
+        >
+          {mutation.isPending ? (
+            <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+          ) : (
+            <><Wand2 className="w-3 h-3" /> Generate tree</>
+          )}
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf,image/png,image/jpeg"
+          className="hidden"
+          data-testid="ai-builder-upload-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) ingestMutation.mutate(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1 text-[11px]"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={ingestMutation.isPending || mutation.isPending}
+          data-testid="ai-builder-upload"
+          title="Extract text from PDF / image"
+        >
+          {ingestMutation.isPending ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <FileText className="w-3 h-3" />
+          )}
+          Upload doc
+        </Button>
+      </div>
+      {(mutation.isPending || ingestMutation.isPending) && (
+        <div className="space-y-1.5" data-testid="ai-builder-shimmer">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-5/6" />
+          <Skeleton className="h-3 w-4/6" />
+        </div>
+      )}
       {proposed && (
         <div className="border border-border rounded p-2 space-y-2 bg-muted/30" data-testid="ai-builder-diff">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1113,9 +1371,254 @@ function AiBuilderPanel({
           </p>
         </div>
       )}
+
+      {/* Clarity / ambiguity scan */}
+      <div className="border-t border-border pt-2 mt-1 space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Clarity check
+          </Label>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => ambiguityMutation.mutate()}
+            disabled={ambiguityMutation.isPending || currentTree.nodes.length === 0}
+            data-testid="ai-builder-scan-ambiguity"
+          >
+            {ambiguityMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Sparkles className="w-3 h-3" />
+            )}
+            Scan
+          </Button>
+        </div>
+        {ambiguityFlags && ambiguityFlags.length > 0 && (
+          <div className="space-y-1.5" data-testid="ai-builder-ambiguity-results">
+            {ambiguityFlags.map((f, i) => (
+              <div
+                key={`${f.nodeId}-${i}`}
+                className="rounded border border-border bg-card p-2 text-[11px] space-y-1"
+                data-testid={`ai-builder-ambiguity-flag-${i}`}
+              >
+                <div className="flex items-center justify-between gap-1.5">
+                  <span
+                    className="inline-block px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-semibold"
+                    style={{
+                      color: f.severity === "high"
+                        ? "hsl(var(--cc-red-fg, var(--destructive)))"
+                        : f.severity === "medium"
+                          ? "hsl(var(--cc-amber-fg))"
+                          : "hsl(var(--muted-foreground))",
+                      background: f.severity === "high"
+                        ? "hsl(var(--cc-red-bg, var(--destructive) / 0.1))"
+                        : f.severity === "medium"
+                          ? "hsl(var(--cc-amber-bg))"
+                          : "hsl(var(--muted))",
+                    }}
+                  >
+                    {f.severity}
+                  </span>
+                  <button
+                    className="text-primary hover:underline"
+                    onClick={() => onSelectNode(f.nodeId)}
+                    data-testid={`ai-builder-ambiguity-jump-${i}`}
+                  >
+                    Jump to node →
+                  </button>
+                </div>
+                <div className="text-muted-foreground italic">{f.reason}</div>
+                {f.suggestedRewrite && (
+                  <div className="space-y-1">
+                    <div className="text-foreground">
+                      <span className="text-muted-foreground">Suggest:</span> {f.suggestedRewrite}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[10px] px-2"
+                      onClick={() => {
+                        onApplyRewrite(f.nodeId, f.suggestedRewrite);
+                        setAmbiguityFlags((prev) =>
+                          prev ? prev.filter((_, idx) => idx !== i) : prev,
+                        );
+                      }}
+                      data-testid={`ai-builder-ambiguity-apply-${i}`}
+                    >
+                      Apply rewrite
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {ambiguityFlags && ambiguityFlags.length === 0 && (
+          <p className="text-[10px] text-muted-foreground italic">No ambiguities detected.</p>
+        )}
+      </div>
+
+      {/* Coverage check against recent claims */}
+      <div className="border-t border-border pt-2 mt-1 space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Coverage check
+          </Label>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => coverageMutation.mutate()}
+            disabled={coverageMutation.isPending || !errorTypeId}
+            data-testid="ai-builder-coverage-check"
+            title={!errorTypeId ? "Save the SOP first" : "Walk the last 200 claims through this tree"}
+          >
+            {coverageMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Sparkles className="w-3 h-3" />
+            )}
+            Check
+          </Button>
+        </div>
+        {coverage && (
+          <div className="space-y-1.5 text-[11px]" data-testid="ai-builder-coverage-results">
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Checked:</span>
+              <span className="font-medium">{coverage.totalChecked}</span>
+              <span className="text-muted-foreground">claims</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <Stat label="Terminated" value={coverage.terminated} tone="green" />
+              <Stat label="Abandoned" value={coverage.abandoned} tone="amber" />
+              <Stat label="Unmatched" value={coverage.unmatched} tone="red" />
+            </div>
+            {coverage.unmatchedSamples.length > 0 && (
+              <div className="space-y-1.5 mt-1">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Unmatched samples
+                </div>
+                {coverage.unmatchedSamples.map((s) => (
+                  <div
+                    key={s.claimId}
+                    className="rounded border border-border bg-card p-2 space-y-1"
+                    data-testid={`ai-builder-coverage-sample-${s.claimId}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[10px]">{s.invoiceNumber || `claim #${s.claimId}`}</span>
+                      {s.finalNodeId && (
+                        <button
+                          className="text-primary hover:underline text-[10px]"
+                          onClick={() => onSelectNode(s.finalNodeId!)}
+                        >
+                          Jump →
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-muted-foreground italic">
+                      At: "{s.finalQuestion || "(unknown)"}"
+                    </div>
+                    {s.unmatchedAtOption && (
+                      <div>
+                        <span className="text-muted-foreground">Answered:</span>{" "}
+                        <span className="font-medium">"{s.unmatchedAtOption}"</span>
+                      </div>
+                    )}
+                    {s.finalQuestion && s.unmatchedAtOption && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-2"
+                        data-testid={`ai-builder-coverage-suggest-${s.claimId}`}
+                        onClick={async () => {
+                          try {
+                            const sug = await suggestBranchFromClaim({
+                              finalQuestion: s.finalQuestion,
+                              unmatchedAnswer: s.unmatchedAtOption!,
+                              errorTypeName,
+                              sourceSopText: text,
+                            });
+                            if (!s.finalNodeId) {
+                              toast({
+                                title: "Can't attach",
+                                description: "Final node id missing.",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+                            const branchLabel = sug.branchLabel || s.unmatchedAtOption!;
+                            const next = sug.nextQuestion
+                              ? { nextQuestion: sug.nextQuestion }
+                              : {
+                                  outcomeType: (sug.outcomeType || "hold") as
+                                    | "portal_dispute"
+                                    | "hold"
+                                    | "cannot_dispute"
+                                    | "non_issue"
+                                    | "internal",
+                                  outcomeLabel:
+                                    sug.outcomeLabel || sug.outcomeType || "Hold",
+                                };
+                            const { tree: nextTree } = addBranchWithSuggestion(
+                              currentTree,
+                              s.finalNodeId,
+                              branchLabel,
+                              next,
+                            );
+                            onReplace(nextTree);
+                            onSelectNode(s.finalNodeId);
+                            toast({
+                              title: "Branch attached",
+                              description: sug.nextQuestion
+                                ? `Added "${branchLabel}" → "${sug.nextQuestion}"`
+                                : `Added "${branchLabel}" → ${sug.outcomeLabel || sug.outcomeType}`,
+                            });
+                          } catch (e) {
+                            toast({
+                              title: "Suggest failed",
+                              description: e instanceof Error ? e.message : "Unknown error",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        Suggest fix
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: "green" | "amber" | "red" }) {
+  const fg = tone === "green" ? "--cc-green-fg" : tone === "amber" ? "--cc-amber-fg" : "--destructive";
+  const bg = tone === "green" ? "--cc-green-bg" : tone === "amber" ? "--cc-amber-bg" : "--muted";
+  return (
+    <div
+      className="rounded border border-border p-1.5 text-center"
+      style={{ background: `hsl(var(${bg}))`, color: `hsl(var(${fg}))` }}
+    >
+      <div className="text-base font-semibold tabular-nums">{value}</div>
+      <div className="text-[9px] uppercase tracking-wider opacity-80">{label}</div>
+    </div>
+  );
+}
+
+// Helper exported for the suggest-next button on Inspector option slots.
+// Wraps `suggestNextQuestion` with toast-driven UX and an auto-create
+// path: the first candidate is inserted as the next-step question on
+// that slot.
+export type SuggestNextHandler = (
+  parentNodeId: string,
+  optionIdx: number,
+) => Promise<SuggestedNextQuestion[]>;
 
 // ---------------------------------------------------------------------------
 // Settings panel — full editable form for the error_types columns that the
@@ -2050,6 +2553,7 @@ export default function SopFullPageEditor() {
           ) : leftTab === "ai" ? (
             <AiBuilderPanel
               currentTree={tree}
+              errorTypeId={errorType.id}
               errorTypeName={errorType.name}
               initialText={settings.sourceSopText}
               onTextChange={(next) => updateSettings({ sourceSopText: next })}
@@ -2057,6 +2561,15 @@ export default function SopFullPageEditor() {
                 setTree(next);
                 setSelectedId(next.rootId);
                 setDirty(true);
+                setLeftTab("outline");
+              }}
+              onApplyRewrite={(nodeId, nextQuestion) => {
+                setTree((prev) => (prev ? updateNode(prev, nodeId, { question: nextQuestion }) : prev));
+                setSelectedId(nodeId);
+                setDirty(true);
+              }}
+              onSelectNode={(nodeId) => {
+                setSelectedId(nodeId);
                 setLeftTab("outline");
               }}
             />
@@ -2325,6 +2838,8 @@ export default function SopFullPageEditor() {
               onCopySubTree={handleCopySubTree}
               onPasteSubTree={handlePasteSubTree}
               clipboardNodeCount={clipboard?.nodeCount ?? null}
+              errorTypeName={errorType.name}
+              sourceSopText={settings.sourceSopText}
             />
             {selectedNode && dirty && (
               <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/30 flex items-center gap-1.5">

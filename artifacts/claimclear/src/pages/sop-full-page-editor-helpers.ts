@@ -1107,3 +1107,255 @@ export function buildSavePayload(
     ) as UpdateErrorTypeBodyDecisionTree,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Task #817 — Smarter AI Builder helpers. Direct-fetch wrappers around
+// the four new /api/error-types/ai-builder/* endpoints. Match the
+// existing pattern (simplifyTextField, buildTreeFromText) — no codegen,
+// so the helpers stay co-located with their UI consumers and are easy
+// to unit-test by injecting a fake fetch.
+// ---------------------------------------------------------------------------
+
+export interface SuggestedNextQuestion {
+  question: string;
+  rationale: string;
+}
+
+export async function suggestNextQuestion(args: {
+  parentQuestion: string;
+  optionLabel: string;
+  contextPath: string[];
+  sourceSopText?: string;
+  errorTypeName?: string;
+}): Promise<SuggestedNextQuestion[]> {
+  const res = await fetch("/api/error-types/ai-builder/suggest-next", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const data: { candidates?: SuggestedNextQuestion[] } = await res.json();
+  return (data.candidates || []).filter(
+    (c) => c && typeof c.question === "string" && c.question.trim().length > 0,
+  );
+}
+
+export interface AmbiguityFlag {
+  nodeId: string;
+  severity: "low" | "medium" | "high";
+  reason: string;
+  suggestedRewrite: string;
+}
+
+export async function scanAmbiguity(args: {
+  tree: DecisionTree;
+  errorTypeName?: string;
+}): Promise<AmbiguityFlag[]> {
+  const res = await fetch("/api/error-types/ai-builder/scan-ambiguity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const data: { flags?: AmbiguityFlag[] } = await res.json();
+  return data.flags || [];
+}
+
+export async function ingestDocument(file: File): Promise<string> {
+  const allowed = new Set(["application/pdf", "image/png", "image/jpeg"]);
+  if (!allowed.has(file.type)) {
+    throw new Error("Only PDF, PNG, or JPEG files are supported");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("File too large (max 10MB)");
+  }
+  const buf = await file.arrayBuffer();
+  const res = await fetch("/api/error-types/ai-builder/ingest-document", {
+    method: "POST",
+    headers: { "Content-Type": file.type },
+    body: buf,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const data: { extractedText?: string } = await res.json();
+  if (!data.extractedText) {
+    throw new Error("No text extracted from document");
+  }
+  return data.extractedText;
+}
+
+export interface CoverageUnmatchedSample {
+  claimId: number;
+  invoiceNumber: string | null;
+  finalNodeId: string | null;
+  unmatchedAtOption?: string;
+  finalQuestion: string;
+}
+
+export interface CoverageReport {
+  totalChecked: number;
+  sampleSize: number;
+  terminated: number;
+  abandoned: number;
+  unmatched: number;
+  unmatchedSamples: CoverageUnmatchedSample[];
+}
+
+export async function checkCoverage(args: {
+  errorTypeId: number;
+  tree: DecisionTree;
+  sampleSize?: number;
+}): Promise<CoverageReport> {
+  const res = await fetch("/api/error-types/ai-builder/coverage-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return (await res.json()) as CoverageReport;
+}
+
+export interface BranchSuggestion {
+  branchLabel: string;
+  nextQuestion?: string;
+  outcomeType?: "portal_dispute" | "hold" | "cannot_dispute" | "non_issue" | "internal";
+  outcomeLabel?: string;
+}
+
+export async function suggestBranchFromClaim(args: {
+  finalQuestion: string;
+  unmatchedAnswer: string;
+  errorTypeName?: string;
+  sourceSopText?: string;
+}): Promise<BranchSuggestion> {
+  const res = await fetch("/api/error-types/ai-builder/suggest-branch-from-claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return (await res.json()) as BranchSuggestion;
+}
+
+// Task #817 — create a brand-new child question node and wire the
+// given (parentId, optionIdx) slot to it. Used by the Inspector's
+// "Suggest next question" popover after the author picks one of the
+// AI candidates, and by the coverage check's "Attach suggested fix"
+// flow. Pure + immutable — caller threads the returned tree through
+// setTree().
+export function attachChildQuestion(
+  tree: DecisionTree,
+  parentId: string,
+  optionIdx: number,
+  question: string,
+): { tree: DecisionTree; newId: string } {
+  const parent = tree.nodes.find((n) => n.id === parentId);
+  if (!parent || optionIdx < 0 || optionIdx >= parent.options.length) {
+    return { tree, newId: "" };
+  }
+  const newId = `n_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const newNode = {
+    id: newId,
+    question,
+    options: [{ label: "Yes" }, { label: "No" }],
+  };
+  const nextTree: DecisionTree = {
+    ...tree,
+    nodes: [
+      ...tree.nodes.map((n) =>
+        n.id === parentId
+          ? {
+              ...n,
+              options: n.options.map((o, i) =>
+                i === optionIdx
+                  ? { label: o.label, childId: newId }
+                  : o,
+              ),
+            }
+          : n,
+      ),
+      newNode,
+    ],
+  };
+  return { tree: nextTree, newId };
+}
+
+// Task #817 — add a brand-new branch (option slot) to a node and
+// wire it to either a new child question or a terminal outcome.
+// Used by the coverage check's "Attach suggested fix" flow when the
+// AI suggests a missing branch on an existing node.
+export function addBranchWithSuggestion(
+  tree: DecisionTree,
+  parentId: string,
+  branchLabel: string,
+  next:
+    | { nextQuestion: string }
+    | {
+        outcomeType:
+          | "portal_dispute"
+          | "hold"
+          | "cannot_dispute"
+          | "non_issue"
+          | "internal";
+        outcomeLabel: string;
+      },
+): { tree: DecisionTree; newId?: string } {
+  const parent = tree.nodes.find((n) => n.id === parentId);
+  if (!parent) return { tree };
+  if ("outcomeType" in next) {
+    const nextTree: DecisionTree = {
+      ...tree,
+      nodes: tree.nodes.map((n) =>
+        n.id === parentId
+          ? {
+              ...n,
+              options: [
+                ...n.options,
+                {
+                  label: branchLabel,
+                  outcomeType: next.outcomeType,
+                  outcomeLabel: next.outcomeLabel,
+                },
+              ],
+            }
+          : n,
+      ),
+    };
+    return { tree: nextTree };
+  }
+  const newId = `n_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const newNode = {
+    id: newId,
+    question: next.nextQuestion,
+    options: [{ label: "Yes" }, { label: "No" }],
+  };
+  const nextTree: DecisionTree = {
+    ...tree,
+    nodes: [
+      ...tree.nodes.map((n) =>
+        n.id === parentId
+          ? {
+              ...n,
+              options: [...n.options, { label: branchLabel, childId: newId }],
+            }
+          : n,
+      ),
+      newNode,
+    ],
+  };
+  return { tree: nextTree, newId };
+}

@@ -29,6 +29,10 @@ import {
   scrubSubtreeRefs,
   pasteSubtreeIntoOption,
   getEmptyOptionSlots,
+  suggestNextQuestion,
+  scanAmbiguity,
+  checkCoverage,
+  ingestDocument,
   type SopEditorSettings,
   type SubtreePayload,
 } from "./sop-full-page-editor-helpers";
@@ -1231,4 +1235,181 @@ test("simplifyTextField throws on non-ok responses so the caller can show a dest
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Task #817 — Smarter AI Builder helper wire-shape tests. Same fetch-stub
+// pattern as simplifyTextField/buildTreeFromText above; we don't boot
+// React, we just prove each helper hits the right URL with the right
+// body and returns the expected shape.
+// ---------------------------------------------------------------------------
+
+test("suggestNextQuestion POSTs to /ai-builder/suggest-next and returns trimmed candidates", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({
+        candidates: [
+          { question: "Is the manifest signed?", rationale: "next logical step" },
+          { question: "  ", rationale: "should be dropped" },
+          { question: "Was the driver attested?", rationale: "alt path" },
+        ],
+      }),
+    } as Response;
+  }) as typeof fetch;
+  try {
+    const out = await suggestNextQuestion({
+      parentQuestion: "Is GPS available?",
+      optionLabel: "Yes",
+      contextPath: ["Is GPS available?", "Yes"],
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "/api/error-types/ai-builder/suggest-next");
+    assert.equal(out.length, 2);
+    assert.equal(out[0].question, "Is the manifest signed?");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("scanAmbiguity POSTs the tree and returns flags from the AI response", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    ({
+      ok: true,
+      json: async () => ({
+        flags: [
+          { nodeId: "a", severity: "high", reason: "compound question", suggestedRewrite: "Split it" },
+        ],
+      }),
+    } as Response)) as typeof fetch;
+  try {
+    const flags = await scanAmbiguity({ tree: sampleTree() });
+    assert.equal(flags.length, 1);
+    assert.equal(flags[0].severity, "high");
+    assert.equal(flags[0].suggestedRewrite, "Split it");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checkCoverage POSTs errorTypeId+tree and returns a coverage report", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({
+        totalChecked: 200,
+        sampleSize: 200,
+        terminated: 180,
+        abandoned: 15,
+        unmatched: 5,
+        unmatchedSamples: [
+          { claimId: 42, invoiceNumber: "INV-42", finalNodeId: "a", unmatchedAtOption: "Maybe", finalQuestion: "Is GPS available?" },
+        ],
+      }),
+    } as Response;
+  }) as typeof fetch;
+  try {
+    const report = await checkCoverage({ errorTypeId: 7, tree: sampleTree(), sampleSize: 200 });
+    assert.equal(report.terminated, 180);
+    assert.equal(report.unmatchedSamples.length, 1);
+    const body = JSON.parse(calls[0].init.body as string);
+    assert.equal(body.errorTypeId, 7);
+    assert.equal(body.sampleSize, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ingestDocument refuses unsupported MIME types client-side before hitting the server", async () => {
+  // The helper guards the file type up-front so we don't pay for a round-trip
+  // (and so the file-picker accept= attribute isn't the only gate).
+  const txt = new File(["hello"], "sop.txt", { type: "text/plain" });
+  await assert.rejects(() => ingestDocument(txt), /PDF, PNG, or JPEG/);
+});
+
+test("ingestDocument refuses files larger than 10MB up-front", async () => {
+  const big = new File(
+    [new Uint8Array(11 * 1024 * 1024)],
+    "big.pdf",
+    { type: "application/pdf" },
+  );
+  await assert.rejects(() => ingestDocument(big), /too large/i);
+});
+
+import {
+  attachChildQuestion,
+  addBranchWithSuggestion,
+} from "./sop-full-page-editor-helpers";
+
+test("attachChildQuestion creates a new child node and wires the option slot to it", () => {
+  const tree: DecisionTree = {
+    rootId: "n1",
+    nodes: [
+      {
+        id: "n1",
+        question: "Root?",
+        options: [{ label: "Yes" }, { label: "No" }],
+      },
+    ],
+  };
+  const { tree: next, newId } = attachChildQuestion(tree, "n1", 0, "Was claim within 90 days?");
+  assert.ok(newId.length > 0, "returns a fresh node id");
+  assert.equal(next.nodes.length, 2, "adds a new node");
+  const parent = next.nodes.find((n) => n.id === "n1")!;
+  assert.equal(parent.options[0].childId, newId, "wires slot 0 to new node");
+  assert.equal(parent.options[1].childId, undefined, "leaves other slot alone");
+  const child = next.nodes.find((n) => n.id === newId)!;
+  assert.equal(child.question, "Was claim within 90 days?");
+  assert.equal(child.options.length, 2, "seeds Yes/No");
+});
+
+test("attachChildQuestion is a no-op for an unknown parent", () => {
+  const tree: DecisionTree = {
+    rootId: "n1",
+    nodes: [{ id: "n1", question: "Root?", options: [{ label: "Yes" }] }],
+  };
+  const { tree: next, newId } = attachChildQuestion(tree, "missing", 0, "x?");
+  assert.equal(newId, "");
+  assert.equal(next, tree);
+});
+
+test("addBranchWithSuggestion appends an outcome branch when no nextQuestion", () => {
+  const tree: DecisionTree = {
+    rootId: "n1",
+    nodes: [{ id: "n1", question: "Root?", options: [{ label: "Yes" }] }],
+  };
+  const { tree: next, newId } = addBranchWithSuggestion(tree, "n1", "Other", {
+    outcomeType: "hold",
+    outcomeLabel: "Hold for review",
+  });
+  assert.equal(newId, undefined, "no node id for terminal branch");
+  const parent = next.nodes.find((n) => n.id === "n1")!;
+  assert.equal(parent.options.length, 2);
+  assert.equal(parent.options[1].label, "Other");
+  assert.equal(parent.options[1].outcomeType, "hold");
+  assert.equal(parent.options[1].outcomeLabel, "Hold for review");
+});
+
+test("addBranchWithSuggestion appends a question branch when nextQuestion is given", () => {
+  const tree: DecisionTree = {
+    rootId: "n1",
+    nodes: [{ id: "n1", question: "Root?", options: [{ label: "Yes" }] }],
+  };
+  const { tree: next, newId } = addBranchWithSuggestion(tree, "n1", "Maybe", {
+    nextQuestion: "Is the claim flagged?",
+  });
+  assert.ok(newId && newId.length > 0);
+  assert.equal(next.nodes.length, 2);
+  const parent = next.nodes.find((n) => n.id === "n1")!;
+  assert.equal(parent.options[1].label, "Maybe");
+  assert.equal(parent.options[1].childId, newId);
+  const child = next.nodes.find((n) => n.id === newId)!;
+  assert.equal(child.question, "Is the claim flagged?");
 });
