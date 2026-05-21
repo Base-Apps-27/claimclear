@@ -288,22 +288,33 @@ function assertCountersPresent(meta: Record<string, unknown>, expected: {
 // Tests
 // ---------------------------------------------------------------------------
 
-test("portal_understanding_preflight audit row includes per-leg counters", async () => {
+test("Task #830: portal_understanding_preflight audit row OMITS per-leg counters (framing-only check)", async () => {
+  // The preflight is now a framing-only check on the operator's note
+  // text alone — no per-leg findings, error type, or SOP transcript
+  // enter its prompt. So the per-leg traceability counters that used
+  // to live on this audit row are meaningless here and intentionally
+  // omitted. (The same counters still appear on `group_preview_generated`
+  // — that's where the case context actually feeds the LLM.)
   const seed = await seedGroupWithPerLegContextAndSibling();
   try {
     const res = await fetchJson("/api/portal-submissions/preflight-understanding", {
       method: "POST",
-      body: { invoiceGroupId: seed.groupId, disputeReason: "Mileage mismatch", specialCircumstances: "" },
+      body: { invoiceGroupId: seed.groupId, specialCircumstances: "Driver waited 47 min." },
     });
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
 
     const meta = await latestAuditMetadata({ groupId: seed.groupId, action: "portal_understanding_preflight" });
-    // Primary has per_leg_context (count=1) + 1 sibling duplicate rolled under it.
-    assertCountersPresent(meta, {
-      hasPerLegContext: true,
-      perLegContextLegCount: 1,
-      siblingDuplicateCount: 1,
-    });
+    // Note-scoped metadata is still present.
+    assert.equal(meta.hasSpecialCircumstances, true);
+    assert.equal(meta.specialCircumstancesLength, "Driver waited 47 min.".length);
+    assert.ok(typeof meta.noteHash === "string" && (meta.noteHash as string).length > 0, "noteHash must be present");
+    // Per-leg counters must not appear — they don't reflect what the
+    // framing-only preflight prompt actually saw.
+    assert.equal(Object.prototype.hasOwnProperty.call(meta, "hasPerLegContext"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(meta, "perLegContextLegCount"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(meta, "siblingDuplicateCount"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(meta, "hasSopTranscript"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(meta, "sopTranscriptLegCount"), false);
   } finally {
     await cleanupSeed(seed);
   }

@@ -32,6 +32,7 @@ const inertMutation = () => ({
 mock.module("@workspace/api-client-react", {
   namedExports: {
     useConfirmUnderstandingReadback: inertMutation,
+    usePortalUnderstandingPreflight: inertMutation,
     useStampPreviewGenerated: inertMutation,
     useCreatePortalSubmission: inertMutation,
     useSaveInvoiceGroupDraft: inertMutation,
@@ -421,6 +422,65 @@ test("gauntlet R3: each leg card renders its own overflow trigger", () => {
 // pick-an-error-type prompt. Confirms the visual is keyed off the
 // shared sub-status derivation, not a separate code path.
 // ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Task #830 — Understanding notes textarea persists after Save and
+// after Generate Preview. The pre-#830 UI collapsed the saved state
+// into a read-only blockquote (data-testid="readback-saved-display")
+// with an Edit button (data-testid="readback-edit"); that made the
+// field feel inert at the moment the operator most often wanted to
+// tweak it (right after seeing the generated preview). The textarea
+// is now always the editable surface; saved state is communicated
+// through an inline Saved badge alongside it. We pin the SSR-stable
+// contract: in the "readback confirmed" state, the textarea is still
+// in the DOM, the Saved badge is rendered next to it, and the
+// retired read-only display + Edit button are gone. The drift/revert
+// loop runs off React `useState` we can't easily drive without a
+// DOM-mounted render, so we keep this test to the at-rest contract;
+// the drift logic itself is exercised by the backend preflight tests
+// + the existing `notesMatchSaved` derivation.
+// ─────────────────────────────────────────────────────────────────────
+test("gauntlet readback (Task #830): confirmed-state still renders the editable textarea + Saved badge, with no read-only blockquote or Edit button", () => {
+  const ride = claim({
+    id: 700,
+    confNumber: "RIDE-700",
+    errorTypeId: "ET-1",
+    sopOutcome: "dispute",
+  });
+  const saved = "Driver waited 47 min; member confirmed delay.";
+  const html = render(
+    React.createElement(InvoiceGroupSubmissionGauntlet, {
+      group: group([ride], {
+        specialCircumstances: saved,
+        understandingReadback:
+          "The operator says the driver waited about 47 minutes and the member confirmed the delay.",
+        understandingReadbackForText: saved,
+      } as unknown as Partial<InvoiceGroupDetailResponse>),
+      groupId: 42,
+    }),
+  );
+
+  // Textarea is the always-visible editable surface — even though
+  // the readback is confirmed and the preview is generatable. This
+  // is the headline contract of Task #830.
+  assert.match(html, /data-testid="readback-input"/);
+  // Saved badge sits alongside the textarea (not in place of it).
+  assert.match(
+    html,
+    /data-testid="readback-saved-badge"[^>]*>[\s\S]*?Saved/,
+  );
+  // The pre-#830 read-only blockquote and its Edit button are gone.
+  assert.equal(
+    html.includes(`data-testid="readback-saved-display"`),
+    false,
+    "saved-state must not render a read-only blockquote",
+  );
+  assert.equal(
+    html.includes(`data-testid="readback-edit"`),
+    false,
+    "Edit button is retired — textarea is always live",
+  );
+});
+
 test("gauntlet R4: needs_classification leg renders the amber visual", () => {
   // No errorTypeId → deriveLegSubStatus returns "needs_classification".
   const unclassified = claim({ id: 800 });

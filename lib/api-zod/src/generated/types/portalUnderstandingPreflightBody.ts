@@ -14,8 +14,7 @@ understanding readback / preview generation) instead.
 
 export interface PortalUnderstandingPreflightBody {
   invoiceGroupId?: number;
-  disputeReason?: string;
-  /** The operator's "Understanding notes" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`. */
+  /** The operator's "Understanding notes" text — the ONLY content the framing-only readback prompt sees. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`. */
   specialCircumstances?: string;
   /** Legacy alias for `specialCircumstances` (back-compat). Prefer `specialCircumstances` in new callers. */
   understandingReadback?: string;

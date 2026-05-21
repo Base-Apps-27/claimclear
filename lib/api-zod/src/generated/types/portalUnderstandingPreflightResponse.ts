@@ -13,7 +13,7 @@ understanding readback / preview generation) instead.
  */
 
 export interface PortalUnderstandingPreflightResponse {
-  /** A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context. */
+  /** A short (1–3 sentence) plain-language paraphrase of the operator's note text alone, with no case context threaded in. Used to surface whether the AI understood the operator's wording before Generate Preview runs the full prompt. */
   readback: string;
   /** Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string). */
   previewReadback?: string;

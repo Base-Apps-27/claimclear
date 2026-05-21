@@ -10809,9 +10809,9 @@ export const useGeneratePortalSubmissionPreview = <
 };
 
 /**
- * Lightweight read-only step. Given the error type, the decision-tree outcome, and any operator-supplied special circumstances, returns a short plain-language restatement of what the dispute is actually about. The operator either confirms (and then triggers Generate) or sharpens the context and re-checks. No DB writes happen here.
+ * Lightweight check that takes ONLY the operator's note text and asks the AI to restate it in 1–3 sentences without any case context (error type, decision-tree outcome, per-leg findings, SOP transcript). The point is to surface whether the AI understood the operator's wording on its own — a vague note like "He didn't stop" should come back hedged so the operator knows to sharpen it before Generate Preview, where the full case context will paper over the ambiguity. Persists `understandingReadback` + `understandingReadbackForText` (the drift anchor) on the invoice group and writes a single audit log row.
 
- * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ * @summary Framing-only AI paraphrase of the operator's Understanding notes
  */
 export const getPortalUnderstandingPreflightUrl = () => {
   return `/api/portal-submissions/preflight-understanding`;
@@ -10878,7 +10878,7 @@ export type PortalUnderstandingPreflightMutationBody =
 export type PortalUnderstandingPreflightMutationError = ErrorType<unknown>;
 
 /**
- * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ * @summary Framing-only AI paraphrase of the operator's Understanding notes
  */
 export const usePortalUnderstandingPreflight = <
   TError = ErrorType<unknown>,

@@ -28835,18 +28835,17 @@ export const GeneratePortalSubmissionPreviewResponse = zod.object({
 });
 
 /**
- * Lightweight read-only step. Given the error type, the decision-tree outcome, and any operator-supplied special circumstances, returns a short plain-language restatement of what the dispute is actually about. The operator either confirms (and then triggers Generate) or sharpens the context and re-checks. No DB writes happen here.
+ * Lightweight check that takes ONLY the operator's note text and asks the AI to restate it in 1–3 sentences without any case context (error type, decision-tree outcome, per-leg findings, SOP transcript). The point is to surface whether the AI understood the operator's wording on its own — a vague note like "He didn't stop" should come back hedged so the operator knows to sharpen it before Generate Preview, where the full case context will paper over the ambiguity. Persists `understandingReadback` + `understandingReadbackForText` (the drift anchor) on the invoice group and writes a single audit log row.
 
- * @summary Ask the AI to restate the dispute in 2–4 sentences before generating the full draft
+ * @summary Framing-only AI paraphrase of the operator's Understanding notes
  */
 export const PortalUnderstandingPreflightBody = zod.object({
   invoiceGroupId: zod.number().optional(),
-  disputeReason: zod.string().optional(),
   specialCircumstances: zod
     .string()
     .optional()
     .describe(
-      'The operator\'s \"Understanding notes\" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`.',
+      'The operator\'s \"Understanding notes\" text — the ONLY content the framing-only readback prompt sees. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`.',
     ),
   understandingReadback: zod
     .string()
@@ -28860,7 +28859,7 @@ export const PortalUnderstandingPreflightResponse = zod.object({
   readback: zod
     .string()
     .describe(
-      "A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context.",
+      "A short (1–3 sentence) plain-language paraphrase of the operator's note text alone, with no case context threaded in. Used to surface whether the AI understood the operator's wording before Generate Preview runs the full prompt.",
     ),
   previewReadback: zod
     .string()

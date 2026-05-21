@@ -129,12 +129,10 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   // the group columns and we clear them here). Drift = the live `notes`
   // textarea no longer matches the text the readback was generated for.
   const [notes, setNotes] = useState("");
-  const [isEditingReadback, setIsEditingReadback] = useState(false);
   const [pendingReadback, setPendingReadback] = useState<string | null>(null);
   const [pendingForText, setPendingForText] = useState<string | null>(null);
   useEffect(() => {
     setNotes(group?.specialCircumstances ?? "");
-    setIsEditingReadback(false);
     // External changes (cross-tab save, refetch after our own confirm)
     // invalidate any in-flight pending preflight so we don't render a
     // ghost readback that doesn't match the freshly-loaded server state.
@@ -353,7 +351,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
               ? "Understanding notes cleared"
               : "Understanding notes saved",
           });
-          setIsEditingReadback(false);
           setPendingReadback(null);
           setPendingForText(null);
           invalidateGroup();
@@ -385,7 +382,6 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
     setNotes(group?.specialCircumstances ?? "");
     setPendingReadback(null);
     setPendingForText(null);
-    setIsEditingReadback(false);
   }
 
   function onGeneratePreview() {
@@ -1004,163 +1000,146 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
           )}
         </div>
 
+        {/*
+          Task #830: the Understanding notes textarea is *always* the
+          editable surface — even after Save and after Generate Preview.
+          Collapsing into a read-only blockquote made the field feel
+          inert at the moment the operator most often wanted to tweak
+          it (right after seeing the generated preview). Now the saved
+          state is communicated through an inline Saved badge + an
+          optional "What the AI heard" details disclosure that sits
+          alongside the live textarea. Revert-to-saved replaces the
+          old Cancel/Edit dance whenever the live text drifts from the
+          last saved value.
+        */}
         <div className="space-y-2" data-testid="readback-block">
-          {readbackConfirmed && !isEditingReadback ? (
-            // Saved + in-sync display: the operator's notes are
-            // committed AND the AI restatement that was generated for
-            // them is on file. Edit reopens the textarea + clears any
-            // pending preflight so the gate runs fresh on the next save.
-            <>
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-semibold">Understanding notes</h3>
-                  <Badge variant="secondary" className="text-[10px]">
-                    Saved {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
-                  </Badge>
-                  <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
-                </div>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold">Understanding notes</h3>
+              {readbackConfirmed ? (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px]"
+                  data-testid="readback-saved-badge"
+                >
+                  Saved {group.understandingReadbackAt ? formatDateTime(group.understandingReadbackAt) : ""}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
+              )}
+              <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Revert-to-saved only surfaces when the live text has
+                  drifted from the last saved value. Cancel/Edit are
+                  retired — the textarea is always live. */}
+              {!notesMatchSaved && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onCancelReadbackEdit}
+                  disabled={!isPreSubmit || confirmReadbackMutation.isPending}
+                  data-testid="readback-revert"
+                >
+                  Revert to saved
+                </Button>
+              )}
+              {needsCheck ? (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={onCheckUnderstanding}
+                  disabled={
+                    !isPreSubmit ||
+                    preflightMutation.isPending ||
+                    notesEmpty
+                  }
+                  data-testid="readback-check"
+                >
+                  {preflightMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Check AI understanding
+                </Button>
+              ) : (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setIsEditingReadback(true)}
-                  disabled={!isPreSubmit}
-                  data-testid="readback-edit"
+                  onClick={onConfirmReadback}
+                  disabled={
+                    !isPreSubmit ||
+                    confirmReadbackMutation.isPending ||
+                    // Only suppress Save when there's literally nothing
+                    // to persist: text matches the already-saved note
+                    // AND the saved confirmation is still valid (no
+                    // server/cross-tab drift, no pending re-check).
+                    // Migrated rows arrive with savedNotes ===
+                    // liveNotes but no valid confirmation, so they
+                    // must be allowed to Save after running Check.
+                    (notesMatchSaved && readbackConfirmed)
+                  }
+                  data-testid="readback-confirm"
                 >
-                  Edit
+                  {confirmReadbackMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : null}
+                  {notesEmpty ? "Save (clear)" : "Save \u0026 include in submission"}
                 </Button>
-              </div>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
+          </p>
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            disabled={!isPreSubmit}
+            placeholder="Optional — leave blank if there's nothing extra to add."
+            data-testid="readback-input"
+          />
+          {/*
+            Task #830: "What the AI heard" is now a framing-only
+            paraphrase of the operator's note text, generated without
+            any case context. It's surfaced as a collapsible details
+            disclosure alongside the live textarea so it never blocks
+            editing — and the framing-only hint copy makes clear why a
+            faithful echo of a vague note is itself a useful signal
+            (it means the operator should sharpen the wording).
+          */}
+          {!notesEmpty && hasAnchor && notesMatchAnchor ? (
+            <details
+              className="text-xs text-muted-foreground"
+              data-testid="readback-preview-wrap"
+              open={!readbackConfirmed}
+            >
+              <summary className="cursor-pointer select-none">
+                What the AI heard from your note
+              </summary>
               <blockquote
-                className="rounded-md border-l-2 border-primary/40 bg-muted/40 px-3 py-2 text-xs whitespace-pre-wrap"
-                data-testid="readback-saved-display"
+                className="mt-1 rounded-md border-l-2 border-blue-300/60 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-2 whitespace-pre-wrap"
+                data-testid="readback-preview"
               >
-                {group.specialCircumstances}
+                {anchorReadback}
               </blockquote>
-              {group.understandingReadback ? (
-                <details className="text-xs text-muted-foreground" data-testid="readback-saved-ai-quote-wrap">
-                  <summary className="cursor-pointer select-none">What the AI heard</summary>
-                  <blockquote
-                    className="mt-1 rounded-md border-l-2 border-blue-300/60 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-2 whitespace-pre-wrap"
-                    data-testid="readback-saved-ai-quote"
-                  >
-                    {group.understandingReadback}
-                  </blockquote>
-                </details>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                Included as additional context in the AI write-up.
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                This is a paraphrase of your wording with no case context. If it sounds vaguer than you'd like, sharpen the note above and re-check.
               </p>
-            </>
-          ) : (
-            // Editable state — three sub-states driven by the drift gate:
-            //  1. Empty notes → Save acts as "clear" (no AI check).
-            //  2. Typed but not checked, or drifted from the anchor →
-            //     show "Check AI understanding"; Save is disabled.
-            //  3. Checked + in sync → show the readback blockquote and
-            //     enable Save.
-            <>
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-semibold">Understanding notes</h3>
-                  <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
-                  <PromptContextBadge legs={rides} testId="badge-prompt-context-readback" />
-                </div>
-                <div className="flex items-center gap-2">
-                  {isEditingReadback && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={onCancelReadbackEdit}
-                      disabled={confirmReadbackMutation.isPending}
-                      data-testid="readback-cancel"
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                  {needsCheck ? (
-                    <Button
-                      size="sm"
-                      variant="default"
-                      onClick={onCheckUnderstanding}
-                      disabled={
-                        !isPreSubmit ||
-                        preflightMutation.isPending ||
-                        notesEmpty
-                      }
-                      data-testid="readback-check"
-                    >
-                      {preflightMutation.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      Check AI understanding
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={onConfirmReadback}
-                      disabled={
-                        !isPreSubmit ||
-                        confirmReadbackMutation.isPending ||
-                        // Only suppress Save when there's literally nothing
-                        // to persist: text matches the already-saved note
-                        // AND the saved confirmation is still valid (no
-                        // server/cross-tab drift, no pending re-check).
-                        // Migrated rows arrive with savedNotes ===
-                        // liveNotes but no valid confirmation, so they
-                        // must be allowed to Save after running Check.
-                        (notesMatchSaved && readbackConfirmed)
-                      }
-                      data-testid="readback-confirm"
-                    >
-                      {confirmReadbackMutation.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                      ) : null}
-                      {notesEmpty ? "Save (clear)" : "Save \u0026 include in submission"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Anything the AI write-up should know about the case overall. Leave blank to skip — the AI will use the per-leg findings and the dispute reason on their own.
-              </p>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
-                disabled={!isPreSubmit}
-                placeholder="Optional — leave blank if there's nothing extra to add."
-                data-testid="readback-input"
-              />
-              {!notesEmpty && hasAnchor && notesMatchAnchor ? (
-                <div data-testid="readback-preview-wrap" className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    AI understanding
-                  </p>
-                  <blockquote
-                    className="rounded-md border-l-2 border-blue-300/60 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-2 text-xs whitespace-pre-wrap"
-                    data-testid="readback-preview"
-                  >
-                    {anchorReadback}
-                  </blockquote>
-                  <p className="text-[11px] text-muted-foreground">
-                    Save to include this note in the submission. Edit the text above to re-check.
-                  </p>
-                </div>
-              ) : null}
-              {!notesEmpty && needsCheck ? (
-                <p
-                  className="text-[11px] text-amber-700 dark:text-amber-400"
-                  data-testid="readback-needs-check-hint"
-                >
-                  {hasAnchor
-                    ? "Notes changed since the last AI check — re-check before saving."
-                    : "Run an AI check before saving — this field carries extra weight in the write-up."}
-                </p>
-              ) : null}
-            </>
-          )}
+            </details>
+          ) : null}
+          {!notesEmpty && needsCheck ? (
+            <p
+              className="text-[11px] text-amber-700 dark:text-amber-400"
+              data-testid="readback-needs-check-hint"
+            >
+              {hasAnchor
+                ? "Notes changed since the last AI check — re-check before saving."
+                : "Run an AI check before saving — this field carries extra weight in the write-up."}
+            </p>
+          ) : null}
         </div>
 
         <Separator />

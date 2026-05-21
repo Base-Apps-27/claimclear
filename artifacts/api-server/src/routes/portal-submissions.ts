@@ -574,48 +574,33 @@ Return ONLY the note text, no JSON wrapping.`;
 }
 
 /**
- * Pure prompt-assembly for the AI readback preflight. Extracted so the
- * deterministic prompt-shape tests can assert on the assembled prompt
- * without invoking the LLM. Per Task #307 §"Done looks like", the readback
- * sees the same per-leg findings the full draft will see — but only when
- * there is something to say (parity guard: byte-equivalent to the legacy
- * prompt when no leg has per-leg context and no sibling-duplicate pointers
- * exist).
+ * Pure prompt-assembly for the AI readback preflight. Task #830 made
+ * this a *framing-only* check: the prompt sees ONLY the operator's
+ * note text, not the per-leg findings, error type, or decision-tree
+ * outcome. The point is to surface whether the AI understood the
+ * operator's words on their own — a vague note like "He didn't stop"
+ * should come back with a hedged restatement so the operator knows
+ * to add detail before the case context papers over the ambiguity.
+ * The full Generate Preview prompt still combines this note (verbatim)
+ * with all the case context.
+ *
+ * Extracted so the deterministic prompt-shape tests can assert on the
+ * assembled prompt without invoking the LLM.
  */
 export function buildReadbackPrompt(opts: {
-  ctx: GroupContext;
-  errorType: typeof errorTypesTable.$inferSelect | null;
-  reason: string;
   specialCircumstances: string;
-  promptLegInputs: PromptLegInputsResult;
 }): { prompt: string; systemPrompt: string } {
-  const { ctx, errorType, reason, specialCircumstances, promptLegInputs } = opts;
-  const headline = `Invoice #${ctx.group.invoiceNumber} (${ctx.rides.length} ride${ctx.rides.length === 1 ? "" : "s"}) — Error Type: ${ctx.group.errorTypeName || errorType?.name || "Unclassified"}.`;
-  const guidance = errorType?.guidance ? `\nSOP guidance for this error type: ${errorType.guidance}` : "";
-  const treeLine = reason ? `\nDecision-tree outcome: ${reason}` : "";
-  const trimmedSpecial = specialCircumstances.trim();
-  const specialLine = trimmedSpecial
-    ? `\nOperator-supplied special circumstances (this may fundamentally change the framing — let it lead):\n${trimmedSpecial}`
-    : "\nOperator-supplied special circumstances: (none)";
-  // Parity guard: only inject the per-leg findings block when the
-  // operator actually captured per-leg context, the SOP walk produced a
-  // transcript, or sibling-duplicate pointers exist on the group.
-  // Otherwise the prompt is byte-identical to the legacy. Including the
-  // transcript-only case here preserves the readback↔write-up parity
-  // promised at the top of this block — Task #377 added transcripts as a
-  // first-class context source, and the readback must see the same
-  // grounding the full draft will see.
-  const perLegBlock = (promptLegInputs.hasPerLegContext || promptLegInputs.hasSopTranscript || promptLegInputs.siblingDuplicateCount > 0)
-    ? `\nPer-leg findings the operator captured during the SOP walk (lead with these where they reshape the surface read of the error type):\n${promptLegInputs.ridesBlock}`
-    : "";
+  const note = opts.specialCircumstances.trim();
+  const prompt = `An NEMT claims operator wrote the short note below as extra context for a dispute write-up the AI will draft later. Right now you are NOT drafting the dispute and you do NOT have the case file — only these words. In 1 to 3 plain-language sentences, restate ONLY what you understand the operator is telling you from this note alone. Do not invent facts, names, parties, amounts, dates, or context that is not in the note. If the note is ambiguous or could mean more than one thing, name the ambiguity explicitly so the operator knows to clarify it before the full write-up runs.
 
-  const prompt = `You are previewing your understanding of an NEMT claim dispute before drafting the full write-up. Do NOT write the dispute. In 2 to 4 plain-language sentences, restate — in your own words — what the dispute is actually about, given the inputs below. Lead with the core ask, then the key reason. If the operator's special circumstances change the framing from a surface read of the error type, reflect that explicitly in the readback so the operator can spot any misunderstanding.
+Operator's note:
+"""
+${note}
+"""
 
-${headline}${guidance}${treeLine}${perLegBlock}${specialLine}
+Return ONLY the restatement. No headers, no bullets, no preamble like "Here is my understanding".`;
 
-Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no preamble like "Here is my understanding".`;
-
-  const systemPrompt = "You restate the operator's pending NEMT claim dispute in 2–4 sentences so they can verify the AI is on the same page before you draft the full write-up. Be concrete, specific to the inputs, and never invent facts.";
+  const systemPrompt = "You restate a short operator-written note in 1–3 sentences so the operator can tell whether the AI understood their wording before any case context shapes the dispute write-up. Stay strictly within what the note says; never invent facts, parties, or context.";
 
   return { prompt, systemPrompt };
 }
@@ -1020,17 +1005,17 @@ router.get("/portal-submissions", asyncHandler(async (req, res): Promise<void> =
 }));
 
 /**
- * Preflight "read it back to me" step. Given the error type, the decision-tree
- * outcome, and any operator-supplied context, the model returns a 2–4 sentence
- * restatement of what the dispute is actually about. Read-only — no DB writes
- * happen here so the operator can re-check freely. A successful call writes a
- * single audit log entry so the activity feed can show that the operator
- * verified AI understanding before generating the full draft.
+ * Framing-only AI paraphrase of the operator's Understanding notes
+ * (Task #830). Sees ONLY the note text — no case context (error type,
+ * decision-tree outcome, per-leg findings, SOP transcript). The point
+ * is to surface vague wording before Generate Preview's full prompt
+ * papers over it. Persists `understandingReadback` +
+ * `understandingReadbackForText` (drift anchor) on the group and
+ * writes a single audit log row.
  */
 router.post("/portal-submissions/preflight-understanding", asyncHandler(async (req, res): Promise<void> => {
-  const { invoiceGroupId, disputeReason, specialCircumstances, understandingReadback } = req.body as {
+  const { invoiceGroupId, specialCircumstances, understandingReadback } = req.body as {
     invoiceGroupId?: number;
-    disputeReason?: string;
     specialCircumstances?: string;
     understandingReadback?: string;
   };
@@ -1042,21 +1027,19 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
   const ctx = await resolveContext({ invoiceGroupId });
   if (!ctx) { res.status(404).json({ error: "Invoice group not found" }); return; }
 
-  const errorType = await loadErrorTypeForContext(ctx);
-  const reason = (disputeReason || "").trim();
   // Task #745: accept either field name. Legacy callers (the old
   // gauntlet UI, scripts) sent `specialCircumstances`; back-compat
   // callers may pass `understandingReadback`. Both route through the
   // same resolver so the AI prompt sees the same string regardless.
   const trimmedSpecial = resolveCustomContextNote({ specialCircumstances, understandingReadback });
 
-  // Pre-compute prompt-leg inputs (Task #307 guard #10): the readback sees
-  // the same per-leg findings the full draft will see so the operator's
-  // verification step can't be silently shorn of new context.
-  const rides = ctx.rides as PromptLegRowInput[];
-  const treesByLegId = await loadDecisionTreesForLegs(rides);
-  const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
-  const { prompt, systemPrompt } = buildReadbackPrompt({ ctx, errorType, reason, specialCircumstances: trimmedSpecial, promptLegInputs });
+  // Task #830: the readback is now a framing-only check on the
+  // operator's note text alone. No case context (error type, decision-
+  // tree outcome, per-leg findings, SOP transcript) is threaded into
+  // the prompt — those still feed the full Generate Preview pass. The
+  // point is to catch ambiguous wording before the rich context papers
+  // over it.
+  const { prompt, systemPrompt } = buildReadbackPrompt({ specialCircumstances: trimmedSpecial });
 
   let message: AnthropicMessage;
   try {
@@ -1117,7 +1100,8 @@ router.post("/portal-submissions/preflight-understanding", asyncHandler(async (r
       specialCircumstancesLength: trimmedSpecial.length,
       readbackLength: readback.length,
       noteHash,
-      ...promptLegAuditCounters(promptLegInputs),
+      // Task #830: per-leg counters intentionally omitted — the readback
+      // is framing-only on the note text and never sees per-leg context.
     },
     userEmail: req.user?.email ?? null,
     userName: req.user?.displayName ?? null,

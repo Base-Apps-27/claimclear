@@ -371,33 +371,59 @@ test("(a) parity: portal write-up prompt is byte-identical to the legacy assembl
   assert.equal(prompt.includes("Total invoice amount:"), false);
 });
 
-test("(a) parity: readback prompt is byte-identical to the legacy assembly", () => {
-  const rides = [
-    makeLeg({ id: 501, confNumber: "ABC123" }),
-    makeLeg({ id: 502, confNumber: "DEF456" }),
+test("Task #830: readback prompt is framing-only — built from the operator's note text alone", () => {
+  // The readback no longer threads case context (error type, decision-
+  // tree outcome, per-leg findings, SOP transcript) — those still feed
+  // the full Generate Preview pass. The framing-only prompt surfaces
+  // whether the AI understood the operator's words on their own, so
+  // ambiguity in the note is caught before the rich context papers
+  // over it.
+  const note = "Driver didn't stop at the member's house.";
+  const { prompt, systemPrompt } = buildReadbackPrompt({ specialCircumstances: note });
+
+  // The prompt embeds the note verbatim in a triple-quoted block.
+  assert.match(prompt, /Operator's note:\n"""\nDriver didn't stop at the member's house\.\n"""/);
+  // And asks for a 1–3 sentence restatement that flags ambiguity, with
+  // strict no-invention rules — those are the framing-only contract.
+  assert.match(prompt, /1 to 3 plain-language sentences/);
+  assert.match(prompt, /Do not invent facts/);
+  assert.match(prompt, /name the ambiguity explicitly/);
+
+  // None of the case-context surfaces from the legacy readback prompt
+  // may appear — the test pins the absence so a regression that
+  // reintroduces ctx/errorType/reason/per-leg threading fails loudly.
+  assert.equal(prompt.includes("Error Type:"), false);
+  assert.equal(prompt.includes("SOP guidance"), false);
+  assert.equal(prompt.includes("Decision-tree outcome"), false);
+  assert.equal(prompt.includes("Per-leg finding"), false);
+  assert.equal(prompt.includes("SOP walk transcript"), false);
+  assert.equal(prompt.includes("Invoice #"), false);
+
+  // System prompt is also note-scoped (no draft-the-dispute framing).
+  assert.match(systemPrompt, /restate a short operator-written note/);
+});
+
+test("Task #830: same note + different case contexts produce the same readback prompt", () => {
+  // The readback is independent of the surrounding case. Two groups
+  // with completely different legs/error types/findings must yield
+  // identical prompts as long as the operator's note is the same —
+  // the deterministic guarantee that lets the operator trust the
+  // check as a check on their *words*, not on the case.
+  const note = "Verify GPS shows the actual route taken.";
+  const aRides = [makeLeg({ id: 501, confNumber: "ABC123", perLegContext: "leg A had a 47-min wait" })];
+  const bRides = [
+    makeLeg({ id: 700, confNumber: "ZZZ999", perLegContext: "leg B was a duplicate of nothing" }),
+    makeLeg({ id: 701, confNumber: "YYY888" }),
   ];
-  const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides });
-  const { prompt } = buildReadbackPrompt({
-    ctx: makeCtx(rides),
-    errorType,
-    reason: "Mileage mismatch",
-    specialCircumstances: "",
-    promptLegInputs,
-  });
+  // Build prompt-leg-inputs to prove the helper *would* surface a
+  // per-leg findings block — and then assert the readback ignores it.
+  void buildPromptLegInputs({ legs: aRides, groupLegs: aRides });
+  void buildPromptLegInputs({ legs: bRides, groupLegs: bRides });
 
-  // Reconstruct what the legacy prompt looked like verbatim and assert
-  // exact equality — this is the parity guarantee.
-  const headline = `Invoice #INV-2026-001 (2 rides) — Error Type: Trip Distance Mismatch.`;
-  const guidance = `\nSOP guidance for this error type: Verify GPS breadcrumbs and provider mileage report.`;
-  const treeLine = `\nDecision-tree outcome: Mileage mismatch`;
-  const specialLine = `\nOperator-supplied special circumstances: (none)`;
-  const expected = `You are previewing your understanding of an NEMT claim dispute before drafting the full write-up. Do NOT write the dispute. In 2 to 4 plain-language sentences, restate — in your own words — what the dispute is actually about, given the inputs below. Lead with the core ask, then the key reason. If the operator's special circumstances change the framing from a surface read of the error type, reflect that explicitly in the readback so the operator can spot any misunderstanding.
-
-${headline}${guidance}${treeLine}${specialLine}
-
-Return ONLY the 2–4 sentence restatement. No headers, no bullet points, no preamble like "Here is my understanding".`;
-
-  assert.equal(prompt, expected);
+  const a = buildReadbackPrompt({ specialCircumstances: note });
+  const b = buildReadbackPrompt({ specialCircumstances: note });
+  assert.equal(a.prompt, b.prompt);
+  assert.equal(a.systemPrompt, b.systemPrompt);
 });
 
 test("(a) parity: per-claim email prompt is byte-identical to the legacy assembly", () => {
@@ -472,16 +498,14 @@ test("(b) all-context: portal write-up + readback prompts include the per-leg fi
   assert.match(portalPrompt, /     Per-leg finding: Driver waited 47 min; member confirmed delay\./);
   assert.match(portalPrompt, /     Per-leg finding: GPS shows trip ended early\./);
 
-  const { prompt: readbackPrompt } = buildReadbackPrompt({
-    ctx: makeCtx(rides),
-    errorType,
-    reason: "Mileage mismatch",
-    specialCircumstances: "",
-    promptLegInputs,
-  });
-  // The readback now carries the per-leg findings block (it didn't before).
-  assert.match(readbackPrompt, /Per-leg findings the operator captured during the SOP walk/);
-  assert.match(readbackPrompt, /     Per-leg finding: Driver waited 47 min/);
+  // Task #830: the readback is framing-only on the operator's note —
+  // it never carries the per-leg findings block (the full Generate
+  // Preview prompt above still does). Pin the absence so a regression
+  // that reintroduces per-leg threading into the readback fails loudly.
+  void promptLegInputs;
+  const { prompt: readbackPrompt } = buildReadbackPrompt({ specialCircumstances: "" });
+  assert.equal(readbackPrompt.includes("Per-leg finding"), false);
+  assert.equal(readbackPrompt.includes("Per-leg findings the operator captured"), false);
 });
 
 test("(b) all-context: per-claim email prompt embeds per-leg finding bullet under the claim details", () => {
@@ -963,11 +987,14 @@ test("Task #377: a leg with empty sopAnswers contributes no transcript even when
   assert.equal(result.hasSopTranscript, false);
 });
 
-test("Task #377: readback prompt gates the per-leg findings block on transcript too — transcript-only group still gets the block (write-up↔readback parity)", () => {
-  // Pre-#377, the readback's gate was `hasPerLegContext ||
-  // siblingDuplicateCount > 0`. With transcripts now a first-class
-  // grounding source the write-up sees, the readback must see it too —
-  // otherwise the operator can't verify the AI used the walk correctly.
+test("Task #830 (was #377): readback prompt does NOT carry the SOP transcript — framing-only on the operator's note", () => {
+  // Pre-#830 the readback prompt mirrored the write-up's grounding
+  // sources (per-leg findings, sibling-duplicates, SOP transcript) so
+  // the operator could verify the AI saw them. That made the check
+  // *very* hard to fail: even a vague note would come back paraphrased
+  // through the case context. The framing-only redesign moves that
+  // verification job to Generate Preview itself; the readback is now
+  // strictly about whether the AI understood the operator's words.
   const ride = makeLeg({
     id: 501,
     confNumber: "ABC123",
@@ -979,22 +1006,15 @@ test("Task #377: readback prompt gates the per-leg findings block on transcript 
   });
   const treesByLegId = new Map([[501, transcriptTree]]);
   const promptLegInputs = buildPromptLegInputs({ legs: [ride], groupLegs: [ride], treesByLegId });
-  // Sanity: this group has transcript but no operator-authored finding
-  // and no sibling-duplicates — pre-#377 the readback would have skipped
-  // the block entirely.
-  assert.equal(promptLegInputs.hasPerLegContext, false);
-  assert.equal(promptLegInputs.siblingDuplicateCount, 0);
+  // Sanity: transcript is present in the helper output — so if the
+  // readback were threading it, it WOULD appear.
   assert.equal(promptLegInputs.hasSopTranscript, true);
+  void promptLegInputs;
 
-  const { prompt } = buildReadbackPrompt({
-    ctx: makeCtx([ride]),
-    errorType,
-    reason: "Mileage mismatch",
-    specialCircumstances: "",
-    promptLegInputs,
-  });
-  assert.match(prompt, /Per-leg findings the operator captured during the SOP walk/);
-  assert.match(prompt, /SOP walk transcript:\n {7}• Was GPS available\? — Yes\n {7}• Did breadcrumbs match the billed route\? — No/);
+  const { prompt } = buildReadbackPrompt({ specialCircumstances: "" });
+  assert.equal(prompt.includes("SOP walk transcript"), false);
+  assert.equal(prompt.includes("Was GPS available"), false);
+  assert.equal(prompt.includes("Per-leg findings the operator captured"), false);
 });
 
 test("Task #377: normalizeTree returns null on malformed jsonb payloads — no nodeId leak through buildPromptLegInputs", () => {

@@ -3439,15 +3439,14 @@ operator overrode the warning, not just *that* they did.
 
 export interface PortalUnderstandingPreflightBody {
   invoiceGroupId?: number;
-  disputeReason?: string;
-  /** The operator's "Understanding notes" text. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`. */
+  /** The operator's "Understanding notes" text — the ONLY content the framing-only readback prompt sees. Either this or the legacy `understandingReadback` may be supplied; both route through `resolveCustomContextNote`. */
   specialCircumstances?: string;
   /** Legacy alias for `specialCircumstances` (back-compat). Prefer `specialCircumstances` in new callers. */
   understandingReadback?: string;
 }
 
 export interface PortalUnderstandingPreflightResponse {
-  /** A short (2–4 sentence) plain-language restatement of what the dispute is about, given the error type, decision-tree outcome, and the operator's context. */
+  /** A short (1–3 sentence) plain-language paraphrase of the operator's note text alone, with no case context threaded in. Used to surface whether the AI understood the operator's wording before Generate Preview runs the full prompt. */
   readback: string;
   /** Alias for `readback` returned alongside it for forward-compatibility with callers that want a more explicit name (the value is the same string). */
   previewReadback?: string;
