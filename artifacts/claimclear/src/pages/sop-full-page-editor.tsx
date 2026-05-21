@@ -16,6 +16,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   useListErrorTypes,
+  useListEvidenceTypes,
+  useListSopLibraryItems,
   useUpdateErrorType,
   getListErrorTypesQueryKey,
   type ErrorTypeResponse,
@@ -43,6 +45,9 @@ import {
   History,
   AlertCircle,
   ChevronDown,
+  Copy,
+  ClipboardPaste,
+  X,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -51,7 +56,22 @@ import { PlainTextEditor } from "@/components/decision-tree/plain-text-editor";
 import { FindReplaceDialog } from "./sop-full-page-editor-find-replace";
 import { LibraryDrawer, SaveToLibraryDialog } from "./sop-full-page-editor-library";
 import { HistoryDrawer } from "./sop-full-page-editor-history";
-import { extractSubTreeFromEditor, treesEqual, settingsEqual } from "./sop-full-page-editor-helpers";
+import {
+  extractSubTreeFromEditor,
+  treesEqual,
+  settingsEqual,
+  extractSubtree,
+  remapSubtreeIds,
+  scrubSubtreeRefs,
+  pasteSubtreeIntoOption,
+  getEmptyOptionSlots,
+  type EmptyOptionSlot,
+} from "./sop-full-page-editor-helpers";
+import {
+  clearClipboard,
+  setClipboard,
+  useSopClipboard,
+} from "./sop-clipboard";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -439,7 +459,7 @@ function Outline({
 // ---------------------------------------------------------------------------
 
 function Inspector({
-  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
+  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary, onCopySubTree, onPasteSubTree, clipboardNodeCount,
 }: {
   tree: DecisionTree;
   nodeId: string | null;
@@ -447,6 +467,9 @@ function Inspector({
   onSelectNode: (id: string | null) => void;
   onSaveEvidenceToLibrary: (nodeId: string, index: number) => void;
   onSaveSubTreeToLibrary: (nodeId: string) => void;
+  onCopySubTree: (nodeId: string) => void;
+  onPasteSubTree: (parentId: string, optionIndex: number) => void;
+  clipboardNodeCount: number | null;
 }) {
   if (!nodeId) {
     return (
@@ -507,6 +530,22 @@ function Inspector({
             variant="ghost"
             size="sm"
             className="ml-auto h-6 px-2 text-[10px]"
+            onClick={() => onCopySubTree(node.id)}
+            disabled={node.id === tree.rootId}
+            data-testid="inspector-copy-sub-tree"
+            title={
+              node.id === tree.rootId
+                ? "Copying the root step isn't supported — pick a child step."
+                : "Copy this step and its descendants (⌘C)"
+            }
+            aria-label="Copy sub-tree"
+          >
+            <Copy className="w-3 h-3 mr-1" /> Copy
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px]"
             onClick={() => onSaveSubTreeToLibrary(node.id)}
             data-testid="inspector-save-sub-tree-to-library"
             title="Save this node and its descendants to the SOP library"
@@ -691,6 +730,19 @@ function Inspector({
                     </div>
                   ) : (
                     <div className="space-y-1">
+                      {clipboardNodeCount !== null && !opt.outcomeType && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-full text-[11px] gap-1"
+                          onClick={() => onPasteSubTree(node.id, idx)}
+                          data-testid={`inspector-paste-sub-tree-${idx}`}
+                          title="Paste the copied sub-tree onto this empty branch (⌘V)"
+                        >
+                          <ClipboardPaste className="w-3 h-3" />
+                          Paste sub-tree ({clipboardNodeCount} node{clipboardNodeCount === 1 ? "" : "s"})
+                        </Button>
+                      )}
                       <Select
                         value={opt.outcomeType || ""}
                         onValueChange={(val) =>
@@ -1368,11 +1420,68 @@ export default function SopFullPageEditor() {
       } else if (key === "s") {
         e.preventDefault();
         void handleSaveRef.current?.();
+      } else if (key === "c") {
+        // Don't hijack the browser's text-copy gesture when the user
+        // has actually selected some text or is focused in an editable
+        // field — only treat ⌘C as "copy sub-tree" when the focus is
+        // outside any input/textarea/contenteditable AND no text
+        // selection exists.
+        const target = e.target as HTMLElement | null;
+        const inField =
+          !!target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            (target as HTMLElement).isContentEditable);
+        const sel = typeof window !== "undefined" ? window.getSelection?.() : null;
+        const hasTextSelection = !!sel && sel.toString().length > 0;
+        if (inField || hasTextSelection) return;
+        const id = copyPasteRef.current.selectedId;
+        if (id) {
+          e.preventDefault();
+          copyPasteRef.current.copy(id);
+        }
+      } else if (key === "v") {
+        const target = e.target as HTMLElement | null;
+        const inField =
+          !!target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            (target as HTMLElement).isContentEditable);
+        if (inField) return;
+        if (!copyPasteRef.current.hasClipboard) return;
+        e.preventDefault();
+        // If a single empty option slot is the natural target (selected
+        // node has exactly one empty option), paste straight in.
+        // Otherwise open the picker so the user can choose.
+        const auto = copyPasteRef.current.autoSlot();
+        if (auto) {
+          copyPasteRef.current.paste(auto.parentId, auto.optionIndex);
+        } else {
+          copyPasteRef.current.openPicker();
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Stable ref so the global keydown listener above can call the
+  // current copy/paste closures without re-binding on every render.
+  const copyPasteRef = useRef<{
+    selectedId: string | null;
+    hasClipboard: boolean;
+    copy: (id: string) => void;
+    paste: (parentId: string, optionIndex: number) => void;
+    openPicker: () => void;
+    autoSlot: () => { parentId: string; optionIndex: number } | null;
+  }>({
+    selectedId: null,
+    hasClipboard: false,
+    copy: () => {},
+    paste: () => {},
+    openPicker: () => {},
+    autoSlot: () => null,
+  });
 
   // Stable ref to the latest handleSave so the keydown listener above
   // can call the current closure without re-binding on every render.
@@ -1465,6 +1574,170 @@ export default function SopFullPageEditor() {
     },
     [tree],
   );
+
+  // Task #816 — Cross-SOP copy/paste -----------------------------------
+  const clipboard = useSopClipboard();
+  const [pastePickerOpen, setPastePickerOpen] = useState(false);
+  // Load the destination workspace's allowlists so paste-time scrubbing
+  // can drop references the destination doesn't have. Both lists are
+  // small and already cached for other surfaces, so this is a free
+  // read in the common case.
+  const { data: evidenceTypesData } = useListEvidenceTypes();
+  const { data: sopLibraryItemsData } = useListSopLibraryItems();
+
+  const handleCopySubTree = useCallback(
+    (nodeId: string) => {
+      if (!tree) return;
+      const payload = extractSubtree(tree, nodeId);
+      if (!payload) {
+        toast({
+          title: "Can't copy this step",
+          description:
+            nodeId === tree.rootId
+              ? "Copying the SOP's root step isn't supported. Select a child step instead."
+              : "Step not found.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setClipboard({
+        payload,
+        nodeCount: payload.nodes.length,
+        sourceSopTitle: errorType?.name || "Untitled SOP",
+        sourceErrorTypeId: errorType?.id ?? null,
+        copiedAt: Date.now(),
+      });
+      toast({
+        title: "Sub-tree copied",
+        description: `${payload.nodes.length} step${payload.nodes.length === 1 ? "" : "s"} on the clipboard. Open another SOP and paste onto any empty branch.`,
+      });
+    },
+    [tree, errorType],
+  );
+
+  const performPaste = useCallback(
+    (parentId: string, optionIndex: number): boolean => {
+      if (!tree || !clipboard) return false;
+      // Refuse to paste over a non-empty option (childId attached OR a
+      // terminal outcome). The Paste UI only renders on empty slots,
+      // but guarding here protects future callers (context menu,
+      // keyboard fast-path, etc.) from silently clobbering existing
+      // branches.
+      const targetParent = tree.nodes.find((n) => n.id === parentId);
+      const targetOption = targetParent?.options[optionIndex];
+      if (!targetParent || !targetOption) {
+        toast({
+          title: "Can't paste here",
+          description: "That branch slot no longer exists. Refresh and try again.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      if (targetOption.childId || targetOption.outcomeType) {
+        toast({
+          title: "Can't paste here",
+          description: "That branch is already in use. Clear it first, then paste.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      // Scrub cross-references against the destination workspace's
+      // actual lists. evidenceTypeIds are pulled from the global
+      // EvidenceType list; sopLibraryItemIds are pulled from the SOP
+      // library list. Both lists are loaded into the editor on mount;
+      // if a list hasn't resolved yet (undefined), we skip its scrub
+      // rather than wiping every reference.
+      const evIds: Set<number> | undefined = evidenceTypesData?.evidenceTypes
+        ? new Set(evidenceTypesData.evidenceTypes.map((e) => e.id))
+        : undefined;
+      const libIds: Set<string | number> | undefined = sopLibraryItemsData
+        ? new Set<string | number>(sopLibraryItemsData.map((i) => i.id))
+        : undefined;
+      const { payload: scrubbed, dropped } = scrubSubtreeRefs(
+        clipboard.payload,
+        { evidenceTypeIds: evIds, sopLibraryItemIds: libIds },
+      );
+      const remapped = remapSubtreeIds(scrubbed);
+      const nextTree = pasteSubtreeIntoOption(tree, parentId, optionIndex, remapped);
+      setTree(nextTree);
+      setDirty(true);
+      setSelectedId(remapped.rootId);
+      const droppedParts: string[] = [];
+      if (dropped.evidenceTypeIds.length > 0) {
+        droppedParts.push(
+          `${dropped.evidenceTypeIds.length} evidence type${dropped.evidenceTypeIds.length === 1 ? "" : "s"}`,
+        );
+      }
+      if (dropped.sopLibraryItemIds.length > 0) {
+        droppedParts.push(
+          `${dropped.sopLibraryItemIds.length} library reference${dropped.sopLibraryItemIds.length === 1 ? "" : "s"}`,
+        );
+      }
+      toast({
+        title: "Sub-tree pasted",
+        description:
+          droppedParts.length > 0
+            ? `Inserted ${remapped.nodes.length} step${remapped.nodes.length === 1 ? "" : "s"}. Dropped: ${droppedParts.join(", ")} not available here.`
+            : `Inserted ${remapped.nodes.length} step${remapped.nodes.length === 1 ? "" : "s"} onto the selected branch.`,
+      });
+      // Per spec: the clipboard clears after a successful paste so the
+      // next ⌘V doesn't accidentally re-paste the same payload.
+      clearClipboard();
+      return true;
+    },
+    [tree, clipboard, setSelectedId],
+  );
+
+  const handlePasteSubTree = useCallback(
+    (parentId: string, optionIndex: number) => {
+      if (!clipboard) {
+        toast({
+          title: "Clipboard is empty",
+          description: "Copy a sub-tree from any SOP first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      performPaste(parentId, optionIndex);
+    },
+    [clipboard, performPaste],
+  );
+
+  // Empty option slots in the current tree; powers the picker shown
+  // when the user hits ⌘V at the root level (no slot selected).
+  const emptySlots: EmptyOptionSlot[] = useMemo(
+    () => (tree ? getEmptyOptionSlots(tree) : []),
+    [tree],
+  );
+
+  // Keep the keyboard-shortcut ref in sync with the current closures
+  // and selected-id every render. Cheap pointer assignment — no React
+  // re-render cost. The ref is read by the window-level keydown
+  // listener installed in the ⌘F/⌘S effect above.
+  copyPasteRef.current = {
+    selectedId,
+    hasClipboard: clipboard !== null,
+    copy: handleCopySubTree,
+    paste: (parentId, optionIndex) => {
+      performPaste(parentId, optionIndex);
+    },
+    openPicker: () => setPastePickerOpen(true),
+    autoSlot: () => {
+      // If the currently selected node has exactly one empty option
+      // slot, return it so ⌘V can fast-path straight into the paste.
+      // Otherwise return null and let the picker open.
+      if (!tree || !selectedId) return null;
+      const node = tree.nodes.find((n) => n.id === selectedId);
+      if (!node) return null;
+      const empties: Array<{ parentId: string; optionIndex: number }> = [];
+      node.options.forEach((o, i) => {
+        if (!o.childId && !o.outcomeType) {
+          empties.push({ parentId: node.id, optionIndex: i });
+        }
+      });
+      return empties.length === 1 ? empties[0] : null;
+    },
+  };
 
   // Shared persistence path. Throws on validation or network errors so
   // callers (the top-bar Save button AND the Plain Text tab's Save All
@@ -1668,6 +1941,28 @@ export default function SopFullPageEditor() {
             ⌘F
           </kbd>
         </Button>
+        {clipboard && (
+          <div
+            className="h-7 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2 text-[10px] text-muted-foreground"
+            data-testid="sop-editor-clipboard-chip"
+            title={`Copied from "${clipboard.sourceSopTitle}" — paste onto any empty branch (⌘V)`}
+          >
+            <ClipboardPaste className="w-3 h-3" aria-hidden="true" />
+            <span>
+              Clipboard: 1 sub-tree ({clipboard.nodeCount} node{clipboard.nodeCount === 1 ? "" : "s"})
+            </span>
+            <button
+              type="button"
+              onClick={() => clearClipboard()}
+              className="ml-0.5 inline-flex items-center justify-center rounded-full hover:bg-muted/80 p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              data-testid="sop-editor-clipboard-chip-clear"
+              aria-label="Clear sub-tree clipboard"
+              title="Clear clipboard"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <div className="h-6 w-px bg-border mx-1" aria-hidden="true" />
         <Button
           size="sm"
@@ -1952,6 +2247,70 @@ export default function SopFullPageEditor() {
           defaultLabel={saveToLibrary?.defaultLabel}
         />
 
+        {/* Task #816 — Paste-target picker. Opened by ⌘V when the
+            current selection has no obvious single empty slot. Lists
+            every empty option in the tree so the user can pick where
+            the copied sub-tree should land. */}
+        {pastePickerOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm"
+            data-testid="paste-picker-overlay"
+            onClick={() => setPastePickerOpen(false)}
+          >
+            <div
+              className="w-[420px] max-h-[70vh] flex flex-col rounded-lg border border-border bg-card shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-label="Choose paste target"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold">Paste sub-tree</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Choose an empty branch in this SOP.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full p-1 hover:bg-muted/60"
+                  aria-label="Close paste picker"
+                  onClick={() => setPastePickerOpen(false)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-2">
+                {emptySlots.length === 0 ? (
+                  <div className="p-4 text-xs text-muted-foreground">
+                    No empty branches in this SOP. Every option already has a child or a terminal outcome — clear a slot first, then paste.
+                  </div>
+                ) : (
+                  <ul className="space-y-1" data-testid="paste-picker-list">
+                    {emptySlots.map((slot, i) => (
+                      <li key={`${slot.parentId}-${slot.optionIndex}-${i}`}>
+                        <button
+                          type="button"
+                          className="w-full text-left rounded-md border border-border hover:bg-muted/40 px-2.5 py-2"
+                          data-testid={`paste-picker-slot-${i}`}
+                          onClick={() => {
+                            const ok = performPaste(slot.parentId, slot.optionIndex);
+                            if (ok) setPastePickerOpen(false);
+                          }}
+                        >
+                          <div className="text-[12px] font-medium truncate">{slot.parentQuestion}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">
+                            → {slot.label}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Right inspector — hidden during multi-select so the bulk
             action bar is the only edit affordance on screen. */}
         {selectedIds.size <= 1 && (
@@ -1963,6 +2322,9 @@ export default function SopFullPageEditor() {
               onSelectNode={setSelectedId}
               onSaveEvidenceToLibrary={handleSaveEvidenceToLibrary}
               onSaveSubTreeToLibrary={handleSaveSubTreeToLibrary}
+              onCopySubTree={handleCopySubTree}
+              onPasteSubTree={handlePasteSubTree}
+              clipboardNodeCount={clipboard?.nodeCount ?? null}
             />
             {selectedNode && dirty && (
               <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/30 flex items-center gap-1.5">

@@ -24,8 +24,21 @@ import {
   extractSubTreeFromEditor,
   treesEqual,
   settingsEqual,
+  extractSubtree,
+  remapSubtreeIds,
+  scrubSubtreeRefs,
+  pasteSubtreeIntoOption,
+  getEmptyOptionSlots,
   type SopEditorSettings,
+  type SubtreePayload,
 } from "./sop-full-page-editor-helpers";
+import {
+  getClipboard,
+  setClipboard,
+  clearClipboard,
+  subscribeClipboard,
+  __resetClipboardForTests,
+} from "./sop-clipboard";
 import { validateAppliesPerInvoice } from "@/components/decision-tree/types";
 
 function sampleTree(): DecisionTree {
@@ -733,6 +746,472 @@ test("extractSubTreeFromEditor: returns a tree rooted at the chosen node with on
   assert.equal(sub.rootId, "b");
   const ids = sub.nodes.map((n) => n.id).sort();
   assert.deepEqual(ids, ["b", "c"]);
+});
+
+// ---------------------------------------------------------------------------
+// Task #816 — Cross-SOP sub-tree copy/paste helpers & clipboard
+// ---------------------------------------------------------------------------
+
+test("extractSubtree returns a serializable payload rooted at the picked node", () => {
+  const tree = sampleTree();
+  const payload = extractSubtree(tree, "b");
+  assert.ok(payload, "should return a payload for a non-root node");
+  assert.equal(payload!.rootId, "b");
+  assert.deepEqual(payload!.nodes.map((n) => n.id).sort(), ["b"]);
+  // Must be a fresh object graph — mutating it should not touch the source.
+  payload!.nodes[0].question = "TOUCHED";
+  assert.notEqual(tree.nodes.find((n) => n.id === "b")!.question, "TOUCHED");
+});
+
+test("extractSubtree refuses to extract the tree's root (cannot be pasted onto an empty slot)", () => {
+  const tree = sampleTree();
+  assert.equal(extractSubtree(tree, tree.rootId), null);
+});
+
+test("extractSubtree returns null for an unknown node id", () => {
+  const tree = sampleTree();
+  assert.equal(extractSubtree(tree, "does-not-exist"), null);
+});
+
+test("extractSubtree on a deep sub-tree carries every reachable descendant", () => {
+  const tree: DecisionTree = {
+    rootId: "root",
+    nodes: [
+      { id: "root", question: "Root", options: [{ label: "into", childId: "mid" }] },
+      { id: "mid", question: "Mid", options: [
+        { label: "L", childId: "leafL" },
+        { label: "R", childId: "leafR" },
+      ] },
+      { id: "leafL", question: "L", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      { id: "leafR", question: "R", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+      // Unrelated branch — must not appear.
+      { id: "elsewhere", question: "Else", options: [] },
+    ],
+  };
+  const payload = extractSubtree(tree, "mid");
+  assert.ok(payload);
+  const ids = payload!.nodes.map((n) => n.id).sort();
+  assert.deepEqual(ids, ["leafL", "leafR", "mid"]);
+});
+
+test("remapSubtreeIds mints fresh ids and remaps every internal childId pointer", () => {
+  const payload: SubtreePayload = {
+    rootId: "a",
+    nodes: [
+      { id: "a", question: "A", options: [{ label: "→", childId: "b" }] },
+      { id: "b", question: "B", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const remapped = remapSubtreeIds(payload);
+  const ids = new Set(remapped.nodes.map((n) => n.id));
+  assert.equal(ids.has("a"), false, "old root id must be replaced");
+  assert.equal(ids.has("b"), false, "old child id must be replaced");
+  assert.equal(ids.has(remapped.rootId), true);
+  const root = remapped.nodes.find((n) => n.id === remapped.rootId)!;
+  const childId = root.options[0].childId!;
+  assert.ok(ids.has(childId), "internal pointer must land inside the cloned set");
+  // Source payload untouched (input is JSON-cloned defensively).
+  assert.equal(payload.rootId, "a");
+});
+
+test("remapSubtreeIds: repeated calls produce non-overlapping id sets", () => {
+  const payload: SubtreePayload = {
+    rootId: "a",
+    nodes: [
+      { id: "a", question: "A", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const r1 = remapSubtreeIds(payload);
+  const r2 = remapSubtreeIds(payload);
+  assert.notEqual(r1.rootId, r2.rootId);
+});
+
+test("scrubSubtreeRefs drops evidenceTypeId values not present in the destination's allowlist", () => {
+  const payload: SubtreePayload = {
+    rootId: "a",
+    nodes: [
+      {
+        id: "a", question: "A", options: [
+          { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+        ],
+        evidenceRequirements: [
+          { key: "k1", label: "GPS log", required: true, evidenceTypeId: 1 },
+          { key: "k2", label: "Photo", required: false, evidenceTypeId: 999 },
+        ],
+      },
+    ],
+  };
+  const { payload: scrubbed, dropped } = scrubSubtreeRefs(payload, {
+    evidenceTypeIds: new Set([1]),
+  });
+  const reqs = scrubbed.nodes[0].evidenceRequirements!;
+  assert.equal(reqs[0].evidenceTypeId, 1, "valid id is preserved");
+  assert.equal(reqs[1].evidenceTypeId, undefined, "invalid id is stripped");
+  // Other req fields untouched.
+  assert.equal(reqs[1].label, "Photo");
+  assert.equal(reqs[1].required, false);
+  assert.deepEqual(dropped.evidenceTypeIds, [999]);
+  assert.deepEqual(dropped.sopLibraryItemIds, []);
+});
+
+test("scrubSubtreeRefs without an allowlist is a no-op so unknown destinations don't lose every reference", () => {
+  const payload: SubtreePayload = {
+    rootId: "a",
+    nodes: [
+      {
+        id: "a", question: "A", options: [
+          { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+        ],
+        evidenceRequirements: [
+          { key: "k1", label: "GPS log", required: true, evidenceTypeId: 42 },
+        ],
+      },
+    ],
+  };
+  const { payload: scrubbed, dropped } = scrubSubtreeRefs(payload, {});
+  assert.equal(scrubbed.nodes[0].evidenceRequirements![0].evidenceTypeId, 42);
+  assert.deepEqual(dropped.evidenceTypeIds, []);
+});
+
+test("scrubSubtreeRefs strips sopLibraryItemId when the destination doesn't have it", () => {
+  // sopLibraryItemId is off the typed schema today but the helper must
+  // defensively scrub future payloads that carry it.
+  const payload = {
+    rootId: "a",
+    nodes: [
+      {
+        id: "a", question: "A", options: [
+          { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+        ],
+        sopLibraryItemId: "lib-xyz",
+      },
+    ],
+  } as unknown as SubtreePayload;
+  const { payload: scrubbed, dropped } = scrubSubtreeRefs(payload, {
+    sopLibraryItemIds: new Set<string>(),
+  });
+  assert.equal(
+    (scrubbed.nodes[0] as unknown as Record<string, unknown>).sopLibraryItemId,
+    undefined,
+  );
+  assert.deepEqual(dropped.sopLibraryItemIds, ["lib-xyz"]);
+});
+
+test("pasteSubtreeIntoOption attaches the payload's root to the chosen empty option", () => {
+  // Destination tree has one empty slot on the root option "Left".
+  const dest: DecisionTree = {
+    rootId: "d-root",
+    nodes: [
+      { id: "d-root", question: "Pick", options: [
+        { label: "Left" },
+        { label: "Right", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  const payload: SubtreePayload = {
+    rootId: "pasted",
+    nodes: [
+      { id: "pasted", question: "Pasted root", options: [
+        { label: "Done", outcomeType: "non_issue", outcomeLabel: "Drop" },
+      ] },
+    ],
+  };
+  const next = pasteSubtreeIntoOption(dest, "d-root", 0, payload);
+  // Option got wired to the payload's root id
+  assert.equal(next.nodes[0].options[0].childId, "pasted");
+  // Pasted nodes were appended
+  assert.ok(next.nodes.find((n) => n.id === "pasted"));
+  // Untouched option stayed put
+  assert.equal(next.nodes[0].options[1].outcomeType, "hold");
+  // Source tree untouched (immutability)
+  assert.equal(dest.nodes[0].options[0].childId, undefined);
+});
+
+test("pasteSubtreeIntoOption refuses to overwrite an option that already has a childId or outcomeType", () => {
+  const dest: DecisionTree = {
+    rootId: "x",
+    nodes: [
+      { id: "x", question: "Pick", options: [
+        { label: "Has child", childId: "c" },
+        { label: "Terminal", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      { id: "c", question: "Child", options: [] },
+    ],
+  };
+  const payload: SubtreePayload = {
+    rootId: "p", nodes: [
+      { id: "p", question: "P", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  // Both slots are non-empty — paste must be a no-op for both.
+  assert.equal(pasteSubtreeIntoOption(dest, "x", 0, payload), dest);
+  assert.equal(pasteSubtreeIntoOption(dest, "x", 1, payload), dest);
+});
+
+test("pasteSubtreeIntoOption is a no-op for unknown parent or out-of-range option index", () => {
+  const dest: DecisionTree = {
+    rootId: "x", nodes: [
+      { id: "x", question: "Only", options: [{ label: "slot" }] },
+    ],
+  };
+  const payload: SubtreePayload = {
+    rootId: "p", nodes: [
+      { id: "p", question: "P", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  assert.equal(pasteSubtreeIntoOption(dest, "nope", 0, payload), dest);
+  assert.equal(pasteSubtreeIntoOption(dest, "x", 5, payload), dest);
+});
+
+test("getEmptyOptionSlots enumerates every option without childId or outcomeType", () => {
+  const tree: DecisionTree = {
+    rootId: "r",
+    nodes: [
+      { id: "r", question: "Root", options: [
+        { label: "Empty" },                                        // empty → match
+        { label: "Has child", childId: "c" },                      // skip
+        { label: "Terminal", outcomeType: "hold", outcomeLabel: "Hold" }, // skip
+      ] },
+      { id: "c", question: "Child", options: [
+        { label: "" },                                             // empty (uses fallback label) → match
+      ] },
+    ],
+  };
+  const slots = getEmptyOptionSlots(tree);
+  assert.equal(slots.length, 2);
+  assert.deepEqual(
+    slots.map((s) => `${s.parentId}#${s.optionIndex}:${s.label}`).sort(),
+    ["c#0:Option 1", "r#0:Empty"],
+  );
+});
+
+// ---- Clipboard module ----------------------------------------------------
+
+test("clipboard store: setClipboard then getClipboard round-trips the entry", () => {
+  __resetClipboardForTests();
+  const payload: SubtreePayload = {
+    rootId: "a",
+    nodes: [
+      { id: "a", question: "A", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+  setClipboard({
+    payload,
+    nodeCount: 1,
+    sourceSopTitle: "Source SOP",
+    sourceErrorTypeId: 42,
+    copiedAt: 1234,
+  });
+  const got = getClipboard();
+  assert.ok(got);
+  assert.equal(got!.nodeCount, 1);
+  assert.equal(got!.sourceSopTitle, "Source SOP");
+  assert.equal(got!.payload.rootId, "a");
+});
+
+test("clipboard store: clearClipboard nulls the entry and notifies subscribers", () => {
+  __resetClipboardForTests();
+  let calls = 0;
+  const unsub = subscribeClipboard(() => { calls++; });
+  setClipboard({
+    payload: { rootId: "x", nodes: [{ id: "x", question: "x", options: [] }] },
+    nodeCount: 1,
+    sourceSopTitle: "S",
+    sourceErrorTypeId: null,
+    copiedAt: 0,
+  });
+  assert.equal(calls, 1);
+  clearClipboard();
+  assert.equal(calls, 2);
+  assert.equal(getClipboard(), null);
+  // Clearing again when already empty is a no-op (no extra notify).
+  clearClipboard();
+  assert.equal(calls, 2);
+  unsub();
+});
+
+test("clipboard store: hydrates from sessionStorage on first read", () => {
+  __resetClipboardForTests();
+  // Stub a minimal sessionStorage so the hydrate path runs in node.
+  const store = new Map<string, string>();
+  const fakeStorage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => { store.set(k, v); },
+    removeItem: (k: string) => { store.delete(k); },
+    clear: () => { store.clear(); },
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; },
+  };
+  const originalSession = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  (globalThis as { sessionStorage?: Storage }).sessionStorage = fakeStorage as unknown as Storage;
+  try {
+    store.set(
+      "sop-editor:clipboard",
+      JSON.stringify({
+        payload: { rootId: "z", nodes: [{ id: "z", question: "z", options: [] }] },
+        nodeCount: 1,
+        sourceSopTitle: "Persisted",
+        sourceErrorTypeId: 7,
+        copiedAt: 999,
+      }),
+    );
+    const got = getClipboard();
+    assert.ok(got);
+    assert.equal(got!.sourceSopTitle, "Persisted");
+    assert.equal(got!.payload.rootId, "z");
+  } finally {
+    if (originalSession !== undefined) {
+      (globalThis as { sessionStorage?: Storage }).sessionStorage = originalSession;
+    } else {
+      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    }
+    __resetClipboardForTests();
+  }
+});
+
+test("cross-SOP copy/paste end-to-end: copy from SOP A, paste into SOP B with id remapping and reference scrubbing", () => {
+  __resetClipboardForTests();
+  // SOP A — source. Has a sub-tree under "branch" with an evidence
+  // requirement that references evidenceTypeId=7 (valid in source) and
+  // a node carrying a sopLibraryItemId="lib-a" (valid in source).
+  const sopA = {
+    rootId: "a-root",
+    nodes: [
+      { id: "a-root", question: "A root", options: [
+        { label: "Yes", childId: "a-branch" },
+        { label: "No",  outcomeType: "non_issue", outcomeLabel: "Drop" },
+      ] },
+      {
+        id: "a-branch",
+        question: "A branch root",
+        options: [{ label: "deeper", childId: "a-leaf" }],
+        evidenceRequirements: [
+          { key: "k1", label: "GPS log", required: true, evidenceTypeId: 7 },
+          { key: "k2", label: "Photo", required: false, evidenceTypeId: 999 },
+        ],
+        // off-schema; helper scrubs defensively
+        sopLibraryItemId: "lib-a",
+      },
+      { id: "a-leaf", question: "A leaf", options: [
+        { label: "Done", outcomeType: "portal_dispute", outcomeLabel: "Ready" },
+      ] },
+    ],
+  } as unknown as DecisionTree;
+
+  // SOP B — destination. Has a single empty option slot under "b-root".
+  // Crucially, it reuses some of the same node ids ("a-leaf") to prove
+  // that id remapping prevents collisions.
+  const sopB: DecisionTree = {
+    rootId: "b-root",
+    nodes: [
+      { id: "b-root", question: "B root", options: [
+        { label: "Open", /* empty slot — paste target */ },
+        { label: "Closed", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+      // Same id namespace as SOP A on purpose
+      { id: "a-leaf", question: "B's pre-existing a-leaf", options: [
+        { label: "Done", outcomeType: "hold", outcomeLabel: "Hold" },
+      ] },
+    ],
+  };
+
+  // -- Step 1: COPY from SOP A ------------------------------------------
+  const payload = extractSubtree(sopA, "a-branch");
+  assert.ok(payload, "copy of a non-root node should succeed");
+  setClipboard({
+    payload: payload!,
+    nodeCount: payload!.nodes.length,
+    sourceSopTitle: "SOP A",
+    sourceErrorTypeId: 1,
+    copiedAt: Date.now(),
+  });
+  const stashed = getClipboard();
+  assert.ok(stashed);
+  assert.equal(stashed!.payload.rootId, "a-branch");
+
+  // -- Step 2: NAVIGATE to SOP B ----------------------------------------
+  // (No state change here — the clipboard is module-level so SOP B
+  // sees the same entry.)
+
+  // -- Step 3: PASTE into SOP B's empty slot, scrubbing references ------
+  // Destination workspace knows evidenceTypeId 7 but NOT 999; it also
+  // has zero matching sop-library ids.
+  const { payload: scrubbed, dropped } = scrubSubtreeRefs(stashed!.payload, {
+    evidenceTypeIds: new Set([7]),
+    sopLibraryItemIds: new Set<string>(),
+  });
+  // The scrub must drop the unknown evidence type id and the unknown
+  // sop library reference, and report both in the dropped summary.
+  assert.deepEqual(dropped.evidenceTypeIds, [999]);
+  assert.deepEqual(dropped.sopLibraryItemIds, ["lib-a"]);
+
+  const remapped = remapSubtreeIds(scrubbed);
+  const result = pasteSubtreeIntoOption(sopB, "b-root", 0, remapped);
+
+  // -- Step 4: ASSERTIONS ------------------------------------------------
+  // (a) The empty slot in SOP B is now wired to the pasted root.
+  const bRoot = result.nodes.find((n) => n.id === "b-root")!;
+  assert.equal(bRoot.options[0].childId, remapped.rootId);
+  assert.equal(bRoot.options[1].outcomeType, "hold", "untouched options stay put");
+
+  // (b) None of SOP A's original node ids leaked into SOP B's tree
+  //     for the pasted set — remapping must have produced fresh ids.
+  const pastedIds = new Set(remapped.nodes.map((n) => n.id));
+  for (const sourceId of ["a-branch", "a-leaf"]) {
+    assert.equal(
+      pastedIds.has(sourceId),
+      false,
+      `source id ${sourceId} leaked into the pasted tree`,
+    );
+  }
+
+  // (c) SOP B's pre-existing "a-leaf" node is untouched — the paste
+  //     must NOT have overwritten it via an id collision.
+  const preExisting = result.nodes.find(
+    (n) => n.id === "a-leaf" && n.question === "B's pre-existing a-leaf",
+  );
+  assert.ok(preExisting, "pre-existing destination node must survive paste");
+
+  // (d) The pasted sub-tree carries the scrubbed evidence (kept id=7,
+  //     dropped id=999) and no sopLibraryItemId field.
+  const pastedRoot = result.nodes.find((n) => n.id === remapped.rootId)!;
+  assert.equal(pastedRoot.evidenceRequirements?.length, 2);
+  assert.equal(pastedRoot.evidenceRequirements![0].evidenceTypeId, 7);
+  assert.equal(pastedRoot.evidenceRequirements![1].evidenceTypeId, undefined);
+  assert.equal(
+    (pastedRoot as unknown as Record<string, unknown>).sopLibraryItemId,
+    undefined,
+  );
+
+  // (e) Internal childId pointers in the pasted tree all resolve
+  //     inside the pasted set (no dangling pointer to the source).
+  for (const n of remapped.nodes) {
+    for (const o of n.options) {
+      if (o.childId) assert.ok(pastedIds.has(o.childId));
+    }
+  }
+
+  // (f) Source tree (SOP A) is untouched — copy/paste is non-destructive.
+  assert.equal(
+    sopA.nodes.find((n) => n.id === "a-branch")!.question,
+    "A branch root",
+  );
+
+  __resetClipboardForTests();
 });
 
 test("simplifyTextField throws on non-ok responses so the caller can show a destructive toast", async () => {

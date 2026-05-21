@@ -650,6 +650,187 @@ export function cloneSubTreeWithFreshIds(
   return { nodes, rootId: idMap.get(nodeId)! };
 }
 
+// Task #816 — Cross-SOP sub-tree copy/paste.
+//
+// `extractSubtree` returns a serializable payload `{ rootId, nodes }`
+// containing only the selected node and its descendants. Used by the
+// editor's "Copy sub-tree" gesture so an author can paste the branch
+// into another SOP. Refuses to extract the tree's root — copying the
+// root would be "copy the whole SOP", which the paste affordance
+// (which only fills empty option slots) cannot accept. Returns null
+// for missing nodes or for the root.
+export function extractSubtree(
+  tree: DecisionTree,
+  nodeId: string,
+): SubtreePayload | null {
+  if (!tree || nodeId === tree.rootId) return null;
+  const exists = tree.nodes.some((n) => n.id === nodeId);
+  if (!exists) return null;
+  const sub = extractSubTreeFromEditor(tree, nodeId);
+  // JSON round-trip so the caller gets a freshly serializable payload
+  // (no live refs into the editor's tree state).
+  return JSON.parse(JSON.stringify(sub)) as SubtreePayload;
+}
+
+// `remapSubtreeIds` clones the payload, minting a fresh node id for
+// every node and remapping every internal `childId` pointer to its
+// clone. Evidence requirements also get fresh keys so they don't
+// collide with the destination tree's list keys. Returns the cloned
+// payload — the caller is responsible for splicing it into a
+// destination tree.
+export function remapSubtreeIds(payload: SubtreePayload): SubtreePayload {
+  // Round-trip the payload through JSON first to defensively detach
+  // from anything the caller still holds a reference to.
+  const cloned = JSON.parse(JSON.stringify(payload)) as SubtreePayload;
+  const fake: DecisionTree = { rootId: cloned.rootId, nodes: cloned.nodes };
+  const { nodes, rootId } = cloneSubTreeWithFreshIds(fake, cloned.rootId);
+  return { rootId, nodes };
+}
+
+// Walk the payload and drop any cross-reference that the destination
+// workspace doesn't have. Currently scrubs:
+//   - `evidenceTypeId` on each evidence requirement (if not present in
+//     `availableEvidenceTypeIds`).
+//   - `sopLibraryItemId` on each node (if the field exists and the id
+//     is not present in `availableSopLibraryItemIds`).
+// Returns the scrubbed payload plus a summary describing what was
+// dropped so the caller can surface it in a toast.
+export interface DroppedRefsSummary {
+  evidenceTypeIds: number[];
+  sopLibraryItemIds: Array<string | number>;
+}
+export function scrubSubtreeRefs(
+  payload: SubtreePayload,
+  available: {
+    evidenceTypeIds?: ReadonlySet<number> | ReadonlyArray<number>;
+    sopLibraryItemIds?: ReadonlySet<string | number> | ReadonlyArray<string | number>;
+  },
+): { payload: SubtreePayload; dropped: DroppedRefsSummary } {
+  // When a key is absent we treat the destination as "accepts any
+  // value" (no scrub). Only when the caller explicitly passes an
+  // allowlist do we drop references not present in it. This avoids
+  // wiping every cross-ref when the caller doesn't yet know the
+  // destination's available ids.
+  const evSet: ReadonlySet<number> | null =
+    available.evidenceTypeIds === undefined
+      ? null
+      : available.evidenceTypeIds instanceof Set
+        ? available.evidenceTypeIds
+        : new Set<number>(available.evidenceTypeIds);
+  const libSet: ReadonlySet<string | number> | null =
+    available.sopLibraryItemIds === undefined
+      ? null
+      : available.sopLibraryItemIds instanceof Set
+        ? available.sopLibraryItemIds
+        : new Set<string | number>(available.sopLibraryItemIds);
+  const dropped: DroppedRefsSummary = {
+    evidenceTypeIds: [],
+    sopLibraryItemIds: [],
+  };
+  const nodes = payload.nodes.map((n) => {
+    let next: TreeNode = n;
+    // sopLibraryItemId lives off-schema today but the task spec calls
+    // it out, so we scrub the field defensively if a future
+    // payload carries it.
+    const libRef = (n as unknown as Record<string, unknown>).sopLibraryItemId;
+    if (libSet && libRef != null && (typeof libRef === "string" || typeof libRef === "number")) {
+      if (!libSet.has(libRef)) {
+        dropped.sopLibraryItemIds.push(libRef);
+        const stripped = { ...(n as unknown as Record<string, unknown>) };
+        delete stripped.sopLibraryItemId;
+        next = stripped as unknown as TreeNode;
+      }
+    }
+    if (next.evidenceRequirements && next.evidenceRequirements.length > 0) {
+      const reqs = next.evidenceRequirements.map((r) => {
+        if (evSet && typeof r.evidenceTypeId === "number" && !evSet.has(r.evidenceTypeId)) {
+          dropped.evidenceTypeIds.push(r.evidenceTypeId);
+          const { evidenceTypeId: _drop, ...rest } = r;
+          void _drop;
+          return rest as EvidenceReq;
+        }
+        return r;
+      });
+      next = { ...next, evidenceRequirements: reqs };
+    }
+    return next;
+  });
+  return { payload: { rootId: payload.rootId, nodes }, dropped };
+}
+
+export interface SubtreePayload {
+  rootId: string;
+  nodes: TreeNode[];
+}
+
+// Splice a remapped sub-tree payload into `tree` and attach the
+// payload's root to `parentId`.options[optionIndex] as the new
+// `childId`. The caller is responsible for having already remapped
+// the payload (via `remapSubtreeIds`) so there are no id collisions.
+export function pasteSubtreeIntoOption(
+  tree: DecisionTree,
+  parentId: string,
+  optionIndex: number,
+  remapped: SubtreePayload,
+): DecisionTree {
+  const parent = tree.nodes.find((n) => n.id === parentId);
+  if (!parent) return tree;
+  if (optionIndex < 0 || optionIndex >= parent.options.length) return tree;
+  // Defensive: refuse to overwrite a non-empty option slot. The UI
+  // only surfaces Paste on empty slots, but the helper is a public
+  // surface and must not silently clobber an attached child or
+  // terminal outcome if called from a future entry point.
+  const target = parent.options[optionIndex];
+  if (target.childId || target.outcomeType) return tree;
+  return {
+    ...tree,
+    nodes: [
+      ...tree.nodes.map((n) =>
+        n.id === parentId
+          ? {
+              ...n,
+              options: n.options.map((o, i) =>
+                i === optionIndex
+                  ? {
+                      label: o.label,
+                      childId: remapped.rootId,
+                    }
+                  : o,
+              ),
+            }
+          : n,
+      ),
+      ...remapped.nodes,
+    ],
+  };
+}
+
+// Enumerate every empty option slot (no childId AND no outcomeType) in
+// the tree. Used by the top-level Paste picker when the user hits ⌘V
+// with nothing selected.
+export interface EmptyOptionSlot {
+  parentId: string;
+  optionIndex: number;
+  label: string;
+  parentQuestion: string;
+}
+export function getEmptyOptionSlots(tree: DecisionTree): EmptyOptionSlot[] {
+  const out: EmptyOptionSlot[] = [];
+  for (const node of tree.nodes) {
+    node.options.forEach((opt, idx) => {
+      if (!opt.childId && !opt.outcomeType) {
+        out.push({
+          parentId: node.id,
+          optionIndex: idx,
+          label: opt.label || `Option ${idx + 1}`,
+          parentQuestion: node.question || "(untitled)",
+        });
+      }
+    });
+  }
+  return out;
+}
+
 export function removeEvidenceReq(
   tree: DecisionTree,
   nodeId: string,
