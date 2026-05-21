@@ -281,6 +281,13 @@
       "when": 1778859222301,
       "tag": "0039_salty_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1779378769826,
+      "tag": "0040_stormy_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

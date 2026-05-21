@@ -236,6 +236,7 @@ test("save pipeline: mocked errorType + name edit + tree edit fires one mutateAs
     useGpsControlDeviation: false,
     useDirectEmail: false,
     tripOverriding: false,
+    sourceSopText: "",
     decisionTree: sampleTree() as unknown as Record<string, unknown>,
   };
 
@@ -250,6 +251,7 @@ test("save pipeline: mocked errorType + name edit + tree edit fires one mutateAs
     useGpsControlDeviation: errorType.useGpsControlDeviation,
     useDirectEmail: errorType.useDirectEmail,
     tripOverriding: errorType.tripOverriding,
+    sourceSopText: "",
   };
   let tree: DecisionTree = coerceTree(errorType.decisionTree)!;
   assert.ok(tree, "loaded tree should coerce");
@@ -304,6 +306,7 @@ test("buildSavePayload sends both the tree and the settings in a single PATCH bo
     useGpsControlDeviation: true,
     useDirectEmail: false,
     tripOverriding: true,
+    sourceSopText: "",
   };
 
   const payload = buildSavePayload(editedTree, settings);
@@ -479,6 +482,7 @@ test("settingsEqual recognizes identical settings and rejects any field drift", 
     useGpsControlDeviation: false,
     useDirectEmail: true,
     tripOverriding: false,
+    sourceSopText: "",
   };
   const copy: SopEditorSettings = { ...base };
   assert.equal(settingsEqual(base, copy), true);

@@ -14,6 +14,11 @@ export const errorTypesTable = pgTable("error_types", {
   decisionTree: jsonb("decision_tree"),
   emailTemplate: text("email_template"),
   disputeInstructions: text("dispute_instructions"),
+  // Task #784 — last plain-text SOP description the author pasted into the
+  // AI Builder. Persisted so the panel can rehydrate on next open instead
+  // of forcing the author to re-paste from notes. Plain text only; the
+  // generated decision tree still lives in `decision_tree`.
+  sourceSopText: text("source_sop_text"),
   useGpsControlDeviation: boolean("use_gps_control_deviation").notNull().default(false),
   useDirectEmail: boolean("use_direct_email").notNull().default(false),
   // Trip-overriding error types bind every leg of a trip identically — the

@@ -8506,6 +8506,12 @@ components:
           type: ["string", "null"]
         disputeInstructions:
           type: ["string", "null"]
+        sourceSopText:
+          type: ["string", "null"]
+          description: |
+            Task #784 — last plain-text SOP description the author pasted into
+            the AI Builder. Persisted so the panel can rehydrate on next open
+            instead of forcing the author to re-paste from notes.
         useGpsControlDeviation:
           type: boolean
           description: |
@@ -8563,6 +8569,8 @@ components:
           type: string
         disputeInstructions:
           type: string
+        sourceSopText:
+          type: string
         useGpsControlDeviation:
           type: boolean
         useDirectEmail:
@@ -8615,6 +8623,8 @@ components:
         emailTemplate:
           type: string
         disputeInstructions:
+          type: string
+        sourceSopText:
           type: string
         useGpsControlDeviation:
           type: boolean

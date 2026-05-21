@@ -110,6 +110,7 @@ type ErrorTypeVersionSnapshot = {
   useGpsControlDeviation: boolean;
   useDirectEmail: boolean;
   tripOverriding: boolean;
+  sourceSopText: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -132,6 +133,7 @@ function buildErrorTypeSnapshot(
     useGpsControlDeviation: errorType.useGpsControlDeviation,
     useDirectEmail: errorType.useDirectEmail,
     tripOverriding: errorType.tripOverriding,
+    sourceSopText: errorType.sourceSopText,
     createdAt: errorType.createdAt.toISOString(),
     updatedAt: errorType.updatedAt.toISOString(),
   };
@@ -178,7 +180,8 @@ async function applyErrorTypeUpdate(
 ): Promise<boolean> {
   const updateData: Partial<typeof errorTypesTable.$inferInsert> = {};
   const fields = ["name", "category", "description", "guidance", "recommendedActions",
-    "disputeReasonsLibrary", "evidenceRequirements", "decisionTree", "emailTemplate", "disputeInstructions"] as const;
+    "disputeReasonsLibrary", "evidenceRequirements", "decisionTree", "emailTemplate", "disputeInstructions",
+    "sourceSopText"] as const;
   for (const f of fields) {
     if (body[f] !== undefined) {
       (updateData as Record<string, unknown>)[f] = body[f];
@@ -247,6 +250,7 @@ router.post("/error-types", denyClerk, asyncHandler(async (req, res): Promise<vo
     decisionTree: body.decisionTree || null,
     emailTemplate: body.emailTemplate || null,
     disputeInstructions: body.disputeInstructions || null,
+    sourceSopText: body.sourceSopText || null,
     useGpsControlDeviation: body.useGpsControlDeviation === true,
     useDirectEmail: body.useDirectEmail === true,
     tripOverriding: body.tripOverriding === true,
@@ -345,6 +349,7 @@ router.post("/error-types/:id/versions/:versionId/restore", denyClerk, asyncHand
     decisionTree: snap.decisionTree ?? null,
     emailTemplate: snap.emailTemplate ?? null,
     disputeInstructions: snap.disputeInstructions ?? null,
+    sourceSopText: snap.sourceSopText ?? null,
     useGpsControlDeviation: snap.useGpsControlDeviation === true,
     useDirectEmail: snap.useDirectEmail === true,
     tripOverriding: snap.tripOverriding === true,

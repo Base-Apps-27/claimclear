@@ -27035,6 +27035,12 @@ export const ListErrorTypesResponseItem = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  sourceSopText: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #784 — last plain-text SOP description the author pasted into\nthe AI Builder. Persisted so the panel can rehydrate on next open\ninstead of forcing the author to re-paste from notes.\n",
+    ),
   useGpsControlDeviation: zod
     .boolean()
     .describe(
@@ -27069,6 +27075,7 @@ export const CreateErrorTypeBody = zod.object({
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
+  sourceSopText: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
   useDirectEmail: zod.boolean().optional(),
   tripOverriding: zod.boolean().optional(),
@@ -27093,6 +27100,12 @@ export const GetErrorTypeResponse = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  sourceSopText: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #784 — last plain-text SOP description the author pasted into\nthe AI Builder. Persisted so the panel can rehydrate on next open\ninstead of forcing the author to re-paste from notes.\n",
+    ),
   useGpsControlDeviation: zod
     .boolean()
     .describe(
@@ -27130,6 +27143,7 @@ export const UpdateErrorTypeBody = zod.object({
   decisionTree: zod.object({}).passthrough().optional(),
   emailTemplate: zod.string().optional(),
   disputeInstructions: zod.string().optional(),
+  sourceSopText: zod.string().optional(),
   useGpsControlDeviation: zod.boolean().optional(),
   useDirectEmail: zod.boolean().optional(),
   tripOverriding: zod.boolean().optional(),
@@ -27147,6 +27161,12 @@ export const UpdateErrorTypeResponse = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  sourceSopText: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #784 — last plain-text SOP description the author pasted into\nthe AI Builder. Persisted so the panel can rehydrate on next open\ninstead of forcing the author to re-paste from notes.\n",
+    ),
   useGpsControlDeviation: zod
     .boolean()
     .describe(
@@ -27227,6 +27247,12 @@ export const RestoreErrorTypeVersionResponse = zod.object({
   decisionTree: zod.object({}).passthrough().nullish(),
   emailTemplate: zod.string().nullish(),
   disputeInstructions: zod.string().nullish(),
+  sourceSopText: zod
+    .string()
+    .nullish()
+    .describe(
+      "Task #784 — last plain-text SOP description the author pasted into\nthe AI Builder. Persisted so the panel can rehydrate on next open\ninstead of forcing the author to re-paste from notes.\n",
+    ),
   useGpsControlDeviation: zod
     .boolean()
     .describe(

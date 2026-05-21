@@ -295,6 +295,7 @@ const errorType: ErrorType = {
   description: "Distance billed exceeds the contract distance",
   guidance: "Verify GPS breadcrumbs and provider mileage report.",
   recommendedActions: null,
+  sourceSopText: null,
   disputeReasonsLibrary: null,
   evidenceRequirements: null,
   decisionTree: null,

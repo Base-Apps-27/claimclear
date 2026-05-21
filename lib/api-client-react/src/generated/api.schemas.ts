@@ -3095,6 +3095,14 @@ export interface ErrorTypeResponse {
   emailTemplate?: string | null;
   /** @nullable */
   disputeInstructions?: string | null;
+  /**
+   * Task #784 — last plain-text SOP description the author pasted into
+the AI Builder. Persisted so the panel can rehydrate on next open
+instead of forcing the author to re-paste from notes.
+
+   * @nullable
+   */
+  sourceSopText?: string | null;
   /** When true, portal submissions for claims with this error type are
 routed to the MAS "GPS Control Deviation" Freshdesk form (which
 requires the GPS Breadcrumbs Available field). When false, they
@@ -3140,6 +3148,7 @@ export interface CreateErrorTypeBody {
   decisionTree?: CreateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
   disputeInstructions?: string;
+  sourceSopText?: string;
   useGpsControlDeviation?: boolean;
   useDirectEmail?: boolean;
   tripOverriding?: boolean;
@@ -3181,6 +3190,7 @@ export interface UpdateErrorTypeBody {
   decisionTree?: UpdateErrorTypeBodyDecisionTree;
   emailTemplate?: string;
   disputeInstructions?: string;
+  sourceSopText?: string;
   useGpsControlDeviation?: boolean;
   useDirectEmail?: boolean;
   tripOverriding?: boolean;

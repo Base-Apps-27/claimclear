@@ -18,6 +18,8 @@ import {
   legacyToTree,
   OUTCOME_LABELS,
   validateAppliesPerInvoice,
+  removeSubtree,
+  deleteNodeWithReparent,
 } from "@/components/decision-tree/types";
 
 // Structurally validate a tree object before letting React Flow / dagre /
@@ -244,6 +246,140 @@ export function addEvidenceReq(tree: DecisionTree, nodeId: string): DecisionTree
       ...((tree.nodes.find((n) => n.id === nodeId)?.evidenceRequirements) || []),
       { key: `ev_${Date.now()}`, label: "New evidence", required: true },
     ],
+  });
+}
+
+// Task #784 — parity helpers restored after Task #780 retired the modal
+// editor. These power: add/delete branches, delete-node-with-reparent,
+// orphan re-attach, and per-node instruction image. All pure +
+// immutable so the React state setter picks up the new tree.
+
+export function addOption(tree: DecisionTree, nodeId: string): DecisionTree {
+  const node = tree.nodes.find((n) => n.id === nodeId);
+  if (!node) return tree;
+  return updateNode(tree, nodeId, {
+    options: [...node.options, { label: `Option ${node.options.length + 1}` }],
+  });
+}
+
+// Remove a single branch. If the branch pointed at a child sub-tree
+// AND that sub-tree has no other parent in the graph, the sub-tree
+// is also pruned to keep the tree tidy. Callers may opt to NOT prune
+// (detach only) by using `setOption(tree, nodeId, idx, { childId: undefined })`.
+export function removeOption(
+  tree: DecisionTree,
+  nodeId: string,
+  idx: number,
+): DecisionTree {
+  const node = tree.nodes.find((n) => n.id === nodeId);
+  if (!node) return tree;
+  const opt = node.options[idx];
+  if (!opt) return tree;
+  const childId = opt.childId;
+  const nextOptions = node.options.filter((_, i) => i !== idx);
+  let nextNodes = tree.nodes.map((n) =>
+    n.id === nodeId ? { ...n, options: nextOptions } : n,
+  );
+  // Only prune the sub-tree if no other option anywhere still points
+  // at the removed child — otherwise we'd silently delete a shared
+  // sub-tree that the rest of the graph depends on.
+  if (childId) {
+    const stillReferenced = nextNodes.some((n) =>
+      n.options.some((o) => o.childId === childId),
+    );
+    if (!stillReferenced) {
+      nextNodes = removeSubtree(nextNodes, childId);
+    }
+  }
+  return { ...tree, nodes: nextNodes };
+}
+
+// Question nodes that exist in the tree but no parent references them
+// AND are not the root. These are eligible re-attach targets for any
+// empty branch slot. (Re-attach restores the parity gap from the old
+// modal editor where Detach was reversible.)
+export function getOrphanQuestionIds(tree: DecisionTree): string[] {
+  const referenced = new Set<string>();
+  for (const n of tree.nodes) {
+    for (const o of n.options) {
+      if (o.childId) referenced.add(o.childId);
+    }
+  }
+  return tree.nodes
+    .filter((n) => n.id !== tree.rootId && !referenced.has(n.id))
+    .map((n) => n.id);
+}
+
+// Delete an entire question node. Root cannot be deleted. Children
+// of the deleted node are re-parented onto the deleted node's parent
+// when there's room; if not, the whole sub-tree is pruned (the leaf
+// path). The caller is expected to confirm with the user before
+// invoking when descendantCount > 1.
+export function deleteNode(
+  tree: DecisionTree,
+  nodeId: string,
+): { tree: DecisionTree; ok: boolean; reason?: string } {
+  const result = deleteNodeWithReparent(tree, nodeId);
+  if (result.ok) {
+    // Drop the deleted node itself; deleteNodeWithReparent rewires the
+    // parent's options but leaves the node row in `.nodes`. Final
+    // cleanup also prunes any descendants that became unreachable.
+    let nodes = result.tree.nodes.filter((n) => n.id !== nodeId);
+    const reachable = new Set<string>();
+    const stack = [result.tree.rootId];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (reachable.has(id)) continue;
+      reachable.add(id);
+      const node = nodes.find((n) => n.id === id);
+      if (!node) continue;
+      for (const o of node.options) {
+        if (o.childId) stack.push(o.childId);
+      }
+    }
+    nodes = nodes.filter((n) => reachable.has(n.id));
+    return { tree: { ...result.tree, nodes }, ok: true };
+  }
+  // Fall back: if the only obstacle was "no_available_slot" (orphans
+  // had nowhere to land on the parent), just prune the sub-tree.
+  if (result.reason === "no_available_slot") {
+    const parent = tree.nodes.find((n) =>
+      n.options.some((o) => o.childId === nodeId),
+    );
+    if (!parent) return { tree, ok: false, reason: "no_parent" };
+    const detached: DecisionTree = {
+      ...tree,
+      nodes: tree.nodes.map((n) =>
+        n.id === parent.id
+          ? {
+              ...n,
+              options: n.options.map((o) =>
+                o.childId === nodeId ? { ...o, childId: undefined } : o,
+              ),
+            }
+          : n,
+      ),
+    };
+    return {
+      tree: { ...detached, nodes: removeSubtree(detached.nodes, nodeId) },
+      ok: true,
+    };
+  }
+  return { tree, ok: false, reason: result.reason };
+}
+
+// Per-node instruction image. Stored on the node so the runner can
+// surface it next to the question; persisted as a `/objects/…` path
+// that the storage route serves back at upload time.
+export function setInstructionImage(
+  tree: DecisionTree,
+  nodeId: string,
+  imagePath: string | undefined,
+): DecisionTree {
+  return updateNode(tree, nodeId, {
+    instructionImagePath: imagePath,
+    // Clear any legacy URL field so the two never disagree.
+    instructionImageUrl: imagePath ? undefined : undefined,
   });
 }
 
@@ -759,6 +895,10 @@ export interface SopEditorSettings {
   useGpsControlDeviation: boolean;
   useDirectEmail: boolean;
   tripOverriding: boolean;
+  // Task #784 — last plain-text SOP description the author pasted into
+  // the AI Builder. Round-trips through the editor's settings state so
+  // the AI Builder panel can rehydrate on next open.
+  sourceSopText: string;
 }
 
 // Build the PATCH body for /api/error-types/:id. Sends the tree and the
@@ -780,6 +920,7 @@ export function buildSavePayload(
     useGpsControlDeviation: settings.useGpsControlDeviation,
     useDirectEmail: settings.useDirectEmail,
     tripOverriding: settings.tripOverriding,
+    sourceSopText: settings.sourceSopText,
     decisionTree: JSON.parse(
       JSON.stringify(tree),
     ) as UpdateErrorTypeBodyDecisionTree,

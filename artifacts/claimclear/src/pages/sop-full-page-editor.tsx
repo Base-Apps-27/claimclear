@@ -84,10 +84,26 @@ import {
   buildSavePayload,
   addEvidenceReqToMany,
   bulkToggleAppliesPerInvoice,
+  addOption,
+  removeOption,
+  deleteNode,
+  getOrphanQuestionIds,
+  setInstructionImage,
   type FlowNodeData,
   type SopEditorSettings,
 } from "./sop-full-page-editor-helpers";
 import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { InstructionImageUploader } from "@/components/decision-tree/instruction-image-uploader";
 
 // ---------------------------------------------------------------------------
 // AI rewrite hook + inline accept/reject popover
@@ -423,11 +439,12 @@ function Outline({
 // ---------------------------------------------------------------------------
 
 function Inspector({
-  tree, nodeId, onChange, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
+  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
 }: {
   tree: DecisionTree;
   nodeId: string | null;
   onChange: (tree: DecisionTree) => void;
+  onSelectNode: (id: string | null) => void;
   onSaveEvidenceToLibrary: (nodeId: string, index: number) => void;
   onSaveSubTreeToLibrary: (nodeId: string) => void;
 }) {
@@ -445,6 +462,29 @@ function Inspector({
   const branchCount = node.options.length;
   const evidenceCount = (node.evidenceRequirements || []).length;
   const outcomeCount = node.options.filter((o) => !o.childId && o.outcomeType).length;
+  const childBranchCount = node.options.filter((o) => o.childId).length;
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const performDelete = () => {
+    const res = deleteNode(tree, node.id);
+    setDeleteConfirmOpen(false);
+    if (!res.ok) {
+      toast({
+        title: "Couldn't delete",
+        description:
+          res.reason === "root"
+            ? "Root step can't be deleted."
+            : res.reason === "no_parent"
+              ? "Step has no parent to re-parent onto."
+              : "Delete failed.",
+        variant: "destructive",
+      });
+      return;
+    }
+    onChange(res.tree);
+    onSelectNode(res.tree.rootId);
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="inspector">
       <div className="px-3 py-2 border-b border-border bg-card flex flex-col gap-2">
@@ -474,6 +514,44 @@ function Inspector({
           >
             <Bookmark className="w-3 h-3 mr-1" /> Save sub-tree
           </Button>
+          {node.id !== tree.rootId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+              onClick={() => {
+                if (childBranchCount > 0) setDeleteConfirmOpen(true);
+                else performDelete();
+              }}
+              data-testid="inspector-delete-node"
+              title="Delete this question node"
+              aria-label="Delete question node"
+            >
+              <Trash2 className="w-3 h-3 mr-1" /> Delete
+            </Button>
+          )}
+          <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+            <AlertDialogContent data-testid="inspector-delete-node-confirm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this step?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {childBranchCount > 0
+                    ? `This step has ${childBranchCount} child branch${childBranchCount === 1 ? "" : "es"}. They'll be re-parented onto the parent when there's room, otherwise pruned.`
+                    : "This step has no children."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={performDelete}
+                  data-testid="inspector-delete-node-confirm-action"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         <div className="flex items-center gap-2 flex-wrap" data-testid="inspector-chip-row">
           <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
@@ -529,10 +607,30 @@ function Inspector({
             className="mt-1 text-xs"
             placeholder="Optional guidance shown to the operator."
           />
+          <div className="mt-1.5">
+            <InstructionImageUploader
+              imagePath={node.instructionImagePath}
+              imageUrl={node.instructionImageUrl}
+              onUploaded={(path) => onChange(setInstructionImage(tree, node.id, path))}
+              onRemove={() => onChange(setInstructionImage(tree, node.id, undefined))}
+            />
+          </div>
         </div>
 
         <div>
-          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Branches</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Branches</Label>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => onChange(addOption(tree, node.id))}
+              data-testid="inspector-add-branch"
+              title="Add a new branch"
+            >
+              <Plus className="w-3 h-3 mr-1" /> Add branch
+            </Button>
+          </div>
           <div className="mt-1 space-y-2">
             {node.options.map((opt, idx) => {
               const isContinuation = !!opt.childId;
@@ -570,6 +668,16 @@ function Inspector({
                       className="h-7 text-xs bg-card"
                       placeholder="Branch label"
                     />
+                    <button
+                      type="button"
+                      className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => onChange(removeOption(tree, node.id, idx))}
+                      title="Delete this branch"
+                      aria-label="Delete branch"
+                      data-testid={`inspector-remove-branch-${idx}`}
+                    >
+                      <Trash2 className="w-3 h-3 text-muted-foreground" />
+                    </button>
                   </div>
                   {isContinuation ? (
                     <div className="text-[10px] flex items-center justify-between" style={{ color: "hsl(var(--cc-blue-fg))" }}>
@@ -582,7 +690,7 @@ function Inspector({
                       </button>
                     </div>
                   ) : (
-                    <div>
+                    <div className="space-y-1">
                       <Select
                         value={opt.outcomeType || ""}
                         onValueChange={(val) =>
@@ -600,6 +708,48 @@ function Inspector({
                           ))}
                         </SelectContent>
                       </Select>
+                      {/* Re-attach a previously-detached sub-tree by
+                          pointing this empty branch at one of the tree's
+                          orphan question nodes. Parity with the pre-#780
+                          modal editor where Detach was reversible. */}
+                      {(() => {
+                        const orphans = getOrphanQuestionIds(tree).filter(
+                          (id) => id !== node.id,
+                        );
+                        if (orphans.length === 0) return null;
+                        return (
+                          <Select
+                            value=""
+                            onValueChange={(id) => {
+                              onChange(
+                                setOption(tree, node.id, idx, {
+                                  childId: id,
+                                  outcomeType: undefined,
+                                  outcomeLabel: undefined,
+                                }),
+                              );
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 text-xs bg-card"
+                              data-testid={`inspector-reattach-branch-${idx}`}
+                            >
+                              <SelectValue placeholder="…or re-attach orphan step" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {orphans.map((id) => {
+                                const orphan = tree.nodes.find((n) => n.id === id);
+                                const label = (orphan?.question || "(untitled)").slice(0, 48);
+                                return (
+                                  <SelectItem key={id} value={id} className="text-xs">
+                                    {label}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -787,13 +937,25 @@ function Inspector({
 function AiBuilderPanel({
   currentTree,
   errorTypeName,
+  initialText,
+  onTextChange,
   onReplace,
 }: {
   currentTree: DecisionTree;
   errorTypeName?: string;
+  // Task #784 — last-saved plain-text SOP description; rehydrated from
+  // the error type so the panel doesn't reset every time the editor
+  // remounts. `onTextChange` writes the in-memory text back up so the
+  // top-bar Save persists it alongside the tree + settings.
+  initialText: string;
+  onTextChange: (next: string) => void;
   onReplace: (next: DecisionTree) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
+  // Keep local text in sync if the parent reloads a different SOP.
+  useEffect(() => {
+    setText(initialText);
+  }, [initialText]);
   const [proposed, setProposed] = useState<DecisionTree | null>(null);
   const mutation = useMutation({
     mutationFn: (description: string) => buildTreeFromText(description, errorTypeName),
@@ -834,7 +996,10 @@ function AiBuilderPanel({
       </Label>
       <Textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          onTextChange(e.target.value);
+        }}
         rows={8}
         className="text-xs"
         placeholder={"Paste the SOP in plain English. Example:\n\nFirst check if GPS data is available. If yes, verify the breadcrumbs match pickup and dropoff. If they match, mark ready. Otherwise place on hold."}
@@ -1136,6 +1301,7 @@ export default function SopFullPageEditor() {
     useGpsControlDeviation: false,
     useDirectEmail: false,
     tripOverriding: false,
+    sourceSopText: "",
   });
 
   // Load tree + settings from server when the error type arrives.
@@ -1152,6 +1318,7 @@ export default function SopFullPageEditor() {
       useGpsControlDeviation: errorType.useGpsControlDeviation === true,
       useDirectEmail: errorType.useDirectEmail === true,
       tripOverriding: errorType.tripOverriding === true,
+      sourceSopText: errorType.sourceSopText || "",
     };
     setTree(t);
     setSelectedId(t.rootId);
@@ -1589,6 +1756,8 @@ export default function SopFullPageEditor() {
             <AiBuilderPanel
               currentTree={tree}
               errorTypeName={errorType.name}
+              initialText={settings.sourceSopText}
+              onTextChange={(next) => updateSettings({ sourceSopText: next })}
               onReplace={(next) => {
                 setTree(next);
                 setSelectedId(next.rootId);
@@ -1637,11 +1806,17 @@ export default function SopFullPageEditor() {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodeClick={(ev, n) => {
-              // Outcome (synthetic terminal) nodes are not selectable
-              // — only question nodes participate in selection.
-              if ((n.data as FlowNodeData).kind !== "question") return;
-              if (ev.shiftKey) toggleSelectedId(n.id);
-              else setSelectedId(n.id);
+              // Task #784 — outcome (synthetic terminal) nodes are
+              // clickable: select the parent question so the operator
+              // can edit the branch that produced this outcome. The
+              // synthetic id is `${parentId}__term${optionIndex}` (see
+              // treeToFlow); split off the suffix to get the parent.
+              const data = n.data as FlowNodeData;
+              const targetId = data.kind === "outcome"
+                ? n.id.split("__term")[0]
+                : n.id;
+              if (ev.shiftKey && data.kind === "question") toggleSelectedId(targetId);
+              else setSelectedId(targetId);
             }}
             fitView
             fitViewOptions={{ padding: 0.2 }}
@@ -1785,6 +1960,7 @@ export default function SopFullPageEditor() {
               tree={tree}
               nodeId={selectedId}
               onChange={onTreeChange}
+              onSelectNode={setSelectedId}
               onSaveEvidenceToLibrary={handleSaveEvidenceToLibrary}
               onSaveSubTreeToLibrary={handleSaveSubTreeToLibrary}
             />
