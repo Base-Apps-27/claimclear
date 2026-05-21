@@ -4,6 +4,25 @@
 // pulling in the full page (which transitively imports React hooks,
 // the API client, and replit-auth — none of which the helpers need).
 
+// Task #813 — the two "hidden from this view" chips on the Responses
+// Awaiting Review header double as inline view toggles. When one of
+// these bucket names is active the list query switches from the
+// default verdict-pending cohort to that bucket's predicate (shared
+// SQL with `/responses/awaiting-review/hidden-counts` so the chip
+// count and the visible list always agree).
+export const HIDDEN_BUCKET_VALUES = [
+  "awaitingPayorAgain",
+  "acknowledgmentOnly",
+] as const;
+export type HiddenBucket = typeof HIDDEN_BUCKET_VALUES[number];
+
+export function parseHiddenBucket(raw: string | null | undefined): HiddenBucket | null {
+  if (!raw) return null;
+  return (HIDDEN_BUCKET_VALUES as readonly string[]).includes(raw)
+    ? (raw as HiddenBucket)
+    : null;
+}
+
 export interface VerdictPendingFilterState {
   q: string | null;
   statuses: string[];
@@ -14,9 +33,27 @@ export interface VerdictPendingFilterState {
   serviceDateTo: string | null;
   responseReceivedFrom: string | null;
   responseReceivedTo: string | null;
+  /** Task #813 — when set, the list query is swapped for the matching
+   *  hidden-bucket predicate so operators can review those items in
+   *  place. `null` keeps the default awaiting-review cohort. */
+  hiddenBucket: HiddenBucket | null;
 }
 
 export function buildVerdictPendingQuery(s: VerdictPendingFilterState) {
+  // Task #813 — when a hidden bucket is active, the cohort changes:
+  // the default `macroPhase=response-pending + errorTypeAssigned`
+  // predicate is replaced by `inboxHiddenBucket=<bucket>`. Free-text
+  // search still threads through so operators can narrow within the
+  // bucket; the other facet filters target columns the bucketed list
+  // doesn't surface (status, response type, …) so we drop them rather
+  // than silently filter to nothing.
+  if (s.hiddenBucket) {
+    return {
+      inboxHiddenBucket: s.hiddenBucket,
+      limit: 500,
+      ...(s.q ? { q: s.q } : {}),
+    };
+  }
   return {
     macroPhase: "response-pending" as const,
     limit: 500,

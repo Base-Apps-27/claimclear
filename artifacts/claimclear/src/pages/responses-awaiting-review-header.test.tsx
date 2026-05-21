@@ -75,6 +75,7 @@ const hiddenSlotsLoading: HiddenItemsSlots = {
   isLoading: true,
   hasChips: false,
   chips: null,
+  activeBucket: null,
   marker: (
     <span className="sr-only" data-testid="hidden-items-strip-loading">
       loading
@@ -86,6 +87,7 @@ const hiddenSlotsEmpty: HiddenItemsSlots = {
   isLoading: false,
   hasChips: false,
   chips: null,
+  activeBucket: null,
   marker: (
     <span className="sr-only" data-testid="hidden-items-strip-empty">
       Nothing hidden from this view.
@@ -96,10 +98,27 @@ const hiddenSlotsEmpty: HiddenItemsSlots = {
 const hiddenSlotsWithChips: HiddenItemsSlots = {
   isLoading: false,
   hasChips: true,
+  activeBucket: null,
   chips: (
     <a data-testid="hidden-items-chip-awaitingPayorAgain" href="#">
       3 waiting for payor again
     </a>
+  ),
+  marker: null,
+};
+
+const hiddenSlotsActiveBucket: HiddenItemsSlots = {
+  isLoading: false,
+  hasChips: true,
+  activeBucket: "awaitingPayorAgain",
+  chips: (
+    <button
+      type="button"
+      data-testid="hidden-items-chip-awaitingPayorAgain"
+      aria-pressed="true"
+    >
+      3 waiting for payor again
+    </button>
   ),
   marker: null,
 };
@@ -336,6 +355,28 @@ test("V2 header info tooltip source carries the long Stage 2 explainer copy", as
     src,
     /Re-attestation work lives on the dedicated Attestation\s+Queue page\./,
   );
+});
+
+test("V2 header (bucket-active): state strip label flips to 'Viewing' when a hidden bucket IS the current view", () => {
+  // Task #813 — when the operator clicks a hidden-bucket chip the
+  // list swaps to show those items in place. The "Hiding" label
+  // would be a lie in that mode, so the strip reads "Viewing" while
+  // the bucket is active.
+  const html = renderHeader({
+    activeHiddenBucket: "awaitingPayorAgain",
+    hiddenSlots: hiddenSlotsActiveBucket,
+  });
+  assert.match(html, /data-testid="hidden-items-strip-label"[^>]*>[\s\S]*?Viewing/);
+  assert.ok(
+    !/data-testid="hidden-items-strip-label"[^>]*>[\s\S]*?Hiding/.test(html),
+    "label must not read 'Hiding' when a bucket is the active view",
+  );
+  assert.match(html, /data-testid="hidden-items-chip-awaitingPayorAgain"/);
+});
+
+test("V2 header (no-bucket): state strip label stays 'Hiding' when chips are render-only", () => {
+  const html = renderHeader({ hiddenSlots: hiddenSlotsWithChips });
+  assert.match(html, /data-testid="hidden-items-strip-label"[^>]*>[\s\S]*?Hiding/);
 });
 
 test("V2 header (combined): both 'Showing' and 'Hiding' segments render with a divider", () => {

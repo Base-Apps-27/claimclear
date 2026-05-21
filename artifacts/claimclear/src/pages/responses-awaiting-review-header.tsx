@@ -53,6 +53,10 @@ export interface HiddenItemsSlots {
   hasChips: boolean;
   /** The chips (with click-through tooltips), or null when there are none. */
   chips: ReactNode;
+  /** Task #813 — when set, the strip should read "Viewing" (the active
+   *  bucket IS the current view) instead of "Hiding". `null` keeps the
+   *  default "Hiding" label. */
+  activeBucket: string | null;
   /** Sr-only marker spans that preserve loading / empty test ids. */
   marker: ReactNode;
 }
@@ -60,6 +64,10 @@ export interface HiddenItemsSlots {
 export interface ReviewHeaderProps {
   groupCount: number;
   hasActiveFilters: boolean;
+  /** Task #813 — passed through so the title row can surface a short
+   *  caption explaining the bucketed view ("Viewing items hidden …"),
+   *  in addition to the chip already shown in the state strip. */
+  activeHiddenBucket?: string | null;
   sortMode: SortMode;
   sortOptions: ReadonlyArray<SortOption>;
   onSortChange: (value: string) => void;
@@ -93,6 +101,7 @@ export interface ReviewHeaderProps {
 export function ReviewHeader({
   groupCount,
   hasActiveFilters,
+  activeHiddenBucket = null,
   sortMode,
   sortOptions,
   onSortChange,
@@ -104,6 +113,13 @@ export function ReviewHeader({
   bulkBar,
 }: ReviewHeaderProps) {
   const hasSelection = bulkBar !== null;
+  // Task #813 — when a hidden bucket is the current view, the "Hiding"
+  // label in the state strip would be a lie (we ARE viewing it). Swap
+  // the label so the strip reads coherently. The chip itself carries
+  // the X / "Clear" affordance.
+  const isViewingHiddenBucket =
+    hiddenSlots.activeBucket !== null && activeHiddenBucket !== null;
+  const hiddenLabel = isViewingHiddenBucket ? "Viewing" : "Hiding";
   // Hide the toolbar when there are no rows AND no filters — the
   // inbox-empty success card on its own is the whole UI in that case
   // (V2SplitEmpty mockup).
@@ -221,9 +237,12 @@ export function ReviewHeader({
           )}
           {hiddenSlots.hasChips && (
             <>
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+              <span
+                className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1"
+                data-testid="hidden-items-strip-label"
+              >
                 <Eye className="h-3 w-3" />
-                Hiding
+                {hiddenLabel}
               </span>
               {hiddenSlots.chips}
             </>

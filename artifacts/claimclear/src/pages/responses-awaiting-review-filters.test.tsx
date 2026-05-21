@@ -36,11 +36,12 @@ function emptyState(): VerdictPendingFilterState {
     serviceDateTo: null,
     responseReceivedFrom: null,
     responseReceivedTo: null,
+    hiddenBucket: null,
   };
 }
 
 test("buildVerdictPendingQuery: pinned cohort fields are always present", () => {
-  const q = buildVerdictPendingQuery(emptyState());
+  const q = buildVerdictPendingQuery(emptyState()) as Record<string, unknown>;
   assert.equal(q.macroPhase, "response-pending");
   assert.equal(q.includeExpired, true);
   assert.equal(q.errorTypeAssigned, true);
@@ -67,6 +68,7 @@ test("buildVerdictPendingQuery: every URL facet round-trips into the server quer
     serviceDateTo: "2026-04-30",
     responseReceivedFrom: "2026-05-01",
     responseReceivedTo: "2026-05-15",
+    hiddenBucket: null,
   };
   const q = buildVerdictPendingQuery(state) as Record<string, unknown>;
   assert.equal(q.q, "leg-77");
@@ -101,6 +103,25 @@ test("hasActiveVerdictPendingFilters: false on empty, true for any single facet"
       `expected hasActiveFilters=true for ${JSON.stringify(p)}`,
     );
   }
+});
+
+test("buildVerdictPendingQuery: an active hiddenBucket swaps the cohort for inboxHiddenBucket", () => {
+  // Task #813 — when a hidden bucket is active the list query must
+  // drop the default verdict-pending cohort and target only the
+  // matching bucket. Free-text search threads through; other facet
+  // filters are dropped because they don't apply to the bucket views.
+  const state: VerdictPendingFilterState = {
+    ...emptyState(),
+    q: "abc",
+    statuses: ["Awaiting Response"],
+    hiddenBucket: "awaitingPayorAgain",
+  };
+  const q = buildVerdictPendingQuery(state) as Record<string, unknown>;
+  assert.equal(q.inboxHiddenBucket, "awaitingPayorAgain");
+  assert.equal(q.q, "abc");
+  assert.equal(q.macroPhase, undefined, "macroPhase must not be sent when a hidden bucket is active");
+  assert.equal(q.errorTypeAssigned, undefined);
+  assert.equal(q.status, undefined, "status facet is dropped under hidden-bucket cohort");
 });
 
 test("CLEAR_ALL_VERDICT_PENDING_FILTERS_PAYLOAD nulls every Task #753 facet key", () => {
@@ -242,6 +263,7 @@ test("Status facet: selecting a status round-trips into the server query as ?sta
     serviceDateTo: null,
     responseReceivedFrom: null,
     responseReceivedTo: null,
+    hiddenBucket: null,
   };
   const q = buildVerdictPendingQuery(state) as Record<string, unknown>;
   assert.equal(

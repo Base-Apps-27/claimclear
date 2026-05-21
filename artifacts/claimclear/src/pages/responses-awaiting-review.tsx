@@ -117,6 +117,8 @@ import {
   CLEAR_ALL_VERDICT_PENDING_FILTERS_PAYLOAD,
   VERDICT_PENDING_STATUS_FILTER_VALUES,
   VERDICT_PENDING_RESPONSE_TYPE_FILTER_VALUES,
+  parseHiddenBucket,
+  type HiddenBucket,
   type VerdictPendingFilterState,
 } from "./responses-awaiting-review-filters";
 import {
@@ -239,6 +241,10 @@ function VerdictPendingTabContent() {
   const filterServiceDateTo = url.get("serviceDateTo");
   const filterResponseReceivedFrom = url.get("responseReceivedFrom");
   const filterResponseReceivedTo = url.get("responseReceivedTo");
+  // Task #813 — when set, the "Hidden from this view" chip is acting as
+  // a view toggle instead of a navigation link. The URL carries the
+  // active bucket so deep links + refresh restore the bucketed view.
+  const activeHiddenBucket = parseHiddenBucket(url.get("bucket"));
 
   const filterState: VerdictPendingFilterState = {
     q: filterQ,
@@ -250,6 +256,7 @@ function VerdictPendingTabContent() {
     serviceDateTo: filterServiceDateTo,
     responseReceivedFrom: filterResponseReceivedFrom,
     responseReceivedTo: filterResponseReceivedTo,
+    hiddenBucket: activeHiddenBucket,
   };
   const verdictPendingQuery = useMemo(
     () => buildVerdictPendingQuery(filterState),
@@ -258,8 +265,17 @@ function VerdictPendingTabContent() {
       filterErrorTypeIds.join(","), filterClientNumbers.join(","),
       filterServiceDateFrom, filterServiceDateTo,
       filterResponseReceivedFrom, filterResponseReceivedTo,
+      activeHiddenBucket,
     ],
   );
+
+  // Task #813 — toggle helper for the hidden-bucket chips. Clicking the
+  // active chip clears it (returning to the default Awaiting Review
+  // cohort); clicking the other chip swaps the view (one bucket at a
+  // time).
+  const setHiddenBucket = (next: HiddenBucket | null) => {
+    url.set({ bucket: next ?? null }, false);
+  };
   const { data, isLoading, isError, refetch } = useListInvoiceGroups(
     verdictPendingQuery,
     {
@@ -496,7 +512,13 @@ function VerdictPendingTabContent() {
     if (selectedId === null) return;
     const stillVisible = groups.some((g) => g.id === selectedId);
     if (stillVisible) return;
-    if (needsFallbackFetch && fallbackGroupDetail) return;
+    // Task #813 — keep the selection while the fallback fetch is in
+    // flight too. Without this guard, clicking a row from the inline
+    // unclassified panel (which targets a group that isn't in the
+    // verdict-pending `groups` list) caused this effect to fire one
+    // render before `fallbackGroupDetail` resolved and instantly
+    // bounce focus back to the first list row.
+    if (needsFallbackFetch) return;
     if (groups.length === 0) {
       navigate(`/responses-awaiting-review`, { replace: true });
     } else {
@@ -890,15 +912,22 @@ function VerdictPendingTabContent() {
       url.set({ responseReceivedFrom: v.from || null, responseReceivedTo: v.to || null }, false),
     clearAllFilters,
   });
-  const hiddenSlots = useHiddenItemsChips();
+  const hiddenSlots = useHiddenItemsChips({
+    activeBucket: activeHiddenBucket,
+    onToggleBucket: setHiddenBucket,
+  });
 
   return (
     <div className="space-y-5" data-testid="verdict-pending-tab-content">
-      <UnclassifiedResponsesSection />
+      <UnclassifiedResponsesSection
+        selectedId={selectedId}
+        onSelect={selectGroup}
+      />
 
       <ReviewHeader
         groupCount={groups.length}
-        hasActiveFilters={hasActiveFilters}
+        hasActiveFilters={hasActiveFilters || activeHiddenBucket !== null}
+        activeHiddenBucket={activeHiddenBucket}
         sortMode={sortMode}
         sortOptions={SORT_OPTIONS}
         onSortChange={handleSortChange}
@@ -938,8 +967,12 @@ function VerdictPendingTabContent() {
         onToggleSelected={toggleGroupSelected}
         onSelectAllEligible={selectAllEligible}
         onClearSelection={clearSelection}
-        hasActiveFilters={hasActiveFilters}
-        onClearFilters={clearAllFilters}
+        hasActiveFilters={hasActiveFilters || activeHiddenBucket !== null}
+        onClearFilters={() => {
+          clearAllFilters();
+          if (activeHiddenBucket !== null) setHiddenBucket(null);
+        }}
+        activeHiddenBucket={activeHiddenBucket}
       />
       <BulkApproveDialog
         open={bulkConfirmOpen}
@@ -1096,7 +1129,20 @@ function BulkApproveBar({
  * predicate as the count endpoint, so the section count, the chip count,
  * and the rows we render can never disagree.
  */
-function UnclassifiedResponsesSection() {
+interface UnclassifiedResponsesSectionProps {
+  /** Task #813 — currently-selected group id (from the URL), so the
+   *  active unclassified row gets a "selected" treatment instead of
+   *  pretending nothing is open. */
+  selectedId: number | null;
+  /** Task #813 — opens the row in the existing detail pane instead of
+   *  navigating away to `/invoice-groups/:id`. */
+  onSelect: (id: number) => void;
+}
+
+function UnclassifiedResponsesSection({
+  selectedId,
+  onSelect,
+}: UnclassifiedResponsesSectionProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const listParams = {
@@ -1181,23 +1227,42 @@ function UnclassifiedResponsesSection() {
         </p>
       </CardHeader>
       <CardContent className="pt-0 space-y-2">
-        {groups.map((g) => (
+        {groups.map((g) => {
+          const isActive = selectedId === g.id;
+          return (
           <div
             key={g.id}
-            className="flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-background px-3 py-2"
+            className={`flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 transition-colors ${
+              isActive
+                ? "border-amber-500 bg-amber-100/60 ring-1 ring-amber-400"
+                : "border-amber-200 bg-background"
+            }`}
             data-testid={`unclassified-row-${g.id}`}
+            data-active={isActive ? "true" : undefined}
           >
-            <Link
-              href={`/invoice-groups/${g.id}`}
-              className="font-medium text-sm hover:underline"
+            {/* Task #813 — primary click target now opens the group in
+                the existing detail pane on the right instead of
+                navigating to the standalone /invoice-groups detail
+                page. The inline error-type Select below still works
+                exactly as before, including stopPropagation so its
+                trigger click doesn't double as a row click. */}
+            <button
+              type="button"
+              onClick={() => onSelect(g.id)}
+              aria-pressed={isActive}
+              className="font-medium text-sm hover:underline text-left"
+              data-testid={`unclassified-row-select-${g.id}`}
             >
               <RefNumber value={g.invoiceNumber} />
-            </Link>
+            </button>
             <StateBadge variant="status" value={g.status} />
             <span className="text-xs text-muted-foreground">
               Updated {formatDateTime(g.updatedAt as unknown as string)}
             </span>
-            <div className="ml-auto flex items-center gap-2">
+            <div
+              className="ml-auto flex items-center gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
               <span className="text-xs text-muted-foreground">Error type:</span>
               <Select
                 disabled={typesLoading || (pendingId === g.id) || bulkAssign.isPending}
@@ -1223,7 +1288,8 @@ function UnclassifiedResponsesSection() {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </CardContent>
     </Card>
   );
@@ -1259,7 +1325,15 @@ function UnclassifiedResponsesSection() {
  * (`hidden-items-strip-loading`, `hidden-items-strip-empty`) keep
  * resolving in the canonical states.
  */
-function useHiddenItemsChips(): HiddenItemsSlots {
+interface UseHiddenItemsChipsArgs {
+  activeBucket: HiddenBucket | null;
+  onToggleBucket: (next: HiddenBucket | null) => void;
+}
+
+function useHiddenItemsChips({
+  activeBucket,
+  onToggleBucket,
+}: UseHiddenItemsChipsArgs): HiddenItemsSlots {
   const { data, isLoading } = useGetResponsesAwaitingReviewHiddenCounts({
     query: { queryKey: getGetResponsesAwaitingReviewHiddenCountsQueryKey() },
   });
@@ -1269,6 +1343,7 @@ function useHiddenItemsChips(): HiddenItemsSlots {
       isLoading: true,
       hasChips: false,
       chips: null,
+      activeBucket: null,
       marker: (
         <Skeleton
           className="sr-only"
@@ -1284,11 +1359,16 @@ function useHiddenItemsChips(): HiddenItemsSlots {
   // "Nothing hidden" when the only hidden items are unclassified ones.
   const totalHidden = awaitingPayorAgain + acknowledgmentOnly;
 
-  if (totalHidden === 0) {
+  // Task #813 — the chips now double as inline view toggles. We render
+  // them even when their count drops to zero IF that bucket is the
+  // currently active view, so the operator always has an obvious way
+  // to step back out of the bucket.
+  if (totalHidden === 0 && activeBucket === null) {
     return {
       isLoading: false,
       hasChips: false,
       chips: null,
+      activeBucket: null,
       marker: (
         <span className="sr-only" data-testid="hidden-items-strip-empty">
           Nothing hidden from this view.
@@ -1297,59 +1377,74 @@ function useHiddenItemsChips(): HiddenItemsSlots {
     };
   }
 
-  // Click-through destinations reuse existing list pages with precise
-  // filters so the chip count and the resulting page list always agree.
+  // Task #813 — chip metadata. The chips are buttons that toggle the
+  // view URL param rather than navigation links to a different page.
   const chips: Array<{
-    key: string;
+    key: HiddenBucket;
     label: string;
     tooltip: string;
-    href: string;
     toneClass: string;
-  }> = [];
-
-  if (awaitingPayorAgain > 0) {
-    chips.push({
+    activeToneClass: string;
+    show: boolean;
+  }> = [
+    {
       key: "awaitingPayorAgain",
       label: `${awaitingPayorAgain} waiting for payor again`,
       tooltip:
-        "Operator clicked \"I replied — wait for payor again\" and no newer reply has arrived. The inbox suppresses these until a fresh response lands.",
-      href: "/invoice-groups?inboxHiddenBucket=awaitingPayorAgain",
+        "Operator clicked \"I replied — wait for payor again\" and no newer reply has arrived. Click to view these in place; click again to return to the default Awaiting Review list.",
       toneClass: "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-900",
-    });
-  }
-  if (acknowledgmentOnly > 0) {
-    chips.push({
+      activeToneClass: "bg-blue-600 hover:bg-blue-700 border-blue-700 text-white",
+      show: awaitingPayorAgain > 0 || activeBucket === "awaitingPayorAgain",
+    },
+    {
       key: "acknowledgmentOnly",
       label:
         acknowledgmentOnly === 1
           ? "1 has only acknowledgment/abstain responses"
           : `${acknowledgmentOnly} have only acknowledgment/abstain responses`,
       tooltip:
-        "Every response on file has been (re)classified as acknowledgment or abstain, so there's no verdict to take. The inbox hides these because there's nothing reviewable.",
-      href: "/invoice-groups?inboxHiddenBucket=acknowledgmentOnly",
+        "Every response on file has been (re)classified as acknowledgment or abstain, so there's no verdict to take. Click to view these in place; click again to return to the default Awaiting Review list.",
       toneClass: "bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-800",
-    });
-  }
+      activeToneClass: "bg-slate-700 hover:bg-slate-800 border-slate-800 text-white",
+      show: acknowledgmentOnly > 0 || activeBucket === "acknowledgmentOnly",
+    },
+  ];
+
+  const visibleChips = chips.filter((c) => c.show);
 
   return {
     isLoading: false,
-    hasChips: true,
+    hasChips: visibleChips.length > 0,
+    activeBucket,
     chips: (
       <>
-        {chips.map((chip) => (
-          <Tooltip key={chip.key}>
-            <TooltipTrigger asChild>
-              <Link
-                href={chip.href}
-                className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${chip.toneClass}`}
-                data-testid={`hidden-items-chip-${chip.key}`}
-              >
-                {chip.label}
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">{chip.tooltip}</TooltipContent>
-          </Tooltip>
-        ))}
+        {visibleChips.map((chip) => {
+          const isActive = activeBucket === chip.key;
+          return (
+            <Tooltip key={chip.key}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => onToggleBucket(isActive ? null : chip.key)}
+                  aria-pressed={isActive}
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${isActive ? chip.activeToneClass : chip.toneClass}`}
+                  data-testid={`hidden-items-chip-${chip.key}`}
+                  data-active={isActive ? "true" : undefined}
+                >
+                  {chip.label}
+                  {isActive && (
+                    <X
+                      className="h-3 w-3"
+                      aria-hidden="true"
+                      data-testid={`hidden-items-chip-${chip.key}-clear`}
+                    />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{chip.tooltip}</TooltipContent>
+            </Tooltip>
+          );
+        })}
       </>
     ),
     marker: null,
@@ -1403,6 +1498,10 @@ interface WorkspaceProps {
    *  filter rather than a genuinely empty inbox. */
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
+  /** Task #813 — when a hidden bucket is being viewed inline, the
+   *  empty-state copy should reflect that ("Nothing in this bucket
+   *  right now") instead of the default filtered-empty messaging. */
+  activeHiddenBucket?: HiddenBucket | null;
 }
 
 function Workspace({
@@ -1420,6 +1519,7 @@ function Workspace({
   onClearSelection,
   hasActiveFilters = false,
   onClearFilters,
+  activeHiddenBucket = null,
 }: WorkspaceProps) {
   // Per-group scroll position cache. Each row click captures the
   // current scroll position under the *previous* selection, so when the
@@ -1469,8 +1569,18 @@ function Workspace({
             <CardContent className="py-6 text-center space-y-3">
               <EmptyState
                 icon={Inbox}
-                title="No matches for the active filters"
-                description="Try widening a date range, dropping a status, or clearing the search to see more responses."
+                title={
+                  activeHiddenBucket === "awaitingPayorAgain"
+                    ? "Nothing waiting for the payor again right now"
+                    : activeHiddenBucket === "acknowledgmentOnly"
+                      ? "No groups with only acknowledgment/abstain responses"
+                      : "No matches for the active filters"
+                }
+                description={
+                  activeHiddenBucket !== null
+                    ? "Clear this view to return to the default Awaiting Review list."
+                    : "Try widening a date range, dropping a status, or clearing the search to see more responses."
+                }
               />
               {onClearFilters && (
                 <Button
@@ -1479,7 +1589,7 @@ function Workspace({
                   onClick={onClearFilters}
                   data-testid="empty-state-clear-filters"
                 >
-                  Clear filters
+                  {activeHiddenBucket !== null ? "Back to Awaiting Review" : "Clear filters"}
                 </Button>
               )}
             </CardContent>
