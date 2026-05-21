@@ -1,0 +1,124 @@
+2026-05-21T16:54:16Z info: Deployment: ca5d609b-5480-4d81-93d0-13df7c111545
+2026-05-21T16:54:16Z info: Build: d53adc66-8ad6-4c7f-aa05-e1b76753f98c
+2026-05-21T16:54:17Z info: Running Security Scan
+2026-05-21T16:54:42Z info: Security Scan Complete
+2026-05-21T16:54:48Z info: Installing packages
+--> pnpm install
+
+Scope: all 20 workspace projects
+
+
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.26.1 → 11.2.2.   │
+   │   Changelog: https://pnpm.io/v/11.2.2   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+
+Lockfile is up to date, resolution step is skipped
+
+Already up to date
+
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; esac'
+
+. preinstall: Done
+
+Done in 4.7s using pnpm v10.26.1
+
+2026-05-21T16:54:54Z info: Starting Build
+
+> @workspace/db@0.0.0 migrate /home/runner/workspace/lib/db
+> node ./scripts/apply-migrations.mjs
+
+
+(node:126) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[migrate] Found 40 migration(s) already applied.
+
+[migrate] Found 40 migration file(s) on disk.
+[migrate] SKIP 0001_post_burst_alignment.sql (already applied)
+[migrate] SKIP 0002_add_processed_status.sql (already applied)
+[migrate] SKIP 0003_backfill_processed_status.sql (already applied)
+[migrate] SKIP 0014_drop_portal_submissions_claim_id.sql (already applied)
+[migrate] SKIP 0015_portal_submissions_submitted_in_batch_id.sql (already applied)
+[migrate] SKIP 0016_invoice_group_draft.sql (already applied)
+[migrate] SKIP 0017_sibling_duplicate_and_trip_overriding.sql (already applied)
+[migrate] SKIP 0018_payor_denial_reason_and_awaiting_payor_again.sql (already applied)
+[migrate] SKIP 0019_day_completed_celebration_unique.sql (already applied)
+
+[migrate] SKIP 0020_operator_draft_verdict_source.sql (already applied)
+[migrate] SKIP 0021_normalize_claims_date.sql (already applied)
+[migrate] SKIP 0022_typed_claims_date.sql (already applied)
+[migrate] SKIP 0023_invoice_group_service_date.sql (already applied)
+[migrate] SKIP 0024_mas_eligible_status.sql (already applied)
+[migrate] SKIP 0025_expired_status.sql (already applied)
+[migrate] SKIP 0026_tour_version_seen.sql (already applied)
+[migrate] SKIP 0027_drop_portal_submissions_workflow_history.sql (already applied)
+[migrate] SKIP 0028_outbound_emails_brief_logging.sql (already applied)
+[migrate] SKIP 0029_tour_sample.sql (already applied)
+[migrate] SKIP 0030_tour_sample_response.sql (already applied)
+[migrate] SKIP 0031_invoice_groups_invoice_number_unique.sql (already applied)
+[migrate] SKIP 0032_portal_submissions_legs_jsonb.sql (already applied)
+[migrate] SKIP 0033_drop_day_completed_celebration_unique.sql (already applied)
+[migrate] SKIP 0034_invoice_phase_and_disposition.sql (already applied)
+[migrate] SKIP 0035_heal_legacy_classifying_dispositions.sql (already applied)
+[migrate] SKIP 0036_invoice_groups_and_claims_is_open.sql (already applied)
+[migrate] SKIP 0037_disposed_expired_disposition.sql (already applied)
+[migrate] SKIP 0038_claims_submitted_via.sql (already applied)
+[migrate] SKIP 0039_cron_runs_state_collapse.sql (already applied)
+
+[migrate] SKIP 0040_vocab_cleanup_backfill.sql (already applied)
+[migrate] SKIP 0041_audit_logs_user_email_timestamp_index.sql (already applied)
+[migrate] SKIP 0042_no_action_needed_outcome.sql (already applied)
+[migrate] SKIP 0042_reply_attachment_staging.sql (already applied)
+[migrate] SKIP 0043_portal_submissions_scrape_columns.sql (already applied)
+[migrate] SKIP 0044_cron_runs_allow_degraded.sql (already applied)
+[migrate] SKIP 0045_invoice_groups_special_circumstances_split.sql (already applied)
+[migrate] SKIP 0046_bulk_approve_progress.sql (already applied)
+[migrate] SKIP 0047_error_type_versions.sql (already applied)
+[migrate] SKIP 0047_sop_library_items.sql (already applied)
+[migrate] APPLY 0048_error_types_source_sop_text.sql (793 bytes)…
+
+[migrate] OK    0048_error_types_source_sop_text.sql (58ms)
+[migrate] Done. Applied 1 new migration(s).
+
+
+> @workspace/claimclear@0.0.0 build /home/runner/workspace/artifacts/claimclear
+> node ./scripts/check-tour-version.mjs && vite build --config vite.config.ts
+
+
+✓ tour version in sync (version=2026-05-12.v18).
+
+vite v7.3.1 building client environment for production...
+
+transforming...
+
+src/components/ui/tooltip.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+
+src/components/ui/select.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+
+✓ 1783 modules transformed.
+
+✗ Build failed in 2.48s
+
+error during build:
+Could not resolve "./generated/api" from "../../lib/api-client-react/src/index.ts"
+file: /home/runner/workspace/lib/api-client-react/src/index.ts
+    at getRollupError (file:///home/runner/workspace/node_modules/.pnpm/rollup@4.59.0/node_modules/rollup/dist/es/shared/parseAst.js:402:41)
+    at error (file:///home/runner/workspace/node_modules/.pnpm/rollup@4.59.0/node_modules/rollup/dist/es/shared/parseAst.js:398:42)
+    at ModuleLoader.handleInvalidResolvedId (file:///home/runner/workspace/node_modules/.pnpm/rollup@4.59.0/node_modules/rollup/dist/es/shared/node-entry.js:21710:24)
+    at file:///home/runner/workspace/node_modules/.pnpm/rollup@4.59.0/node_modules/rollup/dist/es/shared/node-entry.js:21670:26
+
+/home/runner/workspace/artifacts/claimclear:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/claimclear@0.0.0 build: `node ./scripts/check-tour-version.mjs && vite build --config vite.config.ts`
+Exit status 1
