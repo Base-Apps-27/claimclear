@@ -680,13 +680,83 @@ function RightInspector() {
           <AIRewriteButton />
         </InspectorField>
 
-        <InspectorField label="Instructions / help text">
+        <InspectorField
+          label="Instructions / help text"
+          hint="Operator sees this above the question during the walk. Image + link render inline."
+        >
           <textarea
             rows={2}
             defaultValue="Look for the same CPT family on a sibling claim. If found, note the claim ID."
             className="w-full px-2 py-1.5 text-xs border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-foreground resize-none"
           />
-          <AIRewriteButton label="Tighten with AI" />
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <AIRewriteButton label="Tighten with AI" />
+            <span className="flex-1" />
+            <button
+              className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Attach a screenshot or photo (e.g. 'click this button on the portal'). Stored in object storage; rendered above the question during the walk."
+            >
+              <Upload className="w-3 h-3" /> Add image
+            </button>
+            <button
+              className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Attach a 'go to this URL' link. Shown as a clickable button during the walk."
+            >
+              <Link2 className="w-3 h-3" /> Add link
+            </button>
+          </div>
+
+          {/* Attached image — visible state */}
+          <div
+            className="mt-2 rounded-md border border-border bg-muted/30 overflow-hidden"
+          >
+            <div className="relative">
+              <div
+                className="h-24 w-full flex items-center justify-center text-[10px] text-muted-foreground"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(135deg, hsl(var(--cc-blue-bg)) 0%, hsl(var(--cc-purple-bg)) 100%)",
+                }}
+              >
+                <div className="flex flex-col items-center gap-1" style={{ color: tone.blue.fg }}>
+                  <Eye className="w-4 h-4" />
+                  <span className="font-semibold">portal-companion-search.png</span>
+                </div>
+              </div>
+              <div className="absolute top-1 right-1 flex items-center gap-0.5">
+                <button
+                  className="p-1 rounded bg-card/90 border border-border hover:bg-card"
+                  title="Replace image"
+                >
+                  <Pencil className="w-3 h-3 text-muted-foreground" />
+                </button>
+                <button
+                  className="p-1 rounded bg-card/90 border border-border hover:bg-card"
+                  title="Remove image"
+                >
+                  <Trash2 className="w-3 h-3 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+            <div className="px-2 py-1 flex items-center justify-between text-[10px] text-muted-foreground border-t border-border">
+              <span className="truncate font-mono">/objects/sop-media/portal-companion-search.png</span>
+              <span className="tabular-nums shrink-0 ml-2">142 KB</span>
+            </div>
+          </div>
+
+          {/* Attached link — visible state */}
+          <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-md border border-border bg-muted/30">
+            <Link2 className="w-3 h-3 shrink-0" style={{ color: tone.purple.fg }} />
+            <span className="text-[10px] font-mono text-foreground truncate flex-1">
+              payor-portal.com/claims/search?type=companion
+            </span>
+            <button className="p-0.5 hover:bg-background/60 rounded shrink-0" title="Edit link">
+              <Pencil className="w-3 h-3 text-muted-foreground" />
+            </button>
+            <button className="p-0.5 hover:bg-background/60 rounded shrink-0" title="Remove link">
+              <Trash2 className="w-3 h-3 text-muted-foreground" />
+            </button>
+          </div>
         </InspectorField>
 
         <InspectorField label="Channel hint">
