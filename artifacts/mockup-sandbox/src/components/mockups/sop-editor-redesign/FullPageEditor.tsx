@@ -105,7 +105,10 @@ function TopBar() {
         <Search className="w-3.5 h-3.5" /> Find
         <kbd className="ml-1 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘F</kbd>
       </button>
-      <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
+      <button
+        className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md"
+        title="Find & Replace across every SOP — e.g. rename 'modifier 59' to 'modifier XU' across all 47 trees in one pass. Scope: all SOPs in this workspace."
+      >
         <Replace className="w-3.5 h-3.5" /> Find &amp; Replace across all SOPs
       </button>
       <button className="flex items-center gap-1.5 px-2.5 h-8 text-xs font-medium text-foreground hover:bg-muted rounded-md">
@@ -129,7 +132,7 @@ function LeftPanelTabs({ active }: { active: string }) {
   const tabs = [
     { key: "outline", label: "Outline", icon: ListTree },
     { key: "palette", label: "Add", icon: Plus },
-    { key: "library", label: "Library", icon: Library },
+    { key: "library", label: "Library", icon: Library, hint: "Shared building blocks (evidence reqs, reply templates, sub-trees) reused across SOPs. Edit once, all SOPs that reference it update." },
     { key: "settings", label: "Settings", icon: Settings },
     { key: "ai", label: "AI Builder", icon: Wand2 },
   ];
@@ -141,6 +144,7 @@ function LeftPanelTabs({ active }: { active: string }) {
         return (
           <button
             key={t.key}
+            title={(t as { hint?: string }).hint}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[10px] font-semibold uppercase tracking-wider border-b-2 transition-colors ${
               isActive
                 ? "border-foreground text-foreground bg-card"
@@ -184,11 +188,11 @@ function OutlineRow({
   }[type];
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-1 text-xs rounded cursor-pointer transition-colors ${
+      className={`flex items-center gap-1 pr-2 py-1 text-xs rounded cursor-pointer transition-colors overflow-hidden ${
         selected ? "" : "hover:bg-muted/60"
       }`}
       style={{
-        paddingLeft: 8 + depth * 14,
+        paddingLeft: 8 + depth * 12,
         background: selected ? tone.blue.bg : undefined,
         boxShadow: selected ? `inset 0 0 0 1px ${tone.blue.border}` : undefined,
       }}
@@ -202,13 +206,16 @@ function OutlineRow({
       ) : (
         <span className="w-3 shrink-0" />
       )}
-      {iconForType}
-      <span className={`truncate ${selected ? "font-semibold text-foreground" : "text-foreground"}`}>
+      <span className="shrink-0">{iconForType}</span>
+      <span
+        className={`truncate min-w-0 flex-1 ${selected ? "font-semibold text-foreground" : "text-foreground"}`}
+        title={label}
+      >
         {label}
       </span>
       {typeof evidenceCount === "number" && (
         <span
-          className="ml-auto px-1.5 py-0.5 text-[9px] rounded font-semibold tabular-nums"
+          className="shrink-0 px-1 py-0.5 text-[9px] rounded font-semibold tabular-nums"
           style={{ color: tone.amber.fg, background: tone.amber.bg, border: `1px solid ${tone.amber.border}` }}
         >
           {evidenceCount} ev
@@ -527,23 +534,36 @@ function CanvasArea() {
         Highlighting: nodes with evidence reqs
       </div>
 
-      <div className="absolute bottom-3 right-3 bg-card border border-border rounded-md shadow-sm overflow-hidden">
-        <div className="px-2 py-0.5 text-[9px] text-muted-foreground bg-muted/40 font-semibold uppercase tracking-wider">
+      <div className="absolute bottom-3 right-3 bg-card border border-border rounded-md shadow-md overflow-hidden">
+        <div className="px-2 py-0.5 text-[9px] text-muted-foreground bg-muted/60 font-semibold uppercase tracking-wider border-b border-border">
           Minimap
         </div>
-        <div className="w-44 h-28 bg-muted/30 relative">
+        <div
+          className="w-44 h-28 relative"
+          style={{
+            background:
+              "radial-gradient(circle, hsl(var(--border)) 0.5px, transparent 0.5px) hsl(var(--muted) / 0.5)",
+            backgroundSize: "6px 6px",
+          }}
+        >
           <div className="absolute inset-2 grid grid-cols-3 gap-1">
-            <div className="rounded-sm" style={{ background: tone.blue.border }} />
-            <div className="rounded-sm" style={{ background: tone.blue.border }} />
+            <div className="rounded-sm" style={{ background: tone.blue.fg, opacity: 0.7 }} />
+            <div className="rounded-sm" style={{ background: tone.blue.fg, opacity: 0.7 }} />
             <div />
-            <div className="rounded-sm" style={{ background: tone.blue.border }} />
-            <div className="rounded-sm" style={{ background: tone.red.border }} />
+            <div className="rounded-sm" style={{ background: tone.blue.fg, opacity: 0.7 }} />
+            <div className="rounded-sm" style={{ background: tone.red.fg, opacity: 0.7 }} />
             <div />
-            <div className="rounded-sm" style={{ background: tone.green.border }} />
-            <div className="rounded-sm" style={{ background: tone.green.border }} />
-            <div className="rounded-sm" style={{ background: tone.red.border }} />
+            <div className="rounded-sm" style={{ background: tone.green.fg, opacity: 0.7 }} />
+            <div className="rounded-sm" style={{ background: tone.green.fg, opacity: 0.7 }} />
+            <div className="rounded-sm" style={{ background: tone.red.fg, opacity: 0.7 }} />
           </div>
-          <div className="absolute left-1 top-1 w-20 h-12 border-2 border-foreground rounded-sm pointer-events-none" />
+          <div
+            className="absolute left-1 top-1 w-20 h-12 rounded-sm pointer-events-none"
+            style={{
+              border: `2px solid ${tone.blue.fg}`,
+              background: `${tone.blue.fg}1a`,
+            }}
+          />
         </div>
       </div>
     </div>
