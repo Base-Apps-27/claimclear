@@ -77,8 +77,7 @@ Claim details:
 - Client number: ${claim.clientNumber || "N/A"}
 - Car/vehicle number: ${claim.carNumber || "N/A"}
 - Claim amount: $${claim.claimAmount || "0.00"}
-- Error cited: ${claim.errorDetails || "N/A"}
-- Error type: ${claim.errorTypeName || "Unknown"}${errorType?.description ? `\n- Error description: ${errorType.description}` : ""}${annotationBlock}
+- Error type: ${claim.errorTypeName || "Unknown"}${annotationBlock}
 
 Reason for dispute (from workflow decision): ${disputeReason}
 
