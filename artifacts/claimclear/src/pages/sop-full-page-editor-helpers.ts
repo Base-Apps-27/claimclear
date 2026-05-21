@@ -374,6 +374,76 @@ export function insertBetween(
   return { tree: nextTree, newId };
 }
 
+// Task #819 — reorder a single branch within its parent's options
+// array. `from` and `to` are indices into the parent's options.
+// Out-of-range or no-op moves return the input tree unchanged
+// (referentially equal) so callers can cheaply short-circuit
+// state updates. Pure + immutable; the parent node and the moved
+// option object are both fresh references on success.
+export function moveOption(
+  tree: DecisionTree,
+  nodeId: string,
+  from: number,
+  to: number,
+): DecisionTree {
+  const node = tree.nodes.find((n) => n.id === nodeId);
+  if (!node) return tree;
+  const n = node.options.length;
+  if (n <= 1) return tree;
+  if (from < 0 || from >= n) return tree;
+  // Clamp `to` into range so callers can pass `from-1`/`from+1` at
+  // the edges without checking.
+  const target = Math.max(0, Math.min(n - 1, to));
+  if (target === from) return tree;
+  const nextOptions = node.options.slice();
+  const [moved] = nextOptions.splice(from, 1);
+  nextOptions.splice(target, 0, moved);
+  return updateNode(tree, nodeId, { options: nextOptions });
+}
+
+// Task #819 — root-to-node ancestor chain for the inspector
+// breadcrumb. Returns the ids in order [root, ..., parent, nodeId]
+// or just `[nodeId]` for the root. When the tree is a DAG (orphan
+// re-attach can create multiple parents), we follow the FIRST parent
+// encountered via BFS so the breadcrumb is stable and short. Returns
+// an empty array if the target is not reachable from the root.
+export function getBreadcrumbChain(
+  tree: DecisionTree,
+  targetId: string,
+): string[] {
+  if (!tree || !targetId) return [];
+  if (targetId === tree.rootId) {
+    return tree.nodes.some((n) => n.id === targetId) ? [targetId] : [];
+  }
+  // BFS from the root, recording the parent that first reached each
+  // node. Walk the recorded parents back from the target to assemble
+  // the chain.
+  const parentOf = new Map<string, string>();
+  const visited = new Set<string>([tree.rootId]);
+  const queue: string[] = [tree.rootId];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (id === targetId) break;
+    const node = tree.nodes.find((n) => n.id === id);
+    if (!node) continue;
+    for (const opt of node.options) {
+      if (!opt.childId) continue;
+      if (visited.has(opt.childId)) continue;
+      visited.add(opt.childId);
+      parentOf.set(opt.childId, id);
+      queue.push(opt.childId);
+    }
+  }
+  if (!visited.has(targetId)) return [];
+  const chain: string[] = [];
+  let cur: string | undefined = targetId;
+  while (cur) {
+    chain.unshift(cur);
+    cur = parentOf.get(cur);
+  }
+  return chain;
+}
+
 export function addEvidenceReq(tree: DecisionTree, nodeId: string): DecisionTree {
   return updateNode(tree, nodeId, {
     evidenceRequirements: [

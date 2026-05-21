@@ -38,6 +38,8 @@ import {
   getDescendantIds,
   getHoverHighlightIds,
   addChildQuestion,
+  moveOption,
+  getBreadcrumbChain,
   type SopEditorSettings,
   type SubtreePayload,
 } from "./sop-full-page-editor-helpers";
@@ -1507,4 +1509,65 @@ test("addChildQuestion on an unknown parent is a no-op", () => {
   const { tree: next, newId } = addChildQuestion(tree, "nope");
   assert.equal(newId, "");
   assert.equal(next, tree);
+});
+
+// ---------------------------------------------------------------------------
+// Task #819 — SOP inspector + outline polish helpers
+// ---------------------------------------------------------------------------
+
+test("moveOption reorders branches within a node and is immutable", () => {
+  const tree = sampleTree();
+  const root = tree.nodes.find((n) => n.id === "a")!;
+  const originalLabels = root.options.map((o) => o.label);
+  assert.deepEqual(originalLabels, ["Yes", "No"]);
+  const next = moveOption(tree, "a", 0, 1);
+  // original tree was untouched
+  assert.notEqual(next, tree);
+  assert.deepEqual(
+    tree.nodes.find((n) => n.id === "a")!.options.map((o) => o.label),
+    ["Yes", "No"],
+  );
+  // new tree has swapped order
+  assert.deepEqual(
+    next.nodes.find((n) => n.id === "a")!.options.map((o) => o.label),
+    ["No", "Yes"],
+  );
+});
+
+test("moveOption clamps out-of-range targets to the array bounds", () => {
+  const tree = sampleTree();
+  const downPastEnd = moveOption(tree, "a", 0, 99);
+  assert.deepEqual(
+    downPastEnd.nodes.find((n) => n.id === "a")!.options.map((o) => o.label),
+    ["No", "Yes"],
+  );
+  const upPastStart = moveOption(tree, "a", 1, -5);
+  assert.deepEqual(
+    upPastStart.nodes.find((n) => n.id === "a")!.options.map((o) => o.label),
+    ["No", "Yes"],
+  );
+});
+
+test("moveOption is a no-op when from equals to or when node missing", () => {
+  const tree = sampleTree();
+  assert.equal(moveOption(tree, "a", 0, 0), tree);
+  assert.equal(moveOption(tree, "missing", 0, 1), tree);
+  assert.equal(moveOption(tree, "a", 99, 0), tree);
+});
+
+test("getBreadcrumbChain returns the root for the root node itself", () => {
+  const tree = sampleTree();
+  assert.deepEqual(getBreadcrumbChain(tree, tree.rootId), [tree.rootId]);
+});
+
+test("getBreadcrumbChain walks root→target through option.childId", () => {
+  const tree = sampleTree();
+  // Sample tree: a -[Yes]-> b. Confirm the chain.
+  const chain = getBreadcrumbChain(tree, "b");
+  assert.deepEqual(chain, ["a", "b"]);
+});
+
+test("getBreadcrumbChain returns [] when the target id is unreachable", () => {
+  const tree = sampleTree();
+  assert.deepEqual(getBreadcrumbChain(tree, "ghost"), []);
 });

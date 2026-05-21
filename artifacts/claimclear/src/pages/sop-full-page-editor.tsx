@@ -58,6 +58,11 @@ import {
   History,
   AlertCircle,
   ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  ArrowUp,
+  ArrowDown,
   Copy,
   ClipboardPaste,
   X,
@@ -127,6 +132,8 @@ import {
   bulkToggleAppliesPerInvoice,
   addOption,
   removeOption,
+  moveOption,
+  getBreadcrumbChain,
   deleteNode,
   getOrphanQuestionIds,
   setInstructionImage,
@@ -761,16 +768,45 @@ function SopCanvas({
 // ---------------------------------------------------------------------------
 
 function Outline({
-  tree, selectedId, onSelect, search,
+  tree, selectedId, onSelect, search, collapsed, onToggleCollapsed,
 }: {
   tree: DecisionTree;
   selectedId: string | null;
   onSelect: (id: string) => void;
   search: string;
+  collapsed: ReadonlySet<string>;
+  onToggleCollapsed: (id: string) => void;
 }) {
   const filter = search.trim().toLowerCase();
+  // When the user is searching we ignore the per-row collapsed state so
+  // every match is reachable without first manually expanding parents.
+  const collapseActive = filter.length === 0;
   const visited = new Set<string>();
   const rows: React.ReactNode[] = [];
+  // Refs to each outline row so we can smooth-scroll the selected one
+  // into view when selection changes from the canvas. We rebuild this
+  // map on every render — cheap, and avoids stale ids when the tree
+  // mutates.
+  const rowRefsRef = useRef(new Map<string, HTMLButtonElement | null>());
+  const refMap = rowRefsRef.current;
+  // Drop stale entries this render won't repopulate.
+  for (const id of Array.from(refMap.keys())) {
+    if (!tree.nodes.some((n) => n.id === id)) refMap.delete(id);
+  }
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = refMap.get(selectedId);
+    if (!el) return;
+    // Honor prefers-reduced-motion — skip the smooth easing when set.
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({
+      block: "nearest",
+      behavior: reduce ? "auto" : "smooth",
+    });
+  }, [selectedId, refMap]);
+
   const walk = (id: string, depth: number, branchLabel?: string) => {
     if (visited.has(id)) return;
     visited.add(id);
@@ -778,21 +814,55 @@ function Outline({
     if (!node) return;
     const label = node.question || "(untitled)";
     const match = !filter || label.toLowerCase().includes(filter);
+    const childIds = node.options.map((o) => o.childId).filter(Boolean) as string[];
+    const hasChildren = childIds.length > 0;
+    const isCollapsed = collapseActive && collapsed.has(id);
+    const isSelected = selectedId === id;
     if (match) {
       rows.push(
         <button
           key={id}
+          ref={(el) => {
+            if (el) refMap.set(id, el);
+            else refMap.delete(id);
+          }}
           onClick={() => onSelect(id)}
-          className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-xs rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-            selectedId === id ? "font-medium" : "hover:bg-muted/60"
+          className={`relative w-full text-left flex items-center gap-1 px-2 py-1 text-xs rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            isSelected ? "font-medium" : "hover:bg-muted/60"
           }`}
           style={{
             paddingLeft: 8 + depth * 14,
-            background: selectedId === id ? "hsl(var(--cc-blue-bg))" : undefined,
-            boxShadow: selectedId === id ? "inset 0 0 0 1px hsl(var(--cc-blue-border))" : undefined,
+            // Task #819 — 2px cc-blue left accent bar on the selected
+            // row replaces the prior full-row background tint so the
+            // row blends with the panel until selection lands on it.
+            borderLeft: isSelected
+              ? "2px solid hsl(var(--cc-blue-fg))"
+              : "2px solid transparent",
           }}
           data-testid={`outline-row-${id}`}
+          aria-current={isSelected ? "true" : undefined}
         >
+          {hasChildren ? (
+            <span
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleCollapsed(id);
+              }}
+              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded hover:bg-muted shrink-0"
+              aria-label={isCollapsed ? "Expand sub-tree" : "Collapse sub-tree"}
+              data-testid={`outline-toggle-${id}`}
+            >
+              {isCollapsed ? (
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="w-3 h-3 text-muted-foreground" />
+              )}
+            </span>
+          ) : (
+            <span className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          )}
           <HelpCircle className="w-3 h-3 shrink-0" style={{ color: "hsl(var(--cc-blue-fg))" }} />
           {branchLabel && <span className="text-[9px] text-muted-foreground">[{branchLabel}]</span>}
           <span className="truncate text-foreground">{label}</span>
@@ -810,12 +880,27 @@ function Outline({
         </button>,
       );
     }
+    if (isCollapsed) return;
     for (const opt of node.options) {
       if (opt.childId) walk(opt.childId, depth + 1, opt.label);
     }
   };
   walk(tree.rootId, 0);
-  return <div className="flex-1 overflow-y-auto py-1 space-y-0.5">{rows}</div>;
+  if (rows.length === 0) {
+    return (
+      <div
+        className="flex-1 overflow-y-auto py-1 px-3 text-[11px] text-muted-foreground italic"
+        data-testid="outline-empty"
+      >
+        {filter ? "No nodes match your search." : "Outline is empty."}
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto py-1 space-y-0.5" data-testid="outline-list">
+      {rows}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -949,12 +1034,134 @@ function InspectorSuggestNextButton({
   );
 }
 
+// Task #819 — tiny chip-count animator. Flashes the count cell with a
+// brief fade + scale whenever the displayed number changes, so authors
+// can see at a glance that adding/removing a branch or evidence req
+// landed. Honors prefers-reduced-motion by skipping the animation.
+function AnimatedCount({ value, testId }: { value: number; testId?: string }) {
+  const [flash, setFlash] = useState(false);
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current === value) return;
+    prev.current = value;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+    setFlash(true);
+    const t = window.setTimeout(() => setFlash(false), 320);
+    return () => window.clearTimeout(t);
+  }, [value]);
+  return (
+    <span
+      className="text-[10px] tabular-nums font-medium text-foreground inline-block transition-transform duration-300"
+      style={{
+        transform: flash ? "scale(1.25)" : "scale(1)",
+        color: flash ? "hsl(var(--cc-blue-fg))" : undefined,
+      }}
+      data-testid={testId}
+    >
+      {value}
+    </span>
+  );
+}
+
+// Task #819 — "edited since load" amber dot. Renders a small filled
+// circle when the current value differs from the original snapshot
+// the editor loaded. Pure presentational; the caller decides whether
+// to compute the diff. Hidden entirely (returns null) when not edited
+// so the layout doesn't shift around stable fields.
+function EditedDot({ testId }: { testId?: string }) {
+  return (
+    <span
+      className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+      style={{ background: "hsl(var(--cc-amber-fg))" }}
+      title="Edited since load"
+      aria-label="Edited since load"
+      data-testid={testId}
+    />
+  );
+}
+
+// Inspector breadcrumb (Task #819). Renders the root→node chain at
+// the top of the inspector, each segment a click target that jumps
+// the selection. Pure render — the chain is computed once per render
+// via getBreadcrumbChain so the cost stays O(n) BFS over the tree.
+function InspectorBreadcrumb({
+  tree, nodeId, onSelectNode,
+}: {
+  tree: DecisionTree;
+  nodeId: string;
+  onSelectNode: (id: string | null) => void;
+}) {
+  const chain = getBreadcrumbChain(tree, nodeId);
+  if (chain.length <= 1) {
+    return (
+      <div
+        className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold"
+        data-testid="inspector-breadcrumb"
+      >
+        Root
+      </div>
+    );
+  }
+  return (
+    <nav
+      aria-label="Step location"
+      className="flex items-center flex-wrap gap-0.5 text-[10px] text-muted-foreground min-w-0"
+      data-testid="inspector-breadcrumb"
+    >
+      {chain.map((id, i) => {
+        const n = tree.nodes.find((x) => x.id === id);
+        const label = n?.question?.trim() || "(untitled)";
+        const isLast = i === chain.length - 1;
+        return (
+          <span key={id} className="inline-flex items-center gap-0.5 min-w-0">
+            {i > 0 && <ChevronRight className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />}
+            <button
+              type="button"
+              onClick={() => onSelectNode(id)}
+              disabled={isLast}
+              className={`truncate max-w-[8rem] rounded px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                isLast
+                  ? "text-foreground font-medium cursor-default"
+                  : "hover:text-foreground hover:underline"
+              }`}
+              data-testid={`inspector-breadcrumb-${i}`}
+              title={label}
+            >
+              {label}
+            </button>
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
+// Per-field diff helper (Task #819). Compares two string values
+// (typically `current` from the live tree and `original` from the
+// loaded snapshot). Treats null/undefined/empty-string as equivalent
+// so a fresh node with an empty optional field doesn't paint amber
+// the moment the user types anything else. Returns false whenever
+// the original snapshot isn't available yet (initial load), so we
+// don't flag every field on a freshly-opened SOP.
+export function fieldEdited(
+  original: string | null | undefined,
+  current: string | null | undefined,
+  hasSnapshot: boolean,
+): boolean {
+  if (!hasSnapshot) return false;
+  return (original ?? "") !== (current ?? "");
+}
+
 function Inspector({
-  tree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
+  tree, originalTree, nodeId, onChange, onSelectNode, onSaveEvidenceToLibrary, onSaveSubTreeToLibrary,
   onCopySubTree, onPasteSubTree, clipboardNodeCount,
   errorTypeName, sourceSopText,
 }: {
   tree: DecisionTree;
+  originalTree: DecisionTree | null;
   nodeId: string | null;
   onChange: (tree: DecisionTree) => void;
   onSelectNode: (id: string | null) => void;
@@ -1003,9 +1210,24 @@ function Inspector({
     onSelectNode(res.tree.rootId);
   };
 
+  // Task #819 — original snapshot lookup. Each field-level diff
+  // (question, instructions, option labels, evidence labels) consults
+  // this so we can paint the "edited since load" amber dot. Null
+  // until the page first hydrates.
+  const hasSnapshot = !!originalTree;
+  const originalNode = originalTree?.nodes.find((n) => n.id === node.id) || null;
+
   return (
-    <div className="flex flex-col h-full" data-testid="inspector">
-      <div className="px-3 py-2 border-b border-border bg-card flex flex-col gap-2">
+    <div className="flex flex-col h-full relative" data-testid="inspector">
+      <div
+        className="sticky top-0 z-10 px-3 py-2 border-b border-border bg-card flex flex-col gap-2 shadow-sm"
+        data-testid="inspector-header"
+      >
+        <InspectorBreadcrumb
+          tree={tree}
+          nodeId={node.id}
+          onSelectNode={onSelectNode}
+        />
         <div className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
@@ -1091,24 +1313,29 @@ function Inspector({
           <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
             <StatusDot tone="blue" />
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Branches</span>
-            <span className="text-[10px] tabular-nums font-medium text-foreground">{branchCount}</span>
+            <AnimatedCount value={branchCount} testId="inspector-chip-count-branches" />
           </span>
           <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
             <StatusDot tone={outcomeCount > 0 ? "green" : "muted"} />
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Outcomes</span>
-            <span className="text-[10px] tabular-nums font-medium text-foreground">{outcomeCount}</span>
+            <AnimatedCount value={outcomeCount} testId="inspector-chip-count-outcomes" />
           </span>
           <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-full border border-border bg-muted/40">
             <StatusDot tone={evidenceCount > 0 ? "amber" : "muted"} />
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Evidence</span>
-            <span className="text-[10px] tabular-nums font-medium text-foreground">{evidenceCount}</span>
+            <AnimatedCount value={evidenceCount} testId="inspector-chip-count-evidence" />
           </span>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
           <div className="flex items-center justify-between">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Question text</Label>
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+              Question text
+              {fieldEdited(originalNode?.question, node.question, hasSnapshot) && (
+                <EditedDot testId="inspector-question-edited-dot" />
+              )}
+            </Label>
             <AiRewriteButton
               value={node.question}
               field="question"
@@ -1126,7 +1353,12 @@ function Inspector({
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Instructions / help</Label>
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+              Instructions / help
+              {fieldEdited(originalNode?.instructionText, node.instructionText, hasSnapshot) && (
+                <EditedDot testId="inspector-instructions-edited-dot" />
+              )}
+            </Label>
             <AiRewriteButton
               value={node.instructionText || ""}
               field="instructions"
@@ -1196,12 +1428,44 @@ function Inspector({
                 >
                   <div className="flex items-center gap-1.5">
                     <StatusDot tone={tone} />
+                    {/* Task #819 — reorder arrows. Up/down disabled at
+                        the edges; a single re-ordered branch survives
+                        as a referentially-fresh tree via moveOption. */}
+                    <div className="flex flex-col -my-0.5" data-testid={`inspector-reorder-${idx}`}>
+                      <button
+                        type="button"
+                        onClick={() => onChange(moveOption(tree, node.id, idx, idx - 1))}
+                        disabled={idx === 0}
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        title="Move branch up"
+                        aria-label="Move branch up"
+                        data-testid={`inspector-move-branch-up-${idx}`}
+                      >
+                        <ArrowUp className="w-2.5 h-2.5 text-muted-foreground" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChange(moveOption(tree, node.id, idx, idx + 1))}
+                        disabled={idx === node.options.length - 1}
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        title="Move branch down"
+                        aria-label="Move branch down"
+                        data-testid={`inspector-move-branch-down-${idx}`}
+                      >
+                        <ArrowDown className="w-2.5 h-2.5 text-muted-foreground" />
+                      </button>
+                    </div>
                     <Input
                       value={opt.label}
                       onChange={(e) => onChange(setOption(tree, node.id, idx, { label: e.target.value }))}
                       className="h-7 text-xs bg-card"
                       placeholder="Branch label"
                     />
+                    {fieldEdited(
+                      originalNode?.options?.[idx]?.label,
+                      opt.label,
+                      hasSnapshot,
+                    ) && <EditedDot testId={`inspector-branch-label-edited-dot-${idx}`} />}
                     <button
                       type="button"
                       className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1362,6 +1626,11 @@ function Inspector({
                     className="h-6 text-xs flex-1 bg-card"
                     placeholder="Evidence name"
                   />
+                  {fieldEdited(
+                    originalNode?.evidenceRequirements?.[idx]?.label,
+                    req.label,
+                    hasSnapshot,
+                  ) && <EditedDot testId={`inspector-evidence-label-edited-dot-${idx}`} />}
                   <button
                     type="button"
                     className="p-1 hover:bg-muted rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -2180,6 +2449,12 @@ export default function SopFullPageEditor() {
   const [bulkEvidenceOpen, setBulkEvidenceOpen] = useState(false);
   const [bulkEvidenceLabel, setBulkEvidenceLabel] = useState("");
   const [search, setSearch] = useState("");
+  // Task #819 — per-session outline collapse state. Stored as a Set
+  // of node ids that are collapsed (default = everything expanded).
+  // Searching ignores this set (see Outline) so matches are reachable.
+  const [outlineCollapsed, setOutlineCollapsed] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leftTab, setLeftTab] = useState<"outline" | "ai" | "settings" | "plaintext">("outline");
@@ -2989,16 +3264,58 @@ export default function SopFullPageEditor() {
           </div>
           {leftTab === "outline" ? (
             <>
-              <div className="p-2 border-b border-border">
+              <div className="p-2 border-b border-border space-y-1.5">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search nodes…"
-                    className="pl-7 h-7 text-xs"
+                    className="pl-7 pr-7 h-7 text-xs"
                     data-testid="outline-search"
                   />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="Clear search"
+                      data-testid="outline-search-clear"
+                    >
+                      <X className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setOutlineCollapsed(new Set())}
+                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid="outline-expand-all"
+                    title="Expand every sub-tree"
+                  >
+                    <ChevronsUpDown className="w-3 h-3" />
+                    Expand all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Collapse every node that has at least one
+                      // child branch — leaves stay invisible since
+                      // they don't get a caret either way.
+                      const next = new Set<string>();
+                      for (const n of tree.nodes) {
+                        if (n.options.some((o) => o.childId)) next.add(n.id);
+                      }
+                      setOutlineCollapsed(next);
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid="outline-collapse-all"
+                    title="Collapse every sub-tree"
+                  >
+                    <ChevronsDownUp className="w-3 h-3" />
+                    Collapse all
+                  </button>
                 </div>
               </div>
               <Outline
@@ -3006,6 +3323,15 @@ export default function SopFullPageEditor() {
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 search={search}
+                collapsed={outlineCollapsed}
+                onToggleCollapsed={(id) =>
+                  setOutlineCollapsed((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
               />
             </>
           ) : leftTab === "ai" ? (
@@ -3270,6 +3596,7 @@ export default function SopFullPageEditor() {
           <div className="w-80 border-l border-border bg-card flex flex-col shrink-0" data-testid="inspector-pane">
             <Inspector
               tree={tree}
+              originalTree={loadedSnapshotRef.current?.tree ?? null}
               nodeId={selectedId}
               onChange={onTreeChange}
               onSelectNode={setSelectedId}
