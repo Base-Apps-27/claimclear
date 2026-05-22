@@ -543,7 +543,7 @@ function NotesPanel({
           rows={2}
           data-testid="mini-note-composer"
         />
-        <div className="flex justify-end">
+        <div className="flex justify-start">
           <Button
             size="sm"
             onClick={submit}
@@ -676,7 +676,7 @@ function CommsPanel({ groupId }: { groupId: number }) {
                 rows={2}
                 data-testid="mini-comms-composer"
               />
-              <div className="flex justify-end">
+              <div className="flex justify-start">
                 <Button
                   size="sm"
                   onClick={send}
