@@ -14,7 +14,7 @@ import {
 import { db } from "@workspace/db";
 import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { searchInboxEmails, isOutlookConnected, replyToMessage, sendEmail } from "../lib/outlook";
+import { searchInboxEmails, isOutlookConnected, replyToMessage, sendEmail, getConnectedMailbox } from "../lib/outlook";
 import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { resolveReplyAttachments, markStagedAttachmentsConsumed } from "../lib/reply-attachments";
@@ -935,6 +935,9 @@ router.post("/claims/:id/email-thread/:conversationId/reply", asyncHandler(async
     kind: "manual",
     subject,
     recipients: [...toList, ...ccList],
+    to: toList,
+    cc: ccList,
+    deliveryReceiptRequested: true,
     bodyPreview,
     attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
     sentByUserEmail: req.user?.email ?? null,
@@ -1251,6 +1254,9 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
     kind: "manual",
     subject,
     recipients: [...toList, ...ccList],
+    to: toList,
+    cc: ccList,
+    deliveryReceiptRequested: true,
     bodyPreview,
     attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
     metadata: attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : null,
@@ -1421,6 +1427,9 @@ router.post("/invoice-groups/:id/email-send", asyncHandler(async (req, res): Pro
     kind: "manual",
     subject,
     recipients: [...toList, ...ccList],
+    to: toList,
+    cc: ccList,
+    deliveryReceiptRequested: true,
     bodyPreview,
     attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
     metadata: attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : null,
@@ -1493,6 +1502,29 @@ router.post("/invoice-groups/:id/email-send", asyncHandler(async (req, res): Pro
   };
 
   res.json(message);
+}));
+
+/**
+ * Identity of the Outlook mailbox the integration is connected to — i.e. the
+ * "From" address every send actually goes out from. The composer renders this
+ * so operators can see at a glance which shared mailbox is sending, instead
+ * of having to infer it from the app-user login stamped on audit rows.
+ *
+ * Returns `{ connected: false }` when Outlook isn't configured so the UI can
+ * collapse the hint instead of breaking the composer.
+ */
+router.get("/outlook/me", asyncHandler(async (_req, res): Promise<void> => {
+  if (!(await isOutlookConnected())) {
+    res.json({ connected: false, mail: null, displayName: null, userPrincipalName: null });
+    return;
+  }
+  try {
+    const me = await getConnectedMailbox();
+    res.json({ connected: true, ...me });
+  } catch (err) {
+    logger.warn({ err }, "Failed to fetch connected Outlook mailbox");
+    res.json({ connected: false, mail: null, displayName: null, userPrincipalName: null });
+  }
 }));
 
 export default router;

@@ -288,6 +288,13 @@
       "when": 1779378769826,
       "tag": "0040_stormy_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1779483477468,
+      "tag": "0041_outbound_email_to_cc_split",
+      "breakpoints": true
     }
   ]
 }

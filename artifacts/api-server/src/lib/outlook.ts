@@ -267,6 +267,12 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     draft.ccRecipients = ccRecipients;
   }
 
+  // Ask Graph to set the `Disposition-Notification-To` / `Return-Receipt-To`
+  // headers on the outgoing message so we get a delivery confirmation
+  // bounced back to our mailbox when the recipient's server accepts it.
+  // This is best-effort — many providers strip or ignore the request.
+  draft.isDeliveryReceiptRequested = true;
+
   // Create the draft up front (without inline attachments) so we have a
   // messageId to attach against — the upload-session route requires the
   // draft to already exist, and routing per-attachment via `attachToDraft`
@@ -351,6 +357,9 @@ export async function replyToMessage(options: ReplyToMessageOptions): Promise<Se
   //    re-encoded as HTML.
   const patch: Record<string, unknown> = {
     body: { contentType: "Text", content: options.bodyText },
+    // Same delivery-receipt request as `sendEmail` above — best-effort
+    // ask for an RFC-3798-style DSN when the recipient's server accepts.
+    isDeliveryReceiptRequested: true,
   };
   if (options.subject) {
     patch.subject = options.subject;
@@ -383,6 +392,46 @@ export async function replyToMessage(options: ReplyToMessageOptions): Promise<Se
   await client.api(`/me/messages/${messageId}/send`).post({});
 
   return { messageId, conversationId };
+}
+
+/**
+ * Identity of the Outlook mailbox the integration is currently
+ * authenticated as — i.e. the "From" address every send goes out from.
+ * Cached for the lifetime of the process; the value only changes when an
+ * operator re-connects the Outlook integration to a different account.
+ */
+export interface ConnectedMailbox {
+  mail: string | null;
+  displayName: string | null;
+  userPrincipalName: string | null;
+}
+
+// 5-minute TTL: short enough that re-connecting the Outlook integration to a
+// different account is reflected in the composer "Sending from" hint within
+// a few minutes, long enough that opening many threads in a session doesn't
+// hammer Graph /me. Process restarts also invalidate the cache.
+const CONNECTED_MAILBOX_CACHE_TTL_MS = 5 * 60 * 1000;
+let connectedMailboxCache: { value: ConnectedMailbox; fetchedAt: number } | null = null;
+
+export async function getConnectedMailbox(): Promise<ConnectedMailbox> {
+  if (connectedMailboxCache && Date.now() - connectedMailboxCache.fetchedAt < CONNECTED_MAILBOX_CACHE_TTL_MS) {
+    return connectedMailboxCache.value;
+  }
+  const client = await getOutlookClient();
+  const me = await client.api("/me").select("mail,displayName,userPrincipalName").get();
+  const value: ConnectedMailbox = {
+    mail: me?.mail ?? null,
+    displayName: me?.displayName ?? null,
+    userPrincipalName: me?.userPrincipalName ?? null,
+  };
+  connectedMailboxCache = { value, fetchedAt: Date.now() };
+  return value;
+}
+
+// Test hook: lets the connected-mailbox unit tests reset the module-level
+// cache between cases so each test sees the mocked Graph response.
+export function __resetConnectedMailboxCacheForTesting(): void {
+  connectedMailboxCache = null;
 }
 
 export async function isOutlookConnected(): Promise<boolean> {

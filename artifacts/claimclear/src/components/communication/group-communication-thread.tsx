@@ -6,6 +6,7 @@ import {
   useUpgradeReplyDraft,
   useListInvoiceGroupReplyEvidence,
   getListInvoiceGroupReplyEvidenceQueryKey,
+  useGetOutlookMe,
 } from "@workspace/api-client-react";
 import type { ReplyEvidenceItem } from "@workspace/api-client-react";
 import {
@@ -810,6 +811,29 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Tiny "Sending from: accounting@agapeny.com" hint rendered in the composer
+ * header. Pulled from `GET /api/outlook/me` (Graph `/me`), cached by
+ * react-query — so opening multiple threads in a session only fetches once.
+ *
+ * Renders nothing while loading or when Outlook isn't connected so the
+ * composer header stays clean.
+ */
+function ComposerFromHint() {
+  const { data } = useGetOutlookMe({ query: { staleTime: 5 * 60_000 } });
+  const address = data?.mail ?? data?.userPrincipalName ?? null;
+  if (!data?.connected || !address) return null;
+  return (
+    <div
+      className="text-[11px] text-muted-foreground"
+      data-testid="composer-from-hint"
+      title="The mailbox every reply goes out from. Configured by the connected Outlook integration."
+    >
+      Sending from <span className="font-medium text-foreground">{address}</span>
+    </div>
+  );
+}
+
 function ReplyComposer({
   conversationId,
   groupId,
@@ -1286,8 +1310,15 @@ function ReplyComposer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <div className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">
-        Compose reply
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">
+          Compose reply
+        </div>
+        {/* Real "From" address: the mailbox the Outlook integration is
+            connected as. Helps operators see at a glance which shared
+            mailbox is actually sending (this is the wire-level From on
+            the email, not the ClaimClear user who clicked Send). */}
+        <ComposerFromHint />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <div>

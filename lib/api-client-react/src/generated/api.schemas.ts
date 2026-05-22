@@ -5930,6 +5930,13 @@ export type ReplyToInvoiceGroupEmailConversation502 = {
   error?: string;
 };
 
+export type GetOutlookMe200 = {
+  connected: boolean;
+  mail: string | null;
+  displayName: string | null;
+  userPrincipalName: string | null;
+};
+
 export type SendInvoiceGroupEmailBodyAttachmentsItem = {
   /** Opaque id returned by `PUT /storage/reply-attachments/stage`. */
   stagedId: string;

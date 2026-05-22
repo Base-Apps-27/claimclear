@@ -14465,6 +14465,26 @@ export const ReplyToInvoiceGroupEmailConversationResponse = zod.object({
 });
 
 /**
+ * Returns the mail address, display name, and userPrincipalName of the
+Microsoft 365 mailbox the integration is authenticated as — i.e. the
+actual "From" address on every email ClaimClear sends. The reply
+composer renders this so operators can confirm which shared mailbox
+is sending without having to dig through audit logs.
+
+When Outlook is not connected, returns `{ connected: false }` with
+nulls for all identity fields so the UI can collapse the hint
+instead of erroring out.
+
+ * @summary Identity of the Outlook mailbox every send goes out from
+ */
+export const GetOutlookMeResponse = zod.object({
+  connected: zod.boolean(),
+  mail: zod.string().nullable(),
+  displayName: zod.string().nullable(),
+  userPrincipalName: zod.string().nullable(),
+});
+
+/**
  * Fallback for legacy invoice-group threads that pre-date Outlook
 conversation tracking — those rows have no `conversationId`, so
 Graph's `createReply` can't be used. This endpoint sends a brand

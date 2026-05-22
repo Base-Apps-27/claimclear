@@ -246,6 +246,7 @@ export * from "./getInvoiceGroupAttestationHistoryRange";
 export * from "./getInvoiceGroupEmailThread404";
 export * from "./getMyActivitySummaryParams";
 export * from "./getMyProcessedTodayParams";
+export * from "./getOutlookMe200";
 export * from "./getSopRewindImpactParams";
 export * from "./getSystemHealthBouncesOnlyUnmatched";
 export * from "./getSystemHealthBouncesParams";

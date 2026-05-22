@@ -129,6 +129,7 @@ import type {
   GetInvoiceGroupEmailThread404,
   GetMyActivitySummaryParams,
   GetMyProcessedTodayParams,
+  GetOutlookMe200,
   GetSopRewindImpactParams,
   GetSystemHealthBouncesParams,
   GetSystemHealthClassifierStatsParams,
@@ -4541,6 +4542,91 @@ export const useReplyToInvoiceGroupEmailConversation = <
     getReplyToInvoiceGroupEmailConversationMutationOptions(options),
   );
 };
+
+/**
+ * Returns the mail address, display name, and userPrincipalName of the
+Microsoft 365 mailbox the integration is authenticated as — i.e. the
+actual "From" address on every email ClaimClear sends. The reply
+composer renders this so operators can confirm which shared mailbox
+is sending without having to dig through audit logs.
+
+When Outlook is not connected, returns `{ connected: false }` with
+nulls for all identity fields so the UI can collapse the hint
+instead of erroring out.
+
+ * @summary Identity of the Outlook mailbox every send goes out from
+ */
+export const getGetOutlookMeUrl = () => {
+  return `/api/outlook/me`;
+};
+
+export const getOutlookMe = async (
+  options?: RequestInit,
+): Promise<GetOutlookMe200> => {
+  return customFetch<GetOutlookMe200>(getGetOutlookMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOutlookMeQueryKey = () => {
+  return [`/api/outlook/me`] as const;
+};
+
+export const getGetOutlookMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOutlookMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOutlookMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOutlookMeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOutlookMe>>> = ({
+    signal,
+  }) => getOutlookMe({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOutlookMe>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOutlookMeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOutlookMe>>
+>;
+export type GetOutlookMeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Identity of the Outlook mailbox every send goes out from
+ */
+
+export function useGetOutlookMe<
+  TData = Awaited<ReturnType<typeof getOutlookMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOutlookMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOutlookMeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Fallback for legacy invoice-group threads that pre-date Outlook

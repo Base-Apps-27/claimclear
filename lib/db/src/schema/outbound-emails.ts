@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, jsonb, pgEnum, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -18,7 +18,21 @@ export const outboundEmailsTable = pgTable("outbound_emails", {
   submissionId: integer("submission_id").references(() => portalSubmissionsTable.id, { onDelete: "set null" }),
   kind: outboundEmailKindEnum().notNull(),
   subject: text("subject"),
+  // Legacy merged recipient list (To + CC concatenated). Kept for backward
+  // compatibility with older rows and existing reads; new code should
+  // prefer the split `to` / `cc` columns below.
   recipients: jsonb("recipients"),
+  // Split recipient lists so the To vs CC distinction is queryable directly
+  // from the DB without cross-referencing the audit_logs metadata blob.
+  // Populated on all new sends from May 2026 forward; null on older rows.
+  to: jsonb("to").$type<string[] | null>(),
+  cc: jsonb("cc").$type<string[] | null>(),
+  // Whether we asked Microsoft Graph to request a delivery receipt
+  // (`isDeliveryReceiptRequested: true` on the draft). When true, the
+  // mailbox we send from will receive a DSN-style notification when the
+  // recipient's mail server accepts the message — useful for confirming
+  // delivery (not opens) on important outbound replies.
+  deliveryReceiptRequested: boolean("delivery_receipt_requested").notNull().default(false),
   bodyPreview: text("body_preview"),
   // Names of the files attached to this outbound message, in send order.
   // jsonb of `string[]` so the thread bubble can render "Attached: foo.pdf,
