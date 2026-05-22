@@ -80,6 +80,7 @@ mock.module("@workspace/api-client-react", {
     useDeleteNote: inertMutation,
     useGetInvoiceGroupEmailThread: () => ({ data: { conversations: [] }, isLoading: false }),
     useReplyToInvoiceGroupEmailConversation: inertMutation,
+    useSendInvoiceGroupEmail: inertMutation,
     useCreatePortalSubmission: inertMutation,
     useExcludeLeg: inertMutation,
     useMarkLegDuplicate: inertMutation,

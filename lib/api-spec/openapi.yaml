@@ -2015,6 +2015,95 @@ paths:
                   error:
                     type: string
 
+  /invoice-groups/{id}/email-send:
+    post:
+      operationId: sendInvoiceGroupEmail
+      tags: [invoice-groups]
+      summary: Send a fresh email tied to an invoice group (no prior conversation)
+      description: |
+        Fallback for legacy invoice-group threads that pre-date Outlook
+        conversation tracking — those rows have no `conversationId`, so
+        Graph's `createReply` can't be used. This endpoint sends a brand
+        new email via `sendMail`, persists an `outbound_emails` row tagged
+        with this invoice group's id (and Graph's returned conversationId
+        so the new message threads any future replies), and writes an
+        `email_reply_sent` audit row on the group. Body, recipient, and
+        attachment validation match the conversation reply endpoint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, bodyText, to]
+              properties:
+                subject:
+                  type: string
+                bodyText:
+                  type: string
+                  description: Plain-text body. Wrapped in a minimal HTML envelope for Graph's sendMail.
+                to:
+                  type: array
+                  items:
+                    type: string
+                cc:
+                  type: array
+                  items:
+                    type: string
+                attachments:
+                  type: array
+                  description: |
+                    Optional list of files previously staged via
+                    `PUT /storage/reply-attachments/stage`. Same staging /
+                    validation rules as the conversation reply endpoint.
+                  items:
+                    type: object
+                    required: [stagedId]
+                    properties:
+                      stagedId:
+                        type: string
+                        description: Opaque id returned by `PUT /storage/reply-attachments/stage`.
+      responses:
+        '200':
+          description: Email sent — returns the persisted outbound row so the UI can optimistically render it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailThreadMessage'
+        '400':
+          description: Validation error or no recipients on file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Group not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '502':
+          description: Microsoft Graph rejected the send. Body is preserved client-side so staff can retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /claims:
     get:
       operationId: listClaims

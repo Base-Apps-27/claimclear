@@ -14,6 +14,7 @@ import {
   useExcludeLeg,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
+  useSendInvoiceGroupEmail,
   useListClaimNotes,
   useCreateClaimNote,
   useDeleteNote,
@@ -590,6 +591,9 @@ function CommsPanel({ groupId }: { groupId: number }) {
   const { toast } = useToast();
   const { data: thread, isLoading } = useGetInvoiceGroupEmailThread(groupId);
   const reply = useReplyToInvoiceGroupEmailConversation();
+  // Legacy-thread fallback: when the latest conversation has no
+  // conversationId we can't `createReply`, so send a fresh email instead.
+  const freshSend = useSendInvoiceGroupEmail();
   const [body, setBody] = useState("");
 
   const conversations: EmailThreadConversation[] = useMemo(() => {
@@ -601,32 +605,34 @@ function CommsPanel({ groupId }: { groupId: number }) {
     if (!latest) return;
     const trimmed = body.trim();
     if (!trimmed) return;
-    reply.mutate(
-      {
-        id: groupId,
-        conversationId: latest.conversationId,
-        data: {
-          subject: latest.latestSubject ?? "Re: invoice dispute",
-          bodyText: trimmed,
-          to: latest.latestInboundSender ? [latest.latestInboundSender] : [],
-        },
+    const callbacks = {
+      onSuccess: () => {
+        setBody("");
+        qc.invalidateQueries({
+          queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
+        });
+        successToast({ title: "Done", description: "Reply sent" });
       },
-      {
-        onSuccess: () => {
-          setBody("");
-          qc.invalidateQueries({
-            queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
-          });
-          successToast({ title: "Done", description: "Reply sent" });
-        },
-        onError: (e: unknown) =>
-          toast({
-            title: "Send failed",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
+      onError: (e: unknown) =>
+        toast({
+          title: "Send failed",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "destructive",
+        }),
+    };
+    const commonData = {
+      subject: latest.latestSubject ?? "Re: invoice dispute",
+      bodyText: trimmed,
+      to: latest.latestInboundSender ? [latest.latestInboundSender] : [],
+    };
+    if (!latest.conversationId) {
+      freshSend.mutate({ id: groupId, data: commonData }, callbacks);
+    } else {
+      reply.mutate(
+        { id: groupId, conversationId: latest.conversationId, data: commonData },
+        callbacks,
+      );
+    }
   }
 
   return (
@@ -674,10 +680,10 @@ function CommsPanel({ groupId }: { groupId: number }) {
                 <Button
                   size="sm"
                   onClick={send}
-                  disabled={!body.trim() || reply.isPending}
+                  disabled={!body.trim() || reply.isPending || freshSend.isPending}
                   data-testid="mini-comms-send"
                 >
-                  {reply.isPending ? (
+                  {reply.isPending || freshSend.isPending ? (
                     <Loader2 className="w-3 h-3 animate-spin mr-1" />
                   ) : null}
                   Send reply

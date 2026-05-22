@@ -23,6 +23,7 @@ import {
   useClearLegVerdictDraft,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
+  useSendInvoiceGroupEmail,
   getGetInvoiceGroupEmailThreadQueryKey,
   useListErrorTypes,
   useBulkAssignInvoiceGroupErrorType,
@@ -1926,6 +1927,9 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
   );
 
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
+  // Fallback for legacy threads with no conversationId — see the matching
+  // wiring on the invoice-group detail page.
+  const freshSendMutation = useSendInvoiceGroupEmail();
 
   // The thread component's own `id="invoice-thread"` anchor is what the
   // page scrolls to on first visit — the same anchor used on the
@@ -2022,21 +2026,35 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
             conversations={conversations}
             groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
             groupId={group.id}
-            isSending={replyMutation.isPending}
+            isSending={replyMutation.isPending || freshSendMutation.isPending}
             onReply={async (input) => {
               try {
-                await replyMutation.mutateAsync({
-                  id: group.id,
-                  conversationId: input.conversationId,
-                  data: {
-                    subject: input.subject,
-                    bodyText: htmlBodyToPlainText(input.bodyHtml),
-                    to: input.to,
-                    cc: input.cc.length > 0 ? input.cc : undefined,
-                    attachments:
-                      input.attachments.length > 0 ? input.attachments : undefined,
-                  },
-                });
+                if (!input.conversationId) {
+                  await freshSendMutation.mutateAsync({
+                    id: group.id,
+                    data: {
+                      subject: input.subject,
+                      bodyText: htmlBodyToPlainText(input.bodyHtml),
+                      to: input.to,
+                      cc: input.cc.length > 0 ? input.cc : undefined,
+                      attachments:
+                        input.attachments.length > 0 ? input.attachments : undefined,
+                    },
+                  });
+                } else {
+                  await replyMutation.mutateAsync({
+                    id: group.id,
+                    conversationId: input.conversationId,
+                    data: {
+                      subject: input.subject,
+                      bodyText: htmlBodyToPlainText(input.bodyHtml),
+                      to: input.to,
+                      cc: input.cc.length > 0 ? input.cc : undefined,
+                      attachments:
+                        input.attachments.length > 0 ? input.attachments : undefined,
+                    },
+                  });
+                }
                 successToast({
                   title: "__VERB__",
                   description: `Reply sent to ${input.to.join(", ")}`,

@@ -25,6 +25,7 @@ import {
   getGetInvoiceGroupValidTransitionsQueryKey,
   useGetInvoiceGroupEmailThread,
   useReplyToInvoiceGroupEmailConversation,
+  useSendInvoiceGroupEmail,
   getGetInvoiceGroupEmailThreadQueryKey,
   useCheckEmailResponses,
   useCreateInvoiceGroupNote,
@@ -908,6 +909,10 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
   const { active: justCleared, fire: fireJustCleared } = useTransientFlag(800);
 
   const replyMutation = useReplyToInvoiceGroupEmailConversation();
+  // Legacy threads (pre-conversationId) can't `createReply` against any
+  // Graph message — fall back to a fresh send via this mutation so the
+  // operator's reply still goes out and is persisted under the group.
+  const freshSendMutation = useSendInvoiceGroupEmail();
   const checkEmailMutation = useCheckEmailResponses();
   const createNoteMutation = useCreateInvoiceGroupNote();
   // #687 — note-delete, group-hold place/release, and per-leg
@@ -2485,22 +2490,40 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 }}
                 conversation={latestConversation}
                 groupId={group.id}
-                isSending={replyMutation.isPending}
+                isSending={replyMutation.isPending || freshSendMutation.isPending}
                 scrollToMessageId={threadScrollTargetId}
                 onReply={async (input) => {
                   try {
-                    await replyMutation.mutateAsync({
-                      id: groupId,
-                      conversationId: input.conversationId,
-                      data: {
-                        subject: input.subject,
-                        bodyText: htmlBodyToPlainText(input.bodyHtml),
-                        to: input.to,
-                        cc: input.cc.length > 0 ? input.cc : undefined,
-                        attachments:
-                          input.attachments.length > 0 ? input.attachments : undefined,
-                      },
-                    });
+                    // Legacy threads (pre-conversationId) — there's no Graph
+                    // message to reply against, so send a fresh email tied
+                    // to the group instead. Same outcome from the operator's
+                    // POV: the message goes out and appears in the thread.
+                    if (!input.conversationId) {
+                      await freshSendMutation.mutateAsync({
+                        id: groupId,
+                        data: {
+                          subject: input.subject,
+                          bodyText: htmlBodyToPlainText(input.bodyHtml),
+                          to: input.to,
+                          cc: input.cc.length > 0 ? input.cc : undefined,
+                          attachments:
+                            input.attachments.length > 0 ? input.attachments : undefined,
+                        },
+                      });
+                    } else {
+                      await replyMutation.mutateAsync({
+                        id: groupId,
+                        conversationId: input.conversationId,
+                        data: {
+                          subject: input.subject,
+                          bodyText: htmlBodyToPlainText(input.bodyHtml),
+                          to: input.to,
+                          cc: input.cc.length > 0 ? input.cc : undefined,
+                          attachments:
+                            input.attachments.length > 0 ? input.attachments : undefined,
+                        },
+                      });
+                    }
                     successToast({
                       title: "__VERB__",
                       description: `Reply sent to ${input.to.join(", ")}`,

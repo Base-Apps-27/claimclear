@@ -5930,6 +5930,36 @@ export type ReplyToInvoiceGroupEmailConversation502 = {
   error?: string;
 };
 
+export type SendInvoiceGroupEmailBodyAttachmentsItem = {
+  /** Opaque id returned by `PUT /storage/reply-attachments/stage`. */
+  stagedId: string;
+};
+
+export type SendInvoiceGroupEmailBody = {
+  subject: string;
+  /** Plain-text body. Wrapped in a minimal HTML envelope for Graph's sendMail. */
+  bodyText: string;
+  to: string[];
+  cc?: string[];
+  /** Optional list of files previously staged via
+`PUT /storage/reply-attachments/stage`. Same staging /
+validation rules as the conversation reply endpoint.
+ */
+  attachments?: SendInvoiceGroupEmailBodyAttachmentsItem[];
+};
+
+export type SendInvoiceGroupEmail400 = {
+  error?: string;
+};
+
+export type SendInvoiceGroupEmail404 = {
+  error?: string;
+};
+
+export type SendInvoiceGroupEmail502 = {
+  error?: string;
+};
+
 export type ListClaimsParams = {
   /**
    * Comma-separated list of statuses to filter by

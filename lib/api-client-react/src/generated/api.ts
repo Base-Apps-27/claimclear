@@ -207,6 +207,10 @@ import type {
   SaveMappingsBody,
   SaveMappingsResponse,
   SendAnthropicMessageBody,
+  SendInvoiceGroupEmail400,
+  SendInvoiceGroupEmail404,
+  SendInvoiceGroupEmail502,
+  SendInvoiceGroupEmailBody,
   SetGroupContextBody,
   SetLegContextBody,
   SopAdvanceBody,
@@ -4536,6 +4540,113 @@ export const useReplyToInvoiceGroupEmailConversation = <
   return useMutation(
     getReplyToInvoiceGroupEmailConversationMutationOptions(options),
   );
+};
+
+/**
+ * Fallback for legacy invoice-group threads that pre-date Outlook
+conversation tracking — those rows have no `conversationId`, so
+Graph's `createReply` can't be used. This endpoint sends a brand
+new email via `sendMail`, persists an `outbound_emails` row tagged
+with this invoice group's id (and Graph's returned conversationId
+so the new message threads any future replies), and writes an
+`email_reply_sent` audit row on the group. Body, recipient, and
+attachment validation match the conversation reply endpoint.
+
+ * @summary Send a fresh email tied to an invoice group (no prior conversation)
+ */
+export const getSendInvoiceGroupEmailUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/email-send`;
+};
+
+export const sendInvoiceGroupEmail = async (
+  id: number,
+  sendInvoiceGroupEmailBody: SendInvoiceGroupEmailBody,
+  options?: RequestInit,
+): Promise<EmailThreadMessage> => {
+  return customFetch<EmailThreadMessage>(getSendInvoiceGroupEmailUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendInvoiceGroupEmailBody),
+  });
+};
+
+export const getSendInvoiceGroupEmailMutationOptions = <
+  TError = ErrorType<
+    | SendInvoiceGroupEmail400
+    | SendInvoiceGroupEmail404
+    | SendInvoiceGroupEmail502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendInvoiceGroupEmail>>,
+    TError,
+    { id: number; data: BodyType<SendInvoiceGroupEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendInvoiceGroupEmail>>,
+  TError,
+  { id: number; data: BodyType<SendInvoiceGroupEmailBody> },
+  TContext
+> => {
+  const mutationKey = ["sendInvoiceGroupEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendInvoiceGroupEmail>>,
+    { id: number; data: BodyType<SendInvoiceGroupEmailBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sendInvoiceGroupEmail(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendInvoiceGroupEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendInvoiceGroupEmail>>
+>;
+export type SendInvoiceGroupEmailMutationBody =
+  BodyType<SendInvoiceGroupEmailBody>;
+export type SendInvoiceGroupEmailMutationError = ErrorType<
+  SendInvoiceGroupEmail400 | SendInvoiceGroupEmail404 | SendInvoiceGroupEmail502
+>;
+
+/**
+ * @summary Send a fresh email tied to an invoice group (no prior conversation)
+ */
+export const useSendInvoiceGroupEmail = <
+  TError = ErrorType<
+    | SendInvoiceGroupEmail400
+    | SendInvoiceGroupEmail404
+    | SendInvoiceGroupEmail502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendInvoiceGroupEmail>>,
+    TError,
+    { id: number; data: BodyType<SendInvoiceGroupEmailBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendInvoiceGroupEmail>>,
+  TError,
+  { id: number; data: BodyType<SendInvoiceGroupEmailBody> },
+  TContext
+> => {
+  return useMutation(getSendInvoiceGroupEmailMutationOptions(options));
 };
 
 /**

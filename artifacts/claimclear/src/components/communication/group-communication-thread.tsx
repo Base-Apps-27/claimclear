@@ -1221,16 +1221,11 @@ function ReplyComposer({
   };
 
   const handleSend = async () => {
-    // Legacy messages from before email threading was wired up have no
-    // conversationId, so there's no Graph message to reply against. The
-    // reply route requires one — guard here with a clear explanation
-    // instead of letting the request 404.
-    if (!conversationId) {
-      setError(
-        "This thread predates email threading, so we can't reply in-line. Start a fresh email to the payor instead.",
-      );
-      return;
-    }
+    // Note: `conversationId` may be an empty string for legacy threads
+    // that pre-date Outlook conversation tracking. We deliberately do
+    // NOT block here — the parent dialog routes those to the fresh-send
+    // endpoint instead of the conversation-reply endpoint, so from the
+    // operator's POV the email just goes out either way.
     const toList = to
       .split(/[,;]/)
       .map((s) => s.trim())
@@ -1540,17 +1535,9 @@ function ReplyComposer({
         <Button
           size="sm"
           onClick={handleSend}
-          disabled={
-            isSending || upgradeMutation.isPending || isUploading || !conversationId
-          }
+          disabled={isSending || upgradeMutation.isPending || isUploading}
           data-testid="group-thread-send-reply"
-          title={
-            !conversationId
-              ? "This thread predates email threading — start a fresh email instead."
-              : isUploading
-                ? "Waiting for attachment uploads to finish…"
-                : undefined
-          }
+          title={isUploading ? "Waiting for attachment uploads to finish…" : undefined}
         >
           {isSending ? (
             <>

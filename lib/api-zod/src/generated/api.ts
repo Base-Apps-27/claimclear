@@ -14465,6 +14465,142 @@ export const ReplyToInvoiceGroupEmailConversationResponse = zod.object({
 });
 
 /**
+ * Fallback for legacy invoice-group threads that pre-date Outlook
+conversation tracking — those rows have no `conversationId`, so
+Graph's `createReply` can't be used. This endpoint sends a brand
+new email via `sendMail`, persists an `outbound_emails` row tagged
+with this invoice group's id (and Graph's returned conversationId
+so the new message threads any future replies), and writes an
+`email_reply_sent` audit row on the group. Body, recipient, and
+attachment validation match the conversation reply endpoint.
+
+ * @summary Send a fresh email tied to an invoice group (no prior conversation)
+ */
+export const SendInvoiceGroupEmailParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SendInvoiceGroupEmailBody = zod.object({
+  subject: zod.string(),
+  bodyText: zod
+    .string()
+    .describe(
+      "Plain-text body. Wrapped in a minimal HTML envelope for Graph's sendMail.",
+    ),
+  to: zod.array(zod.string()),
+  cc: zod.array(zod.string()).optional(),
+  attachments: zod
+    .array(
+      zod.object({
+        stagedId: zod
+          .string()
+          .describe(
+            "Opaque id returned by `PUT \/storage\/reply-attachments\/stage`.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Optional list of files previously staged via\n`PUT \/storage\/reply-attachments\/stage`. Same staging \/\nvalidation rules as the conversation reply endpoint.\n",
+    ),
+});
+
+export const SendInvoiceGroupEmailResponse = zod.object({
+  id: zod.string(),
+  direction: zod.enum(["inbound", "outbound"]),
+  conversationId: zod.string().nullish(),
+  subject: zod.string().nullish(),
+  sender: zod.string(),
+  senderEmail: zod.string().nullish(),
+  bodyPreview: zod
+    .string()
+    .nullish()
+    .describe(
+      "Short plain-text snippet of the message. Always safe to render as text — for HTML messages this is the stripped + collapsed version of `bodyHtml`.",
+    ),
+  bodyFormat: zod
+    .enum(["html", "text"])
+    .describe(
+      "Format of the original message body. Inbound rows reflect what the payor sent; outbound rows are always `text` because the composer ships plain text.",
+    ),
+  bodyHtml: zod
+    .string()
+    .nullish()
+    .describe(
+      "Raw HTML body when `bodyFormat` is `html`. Null for text rows and outbound rows. Always sanitize on the client before rendering.",
+    ),
+  timestamp: zod.string(),
+  responseId: zod
+    .number()
+    .nullish()
+    .describe(
+      "For inbound messages, the portal_responses row id (used to wire Approve \/ Deny \/ Mark Reviewed buttons).",
+    ),
+  responseType: zod
+    .enum([
+      "approval",
+      "denial",
+      "partial_approval",
+      "info_request",
+      "acknowledgment",
+      "other",
+    ])
+    .nullish(),
+  processed: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "Inbound only — true when staff has already actioned this response.",
+    ),
+  aiSummary: zod.string().nullish(),
+  extractedAmount: zod.string().nullish(),
+  extractedDeadline: zod.string().nullish(),
+  requestedAction: zod.string().nullish(),
+  classifierSource: zod.string().nullish(),
+  matchedVia: zod.string().nullish(),
+  matchConfidence: zod.string().nullish(),
+  claimId: zod
+    .number()
+    .nullish()
+    .describe(
+      "The claim this row was attached to. May differ from the claim being viewed when the conversation covers multiple sibling claims (a group dispute).",
+    ),
+  siblingClaimRef: zod
+    .string()
+    .nullish()
+    .describe(
+      'Set when this message belongs to a sibling claim in the same conversation. Holds the human-readable ref (e.g. \"INV-1234\") so the UI can render an \"↳ also covers INV-1234\" pill linking out.',
+    ),
+  siblingClaimId: zod
+    .number()
+    .nullish()
+    .describe("Numeric id companion to siblingClaimRef, for navigation."),
+  attachmentNames: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      'Outbound only. Filenames of files attached to this message in send\norder, so the thread bubble can render an \"Attached: foo.pdf,\nbar.png\" line. Null on inbound messages and on outbound rows sent\nbefore attachment names were tracked.\n',
+    ),
+  attachments: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        size: zod.number().nullish(),
+        contentType: zod.string(),
+        downloadUrl: zod
+          .string()
+          .describe(
+            "Server-side URL that streams the original file from object storage.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Outbound only. Structured attachment metadata (name, size,\ncontentType, downloadUrl) for each file shipped with this reply.\nThe download URL points back to object storage so staff can\nretrieve the original file from the thread bubble. Null on\ninbound rows and on legacy outbound rows that pre-date\nstructured attachment tracking — those still expose\n`attachmentNames` for the chip label.\n",
+    ),
+});
+
+/**
  * @summary List claims with filtering
  */
 export const listClaimsQueryLimitDefault = 50;

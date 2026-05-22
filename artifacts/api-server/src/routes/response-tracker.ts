@@ -14,7 +14,7 @@ import {
 import { db } from "@workspace/db";
 import { portalResponsesTable, portalSubmissionsTable, claimsTable, invoiceGroupsTable, notesTable, auditLogsTable, outboundEmailsTable, claimEvidenceTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { searchInboxEmails, isOutlookConnected, replyToMessage } from "../lib/outlook";
+import { searchInboxEmails, isOutlookConnected, replyToMessage, sendEmail } from "../lib/outlook";
 import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { resolveReplyAttachments, markStagedAttachmentsConsumed } from "../lib/reply-attachments";
@@ -44,6 +44,16 @@ import {
 let replyImpl: typeof replyToMessage = replyToMessage;
 export function __setReplyImplForTesting(fn: typeof replyToMessage | null): void {
   replyImpl = fn ?? replyToMessage;
+}
+
+/**
+ * Fresh-send Graph caller. Used by `POST /invoice-groups/:id/email-send`
+ * for legacy threads that have no `conversationId` to reply against.
+ * Overridable in tests just like `replyImpl`.
+ */
+let sendImpl: typeof sendEmail = sendEmail;
+export function __setSendImplForTesting(fn: typeof sendEmail | null): void {
+  sendImpl = fn ?? sendEmail;
 }
 
 const router: IRouter = Router();
@@ -1281,6 +1291,174 @@ router.post("/invoice-groups/:id/email-thread/:conversationId/reply", asyncHandl
     id: `out-${persisted.id}`,
     direction: "outbound",
     conversationId: persistConversationId,
+    subject: persisted.subject,
+    sender: persisted.sentByUserName || persisted.sentByUserEmail || "ClaimClear",
+    senderEmail: persisted.sentByUserEmail,
+    bodyPreview: persisted.bodyPreview,
+    bodyFormat: "text",
+    bodyHtml: null,
+    timestamp: persisted.sentAt.toISOString(),
+    responseId: null,
+    responseType: null,
+    processed: null,
+    aiSummary: null,
+    extractedAmount: null,
+    extractedDeadline: null,
+    requestedAction: null,
+    classifierSource: null,
+    matchedVia: null,
+    matchConfidence: null,
+    claimId: persistClaimId,
+    siblingClaimRef: null,
+    siblingClaimId: null,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
+    attachments: attachmentMetadata.length > 0
+      ? attachmentMetadata.map((a) => ({
+          name: a.name,
+          size: a.size,
+          contentType: a.contentType,
+          downloadUrl: a.storageKey.startsWith("/objects/")
+            ? `/api/storage/objects/${a.storageKey.slice("/objects/".length)}`
+            : a.storageKey,
+        }))
+      : null,
+  };
+
+  res.json(message);
+}));
+
+/**
+ * Fresh-send fallback for invoice-group threads that pre-date Outlook
+ * conversation tracking (Task #833 follow-up). Used by the UI when the
+ * latest conversation on the group has no `conversationId` — there's no
+ * Graph message to `createReply` against, so we send a brand new email
+ * via `sendMail` instead and persist it under the group so it still
+ * appears in the thread.
+ */
+router.post("/invoice-groups/:id/email-send", asyncHandler(async (req, res): Promise<void> => {
+  const groupId = parseInt(String(req.params.id), 10);
+  if (isNaN(groupId)) { res.status(400).json({ error: "Invalid group id" }); return; }
+
+  const { subject, bodyText, to, cc, attachments: rawAttachments } = req.body ?? {};
+  if (typeof subject !== "string" || subject.trim().length === 0) {
+    res.status(400).json({ error: "subject is required" });
+    return;
+  }
+  if (typeof bodyText !== "string" || bodyText.trim().length === 0) {
+    res.status(400).json({ error: "bodyText is required" });
+    return;
+  }
+  const toList = Array.isArray(to)
+    ? (to as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  const ccList = Array.isArray(cc)
+    ? (cc as unknown[]).map((v) => String(v).trim()).filter(Boolean)
+    : [];
+  if (toList.length === 0) {
+    res.status(400).json({ error: "At least one 'to' recipient is required" });
+    return;
+  }
+
+  const [group] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, groupId));
+  if (!group) { res.status(404).json({ error: "Invoice group not found" }); return; }
+
+  const attachmentsResult = await resolveReplyAttachments(
+    rawAttachments,
+    req.user?.email ?? null,
+    `group-${group.invoiceNumber || group.id}`,
+  );
+  if (!attachmentsResult.ok) {
+    res.status(attachmentsResult.status).json({ error: attachmentsResult.error });
+    return;
+  }
+  const {
+    forGraph: attachmentsForGraph,
+    names: attachmentNamesForRow,
+    metadata: attachmentMetadata,
+    stagedIds: attachmentStagedIds,
+  } = attachmentsResult.value;
+
+  // Pivot the persisted row to a child claim if the group has one, so it
+  // shows up via the per-claim email-thread route too. Otherwise the row
+  // stays group-only.
+  const [firstClaim] = await db.select({ id: claimsTable.id })
+    .from(claimsTable).where(eq(claimsTable.invoiceGroupId, groupId)).limit(1);
+  const persistClaimId: number | null = firstClaim?.id ?? null;
+
+  // Wrap the plain-text body in a minimal HTML envelope so Graph's
+  // `sendMail` (which takes HTML) renders line breaks as the operator
+  // typed them.
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const bodyHtml = `<div>${escapeHtml(bodyText).replace(/\n/g, "<br/>")}</div>`;
+
+  let sendResult: { messageId: string | null; conversationId: string | null };
+  try {
+    sendResult = await sendImpl({
+      subject,
+      html: bodyHtml,
+      to: toList,
+      cc: ccList.length > 0 ? ccList : undefined,
+      attachments: attachmentsForGraph.length > 0 ? attachmentsForGraph : undefined,
+    });
+  } catch (err) {
+    logger.error({ err, groupId }, "Failed to send fresh group email via Outlook");
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to send email",
+    });
+    return;
+  }
+
+  const bodyPreview = bodyText.replace(/\s+/g, " ").trim().slice(0, 500);
+  const [persisted] = await db.insert(outboundEmailsTable).values({
+    messageId: sendResult.messageId,
+    // Persist Graph's echoed conversationId (if any) so subsequent inbound
+    // replies thread under this new message.
+    conversationId: sendResult.conversationId,
+    claimId: persistClaimId,
+    invoiceGroupId: groupId,
+    submissionId: null,
+    kind: "manual",
+    subject,
+    recipients: [...toList, ...ccList],
+    bodyPreview,
+    attachmentNames: attachmentNamesForRow.length > 0 ? attachmentNamesForRow : null,
+    metadata: attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : null,
+    sentByUserEmail: req.user?.email ?? null,
+    sentByUserName: req.user?.displayName ?? null,
+  }).returning();
+
+  await markStagedAttachmentsConsumed(attachmentStagedIds);
+
+  const attachmentDetailsSuffix = attachmentNamesForRow.length > 0
+    ? ` with ${attachmentNamesForRow.length} attachment${attachmentNamesForRow.length === 1 ? "" : "s"} (${attachmentNamesForRow.join(", ")})`
+    : "";
+
+  await db.insert(auditLogsTable).values({
+    invoiceGroupId: groupId,
+    claimId: persistClaimId,
+    action: "email_reply_sent",
+    details: `Email sent to ${toList.join(", ")}: "${subject}"${attachmentDetailsSuffix}`,
+    metadata: {
+      outboundEmailId: persisted.id,
+      conversationId: sendResult.conversationId,
+      messageId: sendResult.messageId,
+      to: toList,
+      cc: ccList,
+      subject,
+      scope: "invoice_group",
+      mode: "fresh_send",
+      attachmentNames: attachmentNamesForRow,
+      attachments: attachmentMetadata,
+    },
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? "User",
+  });
+
+  const message: ThreadMessage = {
+    id: `out-${persisted.id}`,
+    direction: "outbound",
+    conversationId: sendResult.conversationId ?? "",
     subject: persisted.subject,
     sender: persisted.sentByUserName || persisted.sentByUserEmail || "ClaimClear",
     senderEmail: persisted.sentByUserEmail,
