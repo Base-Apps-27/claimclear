@@ -102,7 +102,7 @@ import {
 } from "@/components/queue-response-review-panel";
 import { ActionRow } from "@/components/actions-rail";
 import { deriveInvoiceDisputeOutlook } from "@/lib/whats-next-derivation";
-import { GroupCommunicationThread } from "@/components/communication/group-communication-thread";
+import { GroupCommunicationReplyDialog } from "@/components/communication/group-communication-thread";
 import {
   mapToGroupConversations,
   pickGroupBannerData,
@@ -932,12 +932,14 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
 
   /* ---- Group note composer (POST /invoice-groups/:id/notes) ---- */
   const [newNote, setNewNote] = useState("");
-  // D2 polish: inline quick-reply input at the foot of the Communication
-  // card (mockup pattern). Fires the same replyMutation as the legacy
-  // full thread composer — defaults `to` to the latest inbound sender's
-  // email and `subject` to "Re: <latestSubject>" so a one-line operator
-  // reply lands in the right conversation without opening a modal.
-  const [replyDraft, setReplyDraft] = useState("");
+  // Task #833 — compact Communication card pairs with a full-thread reply
+  // dialog (the same one ConversationSection mounts). The card itself is
+  // a one-line summary now; everything substantive — reading prior
+  // messages in full, composing a reply with To/CC/Subject/attachments/AI
+  // upgrade — lives inside this dialog so operators read & reply on the
+  // same surface.
+  const [threadDialogOpen, setThreadDialogOpen] = useState(false);
+  const [threadScrollTargetId, setThreadScrollTargetId] = useState<string | null>(null);
   // Save-confirmation breath replaces the success toast for routine saves
   // (Task #316). Errors still toast via the mutation's onError below.
   const noteBreath = useBreath();
@@ -1110,6 +1112,44 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
     () => mapToGroupConversations(emailThread, legIdToLabel),
     [emailThread, legIdToLabel],
   );
+  // Task #833 — the latest conversation is what the compact Communication
+  // card summarizes and what the full-thread reply dialog opens against.
+  // When the group has no conversations yet (pre-payor-response), the
+  // dialog stays unrenderable and the card shows an empty-state.
+  const latestConversation = useMemo(() => {
+    if (conversations.length === 0) return null;
+    return [...conversations].sort(
+      (a, b) =>
+        new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
+    )[0];
+  }, [conversations]);
+  // Task #833 — deep-link handler. The "Responses Awaiting Review" panel
+  // links here as `/invoice-groups/:id#invoice-thread` (open thread, no
+  // scroll target) and `/invoice-groups/:id#response-{messageId}` (open
+  // thread and scroll the dialog's conversation panel to that message).
+  // Watch the hash on mount, and also on `hashchange` so navigating
+  // between two response links within the same page still re-opens the
+  // dialog on the right message.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const applyHash = () => {
+      const hash = window.location.hash || "";
+      if (hash === "#invoice-thread") {
+        if (latestConversation) {
+          setThreadScrollTargetId(null);
+          setThreadDialogOpen(true);
+        }
+      } else if (hash.startsWith("#response-")) {
+        if (latestConversation) {
+          setThreadScrollTargetId(hash.slice("#response-".length));
+          setThreadDialogOpen(true);
+        }
+      }
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [latestConversation]);
   const computedBanner = useMemo(
     () => pickGroupBannerData(emailThread),
     [emailThread],
@@ -2177,21 +2217,146 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
             {/* RIGHT — ambient surfaces (320px) */}
             <aside className="w-[320px] shrink-0 space-y-4" data-testid="group-detail-right-rail">
 
+              {/* Task #833 — Notes promoted to the top of the right
+                  rail. Notes are the single most operationally important
+                  thing on this page; burying them below Communication
+                  and the ambient cards forced operators to scroll past
+                  noise to read them. All of the card's behavior
+                  (history list, add-note form, breath animation) is
+                  unchanged — only its stacking position moved. */}
+            <CcCard
+              title={
+                <>
+                  Notes
+                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
+                    · {visibleNotes.length}
+                  </span>
+                </>
+              }
+              icon={<Pin className="w-3.5 h-3.5" />}
+              testId="notes-card"
+            >
+              {visibleNotes.length === 0 ? (
+                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                  No notes recorded for this group yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {visibleNotes.slice(0, 6).map((n) => (
+                    <div key={n.id} className="text-sm flex gap-2 items-start group/group-note" data-testid={`note-${n.id}`}>
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+                        style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
+                      >
+                        {authorInitial(n.author)}
+                      </div>
+                      <div className="flex-1 min-w-0 text-xs">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="font-semibold">{n.author || "Unknown"}</span>
+                          <span style={{ color: "var(--cc-muted-fg)" }}>{relativeTime(n.createdAt)}</span>
+                        </div>
+                        <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
+                      </div>
+                      {/* #687 — group-note delete control removed; notes
+                          are deleted from the queue chrome only. */}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--cc-border)" }}>
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  rows={2}
+                  placeholder="Add a note for this invoice group…"
+                  className="cc-input w-full text-xs"
+                  style={{
+                    background: "var(--cc-bg)",
+                    border: "1px solid var(--cc-border)",
+                    color: "var(--cc-fg)",
+                    padding: "6px 8px",
+                    borderRadius: 4,
+                    resize: "vertical",
+                  }}
+                  data-testid="group-note-textarea"
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={onSubmitNote}
+                    disabled={
+                      !newNote.trim() ||
+                      createNoteMutation.isPending ||
+                      noteBreath.breathing
+                    }
+                    className={cn(
+                      "cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5",
+                      noteBreath.className,
+                    )}
+                    style={{
+                      background: "var(--cc-purple-fg)",
+                      color: "white",
+                      opacity:
+                        !newNote.trim() ||
+                        createNoteMutation.isPending ||
+                        noteBreath.breathing
+                          ? 0.6
+                          : 1,
+                    }}
+                    data-testid="group-note-submit-button"
+                  >
+                    {createNoteMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    Add note
+                  </button>
+                </div>
+              </div>
+            </CcCard>
+
               {/* Communication thread */}
             <div id="invoice-thread" />
             {(() => {
-              // Task #767 — Communication card picks up the group's
-              // verdict tone in its header so the operator's eye lands
-              // on the thread when there's a payor verdict in hand
-              // (green for Approved, red for Denied, neutral
-              // otherwise). The pill in the header action mirrors the
-              // D2 "Group verdict · Approved" affordance.
+              // Task #833 — Communication card is now a compact summary
+              // that hands off to a full-thread reply dialog. Header keeps
+              // the verdict tone + total message count (same affordances
+              // as before); body shows inbound/outbound split, the latest
+              // message's sender + timestamp + one-line snippet, and an
+              // "Open thread" button. The inline 5-message stack and
+              // quick-reply input go away — they made the rail tall and
+              // noisy with bodies that were truncated to 320 chars
+              // anyway. Reading and replying both live in the dialog now.
               const verdict = deriveGroupOutcomeFromLegs(allRides).outcome;
               const cardTone: CcCardTone =
                 verdict === "Approved" ? "green" :
                 verdict === "Denied"   ? "amber" :
                                          "default";
               const messageCount = conversations.reduce((acc, c) => acc + c.messages.length, 0);
+              const inboundCount = conversations.reduce(
+                (acc, c) => acc + c.messages.filter((m) => m.direction === "inbound").length,
+                0,
+              );
+              const outboundCount = messageCount - inboundCount;
+              const flatNewestFirst = conversations
+                .flatMap((c) => c.messages.map((m) => ({ m, convSubject: c.subject })))
+                .sort(
+                  (a, b) =>
+                    new Date(b.m.timestamp).getTime() - new Date(a.m.timestamp).getTime(),
+                );
+              const latest = flatNewestFirst[0];
+              const latestSnippet = latest
+                ? (() => {
+                    const raw = (latest.m.bodyPreview || "").replace(/\s+/g, " ").trim();
+                    return raw.length > 160 ? raw.slice(0, 157) + "…" : raw;
+                  })()
+                : "";
+              const openThread = () => {
+                if (!latestConversation) return;
+                setThreadScrollTargetId(null);
+                setThreadDialogOpen(true);
+              };
               return (
             <CcCard
               title={
@@ -2218,270 +2383,145 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 ) : undefined
               }
             >
-              {/* D2 message stack — flattens every conversation's messages,
-                  sorts newest first, and renders each as a tidy card with
-                  sender · type header, tag chips, optional subject, and a
-                  truncated preview in a muted quote box. Replaces the
-                  legacy GroupCommunicationThread mount that rendered the
-                  raw payor portal HTML (full email body + inline scripts)
-                  inside the right rail. */}
-              {(() => {
-                type StackMsg = {
-                  id: string | number;
-                  convId: string;
-                  direction: "inbound" | "outbound";
-                  senderName: string;
-                  senderEmail: string;
-                  subject: string;
-                  preview: string;
-                  timestamp: string;
-                  responseType: string | null;
-                  mentions: { label: string }[];
-                };
-                const flat: StackMsg[] = [];
-                for (const c of conversations) {
-                  for (const m of c.messages) {
-                    const oneLine = (m.bodyPreview || "")
-                      .replace(/\s+/g, " ")
-                      .trim();
-                    flat.push({
-                      id: m.id,
-                      convId: c.conversationId,
-                      direction: m.direction as "inbound" | "outbound",
-                      senderName: m.senderName || (m.direction === "outbound" ? "Operator" : "Payor"),
-                      senderEmail: m.senderEmail || "",
-                      subject: (m.subject ?? c.subject ?? "") as string,
-                      preview: oneLine.length > 320 ? oneLine.slice(0, 320) + "…" : oneLine,
-                      timestamp: m.timestamp,
-                      responseType: m.responseType ?? null,
-                      mentions: m.mentionedLegIds.map((l) => ({ label: l.label })),
-                    });
-                  }
-                }
-                flat.sort(
-                  (a, b) =>
-                    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-                );
-                const topMsgs = flat.slice(0, 5);
-                const latestConv = conversations
-                  .slice()
-                  .sort(
-                    (a, b) =>
-                      new Date(b.lastActivityAt).getTime() -
-                      new Date(a.lastActivityAt).getTime(),
-                  )[0];
-                const latestInbound = flat.find((m) => m.direction === "inbound");
-                const replyTo = latestInbound?.senderEmail || "";
-                const tagStyleFor = (
-                  tone: "green" | "blue" | "amber" | "red" | "muted",
-                ): React.CSSProperties => {
-                  if (tone === "green") return { background: "var(--cc-green-bg)", color: "var(--cc-green-fg)", border: "1px solid var(--cc-green-border)" };
-                  if (tone === "blue")  return { background: "var(--cc-blue-bg)",  color: "var(--cc-blue-fg)",  border: "1px solid var(--cc-blue-border)" };
-                  if (tone === "amber") return { background: "var(--cc-amber-bg)", color: "var(--cc-amber-fg)", border: "1px solid var(--cc-amber-border)" };
-                  if (tone === "red")   return { background: "var(--cc-red-bg)",   color: "var(--cc-red-fg)",   border: "1px solid var(--cc-red-border)" };
-                  return { background: "var(--cc-muted)", color: "var(--cc-muted-fg)", border: "1px solid var(--cc-border)" };
-                };
-                const onSendQuickReply = async () => {
-                  const body = replyDraft.trim();
-                  if (!body || !latestConv) return;
-                  if (!replyTo) {
-                    toast({
-                      title: "Cannot quick-reply",
-                      description: "No recipient address on this thread — open the full composer.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  try {
-                    await replyMutation.mutateAsync({
-                      id: groupId,
-                      conversationId: latestConv.conversationId,
-                      data: {
-                        subject: latestConv.subject?.toLowerCase().startsWith("re:")
-                          ? latestConv.subject
-                          : `Re: ${latestConv.subject ?? ""}`.trim(),
-                        bodyText: body,
-                        to: [replyTo],
-                      },
-                    });
-                    setReplyDraft("");
-                    successToast({ title: "__VERB__", description: `Reply sent to ${replyTo}` });
-                    await qc.invalidateQueries({ queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId) });
-                    await qc.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(groupId) });
-                  } catch (err) {
-                    toast({
-                      title: "Failed to send reply",
-                      description: err instanceof Error ? err.message : "Please try again.",
-                      variant: "destructive",
-                    });
-                  }
-                };
-                return (
-                  <div style={{ background: "var(--cc-card)" }} data-testid="group-comms-message-stack">
-                    {topMsgs.length === 0 ? (
-                      <div className="px-3 py-3 text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                        No messages on this thread yet.
-                      </div>
-                    ) : (
-                      topMsgs.map((m, i, arr) => {
-                        const isInbound = m.direction === "inbound";
-                        const headerLabel = isInbound
-                          ? `${m.senderName} · ${m.responseType ? m.responseType.replace(/_/g, " ") : "response"}`
-                          : `Outbound · ${m.senderName}`;
-                        const tags: { label: string; tone: "green" | "blue" | "amber" | "red" | "muted" }[] = [];
-                        if (m.responseType) {
-                          const rt = m.responseType.toLowerCase();
-                          tags.push({
-                            label: rt.replace(/_/g, " "),
-                            tone:
-                              rt.includes("approv") ? "green" :
-                              rt.includes("deny") || rt.includes("denial") ? "red" :
-                              rt.includes("hold") ? "amber" :
-                              "muted",
-                          });
-                        }
-                        tags.push({
-                          label: isInbound ? "portal" : "submission",
-                          tone: isInbound ? "muted" : "blue",
-                        });
-                        return (
-                          <div
-                            key={`${m.convId}-${m.id}`}
-                            className="p-3"
-                            style={{
-                              background: "var(--cc-card)",
-                              borderBottom: i < arr.length - 1 ? "1px solid var(--cc-border)" : "none",
-                            }}
-                            data-testid={`group-comms-msg-${m.id}`}
-                          >
-                            <div className="flex items-center justify-between mb-1 text-xs gap-2">
-                              <span className="font-semibold truncate" style={{ color: "var(--cc-fg)" }}>
-                                {headerLabel}
-                              </span>
-                              <span className="text-[10px] shrink-0" style={{ color: "var(--cc-muted-fg)" }}>
-                                {formatDateTime(m.timestamp)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 mb-2 mt-1.5 flex-wrap">
-                              {tags.map((t, ti) => (
-                                <span
-                                  key={ti}
-                                  className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded"
-                                  style={tagStyleFor(t.tone)}
-                                >
-                                  {t.label}
-                                </span>
-                              ))}
-                            </div>
-                            {m.subject && (
-                              <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--cc-fg)" }}>
-                                {m.subject}
-                              </p>
-                            )}
-                            {m.preview && (
-                              <p
-                                className="text-[11px] opacity-90 leading-relaxed p-2 rounded"
-                                style={{
-                                  color: "var(--cc-fg)",
-                                  background: "color-mix(in srgb, var(--cc-muted) 40%, transparent)",
-                                  border: "1px solid var(--cc-border)",
-                                }}
-                              >
-                                {m.preview}
-                              </p>
-                            )}
-                            {m.mentions.length > 0 && (
-                              <p className="text-[10px] mt-2 italic" style={{ color: "var(--cc-muted-fg)" }}>
-                                Mentions: {m.mentions.map((x) => x.label).join(" · ")}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                    {/* Quick-reply foot — single-line input + send button.
-                        Disabled when there's no conversation to reply to
-                        yet or when a send is already in flight. */}
-                    <div
-                      className="p-2 flex gap-2"
-                      style={{
-                        background: "color-mix(in srgb, var(--cc-muted) 30%, transparent)",
-                        borderTop: topMsgs.length > 0 ? "1px solid var(--cc-border)" : "none",
-                      }}
-                    >
-                      <input
-                        type="text"
-                        value={replyDraft}
-                        onChange={(e) => setReplyDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey && replyDraft.trim()) {
-                            e.preventDefault();
-                            void onSendQuickReply();
-                          }
-                        }}
-                        placeholder={
-                          latestConv
-                            ? `Reply to ${replyTo || "thread"}…`
-                            : "Awaiting payor — no thread yet"
-                        }
-                        className="flex-1 cc-input text-xs py-1.5"
-                        style={{ background: "var(--cc-card)" }}
-                        disabled={!latestConv || replyMutation.isPending}
-                        data-testid="group-comms-quick-reply-input"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void onSendQuickReply()}
-                        disabled={
-                          !latestConv ||
-                          !replyDraft.trim() ||
-                          replyMutation.isPending
-                        }
-                        className="cc-btn cc-btn-sm cc-btn-primary px-2 py-1"
-                        title="Send reply"
-                        data-testid="group-comms-quick-reply-send"
-                      >
-                        {replyMutation.isPending ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Send className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                    {/* Inbox sync action — was on GroupCommunicationThread.
-                        Kept as a quiet text link beneath the reply box so
-                        the affordance survives the rewrite. */}
-                    {onSyncInbox && (
-                      <div
-                        className="px-3 py-1.5 flex items-center justify-end text-[10px]"
-                        style={{
-                          background: "color-mix(in srgb, var(--cc-muted) 20%, transparent)",
-                          borderTop: "1px solid var(--cc-border)",
-                          color: "var(--cc-muted-fg)",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={onSyncInbox}
-                          disabled={checkEmailMutation.isPending}
-                          className="inline-flex items-center gap-1 hover:opacity-80 transition-opacity"
-                          data-testid="group-comms-sync-inbox"
-                        >
-                          {checkEmailMutation.isPending ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Inbox className="w-3 h-3" />
-                          )}
-                          Sync inbox
-                        </button>
-                      </div>
-                    )}
+              {/* Task #833 — compact body: inbound/outbound split,
+                  latest message header (sender · timestamp), single-line
+                  snippet, primary "Open thread" button, and the quiet
+                  inbox-sync link preserved beneath it. Everything
+                  substantive lives in the dialog opened by the button
+                  (see <GroupCommunicationReplyDialog/> below). */}
+              <div data-testid="group-comms-compact-summary">
+                {messageCount === 0 ? (
+                  <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
+                    No messages on this thread yet.
                   </div>
-                );
-              })()}
+                ) : (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: "var(--cc-muted-fg)" }}>
+                      <span data-testid="group-comms-inbound-count">{inboundCount} received</span>
+                      {" · "}
+                      <span data-testid="group-comms-outbound-count">{outboundCount} sent</span>
+                    </div>
+                    {latest && (
+                      <div
+                        className="text-xs rounded p-2 mb-2"
+                        style={{
+                          background: "color-mix(in srgb, var(--cc-muted) 40%, transparent)",
+                          border: "1px solid var(--cc-border)",
+                        }}
+                        data-testid="group-comms-latest-message"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-semibold truncate" style={{ color: "var(--cc-fg)" }}>
+                            {latest.m.direction === "inbound"
+                              ? latest.m.senderName || "Payor"
+                              : `Outbound · ${latest.m.senderName || "Operator"}`}
+                          </span>
+                          <span className="text-[10px] shrink-0" style={{ color: "var(--cc-muted-fg)" }}>
+                            {formatDateTime(latest.m.timestamp)}
+                          </span>
+                        </div>
+                        {latestSnippet && (
+                          <p className="text-[11px] opacity-90 line-clamp-1" style={{ color: "var(--cc-fg)" }}>
+                            {latestSnippet}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={openThread}
+                  disabled={!latestConversation}
+                  className="cc-btn cc-btn-sm cc-btn-primary w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs"
+                  data-testid="group-comms-open-thread"
+                  title={
+                    latestConversation
+                      ? "Read the full thread and reply"
+                      : "No conversation to open yet"
+                  }
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {messageCount === 0 ? "Open thread" : "Open thread & reply"}
+                </button>
+                {/* Inbox sync action — preserved from the legacy stack so
+                    the affordance survives the slim-down. */}
+                {onSyncInbox && (
+                  <div className="mt-2 flex items-center justify-end text-[10px]" style={{ color: "var(--cc-muted-fg)" }}>
+                    <button
+                      type="button"
+                      onClick={onSyncInbox}
+                      disabled={checkEmailMutation.isPending}
+                      className="inline-flex items-center gap-1 hover:opacity-80 transition-opacity"
+                      data-testid="group-comms-sync-inbox"
+                    >
+                      {checkEmailMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Inbox className="w-3 h-3" />
+                      )}
+                      Sync inbox
+                    </button>
+                  </div>
+                )}
+              </div>
             </CcCard>
               );
             })()}
+            {/* Task #833 — the full-thread reply dialog. Rendered at the
+                rail level (not inside the compact card) so it survives
+                if/when the card itself unmounts, and so the deep-link
+                hash effect (above) can drive it without reaching into
+                child state. The same dialog is also mounted by
+                ConversationSection for the responses-awaiting-review
+                page; this is the detail-page mount. */}
+            {latestConversation && (
+              <GroupCommunicationReplyDialog
+                open={threadDialogOpen}
+                onOpenChange={(open) => {
+                  setThreadDialogOpen(open);
+                  if (!open) setThreadScrollTargetId(null);
+                }}
+                conversation={latestConversation}
+                isSending={replyMutation.isPending}
+                scrollToMessageId={threadScrollTargetId}
+                onReply={async (input) => {
+                  try {
+                    await replyMutation.mutateAsync({
+                      id: groupId,
+                      conversationId: input.conversationId,
+                      data: {
+                        subject: input.subject,
+                        bodyText: htmlBodyToPlainText(input.bodyHtml),
+                        to: input.to,
+                        cc: input.cc.length > 0 ? input.cc : undefined,
+                        attachments:
+                          input.attachments.length > 0 ? input.attachments : undefined,
+                      },
+                    });
+                    successToast({
+                      title: "__VERB__",
+                      description: `Reply sent to ${input.to.join(", ")}`,
+                    });
+                    await qc.invalidateQueries({
+                      queryKey: getGetInvoiceGroupEmailThreadQueryKey(groupId),
+                    });
+                    await qc.invalidateQueries({
+                      queryKey: getGetInvoiceGroupQueryKey(groupId),
+                    });
+                  } catch (err) {
+                    toast({
+                      title: "Failed to send reply",
+                      description:
+                        err instanceof Error ? err.message : "Please try again.",
+                      variant: "destructive",
+                    });
+                    // Re-throw so the composer preserves the draft for retry.
+                    throw err;
+                  }
+                }}
+              />
+            )}
 
               {/* Post-submit verdict + responses */}
             <CcCard
@@ -2686,98 +2726,8 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                 );
               })()}
 
-              {/* Notes */}
-            <CcCard
-              title={
-                <>
-                  Notes
-                  <span className="text-xs font-normal ml-1" style={{ color: "var(--cc-muted-fg)" }}>
-                    · {visibleNotes.length}
-                  </span>
-                </>
-              }
-              icon={<Pin className="w-3.5 h-3.5" />}
-              testId="notes-card"
-            >
-              {visibleNotes.length === 0 ? (
-                <div className="text-xs italic" style={{ color: "var(--cc-muted-fg)" }}>
-                  No notes recorded for this group yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleNotes.slice(0, 6).map((n) => (
-                    <div key={n.id} className="text-sm flex gap-2 items-start group/group-note" data-testid={`note-${n.id}`}>
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
-                        style={{ background: "var(--cc-purple-bg)", color: "var(--cc-purple-fg)" }}
-                      >
-                        {authorInitial(n.author)}
-                      </div>
-                      <div className="flex-1 min-w-0 text-xs">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="font-semibold">{n.author || "Unknown"}</span>
-                          <span style={{ color: "var(--cc-muted-fg)" }}>{relativeTime(n.createdAt)}</span>
-                        </div>
-                        <div style={{ color: "var(--cc-fg)" }}>{n.content}</div>
-                      </div>
-                      {/* #687 — group-note delete control removed; notes
-                          are deleted from the queue chrome only. */}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--cc-border)" }}>
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  rows={2}
-                  placeholder="Add a note for this invoice group…"
-                  className="cc-input w-full text-xs"
-                  style={{
-                    background: "var(--cc-bg)",
-                    border: "1px solid var(--cc-border)",
-                    color: "var(--cc-fg)",
-                    padding: "6px 8px",
-                    borderRadius: 4,
-                    resize: "vertical",
-                  }}
-                  data-testid="group-note-textarea"
-                />
-                <div className="flex justify-end mt-2">
-                  <button
-                    type="button"
-                    onClick={onSubmitNote}
-                    disabled={
-                      !newNote.trim() ||
-                      createNoteMutation.isPending ||
-                      noteBreath.breathing
-                    }
-                    className={cn(
-                      "cc-btn text-xs gap-1 inline-flex items-center px-2.5 py-1.5",
-                      noteBreath.className,
-                    )}
-                    style={{
-                      background: "var(--cc-purple-fg)",
-                      color: "white",
-                      opacity:
-                        !newNote.trim() ||
-                        createNoteMutation.isPending ||
-                        noteBreath.breathing
-                          ? 0.6
-                          : 1,
-                    }}
-                    data-testid="group-note-submit-button"
-                  >
-                    {createNoteMutation.isPending ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="w-3.5 h-3.5" />
-                    )}
-                    Add note
-                  </button>
-                </div>
-              </div>
-            </CcCard>
+              {/* Task #833 — Notes card moved to the top of the right
+                  rail; the old copy that lived here has been removed. */}
 
               {/* Scroll anchor — Task #767, was on the retired chrome. */}
             <div id="group-detail-section-activity" data-testid="group-detail-section-activity" aria-hidden="true" />

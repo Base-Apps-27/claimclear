@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
 import { useUpgradeReplyDraft } from "@workspace/api-client-react";
@@ -341,32 +341,136 @@ function ConversationSection({
                 </button>
               </div>
 
-              <Dialog open={replyOpen} onOpenChange={setReplyOpen}>
-                <DialogContent className="max-w-3xl p-0 gap-0 max-h-[90vh] overflow-y-auto">
-                  <DialogHeader className="px-5 py-3 border-b">
-                    <DialogTitle className="text-base flex items-center gap-2">
-                      <Reply className="h-4 w-4" />
-                      Reply — {conversation.subject}
-                    </DialogTitle>
-                  </DialogHeader>
-                  <ReplyComposer
-                    conversationId={conversation.conversationId}
-                    defaultTo={lastInbound?.senderEmail ?? ""}
-                    defaultSubject={`Re: ${conversation.subject.replace(/^re:\s*/i, "")}`}
-                    isSending={isSending}
-                    onSend={async (input) => {
-                      await onReply(input);
-                      setReplyOpen(false);
-                    }}
-                    onCancel={() => setReplyOpen(false)}
-                  />
-                </DialogContent>
-              </Dialog>
+              <GroupCommunicationReplyDialog
+                open={replyOpen}
+                onOpenChange={setReplyOpen}
+                conversation={conversation}
+                isSending={isSending}
+                onReply={onReply}
+              />
             </>
           )}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Controlled reply dialog that pairs the **full prior conversation**
+ * (every message rendered in full via `MessageRow`) with the existing
+ * `ReplyComposer` below it. Used by both `ConversationSection`'s
+ * "Reply to thread…" affordance and the invoice-group detail page's
+ * compact Communication card's "Open thread" button.
+ *
+ * When `scrollToMessageId` is supplied (e.g. via the
+ * `#response-{id}` deep-link landing on the detail page), the
+ * conversation panel auto-scrolls to that message after the dialog
+ * opens. Anything else just lands at the top of the conversation.
+ */
+export function GroupCommunicationReplyDialog({
+  open,
+  onOpenChange,
+  conversation,
+  isSending,
+  onReply,
+  scrollToMessageId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  conversation: GroupConversation;
+  isSending?: boolean;
+  onReply: NonNullable<Props["onReply"]>;
+  scrollToMessageId?: string | null;
+}) {
+  const lastInbound = useMemo(
+    () =>
+      [...conversation.messages]
+        .reverse()
+        .find((m) => m.direction === "inbound"),
+    [conversation.messages],
+  );
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // After the dialog mounts (and any time the target id changes while
+  // open), find the target message row inside the scrollable panel and
+  // bring it into view. Wrapped in rAF so we run after the dialog's
+  // initial paint — without it the row's offsetTop is 0 because the
+  // portal hasn't laid out yet.
+  useEffect(() => {
+    if (!open) return;
+    const panel = scrollRef.current;
+    if (!panel) return;
+    const raf = requestAnimationFrame(() => {
+      if (scrollToMessageId) {
+        const target = panel.querySelector<HTMLElement>(
+          `[data-testid="group-thread-msg-${scrollToMessageId}"]`,
+        );
+        if (target) {
+          target.scrollIntoView({ behavior: "auto", block: "start" });
+          return;
+        }
+      }
+      panel.scrollTop = 0;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, scrollToMessageId, conversation.messages.length]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-4xl w-[min(960px,95vw)] p-0 gap-0 max-h-[92vh] flex flex-col"
+        data-testid="group-thread-reply-dialog"
+      >
+        <DialogHeader className="px-5 py-3 border-b shrink-0">
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Reply className="h-4 w-4" />
+            Reply — {conversation.subject}
+            <Badge variant="secondary" className="text-xs ml-1">
+              {conversation.messages.length} message
+              {conversation.messages.length === 1 ? "" : "s"}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+        {/* Conversation panel — scrolls independently so the composer
+            below always stays visible. Reuses MessageRow so the full
+            bodies render exactly as they do in the embedded bare
+            thread, with no 320-char truncation. */}
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-[200px] overflow-y-auto border-b bg-muted/10 divide-y"
+          data-testid="group-thread-reply-dialog-conversation"
+        >
+          {conversation.messages.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic px-5 py-4">
+              No messages on this thread yet.
+            </p>
+          ) : (
+            conversation.messages.map((msg) => (
+              <MessageRow key={msg.id} msg={msg} />
+            ))
+          )}
+        </div>
+        {/* Composer keeps all of its existing behavior (To/CC/Subject/
+            rich-text body/attachments/AI upgrade) — only its position
+            changed from "the whole dialog body" to "below the
+            conversation panel". */}
+        <div className="shrink-0 overflow-y-auto max-h-[55vh]">
+          <ReplyComposer
+            conversationId={conversation.conversationId}
+            defaultTo={lastInbound?.senderEmail ?? ""}
+            defaultSubject={`Re: ${conversation.subject.replace(/^re:\s*/i, "")}`}
+            isSending={isSending}
+            onSend={async (input) => {
+              await onReply(input);
+              onOpenChange(false);
+            }}
+            onCancel={() => onOpenChange(false)}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
