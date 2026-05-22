@@ -1221,6 +1221,16 @@ function ReplyComposer({
   };
 
   const handleSend = async () => {
+    // Legacy messages from before email threading was wired up have no
+    // conversationId, so there's no Graph message to reply against. The
+    // reply route requires one — guard here with a clear explanation
+    // instead of letting the request 404.
+    if (!conversationId) {
+      setError(
+        "This thread predates email threading, so we can't reply in-line. Start a fresh email to the payor instead.",
+      );
+      return;
+    }
     const toList = to
       .split(/[,;]/)
       .map((s) => s.trim())
@@ -1530,9 +1540,17 @@ function ReplyComposer({
         <Button
           size="sm"
           onClick={handleSend}
-          disabled={isSending || upgradeMutation.isPending || isUploading}
+          disabled={
+            isSending || upgradeMutation.isPending || isUploading || !conversationId
+          }
           data-testid="group-thread-send-reply"
-          title={isUploading ? "Waiting for attachment uploads to finish…" : undefined}
+          title={
+            !conversationId
+              ? "This thread predates email threading — start a fresh email instead."
+              : isUploading
+                ? "Waiting for attachment uploads to finish…"
+                : undefined
+          }
         >
           {isSending ? (
             <>
