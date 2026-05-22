@@ -131,3 +131,15 @@ id = "k_u8r7Ak3vqRvPVSVIFpz"
 uri = "file://reports/portal_reconciliation_2026-05-22.csv"
 type = "table"
 title = "Per-Invoice Diff (CSV)"
+
+[[outputs]]
+id = "Xh5ydCIlkdHLRxbURf4Mg"
+uri = "file://reports/portal_reconciliation_PROD_2026-05-22.md"
+type = "text"
+title = "Portal Reconciliation — PRODUCTION (Markdown)"
+
+[[outputs]]
+id = "OUvdYY239eTmEzbh6GnLW"
+uri = "file://reports/portal_reconciliation_PROD_2026-05-22.csv"
+type = "table"
+title = "Per-Invoice Diff — PRODUCTION (CSV)"
