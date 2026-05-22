@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
-import { claimsTable, portalSubmissionsTable, portalResponsesTable, notesTable, auditLogsTable, invoiceGroupsTable } from "@workspace/db";
-import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import { claimsTable, portalSubmissionsTable, portalResponsesTable, notesTable, auditLogsTable, invoiceGroupsTable, outboundEmailsTable } from "@workspace/db";
+import { eq, and, inArray, isNotNull, desc } from "drizzle-orm";
 import type { InboxMessage } from "./outlook";
 import { logger } from "./logger";
 import { transitionClaimStatus } from "./claim-transitions";
@@ -80,6 +80,38 @@ function extractIdentifiers(text: string): { ticketIds: string[]; confNumbers: s
 export async function matchEmailToClaim(email: InboxMessage): Promise<MatchResult | null> {
   const fullText = `${email.subject} ${email.bodyPreview} ${email.body?.content || ""}`;
   const { ticketIds, confNumbers, refNumbers, invoiceNumbers } = extractIdentifiers(fullText);
+
+  // Tier 0: ConversationId fast-path. Every email we send out (both the
+  // standard reply route and the legacy-thread fresh-send route) persists
+  // Graph's `conversationId` on `outbound_emails`. When a payor replies,
+  // Outlook tags the inbound message with the same conversationId, so the
+  // most reliable match is to look up an outbound row we already own.
+  // This is independent of whether the payor preserved the subject or
+  // body identifiers, and covers cases where the matcher would otherwise
+  // fall through to "orphan inbox" (e.g. payor stripped the Re: subject,
+  // or the group has moved out of the awaiting-response window).
+  if (email.conversationId) {
+    const [outbound] = await db.select({
+      claimId: outboundEmailsTable.claimId,
+      invoiceGroupId: outboundEmailsTable.invoiceGroupId,
+      submissionId: outboundEmailsTable.submissionId,
+    }).from(outboundEmailsTable)
+      .where(eq(outboundEmailsTable.conversationId, email.conversationId))
+      // If multiple of our outbound rows share the conversationId
+      // (e.g. a long back-and-forth), prefer the most recent — it
+      // reflects the operator's current binding for the thread.
+      .orderBy(desc(outboundEmailsTable.sentAt))
+      .limit(1);
+    if (outbound && (outbound.invoiceGroupId || outbound.claimId || outbound.submissionId)) {
+      return {
+        claimId: outbound.invoiceGroupId ? null : outbound.claimId,
+        invoiceGroupId: outbound.invoiceGroupId,
+        submissionId: outbound.submissionId,
+        matchedVia: `conversation_id:${email.conversationId}`,
+        confidence: "high",
+      };
+    }
+  }
 
   // Tier 1: Portal ticket ID match — group-aware (returns group match if submission is linked to a group)
   if (ticketIds.length > 0) {
