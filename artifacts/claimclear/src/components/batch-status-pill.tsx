@@ -16,12 +16,25 @@ interface ScheduleEntry {
   isNext: boolean;
 }
 
+type Activity = "sending" | "scraping" | "idle";
+
 interface QueueStatus {
   isRunning: boolean;
+  /**
+   * Which bot (if any) is currently holding the shared Chromium gate.
+   * "sending" → submit bot, "scraping" → read bot checking the portal for
+   * new responses, "idle" → nothing in flight. The header pill renders a
+   * distinct label/colour per activity so a scrape never looks like a send.
+   */
+  activity: Activity;
   nextBatchAt: string | null;
   prevBatchAt: string | null;
   queuedCount: number;
   runningCount: number;
+  /** Original size of the currently-running submit batch, if any. */
+  batchTotal: number | null;
+  /** Rows the submit batch has finished (succeeded + failed), if any. */
+  batchProcessed: number | null;
   schedule: ScheduleEntry[];
 }
 
@@ -91,6 +104,8 @@ interface DerivedState {
   count: string;
   label: string;
   subtext: string;
+  /** Longer explanation shown as a native tooltip on hover. */
+  title?: string;
   progress: number;
   icon: typeof Clock;
   pulse: boolean;
@@ -116,12 +131,43 @@ function deriveState(status: QueueStatus | undefined, now: number): DerivedState
     };
   }
 
-  // Running batch — green / Zap.
-  if (status.isRunning) {
-    const total = status.runningCount + status.queuedCount;
+  // Read bot is checking the portal for new responses. Different copy +
+  // icon so this never reads as "Sending batch" (a real send moves money-
+  // adjacent state; a scrape doesn't).
+  if (status.activity === "scraping") {
+    return {
+      color: "blue",
+      count: "·",
+      label: "",
+      subtext: "Checking portal",
+      title: "Checking the customer portal for new responses",
+      progress: 100,
+      icon: Zap,
+      pulse: true,
+      running: true,
+      empty: false,
+      degraded: false,
+    };
+  }
+
+  // Submit batch in flight — green / Zap, count-up progress.
+  if (status.activity === "sending" || status.isRunning) {
+    // Prefer the in-memory batch's original total + processed count so the
+    // numerator counts UP through a fixed denominator (e.g. "3 of 23"
+    // instead of "1 of 23" → "1 of 22" → … as rows leave the queue).
+    // Fall back to the old live-count math only if the server didn't ship
+    // batch progress (e.g. mid-deploy with a stale client cache).
+    const total = status.batchTotal ?? (status.runningCount + status.queuedCount);
+    let current: number;
+    if (status.batchTotal != null && status.batchProcessed != null) {
+      // "Currently working on row N" = finished so far + 1, capped at total.
+      current = Math.min(status.batchProcessed + 1, status.batchTotal);
+    } else {
+      current = status.runningCount;
+    }
     return {
       color: "green",
-      count: status.runningCount > 0 ? String(status.runningCount) : "·",
+      count: current > 0 ? String(current) : "·",
       label: total > 0 ? `of ${total}` : "running",
       subtext: "Sending batch",
       progress: 100,
@@ -256,6 +302,7 @@ function PillButton({ state, collapsed = false }: PillProps) {
   return (
     <button
       data-testid="batch-status-pill-button"
+      title={state.title ?? state.subtext}
       className={[
         "relative group flex items-center border rounded-md overflow-hidden transition-all hover:opacity-90 cursor-pointer",
         collapsed ? "h-8" : "h-9",

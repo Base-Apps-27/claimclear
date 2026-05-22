@@ -169,7 +169,7 @@ async function main(): Promise<number> {
     }
   };
 
-  const outcome = await portalBrowserGate.run(runWork);
+  const outcome = await portalBrowserGate.run("script:scan-portal-index", runWork);
   try {
     if (outcome.kind === "skipped") {
       console.error(`[scan-portal-index] gate busy (${outcome.reason}); retry when the cron is idle`);

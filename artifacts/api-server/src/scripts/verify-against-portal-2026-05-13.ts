@@ -250,7 +250,7 @@ async function scrapeAll(ticketIds: string[], chunkLimit: number | undefined): P
   const total = slice.length;
   const append = fs.createWriteStream(SCRAPE_PATH, { flags: "a" });
   console.log(`[scrape] acquiring portalBrowserGate…`);
-  const outcome = await portalBrowserGate.run(async () => {
+  const outcome = await portalBrowserGate.run("script:verify-against-portal", async () => {
     for (let i = 0; i < total; i += 1) {
       const ticketId = slice[i];
       if (i > 0) await sleep(jitter());

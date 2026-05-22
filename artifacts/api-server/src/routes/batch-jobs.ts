@@ -15,6 +15,7 @@ import {
   listBatchRunHistory,
   isWorkerRunInProgress,
 } from "../lib/batch-processor";
+import { portalBrowserGate } from "../lib/portal-browser-gate";
 import { addGlobalBatchClient } from "../lib/sse";
 import { PORTAL_BATCH_SWEEPER } from "../lib/cron-schedule";
 import { denyClerk } from "../middlewares/denyClerk";
@@ -239,12 +240,38 @@ router.get("/portal-submissions/queue-status", asyncHandler(async (_req, res): P
     logger.warn({ err }, "queue-status: failed to compute cron firings");
   }
 
+  // Distinguish which bot currently owns the shared Chromium gate so the
+  // header pill can render "Sending batch" vs "Checking portal" instead of
+  // mis-labelling every gate hold as a send. See `lib/portal-browser-gate.ts`.
+  const gateOwner = portalBrowserGate.getCurrentOwner();
+  const inProgress = isWorkerRunInProgress();
+  let activity: "sending" | "scraping" | "idle" = "idle";
+  if (inProgress) {
+    if (gateOwner === "scrape") activity = "scraping";
+    else if (gateOwner === "submit" || runningCount > 0) activity = "sending";
+    // Other owners (one-off scripts) fall through as "idle" for UI purposes —
+    // we don't want a developer script to make the pill flash "Sending batch".
+  }
+
+  // When a submit batch is in flight, surface the *original* batch size and
+  // how many rows the worker has already processed. The pill uses these to
+  // render "3 of 23" that counts up instead of "1 of 23" → "1 of 22" → … as
+  // queued+running counts shrink (countdown bug).
+  const activeJob = activity === "sending" ? getActiveBatchJob() : undefined;
+  const batchTotal = activeJob?.total ?? null;
+  const batchProcessed = activeJob?.processed ?? null;
+
   res.json({
-    isRunning: isWorkerRunInProgress(),
+    // `isRunning` retained for back-compat with any other consumer; new UI
+    // code should branch on `activity` instead.
+    isRunning: activity === "sending",
+    activity,
     nextBatchAt,
     prevBatchAt,
     queuedCount,
     runningCount,
+    batchTotal,
+    batchProcessed,
     schedule,
   });
 }));

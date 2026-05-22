@@ -345,7 +345,7 @@ export async function syncPortalResponsesForSubmission(
   // capture the reader's structured result through a closure instead of the
   // gate's resolution value.
   const readerCtx: { parsed: PortalReaderResult | null; error: unknown } = { parsed: null, error: null };
-  const gateOutcome = await portalBrowserGate.run(async () => {
+  const gateOutcome = await portalBrowserGate.run("scrape", async () => {
     try {
       readerCtx.parsed = await readPortalTicket(ticketId, opts.readerOpts);
     } catch (err) {

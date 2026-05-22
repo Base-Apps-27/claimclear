@@ -12,11 +12,11 @@ test("workerGate.run lets the first call through and skips concurrent calls", as
   let release!: (v: string) => void;
   const blockedFn = () => new Promise<string>((resolve) => { release = resolve; });
 
-  const first = await gate.run(blockedFn);
+  const first = await gate.run("test", blockedFn);
   assert.equal(first.kind, "started");
   assert.equal(gate.isInProgress(), true);
 
-  const second = await gate.run(async () => "should not run");
+  const second = await gate.run("test", async () => "should not run");
   assert.equal(second.kind, "skipped");
   if (second.kind === "skipped") {
     assert.equal(second.reason, "already_running");
@@ -26,7 +26,7 @@ test("workerGate.run lets the first call through and skips concurrent calls", as
   if (first.kind === "started") await first.result;
   assert.equal(gate.isInProgress(), false);
 
-  const third = await gate.run(async () => "ok");
+  const third = await gate.run("test", async () => "ok");
   assert.equal(third.kind, "started");
   if (third.kind === "started") await third.result;
 });
@@ -36,7 +36,7 @@ test("workerGate.run with timeout: caller can race the result with a watchdog", 
   let release!: () => void;
   const longRun = () => new Promise<void>((resolve) => { release = resolve; });
 
-  const outcome = await gate.run(longRun);
+  const outcome = await gate.run("test", longRun);
   assert.equal(outcome.kind, "started");
 
   const winner = await Promise.race([
@@ -46,7 +46,7 @@ test("workerGate.run with timeout: caller can race the result with a watchdog", 
   assert.equal(winner, "timeout");
   assert.equal(gate.isInProgress(), true);
 
-  const second = await gate.run(async () => undefined);
+  const second = await gate.run("test", async () => undefined);
   assert.equal(second.kind, "skipped");
 
   release();
@@ -56,7 +56,7 @@ test("workerGate.run with timeout: caller can race the result with a watchdog", 
 
 test("workerGate releases even when the run throws", async () => {
   const gate = createWorkerGate<void>();
-  const outcome = await gate.run(async () => {
+  const outcome = await gate.run("test", async () => {
     throw new Error("boom");
   });
   assert.equal(outcome.kind, "started");
@@ -66,7 +66,7 @@ test("workerGate releases even when the run throws", async () => {
   assert.equal(gate.isInProgress(), false, "gate must release even on throw — otherwise the worker would jam after a single failure");
 
   // Confirm the next run can start
-  const next = await gate.run(async () => undefined);
+  const next = await gate.run("test", async () => undefined);
   assert.equal(next.kind, "started");
   if (next.kind === "started") await next.result;
 });

@@ -268,7 +268,7 @@ export async function triggerWorkerRun(opts: {
     phase1Resolver.resolve = resolve;
   });
 
-  const gateOutcome = await workerGate.run(async () => {
+  const gateOutcome = await workerGate.run("submit", async () => {
     let job: BatchJob;
     try {
       job = await startBatchJob(opts.submissionIds ?? "all", opts.triggeredBy, opts.triggeredByEmail ?? null);

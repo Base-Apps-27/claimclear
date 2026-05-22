@@ -4,7 +4,7 @@ import { readPortalTicket } from "../bot/portal-reader.js";
 const TARGETS = ["92002", "91984", "91986", "92003", "91979", "91769"];
 
 async function main() {
-  const outcome = await portalBrowserGate.run(async () => {
+  const outcome = await portalBrowserGate.run("script:peek-orphan-tickets", async () => {
     for (const id of TARGETS) {
       try {
         const r = await readPortalTicket(id);
