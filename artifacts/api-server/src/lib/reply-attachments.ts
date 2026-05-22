@@ -22,10 +22,7 @@
 
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import {
-  MAX_REPLY_ATTACHMENT_FILES,
-  MAX_REPLY_ATTACHMENT_IMAGES,
   REPLY_ATTACHMENT_ALLOWED_MIME_SET,
-  REPLY_ATTACHMENT_IMAGE_MIME_SET,
   REPLY_ATTACHMENT_TOTAL_BYTES,
 } from "@workspace/api-zod";
 import { db, replyAttachmentStagingTable } from "@workspace/db";
@@ -97,9 +94,10 @@ function normalizeRefs(raw: unknown): StagedAttachmentRef[] | { error: string } 
 /**
  * Resolve a list of `{ stagedId }` refs into validated attachment metadata
  * + downloaded bytes ready for Outlook. Enforces ownership, the MIME
- * allowlist (against the server-recorded type, never the client's), the
- * 5-image cap, the 10-attachment hard ceiling, and the 25 MB total
- * payload cap.
+ * allowlist (against the server-recorded type, never the client's) and
+ * the 25 MB total payload cap. There is intentionally no per-file or
+ * per-image count cap — any combination is fine so long as the combined
+ * bytes stay under 25 MB.
  *
  * @param raw         The request `attachments` array (untrusted input).
  * @param userEmail   Email of the operator hitting the reply endpoint.
@@ -118,13 +116,6 @@ export async function resolveReplyAttachments(
   if (parsed.length === 0) {
     return { ok: true, value: { forGraph: [], names: [], metadata: [], stagedIds: [] } };
   }
-  if (parsed.length > MAX_REPLY_ATTACHMENT_FILES) {
-    return {
-      ok: false,
-      status: 400,
-      error: `Too many attachments: ${parsed.length} provided, max ${MAX_REPLY_ATTACHMENT_FILES} allowed.`,
-    };
-  }
 
   const ids = parsed.map((p) => p.stagedId);
   const rows = await db
@@ -136,7 +127,6 @@ export async function resolveReplyAttachments(
 
   const metadata: PersistedAttachmentMeta[] = [];
   let totalBytes = 0;
-  let imageCount = 0;
 
   for (let i = 0; i < parsed.length; i++) {
     const ref = parsed[i];
@@ -176,17 +166,6 @@ export async function resolveReplyAttachments(
         status: 400,
         error: `attachments[${i}] (${row.fileName}): unsupported file type "${ct}".`,
       };
-    }
-
-    if (REPLY_ATTACHMENT_IMAGE_MIME_SET.has(ct)) {
-      imageCount += 1;
-      if (imageCount > MAX_REPLY_ATTACHMENT_IMAGES) {
-        return {
-          ok: false,
-          status: 400,
-          error: `Too many image attachments: max ${MAX_REPLY_ATTACHMENT_IMAGES} per reply.`,
-        };
-      }
     }
 
     const size = row.sizeBytes;

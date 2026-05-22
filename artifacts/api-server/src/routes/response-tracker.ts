@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { eq, desc, and, or, inArray } from "drizzle-orm";
 import {
   EMAIL_MESSAGE_MAX_BYTES,
-  MAX_REPLY_ATTACHMENT_FILES,
   REPLY_ATTACHMENT_ALLOWED_MIME_SET,
   REPLY_ATTACHMENT_TOTAL_BYTES,
 } from "@workspace/api-zod";

@@ -8,10 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import type { ReplyEvidenceItem } from "@workspace/api-client-react";
 import {
-  MAX_REPLY_ATTACHMENT_FILES,
-  MAX_REPLY_ATTACHMENT_IMAGES,
   REPLY_ATTACHMENT_ALLOWED_MIME_SET,
-  REPLY_ATTACHMENT_IMAGE_MIME_SET,
   REPLY_ATTACHMENT_TOTAL_BYTES,
 } from "@workspace/api-zod";
 import { useToast } from "@/hooks/use-toast";
@@ -874,9 +871,6 @@ function ReplyComposer({
   }, []);
 
   const totalBytes = chips.reduce((sum, c) => sum + c.size, 0);
-  const imageCount = chips.filter((c) =>
-    REPLY_ATTACHMENT_IMAGE_MIME_SET.has(c.contentType),
-  ).length;
   const isUploading = chips.some((c) => c.status === "uploading");
 
   const removeChip = useCallback((id: string) => {
@@ -906,34 +900,22 @@ function ReplyComposer({
    * them and retry without losing the rest of the draft.
    *
    * Caps enforced here (mirrored on the server):
-   *   - up to MAX_REPLY_ATTACHMENT_IMAGES image files (PNG/JPG/GIF/WebP)
-   *   - up to MAX_REPLY_ATTACHMENT_FILES total chips
-   *   - REPLY_ATTACHMENT_TOTAL_BYTES combined size
+   *   - REPLY_ATTACHMENT_TOTAL_BYTES combined size (25 MB Outlook cap)
+   *
+   * There is intentionally no per-file or per-image count limit — any
+   * combination is fine so long as the combined bytes stay under 25 MB.
    */
   const ingestFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
 
       const accepted: File[] = [];
-      let runningCount = chips.length;
-      let runningImages = imageCount;
       let runningBytes = totalBytes;
       const rejections: string[] = [];
 
       for (const f of files) {
-        if (runningCount >= MAX_REPLY_ATTACHMENT_FILES) {
-          rejections.push(`Skipped "${f.name}" — max ${MAX_REPLY_ATTACHMENT_FILES} attachments per reply.`);
-          continue;
-        }
         if (!REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(f.type)) {
           rejections.push(`Skipped "${f.name}" — only PNG, JPG, GIF, WebP, and PDF are allowed.`);
-          continue;
-        }
-        const isImage = REPLY_ATTACHMENT_IMAGE_MIME_SET.has(f.type);
-        if (isImage && runningImages >= MAX_REPLY_ATTACHMENT_IMAGES) {
-          rejections.push(
-            `Skipped "${f.name}" — max ${MAX_REPLY_ATTACHMENT_IMAGES} image attachments per reply.`,
-          );
           continue;
         }
         if (runningBytes + f.size > REPLY_ATTACHMENT_TOTAL_BYTES) {
@@ -943,9 +925,7 @@ function ReplyComposer({
           continue;
         }
         accepted.push(f);
-        runningCount += 1;
         runningBytes += f.size;
-        if (isImage) runningImages += 1;
       }
 
       if (rejections.length > 0) {
@@ -1025,7 +1005,7 @@ function ReplyComposer({
         }
       });
     },
-    [chips.length, imageCount, totalBytes, nextChipId],
+    [totalBytes, nextChipId],
   );
 
   /**
@@ -1037,42 +1017,27 @@ function ReplyComposer({
    * `{stagedId,name,contentType,size}` shape as a fresh upload — so
    * the chip pipeline below is identical to the upload path.
    *
-   * Same per-reply caps apply (10 files, 5 images, 25 MB combined);
-   * anything that would overflow is skipped with an inline message
-   * instead of partially adding.
+   * Only the 25 MB combined-bytes cap is enforced; anything that would
+   * overflow is skipped with an inline message instead of partially
+   * adding.
    */
   const ingestEvidenceUrls = useCallback(
     (picked: ReplyEvidenceItem[]) => {
       if (picked.length === 0 || groupId == null) return;
 
       const accepted: ReplyEvidenceItem[] = [];
-      let runningCount = chips.length;
-      let runningImages = imageCount;
       let runningBytes = totalBytes;
       const rejections: string[] = [];
 
       for (const item of picked) {
-        if (runningCount >= MAX_REPLY_ATTACHMENT_FILES) {
-          rejections.push(
-            `Skipped "${item.name}" — max ${MAX_REPLY_ATTACHMENT_FILES} attachments per reply.`,
-          );
-          continue;
-        }
         // `contentType` from the picker is a filename-based guess; the
-        // server re-detects from storage. We still use it for the cap
-        // check so an obviously-disallowed file gets a friendly skip
-        // message instead of a backend 400.
+        // server re-detects from storage. We still use it for the
+        // allowlist check so an obviously-disallowed file gets a
+        // friendly skip message instead of a backend 400.
         const ct = (item.contentType || "").toLowerCase();
         if (ct && !REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(ct)) {
           rejections.push(
             `Skipped "${item.name}" — only PNG, JPG, GIF, WebP, and PDF can be re-attached.`,
-          );
-          continue;
-        }
-        const isImage = ct ? REPLY_ATTACHMENT_IMAGE_MIME_SET.has(ct) : false;
-        if (isImage && runningImages >= MAX_REPLY_ATTACHMENT_IMAGES) {
-          rejections.push(
-            `Skipped "${item.name}" — max ${MAX_REPLY_ATTACHMENT_IMAGES} image attachments per reply.`,
           );
           continue;
         }
@@ -1084,9 +1049,7 @@ function ReplyComposer({
           continue;
         }
         accepted.push(item);
-        runningCount += 1;
         runningBytes += sz;
-        if (isImage) runningImages += 1;
       }
 
       if (rejections.length > 0) setError(rejections.join(" "));
@@ -1160,7 +1123,7 @@ function ReplyComposer({
         }
       });
     },
-    [chips.length, imageCount, totalBytes, nextChipId, groupId],
+    [totalBytes, nextChipId, groupId],
   );
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1387,11 +1350,7 @@ function ReplyComposer({
             size="sm"
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
-            disabled={
-              isSending ||
-              chips.length >= MAX_REPLY_ATTACHMENT_FILES ||
-              totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES
-            }
+            disabled={isSending || totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES}
             data-testid="group-thread-attach-button"
           >
             <Paperclip className="h-3 w-3 mr-1" /> Attach files
@@ -1409,11 +1368,7 @@ function ReplyComposer({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={
-                    isSending ||
-                    chips.length >= MAX_REPLY_ATTACHMENT_FILES ||
-                    totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES
-                  }
+                  disabled={isSending || totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES}
                   data-testid="group-thread-attach-from-case-button"
                 >
                   <FolderOpen className="h-3 w-3 mr-1" /> Attach from this case
@@ -1461,8 +1416,7 @@ function ReplyComposer({
             </Popover>
           )}
           <span className="text-muted-foreground">
-            {chips.length} / {MAX_REPLY_ATTACHMENT_FILES} files · {imageCount} /{" "}
-            {MAX_REPLY_ATTACHMENT_IMAGES} images ·{" "}
+            {chips.length} {chips.length === 1 ? "file" : "files"} ·{" "}
             {formatBytes(totalBytes)} / {formatBytes(REPLY_ATTACHMENT_TOTAL_BYTES)}
           </span>
           <span className="text-muted-foreground hidden sm:inline">
