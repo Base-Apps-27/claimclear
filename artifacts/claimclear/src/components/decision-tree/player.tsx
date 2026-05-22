@@ -10,6 +10,7 @@ import {
   getMaxDepth,
 } from "./types";
 import { Card, CardContent } from "@/components/ui/card";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import { Button } from "@/components/ui/button";
 import { PresenceLockWrapper } from "@/components/presence-lock";
 import { Badge } from "@/components/ui/badge";
@@ -544,7 +545,7 @@ export const TreePlayer = forwardRef<TreePlayerHandle, PlayerProps>(function Tre
                 const imgSrc = currentNode.instructionImagePath || currentNode.instructionImageUrl;
                 if (!imgSrc) return null;
                 const src = imgSrc.startsWith("/objects/") ? `/api/storage${imgSrc}` : imgSrc;
-                return <img src={src} alt="Instruction reference" className="rounded-md border max-h-48 w-auto mt-1" />;
+                return <InstructionImage src={src} />;
               })()}
               {currentNode.instructionLinkUrl && (
                 <a
@@ -837,6 +838,20 @@ function EvidenceUploadTrigger({
         Paste image
       </Button>
     </div>
+  );
+}
+
+function InstructionImage({ src }: { src: string }) {
+  const { open: openEvidencePreview } = useEvidencePreview();
+  return (
+    <button
+      type="button"
+      onClick={() => openEvidencePreview({ url: src, name: "Instruction reference" })}
+      className="block mt-1 rounded-md hover:opacity-90 transition-opacity"
+      title="Click to preview"
+    >
+      <img src={src} alt="Instruction reference" className="rounded-md border max-h-48 w-auto" />
+    </button>
   );
 }
 

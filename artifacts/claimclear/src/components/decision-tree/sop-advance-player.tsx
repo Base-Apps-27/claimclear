@@ -1482,7 +1482,9 @@ export function SopAdvancePlayer(props: Props) {
                 const imgSrc = currentNode.instructionImagePath || currentNode.instructionImageUrl;
                 if (!imgSrc) return null;
                 const src = imgSrc.startsWith("/objects/") ? `/api/storage${imgSrc}` : imgSrc;
-                return <img src={src} alt="Instruction reference" className="rounded-md border max-h-48 w-auto mt-1" />;
+                return (
+                  <InstructionImage src={src} />
+                );
               })()}
               {currentNode.instructionLinkUrl && (
                 <a
@@ -1930,6 +1932,20 @@ function CopyFilenameBar({ filename, reqKey }: { filename: string; reqKey: strin
         {copied ? "Copied" : "Copy"}
       </Button>
     </div>
+  );
+}
+
+function InstructionImage({ src }: { src: string }) {
+  const { open: openEvidencePreview } = useEvidencePreview();
+  return (
+    <button
+      type="button"
+      onClick={() => openEvidencePreview({ url: src, name: "Instruction reference" })}
+      className="block mt-1 rounded-md hover:opacity-90 transition-opacity"
+      title="Click to preview"
+    >
+      <img src={src} alt="Instruction reference" className="rounded-md border max-h-48 w-auto" />
+    </button>
   );
 }
 
