@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import {
   useUpgradeReplyDraft,
   useListInvoiceGroupReplyEvidence,
@@ -502,6 +503,7 @@ export function GroupCommunicationReplyDialog({
 
 function MessageRow({ msg }: { msg: GroupEmailMessage }) {
   const isInbound = msg.direction === "inbound";
+  const { open: openEvidencePreview } = useEvidencePreview();
 
   // resolveBodyRender picks between sanitized HTML and plain text. The
   // defensive fallback inside also catches the case where a plain-text
@@ -582,11 +584,10 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
         <div className="flex items-center gap-2 flex-wrap text-[11px] mt-2">
           {msg.attachmentLinks && msg.attachmentLinks.length > 0
             ? msg.attachmentLinks.map((a) => (
-                <a
+                <button
                   key={`${a.downloadUrl}|${a.name}`}
-                  href={a.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  type="button"
+                  onClick={() => openEvidencePreview({ url: a.downloadUrl, name: a.name, size: a.size ?? null })}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                   data-testid={`group-thread-attachment-link-${msg.id}`}
                   title={a.size != null ? `${a.name} · ${formatBytes(a.size)}` : a.name}
@@ -598,7 +599,7 @@ function MessageRow({ msg }: { msg: GroupEmailMessage }) {
                       {formatBytes(a.size)}
                     </span>
                   )}
-                </a>
+                </button>
               ))
             : msg.attachments.length > 0 &&
               msg.attachments.map((a) => (

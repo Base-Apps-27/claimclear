@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
 import { HistoryTracker } from "@/components/back-bar";
+import { EvidencePreviewProvider } from "@/components/evidence-preview-dialog";
 import { AdminTourProvider } from "@/tour/admin-tour";
 import Dashboard from "@/pages/dashboard";
 import ClaimNew from "@/pages/claim-new";
@@ -172,15 +173,17 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <SessionInterceptor />
-          {/* Tracks in-app navigations so the BackBar can decide between
-              window.history.back() (true N-1) and a logical-parent fallback
-              for deep-link landings. Mount-once, no UI. */}
-          <HistoryTracker />
-          <Router />
-        </WouterRouter>
-        <Toaster />
+        <EvidencePreviewProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <SessionInterceptor />
+            {/* Tracks in-app navigations so the BackBar can decide between
+                window.history.back() (true N-1) and a logical-parent fallback
+                for deep-link landings. Mount-once, no UI. */}
+            <HistoryTracker />
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </EvidencePreviewProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

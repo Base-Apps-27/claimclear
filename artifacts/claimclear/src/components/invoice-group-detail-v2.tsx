@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BackBar } from "@/components/back-bar";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
@@ -379,6 +380,7 @@ function LegColumn({
   groupId: number;
   auditEntries: AuditLogResponse[];
 }) {
+  const { open: openEvidencePreview } = useEvidencePreview();
   const sub = deriveLegSubStatus(ride);
   const rideAny = ride as {
     evidenceFiles?: Array<{ url?: string; name?: string | null; filename?: string | null; size?: number | null }> | null;
@@ -494,12 +496,11 @@ function LegColumn({
                 <p className="text-[11px] italic px-1 py-1" style={{ color: "var(--cc-muted-fg)" }}>No per-leg attachments.</p>
               )
             ) : items.map((f, i) => (
-              <a
+              <button
                 key={`${f.url}-${i}`}
-                href={f.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-2 py-1.5 rounded border text-[12px] hover:border-[var(--cc-primary)]"
+                type="button"
+                onClick={() => openEvidencePreview({ url: f.url, name: f.name, size: f.size })}
+                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded border text-[12px] hover:border-[var(--cc-primary)]"
                 style={{ borderColor: "var(--cc-border)", background: "var(--cc-card)" }}
               >
                 <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cc-blue-fg)" }} />
@@ -509,7 +510,7 @@ function LegColumn({
                     {f.size > 1024 ? `${Math.round(f.size / 1024)} KB` : `${f.size} B`}
                   </span>
                 )}
-              </a>
+              </button>
             ))}
           </div>
         </div>

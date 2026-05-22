@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { BackBar } from "@/components/back-bar";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import {
   ChipDrawerOverlay,
   MarkDuplicateDialog,
@@ -236,6 +237,7 @@ export function ClaimDetailV2({
 }: Props) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { open: openEvidencePreview } = useEvidencePreview();
   const { data: claim, isLoading } = useGetClaim(claimId, {
     query: { queryKey: getGetClaimQueryKey(claimId), enabled: !!claimId },
   });
@@ -1392,15 +1394,18 @@ export function ClaimDetailV2({
                         {ev.collectedBy ?? "—"} · {relativeTime(ev.collectedAt)}
                       </span>
                       {ev.imageUrl ? (
-                        <a
-                          href={ev.imageUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openEvidencePreview({
+                            url: ev.imageUrl!,
+                            name: fileNameFromUrl(ev.imageUrl!),
+                            size: sizeBytes,
+                          })}
                           className="text-xs hover:underline"
                           style={{ color: "var(--cc-blue-fg)" }}
                         >
-                          Open
-                        </a>
+                          Preview
+                        </button>
                       ) : null}
                     </div>
                   );

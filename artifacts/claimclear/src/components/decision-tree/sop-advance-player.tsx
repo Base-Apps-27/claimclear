@@ -19,6 +19,7 @@ import * as React from "react";
 import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { EMAIL_MESSAGE_MAX_BYTES } from "@workspace/api-zod";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 
 void React; // JSX runtime: keep React in scope under tsx --test (jsxFactory=React.createElement).
 import {
@@ -1933,19 +1934,20 @@ function CopyFilenameBar({ filename, reqKey }: { filename: string; reqKey: strin
 }
 
 function PersistedThumbnail({ ev }: { ev: ClaimEvidenceResponse }) {
+  const { open: openEvidencePreview } = useEvidencePreview();
   const url = ev.imageUrl;
   if (!url) return null;
   const src = url.startsWith("/objects/") ? `/api/storage${url}` : url;
+  const name = displayEvidenceTypeName(ev.evidenceTypeName);
   return (
-    <a
-      href={src}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={() => openEvidencePreview({ url: src, name })}
       className="border rounded-md p-1.5 bg-muted/20 hover:bg-muted/40 transition-colors"
-      title={displayEvidenceTypeName(ev.evidenceTypeName)}
+      title={name}
     >
       <img src={src} alt="Evidence" className="rounded border max-h-24 w-auto block" />
-    </a>
+    </button>
   );
 }
 

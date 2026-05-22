@@ -26,6 +26,7 @@ import { Link } from "wouter";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { absoluteTooltip, formatRelative } from "@/lib/time";
 import { WrapTooltip } from "@/components/info-tooltip";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
 
 // Task #564 — display labels for the parent group's macro-phase chip
@@ -163,6 +164,7 @@ export function PortalSubmissionDrawer({
   processNowDisabledReason,
 }: PortalSubmissionDrawerProps) {
   const queryClient = useQueryClient();
+  const { open: openEvidencePreview } = useEvidencePreview();
   const [tab, setTab] = useState<"payload" | "sandbox" | "activity">("payload");
   const [editingFields, setEditingFields] = useState(false);
   const [fieldEdits, setFieldEdits] = useState<Record<string, string>>({});
@@ -684,21 +686,21 @@ export function PortalSubmissionDrawer({
                       {attachments.map((url, i) => {
                         const name = fileNameFromUrl(url);
                         const image = isImageUrl(url);
-                        const size = formatSize(findSizeForUrl(submission.evidenceFiles, url));
+                        const sizeBytes = findSizeForUrl(submission.evidenceFiles, url);
+                        const size = formatSize(sizeBytes);
                         return (
-                          <a
+                          <button
                             key={`${url}-${i}`}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            type="button"
+                            onClick={() => openEvidencePreview({ url, name, size: sizeBytes })}
                             title={name}
-                            className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted hover:bg-accent transition-colors"
+                            className="w-full text-left flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted hover:bg-accent transition-colors"
                           >
                             {image ? <ImageIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
                             <span className="flex-1 truncate font-mono">{name}</span>
                             {size && <span className="text-muted-foreground">{size}</span>}
                             <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                          </a>
+                          </button>
                         );
                       })}
                     </div>
@@ -736,10 +738,10 @@ export function PortalSubmissionDrawer({
                           src={`/api/storage${submission.screenshotUrl}?t=${new Date(submission.updatedAt || submission.submittedAt || "").getTime() || Date.now()}`}
                           alt="Sandbox run screenshot of the filled portal form"
                           className="w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(`/api/storage${submission.screenshotUrl}`, "_blank")}
+                          onClick={() => openEvidencePreview({ url: `/api/storage${submission.screenshotUrl}`, name: "Sandbox screenshot" })}
                         />
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">Click to open full-size in a new tab.</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Click to preview full-size.</p>
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">No sandbox run captured yet. Click <strong>Run sandbox now</strong> to fill the form on the real portal and capture a screenshot — without submitting.</p>
@@ -766,14 +768,16 @@ export function PortalSubmissionDrawer({
                             <div className="font-medium break-words">{log.action}</div>
                             {log.message && <div className="text-[11px] mt-0.5 text-muted-foreground break-words">{log.message}</div>}
                             {log.screenshotPath && log.screenshotPath.startsWith("/objects/") && (
-                              <a
-                                href={`/api/storage${log.screenshotPath}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={() => openEvidencePreview({
+                                  url: `/api/storage${log.screenshotPath}`,
+                                  name: `${log.action} screenshot`,
+                                })}
                                 className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 mt-0.5"
                               >
                                 <ImageIcon className="h-3 w-3" /> View screenshot
-                              </a>
+                              </button>
                             )}
                             <div className="text-[10px] mt-0.5 text-muted-foreground">{log.createdAt ? formatDateTime(log.createdAt) : ""}</div>
                           </div>

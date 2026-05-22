@@ -1,4 +1,5 @@
-import { FileText, ImageIcon, ExternalLink } from "lucide-react";
+import { FileText, ImageIcon } from "lucide-react";
+import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic"];
 
@@ -39,6 +40,7 @@ interface EvidenceFileListProps {
 }
 
 export function EvidenceFileList({ urls, sizeMap }: EvidenceFileListProps) {
+  const { open: openPreview } = useEvidencePreview();
   if (urls.length === 0) {
     return <span className="text-red-500 font-medium">No evidence files</span>;
   }
@@ -52,13 +54,13 @@ export function EvidenceFileList({ urls, sizeMap }: EvidenceFileListProps) {
           const name = fileNameFromUrl(url);
           const image = isImageUrl(url);
           const size = sizeMap?.get(url);
+          const preview = () => openPreview({ url, name, size });
           return (
             <li key={`${url}-${i}`} className="flex items-center gap-2 text-sm">
               {image ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={preview}
                   className="shrink-0"
                   title={name}
                 >
@@ -68,18 +70,17 @@ export function EvidenceFileList({ urls, sizeMap }: EvidenceFileListProps) {
                     className="h-10 w-10 object-cover rounded border bg-muted"
                     loading="lazy"
                   />
-                </a>
+                </button>
               ) : (
                 <div className="h-10 w-10 rounded border bg-muted flex items-center justify-center shrink-0">
                   <FileText className="h-5 w-5 text-muted-foreground" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline truncate flex items-center gap-1 min-w-0"
+                <button
+                  type="button"
+                  onClick={preview}
+                  className="text-primary hover:underline truncate flex items-center gap-1 min-w-0 text-left"
                   title={name}
                 >
                   {image ? (
@@ -88,19 +89,18 @@ export function EvidenceFileList({ urls, sizeMap }: EvidenceFileListProps) {
                     <FileText className="h-3.5 w-3.5 shrink-0" />
                   )}
                   <span className="truncate">{name}</span>
-                </a>
+                </button>
                 {size != null && size > 0 && (
                   <span className="text-[11px] text-muted-foreground">{formatFileSize(size)}</span>
                 )}
               </div>
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={preview}
                 className="text-[11px] text-primary hover:underline shrink-0"
               >
                 View
-              </a>
+              </button>
             </li>
           );
         })}
