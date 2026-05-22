@@ -119,3 +119,15 @@ id = "focWl2TW9MzQ4xhORoumB"
 uri = "file://dist/d2-ledger.tar.gz"
 type = "unspecified"
 title = "D2 Ledger — standalone HTML (tar.gz, contains d2-ledger.html)"
+
+[[outputs]]
+id = "rfB8-iGh4QUTVffT95kX2"
+uri = "file://reports/portal_reconciliation_2026-05-22.md"
+type = "text"
+title = "Portal Reconciliation Report (Markdown)"
+
+[[outputs]]
+id = "k_u8r7Ak3vqRvPVSVIFpz"
+uri = "file://reports/portal_reconciliation_2026-05-22.csv"
+type = "table"
+title = "Per-Invoice Diff (CSV)"
