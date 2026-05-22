@@ -5312,6 +5312,65 @@ export interface GlobalSearchResponse {
   portalSubmissions: GlobalSearchPortalSubmission[];
 }
 
+/**
+ * Primary source row this file came from. When the same file appears on multiple rows the canonical one is reported here and the rest go in `sources`.
+ */
+export type ReplyEvidenceItemSource =
+  (typeof ReplyEvidenceItemSource)[keyof typeof ReplyEvidenceItemSource];
+
+export const ReplyEvidenceItemSource = {
+  group: "group",
+  claim: "claim",
+  portal_submission: "portal_submission",
+} as const;
+
+export type ReplyEvidenceItemSourcesItem =
+  (typeof ReplyEvidenceItemSourcesItem)[keyof typeof ReplyEvidenceItemSourcesItem];
+
+export const ReplyEvidenceItemSourcesItem = {
+  group: "group",
+  claim: "claim",
+  portal_submission: "portal_submission",
+} as const;
+
+/**
+ * A single attachment already on this case, surfaced by
+`GET /invoice-groups/{id}/reply-evidence` so the reply composer
+can re-stage it without re-uploading. The `url` is the object-
+storage path (`/objects/...`); the picker hands it back to
+`POST /storage/reply-attachments/stage-from-evidence`.
+
+ */
+export interface ReplyEvidenceItem {
+  /** Object-storage path (`/objects/...`). */
+  url: string;
+  /** Display filename (falls back to URL basename when the source row had no `name`). */
+  name: string;
+  /**
+   * Bytes, when known from the source row. The stage-from-evidence response carries the authoritative size after copying.
+   * @nullable
+   */
+  size?: number | null;
+  /**
+   * Best-effort MIME guess from the filename extension; the server re-detects on copy.
+   * @nullable
+   */
+  contentType?: string | null;
+  /** Primary source row this file came from. When the same file appears on multiple rows the canonical one is reported here and the rest go in `sources`. */
+  source: ReplyEvidenceItemSource;
+  /** Every source kind that referenced this URL, in stable order. Always contains `source`. */
+  sources: ReplyEvidenceItemSourcesItem[];
+  /**
+   * Set when `source === "claim"` so the picker can label the claim that contributed the file.
+   * @nullable
+   */
+  claimConfNumber?: string | null;
+}
+
+export interface ReplyEvidenceList {
+  items: ReplyEvidenceItem[];
+}
+
 export type GetCurrentAuthUser200 = {
   user: AuthUser | null;
 };
@@ -6252,6 +6311,25 @@ export type StageReplyAttachment200 = {
 
 export type DeleteReplyAttachmentStage200 = {
   ok?: boolean;
+};
+
+export type StageReplyAttachmentFromEvidenceBody = {
+  /** Invoice group whose evidence pool the URL must come from. */
+  groupId: number;
+  /** Object-storage URL (must start with `/objects/`) returned by `listInvoiceGroupReplyEvidence`. */
+  url: string;
+  /**
+   * Display filename. Optional; server falls back to the URL basename.
+   * @nullable
+   */
+  name?: string | null;
+};
+
+export type StageReplyAttachmentFromEvidence200 = {
+  stagedId: string;
+  name: string;
+  contentType: string;
+  size: number;
 };
 
 export type ListEvidenceTypes200 = {

@@ -9550,6 +9550,71 @@ export const AddInvoiceGroupEvidenceBody = zod.object({
 });
 
 /**
+ * Returns the deduplicated set of files already on this case that the
+reply composer can re-stage as outbound attachments — group-level
+`evidenceFiles`, per-claim `evidenceFiles` for every child claim,
+and the most recent portal submission's `evidenceFiles` plus
+`attachment_urls`. Each item carries a `source` ("group" |
+"claim" | "portal_submission") so the picker can group them, and
+a `sources` array when the same file is reachable from multiple
+rows. Only entries whose URL starts with `/objects/` (i.e. live
+in our object storage) are returned — external links are dropped
+so the picker can't surface anything we can't re-upload server-
+side. The companion `POST /storage/reply-attachments/stage-from-evidence`
+endpoint enforces the same membership check before copying bytes.
+
+ * @summary List existing case files available to re-attach on an email reply
+ */
+export const ListInvoiceGroupReplyEvidenceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceGroupReplyEvidenceResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        url: zod.string().describe("Object-storage path (`\/objects\/...`)."),
+        name: zod
+          .string()
+          .describe(
+            "Display filename (falls back to URL basename when the source row had no `name`).",
+          ),
+        size: zod
+          .number()
+          .nullish()
+          .describe(
+            "Bytes, when known from the source row. The stage-from-evidence response carries the authoritative size after copying.",
+          ),
+        contentType: zod
+          .string()
+          .nullish()
+          .describe(
+            "Best-effort MIME guess from the filename extension; the server re-detects on copy.",
+          ),
+        source: zod
+          .enum(["group", "claim", "portal_submission"])
+          .describe(
+            "Primary source row this file came from. When the same file appears on multiple rows the canonical one is reported here and the rest go in `sources`.",
+          ),
+        sources: zod
+          .array(zod.enum(["group", "claim", "portal_submission"]))
+          .describe(
+            "Every source kind that referenced this URL, in stable order. Always contains `source`.",
+          ),
+        claimConfNumber: zod
+          .string()
+          .nullish()
+          .describe(
+            'Set when `source === \"claim\"` so the picker can label the claim that contributed the file.',
+          ),
+      })
+      .describe(
+        "A single attachment already on this case, surfaced by\n`GET \/invoice-groups\/{id}\/reply-evidence` so the reply composer\ncan re-stage it without re-uploading. The `url` is the object-\nstorage path (`\/objects\/...`); the picker hands it back to\n`POST \/storage\/reply-attachments\/stage-from-evidence`.\n",
+      ),
+  ),
+});
+
+/**
  * Pre-submit only. Replaces any existing `groupContext`.
  * @summary Record the operator's group-level context narrative
  */
@@ -31916,6 +31981,35 @@ export const DeleteReplyAttachmentStageParams = zod.object({
 
 export const DeleteReplyAttachmentStageResponse = zod.object({
   ok: zod.boolean().optional(),
+});
+
+/**
+ * Companion to `PUT /storage/reply-attachments/stage`. Instead of uploading bytes, the client passes the storage URL of a file already on the case (returned by `GET /invoice-groups/{id}/reply-evidence`). The server confirms the URL is reachable from that group's evidence rows, copies the bytes into a fresh staging blob, and returns the same `{stagedId, name, contentType, size}` shape the upload endpoint returns. The composer then treats the result like any other staged attachment.
+
+ * @summary Re-stage an existing case attachment for an outbound reply
+ */
+export const StageReplyAttachmentFromEvidenceBody = zod.object({
+  groupId: zod
+    .number()
+    .describe("Invoice group whose evidence pool the URL must come from."),
+  url: zod
+    .string()
+    .describe(
+      "Object-storage URL (must start with `\/objects\/`) returned by `listInvoiceGroupReplyEvidence`.",
+    ),
+  name: zod
+    .string()
+    .nullish()
+    .describe(
+      "Display filename. Optional; server falls back to the URL basename.",
+    ),
+});
+
+export const StageReplyAttachmentFromEvidenceResponse = zod.object({
+  stagedId: zod.string(),
+  name: zod.string(),
+  contentType: zod.string(),
+  size: zod.number(),
 });
 
 /**

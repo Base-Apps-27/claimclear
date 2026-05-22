@@ -2483,6 +2483,7 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                   if (!open) setThreadScrollTargetId(null);
                 }}
                 conversation={latestConversation}
+                groupId={group.id}
                 isSending={replyMutation.isPending}
                 scrollToMessageId={threadScrollTargetId}
                 onReply={async (input) => {

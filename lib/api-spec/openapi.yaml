@@ -1550,6 +1550,40 @@ paths:
   # was removed from the spec — group-level evidence delete was never
   # wired into the detail page. Re-add alongside the UI that calls it.
 
+  /invoice-groups/{id}/reply-evidence:
+    get:
+      operationId: listInvoiceGroupReplyEvidence
+      tags: [invoice-groups]
+      summary: List existing case files available to re-attach on an email reply
+      description: |
+        Returns the deduplicated set of files already on this case that the
+        reply composer can re-stage as outbound attachments — group-level
+        `evidenceFiles`, per-claim `evidenceFiles` for every child claim,
+        and the most recent portal submission's `evidenceFiles` plus
+        `attachment_urls`. Each item carries a `source` ("group" |
+        "claim" | "portal_submission") so the picker can group them, and
+        a `sources` array when the same file is reachable from multiple
+        rows. Only entries whose URL starts with `/objects/` (i.e. live
+        in our object storage) are returned — external links are dropped
+        so the picker can't surface anything we can't re-upload server-
+        side. The companion `POST /storage/reply-attachments/stage-from-evidence`
+        endpoint enforces the same membership check before copying bytes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Existing case attachments grouped by source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplyEvidenceList"
+        "404":
+          description: Invoice group not found.
+
   /invoice-groups/{id}/group-context:
     post:
       operationId: setGroupContext
@@ -4846,6 +4880,59 @@ paths:
           description: Staged upload belongs to a different user.
         '409':
           description: Staged upload was already attached to a sent reply.
+
+  /storage/reply-attachments/stage-from-evidence:
+    post:
+      tags: [Storage]
+      operationId: stageReplyAttachmentFromEvidence
+      summary: Re-stage an existing case attachment for an outbound reply
+      description: >
+        Companion to `PUT /storage/reply-attachments/stage`. Instead of
+        uploading bytes, the client passes the storage URL of a file
+        already on the case (returned by `GET /invoice-groups/{id}/reply-evidence`).
+        The server confirms the URL is reachable from that group's
+        evidence rows, copies the bytes into a fresh staging blob, and
+        returns the same `{stagedId, name, contentType, size}` shape the
+        upload endpoint returns. The composer then treats the result
+        like any other staged attachment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupId, url]
+              properties:
+                groupId:
+                  type: integer
+                  description: Invoice group whose evidence pool the URL must come from.
+                url:
+                  type: string
+                  description: Object-storage URL (must start with `/objects/`) returned by `listInvoiceGroupReplyEvidence`.
+                name:
+                  type: ["string", "null"]
+                  description: Display filename. Optional; server falls back to the URL basename.
+      responses:
+        '200':
+          description: File copied into staging.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stagedId, name, contentType, size]
+                properties:
+                  stagedId: { type: string }
+                  name: { type: string }
+                  contentType: { type: string }
+                  size: { type: integer }
+        '400':
+          description: Invalid url, groupId, or unsupported MIME type for a reply attachment.
+        '403':
+          description: URL is not part of the named invoice group's evidence pool.
+        '404':
+          description: Invoice group not found, or the object no longer exists in storage.
+        '413':
+          description: File exceeds the reply-attachment size cap.
 
   /evidence-types:
     get:
@@ -12266,3 +12353,47 @@ components:
         portalSubmissions:
           type: array
           items: { $ref: "#/components/schemas/GlobalSearchPortalSubmission" }
+
+    ReplyEvidenceItem:
+      type: object
+      required: [url, name, source, sources]
+      description: |
+        A single attachment already on this case, surfaced by
+        `GET /invoice-groups/{id}/reply-evidence` so the reply composer
+        can re-stage it without re-uploading. The `url` is the object-
+        storage path (`/objects/...`); the picker hands it back to
+        `POST /storage/reply-attachments/stage-from-evidence`.
+      properties:
+        url:
+          type: string
+          description: Object-storage path (`/objects/...`).
+        name:
+          type: string
+          description: Display filename (falls back to URL basename when the source row had no `name`).
+        size:
+          type: ["number", "null"]
+          description: Bytes, when known from the source row. The stage-from-evidence response carries the authoritative size after copying.
+        contentType:
+          type: ["string", "null"]
+          description: Best-effort MIME guess from the filename extension; the server re-detects on copy.
+        source:
+          type: string
+          enum: [group, claim, portal_submission]
+          description: Primary source row this file came from. When the same file appears on multiple rows the canonical one is reported here and the rest go in `sources`.
+        sources:
+          type: array
+          items:
+            type: string
+            enum: [group, claim, portal_submission]
+          description: Every source kind that referenced this URL, in stable order. Always contains `source`.
+        claimConfNumber:
+          type: ["string", "null"]
+          description: Set when `source === "claim"` so the picker can label the claim that contributed the file.
+
+    ReplyEvidenceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReplyEvidenceItem" }

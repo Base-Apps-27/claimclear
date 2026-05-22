@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
-import { useUpgradeReplyDraft } from "@workspace/api-client-react";
+import {
+  useUpgradeReplyDraft,
+  useListInvoiceGroupReplyEvidence,
+  getListInvoiceGroupReplyEvidenceQueryKey,
+} from "@workspace/api-client-react";
+import type { ReplyEvidenceItem } from "@workspace/api-client-react";
 import {
   MAX_REPLY_ATTACHMENT_FILES,
   MAX_REPLY_ATTACHMENT_IMAGES,
@@ -17,6 +22,7 @@ import {
   Reply,
   Inbox,
   Paperclip,
+  FolderOpen,
   Send,
   Clock,
   Sparkles,
@@ -40,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateTime } from "@/lib/format";
 import { RichTextEditor } from "./rich-text-editor";
 import { extractClipboardFiles } from "@/components/decision-tree/evidence-paste";
@@ -104,6 +116,14 @@ export interface GroupConversation {
 interface Props {
   conversations: GroupConversation[];
   groupInvoiceNumber: string;
+  /**
+   * Invoice group id — when provided, the reply composer's "Attach
+   * from this case" picker is enabled (lists group/claim/portal-
+   * submission evidence already in storage so the operator can
+   * re-stage those files without re-uploading). Both consumer pages
+   * pass this through; omitting it just hides the picker button.
+   */
+  groupId?: number;
   isSyncing?: boolean;
   isSending?: boolean;
   onSyncInbox?: () => void;
@@ -149,6 +169,7 @@ const STATUS_META: Record<
 export function GroupCommunicationThread({
   conversations,
   groupInvoiceNumber,
+  groupId,
   isSyncing,
   isSending,
   onSyncInbox,
@@ -179,6 +200,7 @@ export function GroupCommunicationThread({
           <ConversationSection
             key={conv.conversationId}
             conversation={conv}
+            groupId={groupId}
             isSending={isSending}
             onReply={onReply}
             needsReply={needsReply}
@@ -250,11 +272,13 @@ export function GroupCommunicationThread({
 
 function ConversationSection({
   conversation,
+  groupId,
   isSending,
   onReply,
   needsReply,
 }: {
   conversation: GroupConversation;
+  groupId?: number;
   isSending?: boolean;
   onReply?: Props["onReply"];
   needsReply: boolean;
@@ -345,6 +369,7 @@ function ConversationSection({
                 open={replyOpen}
                 onOpenChange={setReplyOpen}
                 conversation={conversation}
+                groupId={groupId}
                 isSending={isSending}
                 onReply={onReply}
               />
@@ -372,6 +397,7 @@ export function GroupCommunicationReplyDialog({
   open,
   onOpenChange,
   conversation,
+  groupId,
   isSending,
   onReply,
   scrollToMessageId,
@@ -379,6 +405,8 @@ export function GroupCommunicationReplyDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversation: GroupConversation;
+  /** Invoice group id — enables the composer's "Attach from this case" picker. */
+  groupId?: number;
   isSending?: boolean;
   onReply: NonNullable<Props["onReply"]>;
   scrollToMessageId?: string | null;
@@ -459,6 +487,7 @@ export function GroupCommunicationReplyDialog({
         <div className="shrink-0 overflow-y-auto max-h-[55vh]">
           <ReplyComposer
             conversationId={conversation.conversationId}
+            groupId={groupId}
             defaultTo={lastInbound?.senderEmail ?? ""}
             defaultSubject={`Re: ${conversation.subject.replace(/^re:\s*/i, "")}`}
             isSending={isSending}
@@ -619,6 +648,162 @@ interface ReplyChip {
   stagedId: string | null;
   /** Friendly error message for the chip's tooltip when status === "error". */
   errorMessage: string | null;
+  /** When the chip was re-staged from an existing case file, the source
+   *  evidence URL. Used to (a) badge the chip as "From case" and (b)
+   *  hide the same URL from the picker so the operator can't double-
+   *  add it without first removing the chip. */
+  sourceUrl?: string;
+}
+
+/**
+ * Inline "Attach from this case" picker, rendered inside the composer's
+ * Popover. Lists every storage-backed file already on the case grouped
+ * by source (group evidence, per-claim, last portal submission) and
+ * lets the operator multi-select before clicking "Add selected" to
+ * stage them as reply attachments.
+ *
+ * The composer owns selection state so checkboxes survive the
+ * popover-close round-trip if we ever want it (today we clear on close
+ * for a clean reopen — the operator can just re-pick).
+ */
+function CaseEvidencePicker({
+  isLoading,
+  isError,
+  items,
+  alreadyAttachedUrls,
+  selection,
+  onToggle,
+  onCancel,
+  onConfirm,
+}: {
+  isLoading: boolean;
+  isError: boolean;
+  items: ReplyEvidenceItem[];
+  alreadyAttachedUrls: Set<string>;
+  selection: Set<string>;
+  onToggle: (url: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const groups = useMemo(() => {
+    const buckets: Record<
+      ReplyEvidenceItem["source"],
+      ReplyEvidenceItem[]
+    > = { group: [], claim: [], portal_submission: [] };
+    for (const it of items) buckets[it.source].push(it);
+    return buckets;
+  }, [items]);
+
+  const sectionLabels: Record<ReplyEvidenceItem["source"], string> = {
+    group: "Group evidence",
+    claim: "Claim evidence",
+    portal_submission: "Last portal submission",
+  };
+
+  const totalSelectable = items.filter(
+    (it) => !alreadyAttachedUrls.has(it.url),
+  ).length;
+
+  return (
+    <div className="flex flex-col h-full max-h-[60vh]">
+      <div className="px-3 py-2 border-b shrink-0">
+        <div className="text-sm font-semibold">Attach from this case</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5">
+          Pick files already on this case to re-attach to your reply.
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-1 py-1 min-h-[80px]">
+        {isLoading ? (
+          <div className="px-3 py-6 text-xs text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading case files…
+          </div>
+        ) : isError ? (
+          <div className="px-3 py-6 text-xs text-destructive">
+            Couldn't load files for this case. Close and reopen to retry.
+          </div>
+        ) : items.length === 0 ? (
+          <div className="px-3 py-6 text-xs text-muted-foreground">
+            No files on this case yet — upload via the regular Attach
+            files button.
+          </div>
+        ) : (
+          (["group", "claim", "portal_submission"] as const).map((src) => {
+            const list = groups[src];
+            if (list.length === 0) return null;
+            return (
+              <div key={src} className="mb-1">
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
+                  {sectionLabels[src]}
+                </div>
+                <ul>
+                  {list.map((it) => {
+                    const isAttached = alreadyAttachedUrls.has(it.url);
+                    const isChecked = selection.has(it.url);
+                    const isImage = (it.contentType || "").startsWith("image/");
+                    return (
+                      <li
+                        key={it.url}
+                        className={`px-2 py-1.5 rounded flex items-start gap-2 ${
+                          isAttached ? "opacity-50" : "hover:bg-muted/50"
+                        }`}
+                        data-testid={`group-thread-attach-from-case-row`}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          disabled={isAttached}
+                          onCheckedChange={() => onToggle(it.url)}
+                          aria-label={`Select ${it.name}`}
+                        />
+                        <div className="flex-shrink-0 mt-0.5">
+                          {isImage ? (
+                            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : (
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs truncate" title={it.name}>
+                            {it.name}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                            {it.size != null && (
+                              <span>{formatBytes(it.size)}</span>
+                            )}
+                            {it.source === "claim" && it.claimConfNumber && (
+                              <span>· {it.claimConfNumber}</span>
+                            )}
+                            {isAttached && <span>· already attached</span>}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="px-3 py-2 border-t flex items-center justify-between gap-2 shrink-0">
+        <span className="text-[11px] text-muted-foreground">
+          {selection.size} of {totalSelectable} selected
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={onConfirm}
+            disabled={selection.size === 0}
+            data-testid="group-thread-attach-from-case-confirm"
+          >
+            Add selected
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -629,6 +814,7 @@ function formatBytes(bytes: number): string {
 
 function ReplyComposer({
   conversationId,
+  groupId,
   defaultTo,
   defaultSubject,
   isSending,
@@ -636,6 +822,8 @@ function ReplyComposer({
   onCancel,
 }: {
   conversationId: string;
+  /** Invoice group id — enables the "Attach from this case" picker. */
+  groupId?: number;
   defaultTo: string;
   defaultSubject: string;
   isSending?: boolean;
@@ -656,7 +844,24 @@ function ReplyComposer({
   const [error, setError] = useState<string | null>(null);
   const [chips, setChips] = useState<ReplyChip[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSelection, setPickerSelection] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Lazy-fetch the case-evidence list — only after the operator first
+  // opens the picker. Saves one query per opened thread on the
+  // common case where they only attach fresh uploads (or don't attach
+  // anything at all).
+  const evidenceQuery = useListInvoiceGroupReplyEvidence(
+    groupId ?? 0,
+    {
+      query: {
+        queryKey: getListInvoiceGroupReplyEvidenceQueryKey(groupId ?? 0),
+        enabled: pickerOpen && groupId != null,
+        staleTime: 30_000,
+      },
+    },
+  );
   // Stable id generator for chips. `crypto.randomUUID` isn't available in
   // every preview / iframe sandbox, so we fall back to a counter.
   const chipIdCounter = useRef(0);
@@ -821,6 +1026,141 @@ function ReplyComposer({
       });
     },
     [chips.length, imageCount, totalBytes, nextChipId],
+  );
+
+  /**
+   * Re-stage existing case files (from the "Attach from this case"
+   * picker). Each picked item is POSTed to
+   * `/api/storage/reply-attachments/stage-from-evidence`; the server
+   * runs the same membership check the picker GET used, copies the
+   * bytes into a fresh staging blob, and returns the same
+   * `{stagedId,name,contentType,size}` shape as a fresh upload — so
+   * the chip pipeline below is identical to the upload path.
+   *
+   * Same per-reply caps apply (10 files, 5 images, 25 MB combined);
+   * anything that would overflow is skipped with an inline message
+   * instead of partially adding.
+   */
+  const ingestEvidenceUrls = useCallback(
+    (picked: ReplyEvidenceItem[]) => {
+      if (picked.length === 0 || groupId == null) return;
+
+      const accepted: ReplyEvidenceItem[] = [];
+      let runningCount = chips.length;
+      let runningImages = imageCount;
+      let runningBytes = totalBytes;
+      const rejections: string[] = [];
+
+      for (const item of picked) {
+        if (runningCount >= MAX_REPLY_ATTACHMENT_FILES) {
+          rejections.push(
+            `Skipped "${item.name}" — max ${MAX_REPLY_ATTACHMENT_FILES} attachments per reply.`,
+          );
+          continue;
+        }
+        // `contentType` from the picker is a filename-based guess; the
+        // server re-detects from storage. We still use it for the cap
+        // check so an obviously-disallowed file gets a friendly skip
+        // message instead of a backend 400.
+        const ct = (item.contentType || "").toLowerCase();
+        if (ct && !REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(ct)) {
+          rejections.push(
+            `Skipped "${item.name}" — only PNG, JPG, GIF, WebP, and PDF can be re-attached.`,
+          );
+          continue;
+        }
+        const isImage = ct ? REPLY_ATTACHMENT_IMAGE_MIME_SET.has(ct) : false;
+        if (isImage && runningImages >= MAX_REPLY_ATTACHMENT_IMAGES) {
+          rejections.push(
+            `Skipped "${item.name}" — max ${MAX_REPLY_ATTACHMENT_IMAGES} image attachments per reply.`,
+          );
+          continue;
+        }
+        const sz = typeof item.size === "number" ? item.size : 0;
+        if (sz > 0 && runningBytes + sz > REPLY_ATTACHMENT_TOTAL_BYTES) {
+          rejections.push(
+            `Skipped "${item.name}" — total size would exceed ${formatBytes(REPLY_ATTACHMENT_TOTAL_BYTES)}.`,
+          );
+          continue;
+        }
+        accepted.push(item);
+        runningCount += 1;
+        runningBytes += sz;
+        if (isImage) runningImages += 1;
+      }
+
+      if (rejections.length > 0) setError(rejections.join(" "));
+      else setError(null);
+
+      if (accepted.length === 0) return;
+
+      const newChips: ReplyChip[] = accepted.map((item) => ({
+        id: nextChipId(),
+        name: item.name,
+        size: typeof item.size === "number" ? item.size : 0,
+        contentType: item.contentType || "application/octet-stream",
+        status: "uploading" as const,
+        progress: 30,
+        stagedId: null,
+        errorMessage: null,
+        sourceUrl: item.url,
+      }));
+      setChips((prev) => [...prev, ...newChips]);
+
+      newChips.forEach(async (chip, idx) => {
+        const item = accepted[idx];
+        try {
+          const resp = await fetch(
+            "/api/storage/reply-attachments/stage-from-evidence",
+            {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                groupId,
+                url: item.url,
+                name: item.name,
+              }),
+            },
+          );
+          if (!resp.ok) {
+            const body = (await resp.json().catch(() => ({}))) as { error?: string };
+            throw new Error(body.error || `Re-stage failed (${resp.status})`);
+          }
+          const data = (await resp.json()) as {
+            stagedId: string;
+            size: number;
+            contentType: string;
+            name: string;
+          };
+          setChips((prev) =>
+            prev.map((c) =>
+              c.id === chip.id
+                ? {
+                    ...c,
+                    status: "ready",
+                    progress: 100,
+                    stagedId: data.stagedId,
+                    size: data.size || c.size,
+                    contentType: data.contentType || c.contentType,
+                    name: data.name || c.name,
+                  }
+                : c,
+            ),
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Re-stage failed";
+          setChips((prev) =>
+            prev.map((c) =>
+              c.id === chip.id
+                ? { ...c, status: "error", progress: 0, errorMessage: message }
+                : c,
+            ),
+          );
+        }
+      });
+    },
+    [chips.length, imageCount, totalBytes, nextChipId, groupId],
   );
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1056,6 +1396,70 @@ function ReplyComposer({
           >
             <Paperclip className="h-3 w-3 mr-1" /> Attach files
           </Button>
+          {groupId != null && (
+            <Popover
+              open={pickerOpen}
+              onOpenChange={(open) => {
+                setPickerOpen(open);
+                if (!open) setPickerSelection(new Set());
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    isSending ||
+                    chips.length >= MAX_REPLY_ATTACHMENT_FILES ||
+                    totalBytes >= REPLY_ATTACHMENT_TOTAL_BYTES
+                  }
+                  data-testid="group-thread-attach-from-case-button"
+                >
+                  <FolderOpen className="h-3 w-3 mr-1" /> Attach from this case
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-[28rem] max-h-[60vh] p-0 flex flex-col"
+                data-testid="group-thread-attach-from-case-panel"
+              >
+                <CaseEvidencePicker
+                  isLoading={evidenceQuery.isPending}
+                  isError={!!evidenceQuery.error}
+                  items={evidenceQuery.data?.items ?? []}
+                  alreadyAttachedUrls={
+                    new Set(
+                      chips
+                        .map((c) => c.sourceUrl)
+                        .filter((u): u is string => !!u),
+                    )
+                  }
+                  selection={pickerSelection}
+                  onToggle={(url) => {
+                    setPickerSelection((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(url)) next.delete(url);
+                      else next.add(url);
+                      return next;
+                    });
+                  }}
+                  onCancel={() => {
+                    setPickerOpen(false);
+                    setPickerSelection(new Set());
+                  }}
+                  onConfirm={() => {
+                    const items = (evidenceQuery.data?.items ?? []).filter(
+                      (it) => pickerSelection.has(it.url),
+                    );
+                    setPickerOpen(false);
+                    setPickerSelection(new Set());
+                    ingestEvidenceUrls(items);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+          )}
           <span className="text-muted-foreground">
             {chips.length} / {MAX_REPLY_ATTACHMENT_FILES} files · {imageCount} /{" "}
             {MAX_REPLY_ATTACHMENT_IMAGES} images ·{" "}

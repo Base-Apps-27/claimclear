@@ -187,6 +187,7 @@ import type {
   RecordPortalResponse200,
   RecordPortalResponseBody,
   RecordVerdictBody,
+  ReplyEvidenceList,
   ReplyToEmailConversation400,
   ReplyToEmailConversation404,
   ReplyToEmailConversation502,
@@ -215,6 +216,8 @@ import type {
   SopRewindDraftConflictResponse,
   SopRewindImpactResponse,
   StageReplyAttachment200,
+  StageReplyAttachmentFromEvidence200,
+  StageReplyAttachmentFromEvidenceBody,
   StateConflictResponse,
   SuccessResponse,
   SystemHealthRollupResponse,
@@ -3423,6 +3426,114 @@ export const useAddInvoiceGroupEvidence = <
 > => {
   return useMutation(getAddInvoiceGroupEvidenceMutationOptions(options));
 };
+
+/**
+ * Returns the deduplicated set of files already on this case that the
+reply composer can re-stage as outbound attachments — group-level
+`evidenceFiles`, per-claim `evidenceFiles` for every child claim,
+and the most recent portal submission's `evidenceFiles` plus
+`attachment_urls`. Each item carries a `source` ("group" |
+"claim" | "portal_submission") so the picker can group them, and
+a `sources` array when the same file is reachable from multiple
+rows. Only entries whose URL starts with `/objects/` (i.e. live
+in our object storage) are returned — external links are dropped
+so the picker can't surface anything we can't re-upload server-
+side. The companion `POST /storage/reply-attachments/stage-from-evidence`
+endpoint enforces the same membership check before copying bytes.
+
+ * @summary List existing case files available to re-attach on an email reply
+ */
+export const getListInvoiceGroupReplyEvidenceUrl = (id: number) => {
+  return `/api/invoice-groups/${id}/reply-evidence`;
+};
+
+export const listInvoiceGroupReplyEvidence = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ReplyEvidenceList> => {
+  return customFetch<ReplyEvidenceList>(
+    getListInvoiceGroupReplyEvidenceUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListInvoiceGroupReplyEvidenceQueryKey = (id: number) => {
+  return [`/api/invoice-groups/${id}/reply-evidence`] as const;
+};
+
+export const getListInvoiceGroupReplyEvidenceQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceGroupReplyEvidenceQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>
+  > = ({ signal }) =>
+    listInvoiceGroupReplyEvidence(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceGroupReplyEvidenceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>
+>;
+export type ListInvoiceGroupReplyEvidenceQueryError = ErrorType<void>;
+
+/**
+ * @summary List existing case files available to re-attach on an email reply
+ */
+
+export function useListInvoiceGroupReplyEvidence<
+  TData = Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceGroupReplyEvidence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceGroupReplyEvidenceQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Pre-submit only. Replaces any existing `groupContext`.
@@ -13619,6 +13730,100 @@ export const useDeleteReplyAttachmentStage = <
   TContext
 > => {
   return useMutation(getDeleteReplyAttachmentStageMutationOptions(options));
+};
+
+/**
+ * Companion to `PUT /storage/reply-attachments/stage`. Instead of uploading bytes, the client passes the storage URL of a file already on the case (returned by `GET /invoice-groups/{id}/reply-evidence`). The server confirms the URL is reachable from that group's evidence rows, copies the bytes into a fresh staging blob, and returns the same `{stagedId, name, contentType, size}` shape the upload endpoint returns. The composer then treats the result like any other staged attachment.
+
+ * @summary Re-stage an existing case attachment for an outbound reply
+ */
+export const getStageReplyAttachmentFromEvidenceUrl = () => {
+  return `/api/storage/reply-attachments/stage-from-evidence`;
+};
+
+export const stageReplyAttachmentFromEvidence = async (
+  stageReplyAttachmentFromEvidenceBody: StageReplyAttachmentFromEvidenceBody,
+  options?: RequestInit,
+): Promise<StageReplyAttachmentFromEvidence200> => {
+  return customFetch<StageReplyAttachmentFromEvidence200>(
+    getStageReplyAttachmentFromEvidenceUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(stageReplyAttachmentFromEvidenceBody),
+    },
+  );
+};
+
+export const getStageReplyAttachmentFromEvidenceMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>,
+    TError,
+    { data: BodyType<StageReplyAttachmentFromEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>,
+  TError,
+  { data: BodyType<StageReplyAttachmentFromEvidenceBody> },
+  TContext
+> => {
+  const mutationKey = ["stageReplyAttachmentFromEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>,
+    { data: BodyType<StageReplyAttachmentFromEvidenceBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return stageReplyAttachmentFromEvidence(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StageReplyAttachmentFromEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>
+>;
+export type StageReplyAttachmentFromEvidenceMutationBody =
+  BodyType<StageReplyAttachmentFromEvidenceBody>;
+export type StageReplyAttachmentFromEvidenceMutationError = ErrorType<void>;
+
+/**
+ * @summary Re-stage an existing case attachment for an outbound reply
+ */
+export const useStageReplyAttachmentFromEvidence = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>,
+    TError,
+    { data: BodyType<StageReplyAttachmentFromEvidenceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stageReplyAttachmentFromEvidence>>,
+  TError,
+  { data: BodyType<StageReplyAttachmentFromEvidenceBody> },
+  TContext
+> => {
+  return useMutation(
+    getStageReplyAttachmentFromEvidenceMutationOptions(options),
+  );
 };
 
 /**

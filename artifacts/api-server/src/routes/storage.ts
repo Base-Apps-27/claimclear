@@ -8,10 +8,12 @@ import {
   REPLY_ATTACHMENT_ALLOWED_MIME_SET,
   REPLY_ATTACHMENT_TOTAL_BYTES,
 } from "@workspace/api-zod";
-import { db, replyAttachmentStagingTable } from "@workspace/db";
+import { db, invoiceGroupsTable, replyAttachmentStagingTable } from "@workspace/db";
+import { Readable as NodeReadable } from "stream";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 import { asyncHandler } from "../lib/asyncHandler";
+import { collectGroupReplyEvidence } from "../lib/reply-evidence";
 
 const SAFE_SERVE_CONTENT_TYPES = new Set([
   "image/png",
@@ -343,6 +345,185 @@ router.delete(
       );
 
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * POST /storage/reply-attachments/stage-from-evidence
+ *
+ * Companion to the upload-bytes staging endpoint above. The reply
+ * composer's "Attach from this case" picker calls this with one of the
+ * URLs returned by `GET /invoice-groups/:id/reply-evidence`. We re-run
+ * the same membership check via `collectGroupReplyEvidence` (single
+ * source of truth — never trust the client to tell us a URL belongs to
+ * a group), copy the bytes into a fresh staging object, and insert a
+ * `reply_attachment_staging` row pinned to the calling user. The
+ * resulting `stagedId` is interchangeable with one returned by the
+ * upload endpoint, so the send-reply path needs zero special-casing.
+ */
+router.post(
+  "/storage/reply-attachments/stage-from-evidence",
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const body = (req.body ?? {}) as {
+      groupId?: unknown;
+      url?: unknown;
+      name?: unknown;
+    };
+    const groupId =
+      typeof body.groupId === "number" && Number.isFinite(body.groupId)
+        ? body.groupId
+        : NaN;
+    const rawUrl = typeof body.url === "string" ? body.url.trim() : "";
+    if (!Number.isInteger(groupId) || groupId <= 0) {
+      res.status(400).json({ error: "groupId must be a positive integer" });
+      return;
+    }
+    if (!rawUrl || !rawUrl.startsWith("/objects/")) {
+      res
+        .status(400)
+        .json({ error: "url must be an object-storage path starting with /objects/" });
+      return;
+    }
+
+    // Confirm the group exists first so a missing group surfaces as
+    // 404 (matching `GET /invoice-groups/:id/reply-evidence`) instead
+    // of getting swallowed into the empty-evidence 403 below.
+    const [groupRow] = await db
+      .select({ id: invoiceGroupsTable.id })
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, groupId))
+      .limit(1);
+    if (!groupRow) {
+      res.status(404).json({ error: "Invoice group not found" });
+      return;
+    }
+
+    // Membership check — same join the picker uses. If the URL isn't
+    // in the group's evidence pool we 403 rather than silently copying
+    // an arbitrary storage object the operator happened to know about.
+    const evidence = await collectGroupReplyEvidence(groupId);
+    const match = evidence.find((e) => e.url === rawUrl);
+    if (!match) {
+      res
+        .status(403)
+        .json({ error: "URL is not part of this group's evidence pool" });
+      return;
+    }
+
+    // Open the source object. If it's gone (operator deleted it from
+    // storage between the picker fetch and the click), surface a 404 —
+    // the picker can refresh and try again.
+    let sourceFile;
+    try {
+      sourceFile = await objectStorageService.getObjectEntityFile(rawUrl);
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "Source attachment no longer exists" });
+        return;
+      }
+      req.log.error({ err, rawUrl }, "Failed to open source attachment");
+      res.status(500).json({ error: "Failed to read source attachment" });
+      return;
+    }
+
+    // Trust storage's recorded content-type over the picker's filename
+    // guess. Reject anything outside the reply-attachment allowlist
+    // before we waste bytes copying it.
+    const [sourceMeta] = await sourceFile.getMetadata();
+    const sourceContentType = (
+      (typeof sourceMeta.contentType === "string" ? sourceMeta.contentType : "") ||
+      match.contentType ||
+      ""
+    )
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!REPLY_ATTACHMENT_ALLOWED_MIME_SET.has(sourceContentType)) {
+      res.status(400).json({
+        error:
+          "Source attachment is not a supported reply-attachment type (PNG, JPG, GIF, WebP, PDF, CSV, or Excel).",
+      });
+      return;
+    }
+    const sourceSize =
+      typeof sourceMeta.size === "number"
+        ? sourceMeta.size
+        : Number(sourceMeta.size ?? 0);
+    if (
+      Number.isFinite(sourceSize) &&
+      sourceSize > REPLY_ATTACHMENT_TOTAL_BYTES
+    ) {
+      res.status(413).json({
+        error: `File size exceeds maximum allowed size of ${REPLY_ATTACHMENT_TOTAL_BYTES} bytes`,
+      });
+      return;
+    }
+
+    // Stream-copy into a fresh staging blob via the existing helper —
+    // re-uses the byte-cap guard so a corrupt content-length header on
+    // the source can't bypass the reply cap.
+    const sourceStream = sourceFile.createReadStream();
+    let storageKey: string;
+    try {
+      storageKey = await objectStorageService.uploadStream(
+        sourceStream as unknown as NodeReadable,
+        sourceContentType,
+        REPLY_ATTACHMENT_TOTAL_BYTES,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("exceeds maximum allowed size")) {
+        res.status(413).json({ error: msg });
+        return;
+      }
+      req.log.error({ err: error, rawUrl }, "Failed to copy evidence into staging");
+      res.status(500).json({ error: "Failed to copy attachment" });
+      return;
+    }
+
+    // Re-stat the new object so we record the bytes actually written.
+    let actualSize = 0;
+    try {
+      const file = await objectStorageService.getObjectEntityFile(storageKey);
+      const [meta] = await file.getMetadata();
+      actualSize =
+        typeof meta.size === "number" ? meta.size : Number(meta.size ?? 0);
+    } catch (err) {
+      req.log.error({ err, storageKey }, "Could not re-stat copied staging object");
+      await objectStorageService.tryDeleteObjectEntity(storageKey);
+      res.status(500).json({ error: "Failed to record copied attachment" });
+      return;
+    }
+
+    const rawName =
+      typeof body.name === "string" && body.name.trim().length > 0
+        ? body.name.trim()
+        : match.name;
+    const fileName = rawName.slice(0, 255);
+
+    const stagedId = randomUUID();
+    try {
+      await db.insert(replyAttachmentStagingTable).values({
+        id: stagedId,
+        userEmail: req.user?.email ?? null,
+        storageKey,
+        fileName,
+        contentType: sourceContentType,
+        sizeBytes: actualSize,
+      });
+    } catch (err) {
+      req.log.error({ err, storageKey }, "Failed to insert staging row for copy");
+      await objectStorageService.tryDeleteObjectEntity(storageKey);
+      res.status(500).json({ error: "Failed to record copied attachment" });
+      return;
+    }
+
+    res.json({
+      stagedId,
+      name: fileName,
+      contentType: sourceContentType,
+      size: actualSize,
+    });
   }),
 );
 

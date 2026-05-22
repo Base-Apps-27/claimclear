@@ -20,6 +20,7 @@ import { computeAttestationDelta } from "../lib/attestation";
 import { applyMasDerivationsForLeg } from "../lib/mas-derivations";
 import { setClaimDisposition, sopOutcomeToDisposition } from "../lib/leg-state/set-claim-disposition";
 import { asyncHandler } from "../lib/asyncHandler";
+import { collectGroupReplyEvidence } from "../lib/reply-evidence";
 import { logger } from "../lib/logger";
 import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
 import { blockMutationOnTourSampleGroup } from "../lib/tour-sample";
@@ -2661,6 +2662,39 @@ router.post("/invoice-groups/:id/evidence", asyncHandler(async (req, res): Promi
   emitGroupEvent(id, "group_evidence_added", req);
   res.status(201).json(created);
 }));
+
+/**
+ * GET /invoice-groups/:id/reply-evidence
+ *
+ * Returns the deduplicated set of storage-backed files already on this
+ * case (group `evidenceFiles`, child-claim `evidenceFiles`, latest
+ * portal submission's `evidenceFiles` + `attachment_urls`) so the
+ * reply composer's "Attach from this case" picker can list them. The
+ * heavy lifting lives in `collectGroupReplyEvidence` so the
+ * `stage-from-evidence` route can reuse the exact same membership rule
+ * when validating a re-stage request.
+ */
+router.get(
+  "/invoice-groups/:id/reply-evidence",
+  asyncHandler(async (req, res): Promise<void> => {
+    const id = parseId(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const [exists] = await db
+      .select({ id: invoiceGroupsTable.id })
+      .from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, id))
+      .limit(1);
+    if (!exists) {
+      res.status(404).json({ error: "Invoice group not found" });
+      return;
+    }
+    const items = await collectGroupReplyEvidence(id);
+    res.json({ items });
+  }),
+);
 
 // Task #411 audit, Tier 5: `DELETE /invoice-groups/:id/evidence/:evidenceId`
 // and `DELETE /invoice-groups/:id` were removed — neither had any UI caller

@@ -2021,6 +2021,7 @@ function DetailPane({ group, onAfterVerdict, restoreScrollY }: DetailPaneProps) 
           <GroupCommunicationThread
             conversations={conversations}
             groupInvoiceNumber={group.invoiceNumber || `#${group.id}`}
+            groupId={group.id}
             isSending={replyMutation.isPending}
             onReply={async (input) => {
               try {
