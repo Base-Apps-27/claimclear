@@ -56,14 +56,19 @@ import type {
   BulkAssignErrorTypeBody,
   BulkAssignInvoiceGroupErrorTypeBody,
   BulkAssignResult,
+  BulkClaimsDryRunResult,
   BulkCloseInvoiceGroupsBody,
   BulkCloseResult,
+  BulkExcludeClaimsDryRunBody,
   BulkGenerateAndReviewInvoiceGroupsBody,
   BulkGenerateAndReviewResult,
   BulkQueueGroupReattestBody,
   BulkQueueGroupReattestResponse,
+  BulkReattestDryRunResult,
   BulkReattestInvoiceGroupsBody,
+  BulkReattestInvoiceGroupsDryRunBody,
   BulkReattestResult,
+  BulkReclassifyClaimsDryRunBody,
   BulkSopAdvanceBody,
   BulkSopAdvanceResponse,
   BulkSubmitInvoiceGroupsToPortalBody,
@@ -2615,6 +2620,293 @@ export const useBulkApproveInvoiceGroupsPreflight = <
   return useMutation(
     getBulkApproveInvoiceGroupsPreflightMutationOptions(options),
   );
+};
+
+/**
+ * Read-only companion to `POST /invoice-groups/bulk-reattest`.
+Evaluates the same per-row gates (not_found, tour_sample,
+terminal_phase, has_disputable_legs, no_survivors,
+no_eligible_legs) without writing anything, so the confirm
+dialog can preview eligible vs skipped before the operator
+commits. On commit the client sends only the eligible ids back
+into the real endpoint so the preview's count and the run's
+outcome match exactly (Task #840).
+
+ * @summary Preflight (read-only) the bulk-reattest eligibility set
+ */
+export const getBulkReattestInvoiceGroupsDryRunUrl = () => {
+  return `/api/invoice-groups/bulk-reattest/dry-run`;
+};
+
+export const bulkReattestInvoiceGroupsDryRun = async (
+  bulkReattestInvoiceGroupsDryRunBody: BulkReattestInvoiceGroupsDryRunBody,
+  options?: RequestInit,
+): Promise<BulkReattestDryRunResult> => {
+  return customFetch<BulkReattestDryRunResult>(
+    getBulkReattestInvoiceGroupsDryRunUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkReattestInvoiceGroupsDryRunBody),
+    },
+  );
+};
+
+export const getBulkReattestInvoiceGroupsDryRunMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>,
+    TError,
+    { data: BodyType<BulkReattestInvoiceGroupsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>,
+  TError,
+  { data: BodyType<BulkReattestInvoiceGroupsDryRunBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkReattestInvoiceGroupsDryRun"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>,
+    { data: BodyType<BulkReattestInvoiceGroupsDryRunBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkReattestInvoiceGroupsDryRun(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkReattestInvoiceGroupsDryRunMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>
+>;
+export type BulkReattestInvoiceGroupsDryRunMutationBody =
+  BodyType<BulkReattestInvoiceGroupsDryRunBody>;
+export type BulkReattestInvoiceGroupsDryRunMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Preflight (read-only) the bulk-reattest eligibility set
+ */
+export const useBulkReattestInvoiceGroupsDryRun = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>,
+    TError,
+    { data: BodyType<BulkReattestInvoiceGroupsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkReattestInvoiceGroupsDryRun>>,
+  TError,
+  { data: BodyType<BulkReattestInvoiceGroupsDryRunBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkReattestInvoiceGroupsDryRunMutationOptions(options),
+  );
+};
+
+/**
+ * Read-only preview for the "mark all as no-issue" bulk action on
+the Needs-Review queue panel. Mirrors POST /claims/:id/exclude's
+per-row gates without writing anything (Task #840).
+
+ * @summary Preflight (read-only) the bulk-exclude eligibility set
+ */
+export const getBulkExcludeClaimsDryRunUrl = () => {
+  return `/api/claims/bulk-exclude/dry-run`;
+};
+
+export const bulkExcludeClaimsDryRun = async (
+  bulkExcludeClaimsDryRunBody: BulkExcludeClaimsDryRunBody,
+  options?: RequestInit,
+): Promise<BulkClaimsDryRunResult> => {
+  return customFetch<BulkClaimsDryRunResult>(getBulkExcludeClaimsDryRunUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(bulkExcludeClaimsDryRunBody),
+  });
+};
+
+export const getBulkExcludeClaimsDryRunMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>,
+    TError,
+    { data: BodyType<BulkExcludeClaimsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>,
+  TError,
+  { data: BodyType<BulkExcludeClaimsDryRunBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkExcludeClaimsDryRun"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>,
+    { data: BodyType<BulkExcludeClaimsDryRunBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkExcludeClaimsDryRun(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkExcludeClaimsDryRunMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>
+>;
+export type BulkExcludeClaimsDryRunMutationBody =
+  BodyType<BulkExcludeClaimsDryRunBody>;
+export type BulkExcludeClaimsDryRunMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Preflight (read-only) the bulk-exclude eligibility set
+ */
+export const useBulkExcludeClaimsDryRun = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>,
+    TError,
+    { data: BodyType<BulkExcludeClaimsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkExcludeClaimsDryRun>>,
+  TError,
+  { data: BodyType<BulkExcludeClaimsDryRunBody> },
+  TContext
+> => {
+  return useMutation(getBulkExcludeClaimsDryRunMutationOptions(options));
+};
+
+/**
+ * Read-only preview for the "apply error type to every leg" bulk
+action on the Needs-Review queue panel. Mirrors the pre-step +
+/classify chain's per-row gates without writing anything
+(Task #840).
+
+ * @summary Preflight (read-only) the bulk-reclassify eligibility set
+ */
+export const getBulkReclassifyClaimsDryRunUrl = () => {
+  return `/api/claims/bulk-reclassify/dry-run`;
+};
+
+export const bulkReclassifyClaimsDryRun = async (
+  bulkReclassifyClaimsDryRunBody: BulkReclassifyClaimsDryRunBody,
+  options?: RequestInit,
+): Promise<BulkClaimsDryRunResult> => {
+  return customFetch<BulkClaimsDryRunResult>(
+    getBulkReclassifyClaimsDryRunUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkReclassifyClaimsDryRunBody),
+    },
+  );
+};
+
+export const getBulkReclassifyClaimsDryRunMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>,
+    TError,
+    { data: BodyType<BulkReclassifyClaimsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>,
+  TError,
+  { data: BodyType<BulkReclassifyClaimsDryRunBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkReclassifyClaimsDryRun"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>,
+    { data: BodyType<BulkReclassifyClaimsDryRunBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkReclassifyClaimsDryRun(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkReclassifyClaimsDryRunMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>
+>;
+export type BulkReclassifyClaimsDryRunMutationBody =
+  BodyType<BulkReclassifyClaimsDryRunBody>;
+export type BulkReclassifyClaimsDryRunMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Preflight (read-only) the bulk-reclassify eligibility set
+ */
+export const useBulkReclassifyClaimsDryRun = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>,
+    TError,
+    { data: BodyType<BulkReclassifyClaimsDryRunBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkReclassifyClaimsDryRun>>,
+  TError,
+  { data: BodyType<BulkReclassifyClaimsDryRunBody> },
+  TContext
+> => {
+  return useMutation(getBulkReclassifyClaimsDryRunMutationOptions(options));
 };
 
 /**

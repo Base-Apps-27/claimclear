@@ -5515,6 +5515,110 @@ router.post("/invoice-groups/bulk-reattest", denyClerk, asyncHandler(async (req,
   });
 }));
 
+// POST /invoice-groups/bulk-reattest/dry-run — Task #840.
+// Read-only companion to /invoice-groups/bulk-reattest. Evaluates the
+// same per-row gates as the real handler (not_found, tour_sample,
+// terminal_phase, has_disputable_legs, no_survivors, no_eligible_legs)
+// without writing anything, so the confirmation dialog can preview
+// eligible vs skipped (with reasons) and the confirm button can show
+// the actual count before the operator commits.
+//
+// Returns the would-be eligible set + skip taxonomy. The frontend
+// passes the eligible ids back into the real endpoint on confirm so the
+// dialog's preview and the run's outcome match exactly.
+router.post("/invoice-groups/bulk-reattest/dry-run", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    res.status(400).json({ error: "groupIds array is required" });
+    return;
+  }
+
+  const requestedIds = (groupIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Skipped = { id: number; refNumber: string | null; reason: string };
+  type Eligible = { id: number; refNumber: string | null; queuedLegCount: number };
+  const skipped: Skipped[] = [];
+  const eligible: Eligible[] = [];
+
+  for (const gid of requestedIds) {
+    const [group] = await db.select().from(invoiceGroupsTable)
+      .where(eq(invoiceGroupsTable.id, gid));
+    if (!group) {
+      skipped.push({ id: gid, refNumber: null, reason: "not_found" });
+      continue;
+    }
+    if (group.isTourSample) {
+      skipped.push({ id: gid, refNumber: group.invoiceNumber, reason: "tour_sample" });
+      continue;
+    }
+
+    const refNumber = group.invoiceNumber;
+    const sourcePhase = getGroupMacroPhase(group);
+    if (sourcePhase === "closed" || sourcePhase === "on-hold") {
+      skipped.push({ id: gid, refNumber, reason: "terminal_phase" });
+      continue;
+    }
+
+    const outlookLegs = await db
+      .select({
+        id: claimsTable.id,
+        includedInDispute: claimsTable.includedInDispute,
+        duplicateOfClaimId: claimsTable.duplicateOfClaimId,
+        sopOutcome: claimsTable.sopOutcome,
+        disposition: claimsTable.disposition,
+        outcome: claimsTable.outcome,
+        attestationState: claimsTable.attestationState,
+      })
+      .from(claimsTable)
+      .where(eq(claimsTable.invoiceGroupId, gid));
+
+    const hasDisputable = outlookLegs.some(isLegDisputable);
+    const hasSurvivor = outlookLegs.some(isLegHardSurvivor);
+    if (hasDisputable || !hasSurvivor) {
+      skipped.push({ id: gid, refNumber, reason: hasDisputable ? "has_disputable_legs" : "no_survivors" });
+      continue;
+    }
+
+    const approvedSurvivorIds = outlookLegs
+      .filter((l) => l.outcome === "Approved" || l.outcome === "Partially Approved")
+      .map((l) => l.id);
+    const verdictConfirmed = new Set<number>();
+    if (approvedSurvivorIds.length > 0) {
+      const verdicts = await db
+        .select({
+          claimId: claimVerdictTable.claimId,
+          outcome: claimVerdictTable.outcome,
+          source: claimVerdictTable.source,
+        })
+        .from(claimVerdictTable)
+        .where(inArray(claimVerdictTable.claimId, approvedSurvivorIds))
+        .orderBy(claimVerdictTable.claimId, desc(claimVerdictTable.createdAt));
+      const seen = new Set<number>();
+      for (const v of verdicts) {
+        if (seen.has(v.claimId)) continue;
+        seen.add(v.claimId);
+        if (
+          v.source === "operator_confirmed"
+          && (v.outcome === "Approved" || v.outcome === "Partial")
+        ) {
+          verdictConfirmed.add(v.claimId);
+        }
+      }
+    }
+    const eligibleLegs = outlookLegs.filter((l) => isReattestEligibleLeg(l, verdictConfirmed));
+    if (eligibleLegs.length === 0) {
+      skipped.push({ id: gid, refNumber, reason: "no_eligible_legs" });
+      continue;
+    }
+
+    eligible.push({ id: gid, refNumber, queuedLegCount: eligibleLegs.length });
+  }
+
+  res.json({ eligible, skipped });
+}));
+
 // POST /invoice-groups/bulk-close — bulk close stranded nothing_to_do
 // groups as Withdrawn (cannot_dispute). Mirrors the PATCH /:id/outcome
 // Withdrawn path via transitionGroupStatusAndOutcome, collecting

@@ -4705,6 +4705,48 @@ export interface BulkApprovePreflightResult {
   cap: number;
 }
 
+export type BulkReattestDryRunResultEligibleItem = {
+  id: number;
+  refNumber?: string | null;
+  queuedLegCount: number;
+};
+
+export type BulkReattestDryRunResultSkippedItem = {
+  id: number;
+  refNumber?: string | null;
+  reason: string;
+};
+
+/**
+ * Read-only preview of POST /invoice-groups/bulk-reattest (Task #840).
+
+ */
+export interface BulkReattestDryRunResult {
+  eligible: BulkReattestDryRunResultEligibleItem[];
+  skipped: BulkReattestDryRunResultSkippedItem[];
+}
+
+export type BulkClaimsDryRunResultEligibleItem = {
+  id: number;
+  confNumber?: string | null;
+};
+
+export type BulkClaimsDryRunResultSkippedItem = {
+  id: number;
+  confNumber?: string | null;
+  reason: string;
+};
+
+/**
+ * Read-only preview of a per-claim bulk action (Task #840). Used
+by /claims/bulk-exclude/dry-run and /claims/bulk-reclassify/dry-run.
+
+ */
+export interface BulkClaimsDryRunResult {
+  eligible: BulkClaimsDryRunResultEligibleItem[];
+  skipped: BulkClaimsDryRunResultSkippedItem[];
+}
+
 /**
  * `running` while the POST handler is still processing; `complete` once it has returned.
  */
@@ -6069,6 +6111,18 @@ export type BulkApproveInvoiceGroupsPreflight400 = {
   error?: string;
   code?: string;
   cap?: number;
+};
+
+export type BulkReattestInvoiceGroupsDryRunBody = {
+  groupIds: number[];
+};
+
+export type BulkExcludeClaimsDryRunBody = {
+  claimIds: number[];
+};
+
+export type BulkReclassifyClaimsDryRunBody = {
+  claimIds: number[];
 };
 
 export type BulkGenerateAndReviewInvoiceGroupsBody = {

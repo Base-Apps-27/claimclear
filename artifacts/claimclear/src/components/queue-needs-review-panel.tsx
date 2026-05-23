@@ -11,7 +11,14 @@ import {
   getListInvoiceGroupsQueryKey,
   getListErrorTypesQueryKey,
   getGetInvoiceGroupQueryKey,
+  bulkExcludeClaimsDryRun,
+  bulkReclassifyClaimsDryRun,
 } from "@workspace/api-client-react";
+import {
+  BulkEligibilityPreviewDialog,
+  type BulkEligibilityRow,
+  type BulkEligibilitySkippedRow,
+} from "@/components/bulk-eligibility-preview-dialog";
 import type {
   ErrorTypeResponse,
   ClaimResponse,
@@ -121,6 +128,30 @@ export function QueueNeedsReviewPanel({
   // lets the operator apply one error type to every visible leg in a
   // single pass, with per-leg pre-step routing.
   const [bulkErrorTypeId, setBulkErrorTypeId] = useState<string>("");
+
+  // Task #840 — confirm-dialog state for the two bulk actions in this
+  // panel. We run the server-side dry-run before opening the dialog so
+  // the operator sees the actual eligible vs skipped breakdown (with
+  // reasons) AND the confirm button label reflects the real count.
+  // On confirm we only loop the eligible ids returned by the dry-run.
+  const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
+  const [excludePreview, setExcludePreview] = useState<{
+    eligible: BulkEligibilityRow[];
+    skipped: BulkEligibilitySkippedRow[];
+  }>({ eligible: [], skipped: [] });
+  const [excludePreviewLoading, setExcludePreviewLoading] = useState(false);
+  const [reclassifyDialogOpen, setReclassifyDialogOpen] = useState(false);
+  const [reclassifyPreview, setReclassifyPreview] = useState<{
+    eligible: BulkEligibilityRow[];
+    skipped: BulkEligibilitySkippedRow[];
+  }>({ eligible: [], skipped: [] });
+  const [reclassifyPreviewLoading, setReclassifyPreviewLoading] = useState(false);
+  // The error-type the operator picked for the in-flight reclassify
+  // dialog. We snapshot it on open so changing the picker mid-confirm
+  // (or closing/reopening) doesn't silently swap which error type
+  // gets applied.
+  const [reclassifyTargetErrorTypeId, setReclassifyTargetErrorTypeId] =
+    useState<string>("");
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
@@ -232,25 +263,68 @@ export function QueueNeedsReviewPanel({
     }
   }, [remainingNeedsClassification.length, inboxClaims.length, groupDetail, inboxGroup.invoiceNumber, onCompleted, highlightLegId]);
 
+  // Task #840 — bulk no-issue now pops a confirmation dialog after a
+  // server-side dry-run so the operator sees exactly which legs will
+  // be marked and which will be skipped (with reasons). The click
+  // handler kicks off the dry-run + opens the dialog; the actual
+  // sequential /exclude loop only runs from the dialog's Confirm.
   async function handleBulkExcludeAll() {
     if (bulkPending) return;
+    const candidates = remainingNeedsClassification;
+    if (candidates.length === 0) return;
+    setExcludePreview({ eligible: [], skipped: [] });
+    setExcludePreviewLoading(true);
+    setExcludeDialogOpen(true);
+    try {
+      const preview = await bulkExcludeClaimsDryRun({
+        claimIds: candidates.map((c) => c.id),
+      });
+      setExcludePreview({
+        eligible: (preview.eligible ?? []).map((e) => ({
+          id: e.id,
+          label: e.confNumber ?? null,
+        })),
+        skipped: (preview.skipped ?? []).map((s) => ({
+          id: s.id,
+          label: s.confNumber ?? null,
+          reason: s.reason,
+        })),
+      });
+    } catch (e) {
+      setExcludeDialogOpen(false);
+      toast({
+        title: "Couldn't check eligibility",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setExcludePreviewLoading(false);
+    }
+  }
+
+  // Real run for bulk no-issue. Mirrors the original sequential loop
+  // but only operates on the ids the dry-run flagged as eligible, so
+  // the dialog's eligible-count and this loop's success-count match
+  // 1:1 (modulo same-tick races, which still surface as skipped here
+  // with the actual server error reason).
+  async function runBulkExclude(ids: number[]) {
+    if (bulkPending || ids.length === 0) return;
     setBulkPending(true);
-    // Task #411 audit, Tier 4: report a per-row breakdown instead of
-    // a generic "Marked N legs as no-issue" toast. Each leg is run
-    // sequentially so the audit trail stays readable AND so a
-    // mid-loop failure leaves the rest of the list cleanly classified
-    // as "skipped" with the actual error reason. The summary toast
-    // names succeeded confs and skipped confs (with truncation) so
-    // the operator can spot which legs need a follow-up.
     const succeeded: { id: string; ref: string }[] = [];
     const skipped: { id: string; ref: string; reason: string }[] = [];
-    for (const c of remainingNeedsClassification) {
-      const idStr = String(c.id);
-      const ref = c.confNumber ? String(c.confNumber) : idStr;
+    const previewById = new Map(
+      excludePreview.eligible.map((e) => [e.id, e.label]),
+    );
+    for (const id of ids) {
+      const idStr = String(id);
+      const ref = previewById.get(id) ?? idStr;
       try {
         await excludeLeg.mutateAsync({
-          id: c.id,
-          data: { reason: "non_issue", note: "Bulk no-issue from Classification Inbox (all-blank group)" },
+          id,
+          data: {
+            reason: "non_issue",
+            note: "Bulk no-issue from Classification Inbox (all-blank group)",
+          },
         });
         succeeded.push({ id: idStr, ref });
       } catch (e) {
@@ -263,18 +337,20 @@ export function QueueNeedsReviewPanel({
     }
     invalidateAll();
     setBulkPending(false);
+    setExcludeDialogOpen(false);
 
     if (skipped.length === 0) {
-      onCompleted(`Marked ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as no-issue`);
+      onCompleted(
+        `Marked ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as no-issue`,
+      );
       return;
     }
-    // Truncated list of skipped refs so the toast stays readable.
-    const skippedPreview = skipped.slice(0, 5).map(s => s.ref).join(", ");
+    const skippedPreview = skipped.slice(0, 5).map((s) => s.ref).join(", ");
     const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
     toast({
       title: `Bulk no-issue partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
       description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
-      variant: skipped.length === remainingNeedsClassification.length ? "destructive" : "default",
+      variant: skipped.length === ids.length ? "destructive" : "default",
     });
   }
 
@@ -285,31 +361,77 @@ export function QueueNeedsReviewPanel({
   // excluded → /include first, classified (investigating/ready/dropped/
   // blocked) → /reclassify first, needs_classification → /classify
   // directly — so retagging works regardless of where each leg started.
+  // Task #840 — bulk reclassify now pops a confirmation dialog after a
+  // server-side dry-run. Snapshots the picked error-type id so changing
+  // the picker mid-confirm doesn't silently swap targets.
   async function handleBulkReclassifyAll() {
     if (bulkPending) return;
     const et = errorTypes.find((t) => String(t.id) === bulkErrorTypeId);
     if (!et) return;
+    const candidates = bulkVisibleClaims;
+    if (candidates.length === 0) return;
+    setReclassifyTargetErrorTypeId(bulkErrorTypeId);
+    setReclassifyPreview({ eligible: [], skipped: [] });
+    setReclassifyPreviewLoading(true);
+    setReclassifyDialogOpen(true);
+    try {
+      const preview = await bulkReclassifyClaimsDryRun({
+        claimIds: candidates.map((c) => c.id),
+      });
+      setReclassifyPreview({
+        eligible: (preview.eligible ?? []).map((e) => ({
+          id: e.id,
+          label: e.confNumber ?? null,
+        })),
+        skipped: (preview.skipped ?? []).map((s) => ({
+          id: s.id,
+          label: s.confNumber ?? null,
+          reason: s.reason,
+        })),
+      });
+    } catch (e) {
+      setReclassifyDialogOpen(false);
+      toast({
+        title: "Couldn't check eligibility",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setReclassifyPreviewLoading(false);
+    }
+  }
+
+  // Real run for bulk reclassify. Only operates on the ids the
+  // dry-run flagged as eligible so the dialog's eligible-count and
+  // this loop's success-count match 1:1.
+  async function runBulkReclassify(ids: number[]) {
+    if (bulkPending || ids.length === 0) return;
+    const et = errorTypes.find((t) => String(t.id) === reclassifyTargetErrorTypeId);
+    if (!et) return;
     setBulkPending(true);
     const succeeded: { id: string; ref: string }[] = [];
     const skipped: { id: string; ref: string; reason: string }[] = [];
-    for (const c of bulkVisibleClaims) {
-      const idStr = String(c.id);
-      const ref = c.confNumber ? String(c.confNumber) : idStr;
-      const live = liveClaimById.get(c.id);
+    const previewById = new Map(
+      reclassifyPreview.eligible.map((e) => [e.id, e.label]),
+    );
+    for (const id of ids) {
+      const idStr = String(id);
+      const ref = previewById.get(id) ?? idStr;
+      const live = liveClaimById.get(id);
       const sub = live ? deriveLegSubStatus(live) : "needs_classification";
       try {
         if (sub === "excluded") {
-          await includeLeg.mutateAsync({ id: c.id, data: {} });
+          await includeLeg.mutateAsync({ id, data: {} });
         } else if (
           sub === "investigating" ||
           sub === "ready" ||
           sub === "dropped" ||
           sub === "blocked"
         ) {
-          await reclassifyLeg.mutateAsync({ id: c.id });
+          await reclassifyLeg.mutateAsync({ id });
         }
         await classifyLeg.mutateAsync({
-          id: c.id,
+          id,
           data: { errorTypeId: String(et.id) },
         });
         succeeded.push({ id: idStr, ref });
@@ -324,6 +446,7 @@ export function QueueNeedsReviewPanel({
     invalidateAll();
     setBulkPending(false);
     setBulkErrorTypeId("");
+    setReclassifyDialogOpen(false);
 
     if (skipped.length === 0) {
       onCompleted(
@@ -336,11 +459,12 @@ export function QueueNeedsReviewPanel({
     toast({
       title: `Bulk reclassify partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
       description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
-      variant: skipped.length === bulkVisibleClaims.length ? "destructive" : "default",
+      variant: skipped.length === ids.length ? "destructive" : "default",
     });
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
@@ -698,6 +822,38 @@ export function QueueNeedsReviewPanel({
         </div>
       </CardContent>
     </Card>
+    <BulkEligibilityPreviewDialog
+      open={excludeDialogOpen}
+      onOpenChange={(o) => { if (!bulkPending) setExcludeDialogOpen(o); }}
+      title="Mark legs as no-issue"
+      description="Each eligible leg will be excluded with reason 'non_issue'. Legs that are already classified, excluded, or otherwise locked are skipped."
+      rowNoun="leg"
+      actionVerb="Mark"
+      eligible={excludePreview.eligible}
+      skipped={excludePreview.skipped}
+      isLoadingPreview={excludePreviewLoading}
+      isSubmitting={bulkPending}
+      onConfirm={() => runBulkExclude(excludePreview.eligible.map((e) => e.id))}
+    />
+    <BulkEligibilityPreviewDialog
+      open={reclassifyDialogOpen}
+      onOpenChange={(o) => { if (!bulkPending) setReclassifyDialogOpen(o); }}
+      title="Reclassify legs"
+      description={
+        (() => {
+          const et = errorTypes.find((t) => String(t.id) === reclassifyTargetErrorTypeId);
+          return `Each eligible leg will be reclassified as "${et?.name ?? "selected error type"}". Legs that can't be reclassified (locked, missing pre-step target, etc.) are skipped.`;
+        })()
+      }
+      rowNoun="leg"
+      actionVerb="Reclassify"
+      eligible={reclassifyPreview.eligible}
+      skipped={reclassifyPreview.skipped}
+      isLoadingPreview={reclassifyPreviewLoading}
+      isSubmitting={bulkPending}
+      onConfirm={() => runBulkReclassify(reclassifyPreview.eligible.map((e) => e.id))}
+    />
+    </>
   );
 }
 

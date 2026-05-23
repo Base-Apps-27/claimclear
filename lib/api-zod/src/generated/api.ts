@@ -7724,6 +7724,106 @@ export const BulkApproveInvoiceGroupsPreflightResponse = zod.object({
 });
 
 /**
+ * Read-only companion to `POST /invoice-groups/bulk-reattest`.
+Evaluates the same per-row gates (not_found, tour_sample,
+terminal_phase, has_disputable_legs, no_survivors,
+no_eligible_legs) without writing anything, so the confirm
+dialog can preview eligible vs skipped before the operator
+commits. On commit the client sends only the eligible ids back
+into the real endpoint so the preview's count and the run's
+outcome match exactly (Task #840).
+
+ * @summary Preflight (read-only) the bulk-reattest eligibility set
+ */
+export const BulkReattestInvoiceGroupsDryRunBody = zod.object({
+  groupIds: zod.array(zod.number()),
+});
+
+export const BulkReattestInvoiceGroupsDryRunResponse = zod
+  .object({
+    eligible: zod.array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        queuedLegCount: zod.number(),
+      }),
+    ),
+    skipped: zod.array(
+      zod.object({
+        id: zod.number(),
+        refNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    ),
+  })
+  .describe(
+    "Read-only preview of POST \/invoice-groups\/bulk-reattest (Task #840).\n",
+  );
+
+/**
+ * Read-only preview for the "mark all as no-issue" bulk action on
+the Needs-Review queue panel. Mirrors POST /claims/:id/exclude's
+per-row gates without writing anything (Task #840).
+
+ * @summary Preflight (read-only) the bulk-exclude eligibility set
+ */
+export const BulkExcludeClaimsDryRunBody = zod.object({
+  claimIds: zod.array(zod.number()),
+});
+
+export const BulkExcludeClaimsDryRunResponse = zod
+  .object({
+    eligible: zod.array(
+      zod.object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+      }),
+    ),
+    skipped: zod.array(
+      zod.object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    ),
+  })
+  .describe(
+    "Read-only preview of a per-claim bulk action (Task #840). Used\nby \/claims\/bulk-exclude\/dry-run and \/claims\/bulk-reclassify\/dry-run.\n",
+  );
+
+/**
+ * Read-only preview for the "apply error type to every leg" bulk
+action on the Needs-Review queue panel. Mirrors the pre-step +
+/classify chain's per-row gates without writing anything
+(Task #840).
+
+ * @summary Preflight (read-only) the bulk-reclassify eligibility set
+ */
+export const BulkReclassifyClaimsDryRunBody = zod.object({
+  claimIds: zod.array(zod.number()),
+});
+
+export const BulkReclassifyClaimsDryRunResponse = zod
+  .object({
+    eligible: zod.array(
+      zod.object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+      }),
+    ),
+    skipped: zod.array(
+      zod.object({
+        id: zod.number(),
+        confNumber: zod.string().nullish(),
+        reason: zod.string(),
+      }),
+    ),
+  })
+  .describe(
+    "Read-only preview of a per-claim bulk action (Task #840). Used\nby \/claims\/bulk-exclude\/dry-run and \/claims\/bulk-reclassify\/dry-run.\n",
+  );
+
+/**
  * Bulk equivalent of the single-group Gauntlet flow. For each group
 in `groupIds`, runs the AI preview generation (populating
 `draftSubject` / `draftDescriptionHtml` and the AI baseline fields),

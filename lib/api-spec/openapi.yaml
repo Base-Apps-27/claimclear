@@ -1222,6 +1222,100 @@ paths:
                   code: { type: string }
                   cap: { type: integer }
 
+  /invoice-groups/bulk-reattest/dry-run:
+    post:
+      operationId: bulkReattestInvoiceGroupsDryRun
+      tags: [invoice-groups]
+      summary: Preflight (read-only) the bulk-reattest eligibility set
+      description: |
+        Read-only companion to `POST /invoice-groups/bulk-reattest`.
+        Evaluates the same per-row gates (not_found, tour_sample,
+        terminal_phase, has_disputable_legs, no_survivors,
+        no_eligible_legs) without writing anything, so the confirm
+        dialog can preview eligible vs skipped before the operator
+        commits. On commit the client sends only the eligible ids back
+        into the real endpoint so the preview's count and the run's
+        outcome match exactly (Task #840).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupIds:
+                  type: array
+                  items:
+                    type: integer
+              required:
+                - groupIds
+      responses:
+        "200":
+          description: Dry-run evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkReattestDryRunResult"
+
+  /claims/bulk-exclude/dry-run:
+    post:
+      operationId: bulkExcludeClaimsDryRun
+      tags: [claims]
+      summary: Preflight (read-only) the bulk-exclude eligibility set
+      description: |
+        Read-only preview for the "mark all as no-issue" bulk action on
+        the Needs-Review queue panel. Mirrors POST /claims/:id/exclude's
+        per-row gates without writing anything (Task #840).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimIds]
+              properties:
+                claimIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: Dry-run evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkClaimsDryRunResult"
+
+  /claims/bulk-reclassify/dry-run:
+    post:
+      operationId: bulkReclassifyClaimsDryRun
+      tags: [claims]
+      summary: Preflight (read-only) the bulk-reclassify eligibility set
+      description: |
+        Read-only preview for the "apply error type to every leg" bulk
+        action on the Needs-Review queue panel. Mirrors the pre-step +
+        /classify chain's per-row gates without writing anything
+        (Task #840).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimIds]
+              properties:
+                claimIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: Dry-run evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkClaimsDryRunResult"
+
   /invoice-groups/bulk-generate-and-review:
     post:
       operationId: bulkGenerateAndReviewInvoiceGroups
@@ -11506,6 +11600,71 @@ components:
         cap:
           type: integer
           description: Server-enforced maximum portal_response ids per request.
+
+    BulkReattestDryRunResult:
+      type: object
+      required: [eligible, skipped]
+      description: |
+        Read-only preview of POST /invoice-groups/bulk-reattest (Task #840).
+      properties:
+        eligible:
+          type: array
+          items:
+            type: object
+            required: [id, queuedLegCount]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              queuedLegCount:
+                type: integer
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, reason]
+            properties:
+              id:
+                type: integer
+              refNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
+
+    BulkClaimsDryRunResult:
+      type: object
+      required: [eligible, skipped]
+      description: |
+        Read-only preview of a per-claim bulk action (Task #840). Used
+        by /claims/bulk-exclude/dry-run and /claims/bulk-reclassify/dry-run.
+      properties:
+        eligible:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: integer
+              confNumber:
+                type: string
+                nullable: true
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, reason]
+            properties:
+              id:
+                type: integer
+              confNumber:
+                type: string
+                nullable: true
+              reason:
+                type: string
 
     BulkApproveProgress:
       type: object

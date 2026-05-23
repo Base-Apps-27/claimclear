@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, useBulkReattestInvoiceGroups, useBulkCloseInvoiceGroups, useBulkGenerateAndReviewInvoiceGroups, listInvoiceGroups, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import { useListInvoiceGroups, useListErrorTypes, useBulkAssignInvoiceGroupErrorType, useBulkSubmitInvoiceGroupsToPortal, useBulkReattestInvoiceGroups, useBulkCloseInvoiceGroups, useBulkGenerateAndReviewInvoiceGroups, bulkReattestInvoiceGroupsDryRun, listInvoiceGroups, getListInvoiceGroupsQueryKey, getExportInvoiceGroupsCsvUrl, ListInvoiceGroupsSort, ListInvoiceGroupsDir } from "@workspace/api-client-react";
+import { BulkEligibilityPreviewDialog, type BulkEligibilityRow, type BulkEligibilitySkippedRow } from "@/components/bulk-eligibility-preview-dialog";
 import type { InvoiceGroupResponse, ErrorTypeResponse, ListInvoiceGroupsParams } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -327,6 +328,18 @@ export default function InvoiceGroupsList() {
   const bulkSubmitToPortal = useBulkSubmitInvoiceGroupsToPortal();
   const bulkReattest = useBulkReattestInvoiceGroups();
   const bulkClose = useBulkCloseInvoiceGroups();
+  // Task #840 — confirm-dialog state for bulk-reattest. We pop the
+  // dialog from the rail's Re-attest button after running the
+  // server-side dry-run, so the operator sees the actual eligible vs
+  // skipped breakdown (with reasons) before committing. On confirm we
+  // send only the dry-run eligible ids back to /bulk-reattest, so the
+  // preview count matches the run's success count.
+  const [bulkReattestDialogOpen, setBulkReattestDialogOpen] = useState(false);
+  const [bulkReattestPreview, setBulkReattestPreview] = useState<{
+    eligible: BulkEligibilityRow[];
+    skipped: BulkEligibilitySkippedRow[];
+  }>({ eligible: [], skipped: [] });
+  const [bulkReattestPreviewLoading, setBulkReattestPreviewLoading] = useState(false);
   const bulkGenerateAndReview = useBulkGenerateAndReviewInvoiceGroups();
   const [bulkPortalMsg, setBulkPortalMsg] = useState("");
   const [selectAllMatching, setSelectAllMatching] = useState(false);
@@ -1826,32 +1839,40 @@ export default function InvoiceGroupsList() {
                       : undefined
                 }
                 onClick={async () => {
+                  // Task #840 — open the confirm dialog after running
+                  // the server-side dry-run so the operator sees the
+                  // actual eligible / skipped breakdown (with reasons)
+                  // before committing.
                   if (noneEligible || bulkReattest.isPending) return;
-                  const ids = eligibleIds;
+                  // Task #840 — send the operator's full selection (not
+                  // the client pre-filtered eligible subset) so the
+                  // dry-run can surface every skipped row with its
+                  // server-side reason in the confirm dialog.
+                  const ids = Array.from(selectedIds);
+                  setBulkReattestPreview({ eligible: [], skipped: [] });
+                  setBulkReattestPreviewLoading(true);
+                  setBulkReattestDialogOpen(true);
                   try {
-                    const res = await bulkReattest.mutateAsync({ data: { groupIds: ids } });
-                    const queued = res.queued ?? 0;
-                    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
-                    let msg = `Queued ${queued} for re-attestation`;
-                    if (skipped.length > 0) {
-                      const sample = skipped
-                        .slice(0, 3)
-                        .map((s: any) => `${s.refNumber || `#${s.id}`} (${explainEligibilityReason(s.reason)})`)
-                        .join(", ");
-                      const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
-                      msg += ` · skipped ${skipped.length} (${sample}${more})`;
-                    }
-                    setBulkPortalMsg(msg);
-                    const skippedIdSet = new Set(skipped.map((s: any) => s.id));
-                    rowBreath.triggerForIds(ids.filter((id) => !skippedIdSet.has(id)));
-                    setSelectedIds(new Set());
-                    queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
-                    setTimeout(() => setBulkPortalMsg(""), skipped.length > 0 ? 6000 : 3000);
+                    const preview = await bulkReattestInvoiceGroupsDryRun({ groupIds: ids });
+                    setBulkReattestPreview({
+                      eligible: (preview.eligible ?? []).map((e) => ({
+                        id: e.id,
+                        label: e.refNumber ?? null,
+                      })),
+                      skipped: (preview.skipped ?? []).map((s) => ({
+                        id: s.id,
+                        label: s.refNumber ?? null,
+                        reason: s.reason,
+                      })),
+                    });
                   } catch (err) {
+                    setBulkReattestDialogOpen(false);
                     setBulkPortalMsg(
-                      `Couldn't re-attest: ${err instanceof Error ? err.message : "unknown error"}`,
+                      `Couldn't check eligibility: ${err instanceof Error ? err.message : "unknown error"}`,
                     );
                     setTimeout(() => setBulkPortalMsg(""), 6000);
+                  } finally {
+                    setBulkReattestPreviewLoading(false);
                   }
                 }}
                 testId="rail-action-bulk-reattest"
@@ -1988,6 +2009,48 @@ export default function InvoiceGroupsList() {
           </ActionsRail>
         </aside>
       </div>
+      <BulkEligibilityPreviewDialog
+        open={bulkReattestDialogOpen}
+        onOpenChange={setBulkReattestDialogOpen}
+        title="Queue groups for re-attestation"
+        description="Each eligible group's surviving approved legs will be queued for re-attestation. Groups that have disputable legs left, no survivors, or are already past re-attest are skipped."
+        rowNoun="group"
+        actionVerb="Queue"
+        eligible={bulkReattestPreview.eligible}
+        skipped={bulkReattestPreview.skipped}
+        isLoadingPreview={bulkReattestPreviewLoading}
+        isSubmitting={bulkReattest.isPending}
+        onConfirm={async () => {
+          const ids = bulkReattestPreview.eligible.map((e) => e.id);
+          if (ids.length === 0) return;
+          try {
+            const res = await bulkReattest.mutateAsync({ data: { groupIds: ids } });
+            const queued = res.queued ?? 0;
+            const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+            let msg = `Queued ${queued} for re-attestation`;
+            if (skipped.length > 0) {
+              const sample = skipped
+                .slice(0, 3)
+                .map((s: any) => `${s.refNumber || `#${s.id}`} (${explainEligibilityReason(s.reason)})`)
+                .join(", ");
+              const more = skipped.length > 3 ? ` +${skipped.length - 3} more` : "";
+              msg += ` · skipped ${skipped.length} (${sample}${more})`;
+            }
+            setBulkPortalMsg(msg);
+            const skippedIdSet = new Set(skipped.map((s: any) => s.id));
+            rowBreath.triggerForIds(ids.filter((id) => !skippedIdSet.has(id)));
+            setSelectedIds(new Set());
+            queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
+            setTimeout(() => setBulkPortalMsg(""), skipped.length > 0 ? 6000 : 3000);
+            setBulkReattestDialogOpen(false);
+          } catch (err) {
+            setBulkPortalMsg(
+              `Couldn't re-attest: ${err instanceof Error ? err.message : "unknown error"}`,
+            );
+            setTimeout(() => setBulkPortalMsg(""), 6000);
+          }
+        }}
+      />
     </div>
   );
 }

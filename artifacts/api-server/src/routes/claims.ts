@@ -3817,4 +3817,206 @@ router.post("/claims/:id/mas-action/complete", asyncHandler(async (req, res): Pr
   res.json(updated);
 }));
 
+// POST /claims/bulk-exclude/dry-run — Task #840.
+// Read-only preview for the "mark all as no-issue" bulk action in the
+// Needs-Review queue panel. Mirrors POST /claims/:id/exclude's
+// per-row gates without writing anything so the confirm dialog can
+// show eligible vs skipped (with reasons) ahead of commit.
+//
+// Per-row gates (skip reasons):
+//   * not_found        — claim id no longer exists
+//   * tour_sample      — claim is a tour-sample row
+//   * wrong_state      — leg sub-status is not {needs_classification, investigating}
+//   * terminal_phase   — parent group has reached mas/payout/closed
+//   * active_submission — parent group has an in-flight or submitted submission
+router.post("/claims/bulk-exclude/dry-run", asyncHandler(async (req, res): Promise<void> => {
+  const { claimIds } = req.body ?? {};
+  if (!Array.isArray(claimIds) || claimIds.length === 0) {
+    res.status(400).json({ error: "claimIds array is required" });
+    return;
+  }
+  const requestedIds = (claimIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Row = { id: number; confNumber: string | null };
+  type Skipped = Row & { reason: string };
+  const eligible: Row[] = [];
+  const skipped: Skipped[] = [];
+
+  const allowedSourceStates: LegSubStatus[] = ["needs_classification", "investigating"];
+  const blockedPhases = new Set(["mas-action-required", "awaiting-payout", "closed"]);
+  const groupCache = new Map<number, { phase: string; hasSubmission: boolean }>();
+
+  for (const id of requestedIds) {
+    const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+    if (!leg) {
+      skipped.push({ id, confNumber: null, reason: "not_found" });
+      continue;
+    }
+    if (leg.isTourSample) {
+      skipped.push({ id, confNumber: leg.confNumber, reason: "tour_sample" });
+      continue;
+    }
+    const subStatus = deriveLegSubStatus(leg);
+    if (!allowedSourceStates.includes(subStatus)) {
+      skipped.push({ id, confNumber: leg.confNumber, reason: "wrong_state" });
+      continue;
+    }
+    if (subStatus === "investigating" && leg.invoiceGroupId != null) {
+      let cached = groupCache.get(leg.invoiceGroupId);
+      if (!cached) {
+        const [parent] = await db
+          .select({
+            status: invoiceGroupsTable.status,
+            reattestRequired: invoiceGroupsTable.reattestRequired,
+            reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+          })
+          .from(invoiceGroupsTable)
+          .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId))
+          .limit(1);
+        const submission = await db
+          .select({ id: portalSubmissionsTable.id })
+          .from(portalSubmissionsTable)
+          .where(and(
+            eq(portalSubmissionsTable.invoiceGroupId, leg.invoiceGroupId),
+            inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
+          ))
+          .limit(1);
+        cached = {
+          phase: parent ? getGroupMacroPhase(parent) : "pre-submit",
+          hasSubmission: submission.length > 0,
+        };
+        groupCache.set(leg.invoiceGroupId, cached);
+      }
+      if (blockedPhases.has(cached.phase)) {
+        skipped.push({ id, confNumber: leg.confNumber, reason: "terminal_phase" });
+        continue;
+      }
+      if (cached.hasSubmission) {
+        skipped.push({ id, confNumber: leg.confNumber, reason: "active_submission" });
+        continue;
+      }
+    }
+    eligible.push({ id, confNumber: leg.confNumber });
+  }
+
+  res.json({ eligible, skipped });
+}));
+
+// POST /claims/bulk-reclassify/dry-run — Task #840.
+// Read-only preview for the "apply error type to every leg" bulk
+// action in the Needs-Review queue panel. The real flow loops
+// /claims/:id/include and /claims/:id/reclassify before /classify;
+// this preview rejects rows whose pre-step would fail (group past
+// pre-submit, submission on the wire, terminal leg state).
+//
+// Per-row gates (skip reasons):
+//   * not_found        — claim id no longer exists
+//   * tour_sample      — claim is a tour-sample row
+//   * wrong_state      — leg sub-status is not one the bulk panel can re-route
+//   * terminal_phase   — parent group has reached mas/payout/closed (and leg needs a pre-step)
+//   * active_submission — parent group has an in-flight or submitted submission (and leg needs a pre-step)
+router.post("/claims/bulk-reclassify/dry-run", asyncHandler(async (req, res): Promise<void> => {
+  const { claimIds } = req.body ?? {};
+  if (!Array.isArray(claimIds) || claimIds.length === 0) {
+    res.status(400).json({ error: "claimIds array is required" });
+    return;
+  }
+  const requestedIds = (claimIds as Array<string | number>)
+    .map((id) => Number(id))
+    .filter((id) => !isNaN(id));
+
+  type Row = { id: number; confNumber: string | null };
+  type Skipped = Row & { reason: string };
+  const eligible: Row[] = [];
+  const skipped: Skipped[] = [];
+
+  // States the queue panel can route through to /classify. Mirrors
+  // queue-needs-review-panel.tsx's per-row branch.
+  const routableStates: LegSubStatus[] = [
+    "needs_classification",
+    "investigating",
+    "ready",
+    "dropped",
+    "blocked",
+    "excluded",
+  ];
+  const blockedPhases = new Set(["mas-action-required", "awaiting-payout", "closed"]);
+  const groupCache = new Map<number, { phase: string; hasSubmission: boolean }>();
+
+  for (const id of requestedIds) {
+    const [leg] = await db.select().from(claimsTable).where(eq(claimsTable.id, id));
+    if (!leg) {
+      skipped.push({ id, confNumber: null, reason: "not_found" });
+      continue;
+    }
+    if (leg.isTourSample) {
+      skipped.push({ id, confNumber: leg.confNumber, reason: "tour_sample" });
+      continue;
+    }
+    const subStatus = deriveLegSubStatus(leg);
+    if (!routableStates.includes(subStatus)) {
+      skipped.push({ id, confNumber: leg.confNumber, reason: "wrong_state" });
+      continue;
+    }
+    // needs_classification rows go straight to /classify — no pre-step
+    // means no group-phase / submission check is needed.
+    const needsPreStep = subStatus !== "needs_classification";
+    if (needsPreStep && leg.invoiceGroupId != null) {
+      let cached = groupCache.get(leg.invoiceGroupId);
+      if (!cached) {
+        const [parent] = await db
+          .select({
+            status: invoiceGroupsTable.status,
+            reattestRequired: invoiceGroupsTable.reattestRequired,
+            reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+          })
+          .from(invoiceGroupsTable)
+          .where(eq(invoiceGroupsTable.id, leg.invoiceGroupId))
+          .limit(1);
+        const submission = await db
+          .select({ id: portalSubmissionsTable.id })
+          .from(portalSubmissionsTable)
+          .where(and(
+            eq(portalSubmissionsTable.invoiceGroupId, leg.invoiceGroupId),
+            inArray(portalSubmissionsTable.status, ["submitted", "in_progress"]),
+          ))
+          .limit(1);
+        cached = {
+          phase: parent ? getGroupMacroPhase(parent) : "pre-submit",
+          hasSubmission: submission.length > 0,
+        };
+        groupCache.set(leg.invoiceGroupId, cached);
+      }
+      // For `excluded` legs the real pre-step is /claims/:id/include,
+      // which requires the parent group's macro phase to be STRICTLY
+      // `pre-submit` (no in-flight, response-pending, on-hold, etc).
+      // For all other routable states the pre-step is /reclassify,
+      // which only refuses the terminal phases. Mirror both gates so
+      // the dry-run can never over-report eligibility.
+      if (subStatus === "excluded") {
+        if (cached.phase !== "pre-submit") {
+          skipped.push({
+            id,
+            confNumber: leg.confNumber,
+            reason: blockedPhases.has(cached.phase) ? "terminal_phase" : "wrong_state",
+          });
+          continue;
+        }
+      } else if (blockedPhases.has(cached.phase)) {
+        skipped.push({ id, confNumber: leg.confNumber, reason: "terminal_phase" });
+        continue;
+      }
+      if (cached.hasSubmission) {
+        skipped.push({ id, confNumber: leg.confNumber, reason: "active_submission" });
+        continue;
+      }
+    }
+    eligible.push({ id, confNumber: leg.confNumber });
+  }
+
+  res.json({ eligible, skipped });
+}));
+
 export default router;
