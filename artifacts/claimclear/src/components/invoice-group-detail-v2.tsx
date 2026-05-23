@@ -5,6 +5,7 @@ import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useInvoiceGroupEvents } from "@/hooks/use-claim-events";
+import { useRecentGroupVisits } from "@/hooks/use-recent-group-visits";
 import { useActorCausedTransition } from "@/hooks/use-actor-caused-transition";
 import { useTransientFlag } from "@/hooks/use-transient-flag";
 import { isPreSubmit as isPreSubmitFn, isInFlight, isClosed, getLifecyclePhase } from "@/lib/lifecycle-phase";
@@ -886,6 +887,19 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
   const { data: group, isLoading } = useGetInvoiceGroup(groupId, {
     query: { queryKey: getGetInvoiceGroupQueryKey(groupId), enabled: !!groupId },
   });
+
+  // Task #839 — record this group in the per-user "Recently viewed"
+  // rail in the sidebar. Local-only (localStorage), capped at 10 entries.
+  const { recordVisit } = useRecentGroupVisits(user?.id);
+  useEffect(() => {
+    if (!group || !groupId) return;
+    recordVisit({
+      id: group.id,
+      invoiceNumber: group.invoiceNumber,
+      clientNumber: group.clientNumber ?? null,
+      phase: group.phase ?? null,
+    });
+  }, [group?.id, group?.invoiceNumber, group?.clientNumber, group?.phase, groupId, recordVisit]);
 
   // ─────────────────────────────────────────────────────────────────────
   // "Invoice shipped" microinteraction (Task #325). When this group's

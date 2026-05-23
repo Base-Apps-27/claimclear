@@ -40,6 +40,8 @@ import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
 import { StreakPipAvatar, useStreakPipLiveUpdates } from "@/components/streak-pip-avatar";
 import { ActivityHoverCard } from "@/components/activity-hover-card";
+import { StateBadge } from "@/components/state-badge";
+import { useRecentGroupVisits } from "@/hooks/use-recent-group-visits";
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -441,6 +443,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SidebarGroup>
               );
             })}
+            <RecentlyViewedSection userId={user.id} />
             {/* Help section — discoverable manual trigger for the guided
                 walkthrough. Lives in the sidebar (not just the header)
                 because operators expect "replay the tour" to be a nav
@@ -547,6 +550,58 @@ function FullBleedAwareMain({ children }: { children: React.ReactNode }) {
     <main className="flex-1 overflow-auto p-6 md:p-8" data-tour="page-main">
       <div className="max-w-7xl mx-auto h-full">{children}</div>
     </main>
+  );
+}
+
+// Task #839 — sidebar rail of the last 10 invoice groups this
+// operator opened. Per-user (localStorage keyed on user id), local-only
+// (no backend round trip on each navigation), updates live as the
+// operator navigates between detail pages. Hidden until there's at
+// least one entry so first-time operators don't see an empty rail.
+function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
+  const { visits } = useRecentGroupVisits(userId);
+  if (visits.length === 0) return null;
+  return (
+    <SidebarGroup data-testid="sidebar-recently-viewed">
+      <SidebarGroupLabel className="uppercase tracking-wider text-[10px] text-sidebar-foreground/50">
+        Recently Viewed
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {visits.map((v) => (
+            <SidebarMenuItem key={v.id}>
+              <SidebarMenuButton
+                asChild
+                tooltip={`Invoice ${v.invoiceNumber}${v.clientNumber ? ` · ${v.clientNumber}` : ""}`}
+                className="h-auto"
+              >
+                <Link
+                  href={`/invoice-groups/${v.id}`}
+                  className="flex items-center gap-2"
+                  data-testid={`sidebar-recent-${v.id}`}
+                >
+                  <span className="flex-1 min-w-0 flex flex-col leading-tight">
+                    <span className="font-mono text-xs truncate text-sidebar-foreground">
+                      {v.invoiceNumber}
+                    </span>
+                    {v.clientNumber && (
+                      <span className="text-[10px] text-sidebar-foreground/60 truncate">
+                        {v.clientNumber}
+                      </span>
+                    )}
+                  </span>
+                  {v.phase && (
+                    <span className="ml-auto shrink-0 scale-[0.85] origin-right">
+                      <StateBadge variant="phase" value={v.phase} />
+                    </span>
+                  )}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }
 
