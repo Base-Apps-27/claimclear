@@ -573,6 +573,36 @@ export const ListInvoiceGroupsResponse = zod.object({
         .describe(
           "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
         ),
+      draftAttribution: zod
+        .array(
+          zod.object({
+            paragraph: zod
+              .string()
+              .describe(
+                "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+              ),
+            sourceKind: zod
+              .enum(["sop", "evidence", "notes", "composed"])
+              .describe(
+                "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+              ),
+            sourceRef: zod
+              .object({
+                legId: zod.number().nullish(),
+                question: zod.string().nullish(),
+                answer: zod.string().nullish(),
+                name: zod.string().nullish(),
+              })
+              .nullish()
+              .describe(
+                "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+              ),
+          }),
+        )
+        .nullish()
+        .describe(
+          "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+        ),
       draftEditedAt: zod.coerce
         .date()
         .nullish()
@@ -1375,6 +1405,36 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
             .nullish()
             .describe(
               "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+            ),
+          draftAttribution: zod
+            .array(
+              zod.object({
+                paragraph: zod
+                  .string()
+                  .describe(
+                    "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+                  ),
+                sourceKind: zod
+                  .enum(["sop", "evidence", "notes", "composed"])
+                  .describe(
+                    "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+                  ),
+                sourceRef: zod
+                  .object({
+                    legId: zod.number().nullish(),
+                    question: zod.string().nullish(),
+                    answer: zod.string().nullish(),
+                    name: zod.string().nullish(),
+                  })
+                  .nullish()
+                  .describe(
+                    "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+                  ),
+              }),
+            )
+            .nullish()
+            .describe(
+              "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
             ),
           draftEditedAt: zod.coerce
             .date()
@@ -2364,6 +2424,36 @@ export const GetInvoiceGroupResponse = zod
       .nullish()
       .describe(
         "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+      ),
+    draftAttribution: zod
+      .array(
+        zod.object({
+          paragraph: zod
+            .string()
+            .describe(
+              "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+            ),
+          sourceKind: zod
+            .enum(["sop", "evidence", "notes", "composed"])
+            .describe(
+              "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+            ),
+          sourceRef: zod
+            .object({
+              legId: zod.number().nullish(),
+              question: zod.string().nullish(),
+              answer: zod.string().nullish(),
+              name: zod.string().nullish(),
+            })
+            .nullish()
+            .describe(
+              "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+            ),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
       ),
     draftEditedAt: zod.coerce
       .date()
@@ -3780,6 +3870,36 @@ export const UpdateInvoiceGroupResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -4324,6 +4444,36 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -4944,6 +5094,36 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -5495,6 +5675,36 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
       .nullish()
       .describe(
         "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+      ),
+    draftAttribution: zod
+      .array(
+        zod.object({
+          paragraph: zod
+            .string()
+            .describe(
+              "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+            ),
+          sourceKind: zod
+            .enum(["sop", "evidence", "notes", "composed"])
+            .describe(
+              "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+            ),
+          sourceRef: zod
+            .object({
+              legId: zod.number().nullish(),
+              question: zod.string().nullish(),
+              answer: zod.string().nullish(),
+              name: zod.string().nullish(),
+            })
+            .nullish()
+            .describe(
+              "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+            ),
+        }),
+      )
+      .nullish()
+      .describe(
+        "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
       ),
     draftEditedAt: zod.coerce
       .date()
@@ -6053,6 +6263,36 @@ export const TriageInvoiceGroupResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -6597,6 +6837,36 @@ export const HoldInvoiceGroupResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -7136,6 +7406,36 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -8283,6 +8583,36 @@ export const RecordPayorDenialReasonResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -8846,6 +9176,36 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -10056,6 +10416,36 @@ export const SetGroupContextResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -10612,6 +11002,36 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -11165,6 +11585,36 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -11711,6 +12161,36 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
     ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+    ),
   draftEditedAt: zod.coerce
     .date()
     .nullish()
@@ -12253,6 +12733,36 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -12798,6 +13308,36 @@ export const StampPreviewGeneratedResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -13373,6 +13913,36 @@ export const CompleteGroupReattestResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()
@@ -13953,6 +14523,36 @@ export const BulkQueueGroupReattestResponse = zod
         .nullish()
         .describe(
           "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+        ),
+      draftAttribution: zod
+        .array(
+          zod.object({
+            paragraph: zod
+              .string()
+              .describe(
+                "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+              ),
+            sourceKind: zod
+              .enum(["sop", "evidence", "notes", "composed"])
+              .describe(
+                "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+              ),
+            sourceRef: zod
+              .object({
+                legId: zod.number().nullish(),
+                question: zod.string().nullish(),
+                answer: zod.string().nullish(),
+                name: zod.string().nullish(),
+              })
+              .nullish()
+              .describe(
+                "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+              ),
+          }),
+        )
+        .nullish()
+        .describe(
+          "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
         ),
       draftEditedAt: zod.coerce
         .date()
@@ -31172,6 +31772,36 @@ export const GetDashboardSummaryResponse = zod.object({
         .describe(
           "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
         ),
+      draftAttribution: zod
+        .array(
+          zod.object({
+            paragraph: zod
+              .string()
+              .describe(
+                "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+              ),
+            sourceKind: zod
+              .enum(["sop", "evidence", "notes", "composed"])
+              .describe(
+                "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+              ),
+            sourceRef: zod
+              .object({
+                legId: zod.number().nullish(),
+                question: zod.string().nullish(),
+                answer: zod.string().nullish(),
+                name: zod.string().nullish(),
+              })
+              .nullish()
+              .describe(
+                "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+              ),
+          }),
+        )
+        .nullish()
+        .describe(
+          "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
+        ),
       draftEditedAt: zod.coerce
         .date()
         .nullish()
@@ -35078,6 +35708,36 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
     .nullish()
     .describe(
       "Last raw AI-generated HTML body captured at draft regeneration. Used to detect operator edits.",
+    ),
+  draftAttribution: zod
+    .array(
+      zod.object({
+        paragraph: zod
+          .string()
+          .describe(
+            "The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted).",
+          ),
+        sourceKind: zod
+          .enum(["sop", "evidence", "notes", "composed"])
+          .describe(
+            "Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.",
+          ),
+        sourceRef: zod
+          .object({
+            legId: zod.number().nullish(),
+            question: zod.string().nullish(),
+            answer: zod.string().nullish(),
+            name: zod.string().nullish(),
+          })
+          .nullish()
+          .describe(
+            "Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`\/`composed`: null.",
+          ),
+      }),
+    )
+    .nullish()
+    .describe(
+      "Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated \/ draft regenerate run.",
     ),
   draftEditedAt: zod.coerce
     .date()

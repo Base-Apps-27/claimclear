@@ -662,6 +662,46 @@ export const InvoiceGroupResponseServiceDateReason = {
 } as const;
 
 /**
+ * Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source.
+ */
+export type InvoiceGroupResponseDraftAttributionItemSourceKind =
+  (typeof InvoiceGroupResponseDraftAttributionItemSourceKind)[keyof typeof InvoiceGroupResponseDraftAttributionItemSourceKind];
+
+export const InvoiceGroupResponseDraftAttributionItemSourceKind = {
+  sop: "sop",
+  evidence: "evidence",
+  notes: "notes",
+  composed: "composed",
+} as const;
+
+/**
+ * Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`/`composed`: null.
+ * @nullable
+ */
+export type InvoiceGroupResponseDraftAttributionItemSourceRef = {
+  /** @nullable */
+  legId?: number | null;
+  /** @nullable */
+  question?: string | null;
+  /** @nullable */
+  answer?: string | null;
+  /** @nullable */
+  name?: string | null;
+} | null;
+
+export type InvoiceGroupResponseDraftAttributionItem = {
+  /** The paragraph text the chip is attached to (already stripped of the inline source tag the LLM emitted). */
+  paragraph: string;
+  /** Which kind of source the paragraph leans on. `sop` = a SOP walk step on a specific leg. `evidence` = an attached evidence file. `notes` = the operator's CRITICAL CONTEXT note. `composed` = an AI-synthesised connective paragraph with no single source. */
+  sourceKind: InvoiceGroupResponseDraftAttributionItemSourceKind;
+  /**
+   * Optional per-kind reference. For `sop`: `{ legId, question?, answer? }`. For `evidence`: `{ name }`. For `notes`/`composed`: null.
+   * @nullable
+   */
+  sourceRef?: InvoiceGroupResponseDraftAttributionItemSourceRef;
+};
+
+/**
  * Per-leg sub-status breakdown for the group. Only populated by the list endpoint when the group's macro phase is `pre-submit`.
  * @nullable
  */
@@ -969,6 +1009,11 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    * @nullable
    */
   aiBaselineDescriptionHtml?: string | null;
+  /**
+   * Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated / draft regenerate run.
+   * @nullable
+   */
+  draftAttribution?: InvoiceGroupResponseDraftAttributionItem[] | null;
   /**
    * Stamped each time the operator saves an edit to the dispute draft.
    * @nullable

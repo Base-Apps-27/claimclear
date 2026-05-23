@@ -3569,6 +3569,11 @@ router.post("/invoice-groups/:id/preview-generated", asyncHandler(async (req, re
       previewGeneratedBy: req.user?.email ?? null,
       draftSubject: draft.subject,
       draftDescriptionHtml: draft.descriptionHtml,
+      // Task #836 — persist per-paragraph source attribution alongside
+      // the AI baseline so the operator-facing chips on the Review &
+      // edit panel survive page reloads, and so a follow-up
+      // `draft/regenerate` overwrites them as a single unit.
+      draftAttribution: draft.attribution,
       aiBaselineSubject: draft.subject,
       aiBaselineDescriptionHtml: draft.descriptionHtml,
       draftEditedAt: now,
@@ -3807,6 +3812,11 @@ router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res
     .set({
       draftSubject: draft.subject,
       draftDescriptionHtml: draft.descriptionHtml,
+      // Task #836 — overwrite the per-paragraph source attribution to
+      // stay in lockstep with the fresh AI baseline. The chips operators
+      // see on the Review & edit panel reflect the just-generated
+      // paragraphs, not stale ones from a prior generate pass.
+      draftAttribution: draft.attribution,
       aiBaselineSubject: draft.subject,
       aiBaselineDescriptionHtml: draft.descriptionHtml,
       draftEditedAt: now,

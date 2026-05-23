@@ -17,6 +17,7 @@ import {
 import type {
   ClaimResponse,
   InvoiceGroupDetailResponse,
+  InvoiceGroupResponseDraftAttributionItem,
   LintResult,
 } from "@workspace/api-client-react";
 import { LintGateDialog, type LintGateMode } from "@/components/lint-gate-dialog";
@@ -43,6 +44,10 @@ import {
   Layers,
   ChevronLeft,
   HelpCircle,
+  ListChecks,
+  Paperclip,
+  StickyNote,
+  Wand2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -1305,6 +1310,20 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                 >
                   Description
                 </label>
+                {/* Task #836 — per-paragraph source chips. Each chip shows
+                    which input (SOP step, evidence file, operator notes, or
+                    AI composition) shaped that paragraph; clicking jumps the
+                    operator to the corresponding source so a sentence can
+                    always be traced back. Attribution is keyed off the AI
+                    baseline so the chips line up with the paragraphs the AI
+                    produced, even after the operator has been editing the
+                    Textarea below. */}
+                <DraftSourceChips
+                  attribution={group.draftAttribution ?? null}
+                  baselineHtml={group.aiBaselineDescriptionHtml ?? null}
+                  legs={rides}
+                  onJumpToLeg={onJumpToLeg}
+                />
                 <Textarea
                   id="draft-body"
                   value={draftBody}
@@ -1402,5 +1421,135 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
       </CardHeader>
       <CardContent className="space-y-4">{body}</CardContent>
     </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task #836 — per-paragraph source chips for the AI-generated dispute
+// write-up. Renders one read-only paragraph preview with a small source
+// chip next to it. Clicking a chip:
+//   - sop:      onJumpToLeg(legId) — opens the leg column
+//   - evidence: scrolls to the group-level evidence section anchor
+//   - notes:    focuses the operator's Understanding notes input
+//   - composed: neutral (no jump target)
+// Attribution survives reload + regenerate because it's persisted on
+// `invoice_groups.draft_attribution` next to the AI baseline. The chips
+// render against the baseline paragraphs (not the operator's possibly-
+// edited Textarea body), so they remain accurate even after edits.
+// ─────────────────────────────────────────────────────────────────────────
+function DraftSourceChips({
+  attribution,
+  baselineHtml,
+  legs,
+  onJumpToLeg,
+}: {
+  attribution: InvoiceGroupResponseDraftAttributionItem[] | null;
+  baselineHtml: string | null;
+  legs: ClaimResponse[];
+  onJumpToLeg?: (claimId: number) => void;
+}) {
+  const list = Array.isArray(attribution) ? attribution : [];
+  if (list.length === 0) return null;
+
+  const legIds = new Set(legs.map((l) => l.id));
+
+  const scrollToEvidence = () => {
+    const el = document.getElementById("group-detail-section-evidence");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const focusNotes = () => {
+    const el = document.querySelector<HTMLElement>('[data-testid="readback-input"]');
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.focus?.();
+    }
+  };
+
+  // Truncate paragraph previews so the chip strip stays compact; the
+  // operator can still see the full text in the Textarea below.
+  const preview = (s: string) => {
+    const t = s.replace(/\s+/g, " ").trim();
+    return t.length > 160 ? `${t.slice(0, 160)}…` : t;
+  };
+  void baselineHtml; // kept for future paragraph alignment / diffing
+
+  return (
+    <div
+      className="rounded-md border border-muted bg-muted/30 p-2 space-y-1.5"
+      data-testid="draft-source-chips"
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
+        Sources used by the AI
+      </div>
+      <ul className="space-y-1.5">
+        {list.map((entry, idx) => {
+          const kind = entry.sourceKind;
+          const ref = entry.sourceRef ?? null;
+          let label = "Composed";
+          let title = "AI-composed paragraph (no single source).";
+          let Icon = Wand2;
+          let onClick: (() => void) | undefined;
+          let testIdSuffix = `composed-${idx}`;
+          let disabled = true;
+
+          if (kind === "sop") {
+            const legId = ref?.legId ?? null;
+            const legExists = typeof legId === "number" && legIds.has(legId);
+            label = legExists ? `SOP · Leg #${legId}` : "SOP step";
+            title = ref?.question
+              ? `${ref.question}${ref.answer ? ` → ${ref.answer}` : ""}`
+              : "SOP walk step";
+            Icon = ListChecks;
+            if (legExists && onJumpToLeg) {
+              onClick = () => onJumpToLeg(legId as number);
+              disabled = false;
+            }
+            testIdSuffix = `sop-${idx}`;
+          } else if (kind === "evidence") {
+            label = ref?.name ? `Evidence · ${ref.name}` : "Evidence";
+            title = ref?.name ?? "Attached evidence file";
+            Icon = Paperclip;
+            onClick = scrollToEvidence;
+            disabled = false;
+            testIdSuffix = `evidence-${idx}`;
+          } else if (kind === "notes") {
+            label = "Operator notes";
+            title = "The CRITICAL CONTEXT note you wrote in Understanding notes.";
+            Icon = StickyNote;
+            onClick = focusNotes;
+            disabled = false;
+            testIdSuffix = `notes-${idx}`;
+          }
+
+          return (
+            <li
+              key={idx}
+              className="flex items-start gap-2 text-xs"
+              data-testid={`draft-source-paragraph-${idx}`}
+            >
+              <button
+                type="button"
+                onClick={onClick}
+                disabled={disabled}
+                title={title}
+                className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none transition-colors ${
+                  disabled
+                    ? "border-muted-foreground/20 bg-muted text-muted-foreground cursor-default"
+                    : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 cursor-pointer"
+                }`}
+                data-testid={`draft-source-chip-${testIdSuffix}`}
+                data-source-kind={kind}
+              >
+                <Icon className="h-3 w-3" />
+                <span className="truncate max-w-[180px]">{label}</span>
+              </button>
+              <span className="text-muted-foreground leading-snug">
+                {preview(entry.paragraph)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

@@ -16,6 +16,7 @@ import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { InvoiceGroupEligibility } from "./invoiceGroupEligibility";
 import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
 import type { InvoiceGroupResponseClosureReviewState } from "./invoiceGroupResponseClosureReviewState";
+import type { InvoiceGroupResponseDraftAttributionItem } from "./invoiceGroupResponseDraftAttributionItem";
 import type { InvoiceGroupResponseEvidenceChecklist } from "./invoiceGroupResponseEvidenceChecklist";
 import type { InvoiceGroupResponseLegSubStatusCounts } from "./invoiceGroupResponseLegSubStatusCounts";
 import type { InvoiceGroupResponseMacroPhase } from "./invoiceGroupResponseMacroPhase";
@@ -221,6 +222,11 @@ on payload shapes that don't compute it (e.g. PATCH echoes).
    * @nullable
    */
   aiBaselineDescriptionHtml?: string | null;
+  /**
+   * Task #836. Per-paragraph source attribution for the AI-generated dispute write-up, in the same paragraph order as `aiBaselineDescriptionHtml`. Drives the small source chips rendered next to each paragraph on the Review & edit panel so the operator can trace any paragraph back to the SOP step, evidence file, or operator note that produced it. Overwritten in lockstep with the AI baseline on every preview-generated / draft regenerate run.
+   * @nullable
+   */
+  draftAttribution?: InvoiceGroupResponseDraftAttributionItem[] | null;
   /**
    * Stamped each time the operator saves an edit to the dispute draft.
    * @nullable

@@ -75,6 +75,22 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   draftDescriptionHtml: text("draft_description_html"),
   aiBaselineSubject: text("ai_baseline_subject"),
   aiBaselineDescriptionHtml: text("ai_baseline_description_html"),
+  // Task #836 — per-paragraph attribution for the AI-generated dispute
+  // write-up. Array of `{ paragraph, sourceKind, sourceRef }`. Captured
+  // alongside the AI baseline so the source chips on the operator's
+  // write-up display survive reload and regenerate, and so the chips
+  // align with the baseline paragraphs even if the operator hasn't yet
+  // edited the draft. Cleared when a new draft is regenerated. The
+  // sourceRef shape varies by kind:
+  //   - sop:       { legId: number, question?: string, answer?: string }
+  //   - evidence:  { name: string }
+  //   - notes:     {} (operator's understanding notes)
+  //   - composed:  {} (AI-synthesised; no single source)
+  draftAttribution: jsonb("draft_attribution").$type<Array<{
+    paragraph: string;
+    sourceKind: "sop" | "evidence" | "notes" | "composed";
+    sourceRef?: { legId?: number; question?: string; answer?: string; name?: string } | null;
+  }>>(),
   draftEditedAt: timestamp("draft_edited_at", { withTimezone: true }),
   draftEditedBy: text("draft_edited_by"),
   draftReviewedAt: timestamp("draft_reviewed_at", { withTimezone: true }),

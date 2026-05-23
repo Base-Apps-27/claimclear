@@ -486,6 +486,95 @@ export function resolveCustomContextNote(opts: {
   return (opts.understandingReadback || "").trim();
 }
 
+// Task #836 — per-paragraph source attribution emitted alongside the
+// AI-generated dispute write-up. Stored as JSONB on `invoice_groups`
+// and rendered as small "source" chips next to each paragraph on the
+// Review & edit panel so operators can trace any sentence back to the
+// SOP step, evidence file, or operator note that produced it.
+export type DraftAttributionKind = "sop" | "evidence" | "notes" | "composed";
+export interface DraftAttributionRef {
+  legId?: number;
+  question?: string;
+  answer?: string;
+  name?: string;
+}
+export interface DraftAttributionEntry {
+  paragraph: string;
+  sourceKind: DraftAttributionKind;
+  sourceRef?: DraftAttributionRef | null;
+}
+
+// Inline tag the LLM appends after each paragraph. Format examples:
+//   [[SRC:sop|leg=123|q=Did the driver wait?|a=Yes]]
+//   [[SRC:evidence|name=PCS.pdf]]
+//   [[SRC:notes]]
+//   [[SRC:composed]]
+// Tolerant parser — unknown kinds collapse to "composed" so an LLM
+// hiccup never blocks the write-up from rendering.
+const SRC_TAG_RE = /\[\[SRC:([^\]]+)\]\]/g;
+
+function parseSrcTag(raw: string): { kind: DraftAttributionKind; ref: DraftAttributionRef | null } {
+  const parts = raw.split("|").map((s) => s.trim()).filter(Boolean);
+  const head = (parts.shift() || "composed").toLowerCase();
+  const kind: DraftAttributionKind =
+    head === "sop" || head === "evidence" || head === "notes" ? head : "composed";
+  if (kind === "composed" || kind === "notes") return { kind, ref: null };
+  const ref: DraftAttributionRef = {};
+  for (const p of parts) {
+    const eq = p.indexOf("=");
+    if (eq < 0) continue;
+    const k = p.slice(0, eq).trim().toLowerCase();
+    const v = p.slice(eq + 1).trim();
+    if (!v) continue;
+    if (k === "leg") {
+      const n = parseInt(v, 10);
+      if (!isNaN(n)) ref.legId = n;
+    } else if (k === "q") ref.question = v.slice(0, 240);
+    else if (k === "a") ref.answer = v.slice(0, 240);
+    else if (k === "name") ref.name = v.slice(0, 240);
+  }
+  return { kind, ref: Object.keys(ref).length > 0 ? ref : null };
+}
+
+/**
+ * Parse the LLM's tagged output into:
+ *   - `description` — the operator-facing write-up text with the tags
+ *     stripped out (this is what gets persisted as the draft body).
+ *   - `attribution` — one entry per paragraph, in order, suitable for
+ *     direct persistence to `invoice_groups.draft_attribution`.
+ *
+ * Paragraphs are split on one-or-more blank lines (matches the prompt's
+ * "blank line between paragraphs" instruction). Tags found inside a
+ * paragraph attach to that paragraph; a paragraph with no tag falls
+ * back to `composed`. Untagged tail tags are ignored.
+ */
+export function parseDraftAttribution(raw: string): {
+  description: string;
+  attribution: DraftAttributionEntry[];
+} {
+  const text = raw.replace(/\r\n/g, "\n").trim();
+  if (!text) return { description: "", attribution: [] };
+  const paragraphs = text.split(/\n\s*\n+/);
+  const attribution: DraftAttributionEntry[] = [];
+  const cleanParas: string[] = [];
+  for (const para of paragraphs) {
+    const tags: Array<ReturnType<typeof parseSrcTag>> = [];
+    const stripped = para.replace(SRC_TAG_RE, (_m, inner) => {
+      tags.push(parseSrcTag(String(inner)));
+      return "";
+    }).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (!stripped) continue;
+    const chosen = tags[0] ?? { kind: "composed" as const, ref: null };
+    cleanParas.push(stripped);
+    attribution.push({
+      paragraph: stripped,
+      sourceKind: chosen.kind,
+      sourceRef: chosen.ref,
+    });
+  }
+  return { description: cleanParas.join("\n\n"), attribution };
+}
+
 export function buildPortalDescriptionPrompt(opts: {
   ctx: GroupContext;
   errorType: typeof errorTypesTable.$inferSelect | null;
@@ -551,6 +640,24 @@ ${trimmedSpecial}
 `
     : "";
 
+  // Task #836 — per-paragraph source attribution. The LLM is asked to
+  // append exactly one bracketed source tag immediately after each
+  // paragraph (on its own line). The server strips the tags before the
+  // text reaches the operator, but persists the (paragraph, source)
+  // pairs so the Review & edit panel can render a small chip next to
+  // each paragraph for traceability.
+  const legIds = rides.map((r) => `${r.id}`).join(", ");
+  const evidenceNames = Array.from(new Set([
+    ...((group.evidenceFiles ?? []).map((f) => f?.name).filter(Boolean) as string[]),
+    ...rides.flatMap((r) => (r.evidenceFiles ?? []).map((f) => f?.name).filter(Boolean) as string[]),
+  ])).slice(0, 12);
+  const attributionRules = `SOURCE TAGS (REQUIRED). After each paragraph, on its own line, append exactly one bracketed source tag identifying what most influenced that paragraph:
+- "[[SRC:sop|leg=<legId>|q=<short question>|a=<short answer>]]" when the paragraph leans on a specific SOP walk step. Use one of these leg ids: ${legIds || "<none>"}. Keep q and a short (≤80 chars each), no pipe characters.
+- "[[SRC:evidence|name=<file name>]]" when the paragraph leans on an attached evidence file.${evidenceNames.length > 0 ? ` Attached files: ${evidenceNames.join(", ")}.` : ""}
+- "[[SRC:notes]]" when the paragraph leans on the operator's CRITICAL CONTEXT note above.
+- "[[SRC:composed]]" when the paragraph is a connective / synthesised paragraph with no single dominant source (e.g. opening framing or closing request).
+Exactly one tag per paragraph. The tag must sit on its own line, immediately after the paragraph, with a blank line before the next paragraph. Never embed a tag mid-sentence. Never invent leg ids, questions, answers, or file names that are not listed above.`;
+
   const prompt = `${channelLine}
 
 ${groupHeader}
@@ -564,11 +671,13 @@ ${specialBlock}${instructions ? `IMPORTANT — Follow these guidelines for tone 
 
 ${formatRules}
 
-Return ONLY the note text, no JSON wrapping.`;
+${attributionRules}
+
+Return ONLY the note text with one source tag after each paragraph. No JSON wrapping, no headers, no preamble.`;
 
   const systemPrompt = isDirectEmail
-    ? "You are a professional NEMT claims dispute specialist. Write the body of a dispute email on behalf of a transportation provider — without the greeting or sign-off (those are added automatically). Each message should sound natural — vary sentence structure and word choice so no two messages are identical. Avoid boilerplate or robotic language. Return only the body text."
-    : "You are a professional NEMT claims dispute specialist. Write clear, factual portal submission notes on behalf of a transportation provider. Each note should sound natural — vary sentence structure and word choice so no two notes are identical. Avoid boilerplate or robotic language. Return only the note text.";
+    ? "You are a professional NEMT claims dispute specialist. Write the body of a dispute email on behalf of a transportation provider — without the greeting or sign-off (those are added automatically). Each message should sound natural — vary sentence structure and word choice so no two messages are identical. Avoid boilerplate or robotic language. After every paragraph, emit exactly one bracketed source tag on its own line per the SOURCE TAGS instructions in the user prompt. Return only the body text and the source tags."
+    : "You are a professional NEMT claims dispute specialist. Write clear, factual portal submission notes on behalf of a transportation provider. Each note should sound natural — vary sentence structure and word choice so no two notes are identical. Avoid boilerplate or robotic language. After every paragraph, emit exactly one bracketed source tag on its own line per the SOURCE TAGS instructions in the user prompt. Return only the note text and the source tags.";
 
   return { prompt, systemPrompt };
 }
@@ -612,7 +721,7 @@ async function generatePortalDescription(
   settings: PortalSettings,
   promptLegInputs: PromptLegInputsResult,
   specialCircumstances?: string | null,
-): Promise<string> {
+): Promise<{ description: string; attribution: DraftAttributionEntry[] }> {
   const { prompt, systemPrompt } = buildPortalDescriptionPrompt({
     ctx, errorType, disputeReason, settings, promptLegInputs, specialCircumstances,
   });
@@ -631,7 +740,8 @@ async function generatePortalDescription(
   if (!textBlock || textBlock.type !== "text") {
     throw new LLMUnavailableError("AI returned an empty response. Please try again in a moment.");
   }
-  return (textBlock as { type: "text"; text: string }).text.trim();
+  const raw = (textBlock as { type: "text"; text: string }).text.trim();
+  return parseDraftAttribution(raw);
 }
 
 /**
@@ -1158,6 +1268,11 @@ export interface GeneratePortalDraftOpts {
 export interface GeneratePortalDraftResult {
   subject: string;
   descriptionHtml: string;
+  // Task #836 — per-paragraph attribution emitted by the LLM, parsed
+  // out of the inline `[[SRC:...]]` tags. Persisted to
+  // `invoice_groups.draft_attribution` so the operator-facing chips on
+  // the Review & edit panel survive page reloads and regenerate runs.
+  attribution: DraftAttributionEntry[];
   promptLegInputs: PromptLegInputsResult;
   auditCounters: ReturnType<typeof promptLegAuditCounters>;
   groupId: number;
@@ -1177,6 +1292,7 @@ interface PreparedDraftContent {
   snap: ReturnType<typeof buildSnapshot>;
   promptLegInputs: PromptLegInputsResult;
   generatedDescription: string;
+  generatedAttribution: DraftAttributionEntry[];
   attachmentUrls: string[];
   gpsBreadcrumbs: string;
   trimmedSpecial: string;
@@ -1226,9 +1342,10 @@ async function preparePortalDraftContent(
   const rides = ctx.rides as PromptLegRowInput[];
   const treesByLegId = await loadDecisionTreesForLegs(rides);
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
-  const generatedDescription = await generatePortalDescription(
-    ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null,
-  );
+  const { description: generatedDescription, attribution: generatedAttribution } =
+    await generatePortalDescription(
+      ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null,
+    );
 
   const attachmentUrls = await collectGroupEvidenceUrls(ctx);
   const gpsBreadcrumbs = resolveGpsBreadcrumbs(issueType, settings.defaultGpsBreadcrumbs);
@@ -1245,7 +1362,7 @@ async function preparePortalDraftContent(
 
   return {
     ctx, filtered, totalLegs, isPartialSubmission, settings, errorType,
-    reason, issueType, snap, promptLegInputs, generatedDescription,
+    reason, issueType, snap, promptLegInputs, generatedDescription, generatedAttribution,
     attachmentUrls, gpsBreadcrumbs, trimmedSpecial, trimmedReadback,
   };
 }
@@ -1268,6 +1385,7 @@ export async function generatePortalDraftForGroup(
   return {
     subject: prepared.snap.subjectFallback,
     descriptionHtml: prepared.generatedDescription,
+    attribution: prepared.generatedAttribution,
     promptLegInputs: prepared.promptLegInputs,
     auditCounters: promptLegAuditCounters(prepared.promptLegInputs),
     groupId: prepared.ctx.group.id,
@@ -1482,7 +1600,10 @@ router.post("/portal-submissions/:id/regenerate", asyncHandler(async (req, res):
   const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
   let generatedDescription: string;
   try {
-    generatedDescription = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, promptLegInputs, savedSpecial || null);
+    // Per-submission regenerate (legacy surface) doesn't persist attribution —
+    // attribution lives on `invoice_groups.draft_attribution` and is written
+    // by the group-level preview/regenerate routes (see invoice-groups.ts).
+    ({ description: generatedDescription } = await generatePortalDescription(ctx, errorType, existing.disputeReason || "", settings, promptLegInputs, savedSpecial || null));
   } catch (err) {
     if (err instanceof LLMUnavailableError) {
       logger.error({ err: err.cause, groupId: ctx.group.id, submissionId: id }, "AI portal description regeneration failed after retries");
@@ -1755,7 +1876,10 @@ router.post("/portal-submissions", asyncHandler(async (req, res): Promise<void> 
     const treesByLegId = await loadDecisionTreesForLegs(rides);
     const promptLegInputs = buildPromptLegInputs({ legs: rides, groupLegs: rides, treesByLegId });
     try {
-      generatedDescription = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null);
+      // Submit-now legacy path — attribution is intentionally discarded
+      // here. The group-level preview/regenerate routes are the canonical
+      // source-of-truth and write `draft_attribution` to `invoice_groups`.
+      ({ description: generatedDescription } = await generatePortalDescription(ctx, errorType, reason, settings, promptLegInputs, trimmedSpecial || null));
     } catch (err) {
       if (err instanceof LLMUnavailableError) {
         logger.error({ err: err.cause, groupId: ctx.group.id }, "AI portal description generation failed after retries (POST /portal-submissions)");
