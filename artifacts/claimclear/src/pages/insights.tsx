@@ -45,6 +45,7 @@ import {
   Line,
   AreaChart,
   Area,
+  Cell,
 } from "recharts";
 import { PageHeader, FilterStrip, type FilterStripTab, MetricTile, Section } from "@/components/cohesion";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -111,6 +112,64 @@ function MiniBar({ pct, tone = "blue" }: { pct: number; tone?: "blue" | "amber" 
   return (
     <div className="h-1.5 rounded flex-1 bg-muted">
       <div className="h-full rounded" style={{ width: `${Math.min(Math.max(pct, 0), 100)}%`, background: map[tone] }} />
+    </div>
+  );
+}
+
+// 8-week trailing rejection sparkline. Last bar = current (in-progress)
+// week, highlighted so operators can quickly read "this week vs the
+// recent baseline". Tooltip lists week-by-week counts with the WoW
+// delta on each bar. Rendered with Recharts so the page only has one
+// chart library to load.
+function RepeatOffenderSparkline({ buckets, label }: { buckets: number[]; label: string }) {
+  const safe = (buckets && buckets.length === 8 ? buckets : new Array(8).fill(0)).map(n => Number(n) || 0);
+  const lastIdx = safe.length - 1;
+  const data = safe.map((count, i) => ({
+    count,
+    weekOffset: i - lastIdx, // -7..0; 0 = current week
+    isCurrent: i === lastIdx,
+  }));
+  const max = Math.max(1, ...safe);
+  return (
+    <div style={{ width: 84, height: 28 }} aria-label={`${label} 8-week rejection trend`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} barCategoryGap={1}>
+          <YAxis hide domain={[0, max]} />
+          <XAxis dataKey="weekOffset" hide />
+          <Tooltip
+            cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+            wrapperStyle={{ zIndex: 50 }}
+            contentStyle={{
+              fontSize: 11,
+              padding: "4px 8px",
+              borderRadius: 4,
+              border: "1px solid hsl(var(--border))",
+              background: "hsl(var(--popover))",
+            }}
+            labelFormatter={(value: number) => {
+              if (value === 0) return "This week";
+              if (value === -1) return "Last week";
+              return `${Math.abs(value)} weeks ago`;
+            }}
+            formatter={(value: number, _name, ctx) => {
+              const idx = (ctx?.payload?.weekOffset ?? 0) + lastIdx;
+              const prev = idx > 0 ? safe[idx - 1] : null;
+              const delta = prev === null ? null : value - prev;
+              const deltaLabel =
+                delta === null ? "" : delta > 0 ? ` (+${delta} WoW)` : delta < 0 ? ` (${delta} WoW)` : " (no change)";
+              return [`${value}${deltaLabel}`, "Rejections"];
+            }}
+          />
+          <Bar dataKey="count" isAnimationActive={false}>
+            {data.map((d, i) => (
+              <Cell
+                key={i}
+                fill={d.isCurrent ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground) / 0.55)"}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -1026,6 +1085,7 @@ export default function Insights() {
               <span style={{ minWidth: 100 }} className="hidden md:inline">Last invoice</span>
               <span className="flex-1">Top error type</span>
               <span style={{ minWidth: 56, textAlign: "right" }}>Rejections</span>
+              <span style={{ width: 84, textAlign: "center" }} className="hidden md:inline">8-wk trend</span>
               <span style={{ minWidth: 84, textAlign: "right" }}>$ at risk</span>
               <span style={{ minWidth: 56, textAlign: "right" }}>Win rate</span>
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
@@ -1050,6 +1110,13 @@ export default function Insights() {
                       <div className="text-[11px] truncate text-muted-foreground">{d.topErrorTypeName ?? "—"}</div>
                     </div>
                     <span className="font-mono font-semibold tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{d.rejectionCount}</span>
+                    <span
+                      className="hidden md:inline-flex items-center justify-center"
+                      style={{ width: 84 }}
+                      data-testid={`repeat-driver-sparkline-${d.carNumber}`}
+                    >
+                      <RepeatOffenderSparkline buckets={d.weeklyBuckets} label={`Vehicle ${d.carNumber}`} />
+                    </span>
                     <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
                       {formatCurrency(d.atRiskAmount)}
                     </span>
@@ -1090,6 +1157,7 @@ export default function Insights() {
               <span style={{ minWidth: 100 }}>Member</span>
               <span className="flex-1">Top error type</span>
               <span style={{ minWidth: 56, textAlign: "right" }}>Rejections</span>
+              <span style={{ width: 84, textAlign: "center" }} className="hidden md:inline">8-wk trend</span>
               <span style={{ minWidth: 84, textAlign: "right" }}>$ at risk</span>
               <span style={{ minWidth: 56, textAlign: "right" }}>Win rate</span>
               <span style={{ minWidth: 28, textAlign: "right" }}>vs</span>
@@ -1111,6 +1179,13 @@ export default function Insights() {
                       <div className="text-[11px] truncate text-muted-foreground">{m.topErrorTypeName ?? "—"}</div>
                     </div>
                     <span className="font-mono font-semibold tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>{m.rejectionCount}</span>
+                    <span
+                      className="hidden md:inline-flex items-center justify-center"
+                      style={{ width: 84 }}
+                      data-testid={`repeat-member-sparkline-${m.clientNumber}`}
+                    >
+                      <RepeatOffenderSparkline buckets={m.weeklyBuckets} label={`Member ${m.clientNumber}`} />
+                    </span>
                     <span className="font-mono text-xs tabular-nums" style={{ minWidth: 84, textAlign: "right", color: "hsl(var(--destructive))" }}>
                       {formatCurrency(m.atRiskAmount)}
                     </span>

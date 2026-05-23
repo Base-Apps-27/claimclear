@@ -31907,6 +31907,12 @@ export const GetDashboardRepeatOffendersQueryParams = zod.object({
     .default(getDashboardRepeatOffendersQueryLimitDefault),
 });
 
+export const getDashboardRepeatOffendersResponseDriversItemWeeklyBucketsMin = 8;
+export const getDashboardRepeatOffendersResponseDriversItemWeeklyBucketsMax = 8;
+
+export const getDashboardRepeatOffendersResponseMembersItemWeeklyBucketsMin = 8;
+export const getDashboardRepeatOffendersResponseMembersItemWeeklyBucketsMax = 8;
+
 export const GetDashboardRepeatOffendersResponse = zod.object({
   days: zod.number(),
   previousPeriodDays: zod
@@ -31958,6 +31964,13 @@ export const GetDashboardRepeatOffendersResponse = zod.object({
           .describe(
             "ISO date (YYYY-MM-DD) of the most recent service date among Denied claims in the window.",
           ),
+        weeklyBuckets: zod
+          .array(zod.number())
+          .min(getDashboardRepeatOffendersResponseDriversItemWeeklyBucketsMin)
+          .max(getDashboardRepeatOffendersResponseDriversItemWeeklyBucketsMax)
+          .describe(
+            "Rejection count per week over the last 8 weeks for this carNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window so the trend stays comparable across range toggles.",
+          ),
       }),
     )
     .describe(
@@ -31974,6 +31987,13 @@ export const GetDashboardRepeatOffendersResponse = zod.object({
         winRate: zod.number().nullable(),
         trend: zod.enum(["up", "down", "flat"]),
         lastRejectionDate: zod.string().nullable(),
+        weeklyBuckets: zod
+          .array(zod.number())
+          .min(getDashboardRepeatOffendersResponseMembersItemWeeklyBucketsMin)
+          .max(getDashboardRepeatOffendersResponseMembersItemWeeklyBucketsMax)
+          .describe(
+            "Rejection count per week over the last 8 weeks for this clientNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window.",
+          ),
       }),
     )
     .describe(

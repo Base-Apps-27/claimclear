@@ -10594,6 +10594,13 @@ components:
         lastRejectionDate:
           type: ["string", "null"]
           description: "ISO date (YYYY-MM-DD) of the most recent service date among Denied claims in the window."
+        weeklyBuckets:
+          type: array
+          description: "Rejection count per week over the last 8 weeks for this carNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window so the trend stays comparable across range toggles."
+          minItems: 8
+          maxItems: 8
+          items:
+            type: integer
       required:
         - carNumber
         - lastInvoiceNumber
@@ -10604,6 +10611,7 @@ components:
         - winRate
         - trend
         - lastRejectionDate
+        - weeklyBuckets
 
     RepeatOffenderMember:
       type: object
@@ -10625,6 +10633,13 @@ components:
           enum: [up, down, flat]
         lastRejectionDate:
           type: ["string", "null"]
+        weeklyBuckets:
+          type: array
+          description: "Rejection count per week over the last 8 weeks for this clientNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window."
+          minItems: 8
+          maxItems: 8
+          items:
+            type: integer
       required:
         - clientNumber
         - rejectionCount
@@ -10634,6 +10649,7 @@ components:
         - winRate
         - trend
         - lastRejectionDate
+        - weeklyBuckets
 
     ExpiringInvoiceGroup:
       type: object

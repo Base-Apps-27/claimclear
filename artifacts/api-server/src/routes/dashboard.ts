@@ -2076,6 +2076,38 @@ export type RepeatOffenderInputRow = {
   invoiceNumber: string | null;
 };
 
+// Sparkline buckets are independent of the `days` query window — we
+// always show the trailing 8 weeks so the trend column stays
+// comparable across the range toggles.
+export const SPARKLINE_WEEKS = 8;
+
+export type SparklineRow = {
+  key: string | null;
+  outcome: string;
+  weekIndex: number | null;
+};
+
+// Build a `key -> number[SPARKLINE_WEEKS]` map of weekly rejection
+// counts. Uses the same rejection rule as `aggregateRepeatOffenders`
+// (everything except Non-Issue / No Action Needed counts as a
+// rejection) so the trailing tail of the sparkline reconciles with
+// the current-window rejection total for the matching range.
+export function buildSparklineBuckets(rows: SparklineRow[]): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  for (const row of rows) {
+    if (!row.key) continue;
+    if (row.weekIndex == null || row.weekIndex < 0 || row.weekIndex >= SPARKLINE_WEEKS) continue;
+    if (row.outcome === "Non-Issue" || row.outcome === "No Action Needed") continue;
+    let buckets = out.get(row.key);
+    if (!buckets) {
+      buckets = new Array(SPARKLINE_WEEKS).fill(0);
+      out.set(row.key, buckets);
+    }
+    buckets[row.weekIndex] += 1;
+  }
+  return out;
+}
+
 export function aggregateRepeatOffenders(rows: RepeatOffenderInputRow[]): Map<string, RepeatOffenderAggRow> {
   const map = new Map<string, RepeatOffenderAggRow>();
   for (const row of rows) {
@@ -2149,6 +2181,7 @@ export type RepeatOffenderShapedRow = {
   winRate: number | null;
   trend: RepeatOffenderTrend;
   lastRejectionDate: string | null;
+  weeklyBuckets: number[];
   carNumber?: string;
   lastInvoiceNumber?: string | null;
   clientNumber?: string;
@@ -2159,6 +2192,7 @@ export function shapeRepeatOffenders(
   priorMap: Map<string, RepeatOffenderAggRow>,
   keyName: RepeatOffenderGroupingKey,
   limit: number,
+  sparklineBuckets: Map<string, number[]> = new Map(),
 ): RepeatOffenderShapedRow[] {
   const list = Array.from(map.values())
     .sort((a, b) => b.rejectionCount - a.rejectionCount || b.atRiskAmount - a.atRiskAmount)
@@ -2175,6 +2209,7 @@ export function shapeRepeatOffenders(
       winRate,
       trend: trendFromCounts(agg.rejectionCount, priorCount),
       lastRejectionDate: agg.lastRejectionDate,
+      weeklyBuckets: sparklineBuckets.get(agg.key) ?? new Array(SPARKLINE_WEEKS).fill(0),
     };
     if (keyName === "carNumber") {
       return {
@@ -2197,7 +2232,26 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
   const priorStart = new Date(start);
   priorStart.setUTCDate(priorStart.getUTCDate() - days);
 
-  // Pull both periods in one query, partition by key.
+  // Sparkline window: trailing 8 weekly buckets ending today (UTC).
+  // The "current week" bucket (index 7) spans `[bucketBoundaries[7],
+  // bucketBoundaries[8])` so each bucket is exactly 7 days. We widen
+  // the SQL query window to `min(priorStart, sparklineStart)` so the
+  // sparkline doesn't depend on the `days` toggle (an 8-week trend is
+  // useful precisely because it survives the range filter).
+  const todayEnd = new Date();
+  todayEnd.setUTCHours(0, 0, 0, 0);
+  todayEnd.setUTCDate(todayEnd.getUTCDate() + 1); // exclusive upper bound = start of tomorrow UTC
+  const bucketBoundaries: Date[] = [];
+  for (let i = SPARKLINE_WEEKS; i >= 0; i--) {
+    const d = new Date(todayEnd);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    bucketBoundaries.push(d);
+  }
+  const sparklineStart = bucketBoundaries[0];
+  const queryStart = sparklineStart < priorStart ? sparklineStart : priorStart;
+
+  // Pull both periods (and the full 8-week sparkline window) in one
+  // query, partition by key.
   const allRows = await db
     .select({
       carNumber: claimsTable.carNumber,
@@ -2211,15 +2265,38 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
     })
     .from(claimsTable)
     .leftJoin(invoiceGroupsTable, eq(claimsTable.invoiceGroupId, invoiceGroupsTable.id))
-    .where(gte(claimsTable.createdAt, priorStart));
+    .where(gte(claimsTable.createdAt, queryStart));
 
   const currentDriverRows: RepeatOffenderInputRow[] = [];
   const priorDriverRows: RepeatOffenderInputRow[] = [];
   const currentMemberRows: RepeatOffenderInputRow[] = [];
   const priorMemberRows: RepeatOffenderInputRow[] = [];
 
+  // Map a row's createdAt to its 0..SPARKLINE_WEEKS-1 bucket index, or
+  // null if it predates the sparkline window. Iterating the boundary
+  // array is fine for fixed N=8.
+  function bucketIndexFor(ts: Date | null): number | null {
+    if (!ts) return null;
+    if (ts < bucketBoundaries[0] || ts >= bucketBoundaries[SPARKLINE_WEEKS]) return null;
+    for (let i = 0; i < SPARKLINE_WEEKS; i++) {
+      if (ts >= bucketBoundaries[i] && ts < bucketBoundaries[i + 1]) return i;
+    }
+    return null;
+  }
+
+  // Sparkline accumulators get EVERY row in the 8-week window. The
+  // current/prior partition below only drives `rejectionCount` and
+  // `previousRejectionCount`; sparkline buckets are independent of
+  // the `days` toggle so a driver whose only recent activity sits in
+  // the prior period still gets full 8-week trend data.
+  const driverSparklineRows: SparklineRow[] = [];
+  const memberSparklineRows: SparklineRow[] = [];
+
   for (const r of allRows) {
     const inCurrent = r.createdAt && r.createdAt >= start;
+    const weekIndex = bucketIndexFor(r.createdAt ?? null);
+    driverSparklineRows.push({ key: r.carNumber, outcome: r.outcome, weekIndex });
+    memberSparklineRows.push({ key: r.clientNumber, outcome: r.outcome, weekIndex });
     const driverPayload: RepeatOffenderInputRow = {
       key: r.carNumber,
       claimAmount: r.claimAmount,
@@ -2242,12 +2319,14 @@ router.get("/dashboard/repeat-offenders", asyncHandler(async (req, res): Promise
   const priorDrivers = aggregateRepeatOffenders(priorDriverRows);
   const currentMembers = aggregateRepeatOffenders(currentMemberRows);
   const priorMembers = aggregateRepeatOffenders(priorMemberRows);
+  const driverSparklines = buildSparklineBuckets(driverSparklineRows);
+  const memberSparklines = buildSparklineBuckets(memberSparklineRows);
 
   // Money scrub: clerks never see atRiskAmount on driver/member rows.
   // The repeat-offender stats remain visible (rejection count, win rate,
   // trend) — only the dollar exposure is hidden.
-  const drivers = shapeRepeatOffenders(currentDrivers, priorDrivers, "carNumber", limit);
-  const members = shapeRepeatOffenders(currentMembers, priorMembers, "clientNumber", limit);
+  const drivers = shapeRepeatOffenders(currentDrivers, priorDrivers, "carNumber", limit, driverSparklines);
+  const members = shapeRepeatOffenders(currentMembers, priorMembers, "clientNumber", limit, memberSparklines);
   const moneyHidden = !canSeeAmounts(req.user);
   const stripAtRisk = <T extends { atRiskAmount: string }>(row: T) =>
     moneyHidden ? { ...row, atRiskAmount: null as unknown as string } : row;

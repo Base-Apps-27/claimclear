@@ -4245,6 +4245,12 @@ export interface RepeatOffenderDriver {
    * @nullable
    */
   lastRejectionDate: string | null;
+  /**
+   * Rejection count per week over the last 8 weeks for this carNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window so the trend stays comparable across range toggles.
+   * @minItems 8
+   * @maxItems 8
+   */
+  weeklyBuckets: number[];
 }
 
 export type RepeatOffenderMemberTrend =
@@ -4268,6 +4274,12 @@ export interface RepeatOffenderMember {
   trend: RepeatOffenderMemberTrend;
   /** @nullable */
   lastRejectionDate: string | null;
+  /**
+   * Rejection count per week over the last 8 weeks for this clientNumber, oldest first. Index 7 is the current (in-progress) week. Independent of the `days` window.
+   * @minItems 8
+   * @maxItems 8
+   */
+  weeklyBuckets: number[];
 }
 
 export interface DashboardRepeatOffenders {

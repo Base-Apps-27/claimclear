@@ -17,8 +17,11 @@ import dashboardRouter, {
   aggregateRepeatOffenders,
   topErrorType,
   shapeRepeatOffenders,
+  buildSparklineBuckets,
+  SPARKLINE_WEEKS,
   type RepeatOffenderInputRow,
   type RepeatOffenderShapedRow,
+  type SparklineRow,
 } from "../routes/dashboard";
 import { db, pool, claimsTable } from "@workspace/db";
 
@@ -412,6 +415,78 @@ test("shape: atRiskAmount is rendered as a fixed-2-decimal string", () => {
     10,
   );
   assert.equal(out[0].atRiskAmount, "100.75");
+});
+
+// =========================================================================
+// buildSparklineBuckets
+// =========================================================================
+test("sparkline: builds an 8-element per-key bucket array", () => {
+  const rows: SparklineRow[] = [
+    { key: "CAR-S1", outcome: "Denied", weekIndex: 0 },
+    { key: "CAR-S1", outcome: "Denied", weekIndex: 7 },
+    { key: "CAR-S1", outcome: "Denied", weekIndex: 7 },
+    { key: "CAR-S2", outcome: "Denied", weekIndex: 3 },
+  ];
+  const out = buildSparklineBuckets(rows);
+  assert.equal(out.size, 2);
+  assert.deepEqual(out.get("CAR-S1"), [1, 0, 0, 0, 0, 0, 0, 2]);
+  assert.deepEqual(out.get("CAR-S2"), [0, 0, 0, 1, 0, 0, 0, 0]);
+  assert.equal(out.get("CAR-S1")!.length, SPARKLINE_WEEKS);
+});
+
+test("sparkline: ignores null keys, null weekIndex, and out-of-range indices", () => {
+  const rows: SparklineRow[] = [
+    { key: null, outcome: "Denied", weekIndex: 3 },
+    { key: "CAR-X", outcome: "Denied", weekIndex: null },
+    { key: "CAR-X", outcome: "Denied", weekIndex: -1 },
+    { key: "CAR-X", outcome: "Denied", weekIndex: 8 },
+    { key: "CAR-X", outcome: "Denied", weekIndex: 2 },
+  ];
+  const out = buildSparklineBuckets(rows);
+  assert.deepEqual(out.get("CAR-X"), [0, 0, 1, 0, 0, 0, 0, 0]);
+});
+
+test("sparkline: excludes Non-Issue / No Action Needed (matches rejection rule)", () => {
+  const rows: SparklineRow[] = [
+    { key: "CAR-N", outcome: "Non-Issue", weekIndex: 1 },
+    { key: "CAR-N", outcome: "No Action Needed", weekIndex: 2 },
+    { key: "CAR-N", outcome: "Denied", weekIndex: 3 },
+    { key: "CAR-N", outcome: "Pending", weekIndex: 4 },
+    { key: "CAR-N", outcome: "Approved", weekIndex: 5 },
+  ];
+  const out = buildSparklineBuckets(rows);
+  assert.deepEqual(out.get("CAR-N"), [0, 0, 0, 1, 1, 1, 0, 0]);
+});
+
+test("shape: weeklyBuckets is wired through from the sparkline map; defaults to 8 zeros when key is absent", () => {
+  const buckets = new Map<string, number[]>([
+    ["CAR-SP", [0, 1, 0, 0, 2, 0, 0, 3]],
+  ]);
+  const out = shapeRepeatOffenders(
+    aggregateRepeatOffenders([
+      row({ key: "CAR-SP", outcome: "Denied" }),
+      row({ key: "CAR-MISS", outcome: "Denied" }),
+    ]),
+    new Map(),
+    "carNumber",
+    10,
+    buckets,
+  );
+  const sp = out.find(r => r.carNumber === "CAR-SP")!;
+  const miss = out.find(r => r.carNumber === "CAR-MISS")!;
+  assert.deepEqual(sp.weeklyBuckets, [0, 1, 0, 0, 2, 0, 0, 3]);
+  assert.equal(miss.weeklyBuckets.length, SPARKLINE_WEEKS);
+  assert.deepEqual(miss.weeklyBuckets, [0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test("shape: omitting the sparklineBuckets arg yields all-zero 8-element arrays", () => {
+  const out = shapeRepeatOffenders(
+    aggregateRepeatOffenders([row({ key: "CAR-DEF", outcome: "Denied" })]),
+    new Map(),
+    "carNumber",
+    10,
+  );
+  assert.deepEqual(out[0].weeklyBuckets, [0, 0, 0, 0, 0, 0, 0, 0]);
 });
 
 // =========================================================================
