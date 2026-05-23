@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { cronRunsTable, connectorHealthTable, emailBouncesTable, portalSubmissionsTable, portalResponsesTable, outboundEmailsTable } from "@workspace/db";
-import { desc, gte, sql, eq, and, or, isNull, lte, count } from "drizzle-orm";
+import { desc, gte, sql, eq, and, or, isNull, lte, count, inArray } from "drizzle-orm";
 import {
   computeClassifierStats,
   type ClassifierStatsRow,
@@ -26,6 +26,8 @@ import { enumerateExpectedFiresSinceBoot } from "../lib/cron-fire-enumeration";
 import {
   KNOWN_CRON_JOBS,
   PORTAL_BATCH_SWEEPER,
+  PORTAL_RESPONSE_SYNC,
+  RESPONSE_TRACKER,
   getSweepBoundaries,
 } from "../lib/cron-schedule";
 import {
@@ -379,6 +381,228 @@ router.get("/admin/system-health/connectors", requireAdmin, asyncHandler(async (
       status: r.status,
       lastCheckedAt: r.lastCheckedAt.toISOString(),
       lastError: r.lastError,
+    })),
+  });
+}));
+
+// Task #841. Per-bot health summary for the three risky surfaces:
+// submit (portal_batch_sweeper), payor response scan (response_tracker),
+// and portal scrape (portal_response_sync). Each card reads from
+// `cron_runs` + the bot-specific queue source so System Health surfaces
+// "what does each bot look like right now?" without operators having to
+// piece it together from the Scheduled Jobs table.
+type BotId = "submit" | "payor_response_scan" | "portal_scrape";
+
+interface BotDef {
+  id: BotId;
+  label: string;
+  jobName: string;
+  queueLabel: string | null;
+}
+
+const BOT_DEFS: BotDef[] = [
+  { id: "submit", label: "Submit", jobName: PORTAL_BATCH_SWEEPER.name, queueLabel: "due" },
+  { id: "payor_response_scan", label: "Payor response scan", jobName: RESPONSE_TRACKER.name, queueLabel: null },
+  { id: "portal_scrape", label: "Portal scrape", jobName: PORTAL_RESPONSE_SYNC.name, queueLabel: null },
+];
+
+const BOT_DEF_BY_ID: Record<BotId, BotDef> = Object.fromEntries(
+  BOT_DEFS.map((b) => [b.id, b]),
+) as Record<BotId, BotDef>;
+
+// Truncate a long error to keep the card excerpt compact. Cron messages
+// are sometimes multi-line stack traces; we want a one-liner.
+function truncateMessage(msg: string | null): string | null {
+  if (!msg) return null;
+  const firstLine = msg.split("\n")[0].trim();
+  if (firstLine.length <= 160) return firstLine;
+  return `${firstLine.slice(0, 157)}…`;
+}
+
+// Bot status thresholds — kept inline rather than reusing the existing
+// rollup ladder because operators read per-bot cards as "is THIS bot
+// alive?" not as part of the global banner. The rules below mirror the
+// spirit of the rollup (no successful tick in 24h → escalate) without
+// pulling in the cron-tick math that only makes sense for the full set.
+//  - Down:     no successful run in the last 24h.
+//  - Degraded: most recent run failed OR ≥1 failure in the last 24h.
+//  - Healthy:  otherwise.
+function computeBotStatus(args: {
+  now: Date;
+  lastRunStatus: string | null;
+  lastSuccessAt: Date | null;
+  failuresLast24h: number;
+  runs7d: number;
+}): { status: "healthy" | "degraded" | "down"; reason: string | null } {
+  const { now, lastRunStatus, lastSuccessAt, failuresLast24h, runs7d } = args;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  if (runs7d === 0) {
+    return { status: "down", reason: "No runs in the last 7 days." };
+  }
+  const successWithin24h = lastSuccessAt !== null && (now.getTime() - lastSuccessAt.getTime()) <= ONE_DAY_MS;
+  if (!successWithin24h) {
+    return { status: "down", reason: "No successful run in the last 24 hours." };
+  }
+  if (lastRunStatus === "failed") {
+    return { status: "degraded", reason: "Most recent run failed." };
+  }
+  if (failuresLast24h > 0) {
+    return {
+      status: "degraded",
+      reason: `${failuresLast24h} failed run${failuresLast24h === 1 ? "" : "s"} in the last 24 hours.`,
+    };
+  }
+  return { status: "healthy", reason: null };
+}
+
+// Build the seven daily buckets (oldest → newest) of mean duration in ms.
+// Days with no completed runs are null so the sparkline can leave a gap
+// rather than imply a zero-duration run.
+function buildSparkline(now: Date, runs: { finishedAt: Date | null; startedAt: Date; durationMs: number | null }[]): (number | null)[] {
+  const buckets: { sum: number; count: number }[] = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
+  const dayMs = 24 * 60 * 60 * 1000;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  for (const r of runs) {
+    if (r.durationMs === null) continue;
+    const stampDate = r.finishedAt ?? r.startedAt;
+    const stamp = new Date(stampDate);
+    stamp.setHours(0, 0, 0, 0);
+    const idx = 6 - Math.floor((today.getTime() - stamp.getTime()) / dayMs);
+    if (idx < 0 || idx > 6) continue;
+    buckets[idx].sum += r.durationMs;
+    buckets[idx].count += 1;
+  }
+  return buckets.map((b) => (b.count === 0 ? null : Math.round(b.sum / b.count)));
+}
+
+router.get("/admin/system-health/bots", requireAdmin, asyncHandler(async (_req, res): Promise<void> => {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  // Pull the last 7d of runs for every tracked job in one query, then
+  // bucket per-bot in JS — cheaper than three round trips for what is
+  // a small table.
+  const trackedJobNames = BOT_DEFS.map((b) => b.jobName);
+  const runs = await db
+    .select({
+      jobName: cronRunsTable.jobName,
+      startedAt: cronRunsTable.startedAt,
+      finishedAt: cronRunsTable.finishedAt,
+      status: cronRunsTable.status,
+      message: cronRunsTable.message,
+    })
+    .from(cronRunsTable)
+    .where(and(
+      gte(cronRunsTable.startedAt, sevenDaysAgo),
+      inArray(cronRunsTable.jobName, trackedJobNames),
+    ))
+    .orderBy(desc(cronRunsTable.startedAt));
+
+  // Submit-bot queue depth comes from the same pending+due rule used
+  // everywhere else (Portal Submissions queue pill, worker-activity
+  // endpoint). The other bots don't have a meaningful "queue" — leave
+  // them null so the UI hides the row instead of showing a misleading 0.
+  const [{ value: submitQueueDepth } = { value: 0 }] = await db
+    .select({ value: count() })
+    .from(portalSubmissionsTable)
+    .where(and(
+      eq(portalSubmissionsTable.status, "pending"),
+      or(
+        isNull(portalSubmissionsTable.nextRetryAt),
+        lte(portalSubmissionsTable.nextRetryAt, now),
+      ),
+    ));
+
+  const bots = BOT_DEFS.map((bot) => {
+    const botRuns = runs.filter((r) => r.jobName === bot.jobName);
+    const withDuration = botRuns.map((r) => ({
+      ...r,
+      durationMs: r.finishedAt ? r.finishedAt.getTime() - r.startedAt.getTime() : null,
+    }));
+
+    const lastRun = withDuration[0] ?? null;
+    // "Success" covers both the canonical `completed` value emitted by
+    // `recordCronRun` and the legacy `ok` rows from older producers.
+    const isSuccess = (s: string): boolean => s === "completed" || s === "ok";
+    const lastSuccess = withDuration.find((r) => isSuccess(r.status)) ?? null;
+    const lastFailure = withDuration.find((r) => r.status === "failed") ?? null;
+
+    const failuresLast24h = withDuration.filter(
+      (r) => r.status === "failed" && r.startedAt >= oneDayAgo,
+    ).length;
+    const failures7d = withDuration.filter((r) => r.status === "failed").length;
+
+    const completedDurations = withDuration
+      .filter((r) => isSuccess(r.status) && r.durationMs !== null)
+      .map((r) => r.durationMs as number);
+    const avgDurationMs7d = completedDurations.length > 0
+      ? Math.round(completedDurations.reduce((a, b) => a + b, 0) / completedDurations.length)
+      : null;
+
+    const { status, reason } = computeBotStatus({
+      now,
+      lastRunStatus: lastRun?.status ?? null,
+      lastSuccessAt: lastSuccess?.startedAt ?? null,
+      failuresLast24h,
+      runs7d: withDuration.length,
+    });
+
+    const queueDepth = bot.id === "submit" ? submitQueueDepth : null;
+
+    return {
+      id: bot.id,
+      label: bot.label,
+      jobName: bot.jobName,
+      status,
+      statusReason: reason,
+      lastSuccessAt: lastSuccess?.startedAt.toISOString() ?? null,
+      lastFailureAt: lastFailure?.startedAt.toISOString() ?? null,
+      lastFailureMessage: truncateMessage(lastFailure?.message ?? null),
+      queueDepth,
+      queueLabel: bot.queueLabel,
+      avgDurationMs7d,
+      runs7d: withDuration.length,
+      failures7d,
+      durationSparkline: buildSparkline(now, withDuration),
+    };
+  });
+
+  res.json({ bots });
+}));
+
+router.get("/admin/system-health/bots/:botId/runs", requireAdmin, asyncHandler(async (req, res): Promise<void> => {
+  const botId = req.params.botId as BotId;
+  const def = BOT_DEF_BY_ID[botId];
+  if (!def) {
+    res.status(404).json({ error: "Unknown bot id" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: cronRunsTable.id,
+      startedAt: cronRunsTable.startedAt,
+      finishedAt: cronRunsTable.finishedAt,
+      status: cronRunsTable.status,
+      message: cronRunsTable.message,
+    })
+    .from(cronRunsTable)
+    .where(eq(cronRunsTable.jobName, def.jobName))
+    .orderBy(desc(cronRunsTable.startedAt))
+    .limit(20);
+
+  res.json({
+    botId: def.id,
+    jobName: def.jobName,
+    runs: rows.map((r) => ({
+      id: r.id,
+      startedAt: r.startedAt.toISOString(),
+      finishedAt: r.finishedAt?.toISOString() ?? null,
+      durationMs: r.finishedAt ? r.finishedAt.getTime() - r.startedAt.getTime() : null,
+      status: r.status,
+      message: r.message,
     })),
   });
 }));

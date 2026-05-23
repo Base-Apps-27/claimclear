@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   useGetSystemHealthCronRuns,
   useGetSystemHealthConnectors,
@@ -7,6 +8,8 @@ import {
   useGetSystemHealthClassifierStats,
   useGetSystemHealthDailyBrief,
   useGetSystemHealthPortalScrape,
+  useGetSystemHealthBots,
+  useGetSystemHealthBotRuns,
   useRunExpiredSweep,
   getGetSystemHealthCronRunsQueryKey,
   getGetSystemHealthConnectorsQueryKey,
@@ -16,8 +19,12 @@ import {
   getGetSystemHealthClassifierStatsQueryKey,
   getGetSystemHealthDailyBriefQueryKey,
   getGetSystemHealthPortalScrapeQueryKey,
+  getGetSystemHealthBotsQueryKey,
+  getGetSystemHealthBotRunsQueryKey,
   type ClassifierStatsResponse,
+  type BotHealthCard as BotHealthCardData,
 } from "@workspace/api-client-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +179,8 @@ export default function SystemHealth() {
       </div>
 
       <WorkerHealthBanner variant="full" />
+
+      <BotsSection />
 
       <Card>
         <CardHeader>
@@ -896,4 +905,235 @@ function fmtUsd(n: number): string {
   if (n === 0) return "$0.00";
   if (n < 1) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
+}
+
+// Task #841. Per-bot health cards for the three risky surfaces: submit,
+// payor response scan, and portal scrape. Cards summarize "is this bot
+// alive?" — last success, last failure, queue depth, 7-day duration
+// sparkline, and a Healthy/Degraded/Down pill. Clicking a card opens a
+// drawer with the last 20 cron_runs for that bot.
+function BotsSection() {
+  const [openBotId, setOpenBotId] = useState<string | null>(null);
+  const { data, isLoading } = useGetSystemHealthBots({
+    query: {
+      queryKey: getGetSystemHealthBotsQueryKey(),
+      refetchInterval: REFRESH_MS,
+    },
+  });
+  return (
+    <Card data-testid="bots-section">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bot className="h-5 w-5 text-blue-600" /> Bots
+        </CardTitle>
+        <CardDescription>
+          Per-bot health for the submit, payor response scan, and portal scrape workers.
+          Status reflects the last 24h of runs; click a card for the run history.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <SkeletonSwap loading={isLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+          {data?.bots?.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {data.bots.map((b) => (
+                <BotCard key={b.id} bot={b} onOpen={() => setOpenBotId(b.id)} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No bot data available.</p>
+          )}
+        </SkeletonSwap>
+      </CardContent>
+      <BotRunsDrawer
+        botId={openBotId}
+        label={data?.bots?.find((b) => b.id === openBotId)?.label ?? null}
+        onOpenChange={(open) => { if (!open) setOpenBotId(null); }}
+      />
+    </Card>
+  );
+}
+
+function botStatusBadge(status: "healthy" | "degraded" | "down") {
+  if (status === "healthy") return <Badge className="bg-green-600 text-white">Healthy</Badge>;
+  if (status === "degraded") return <Badge className="bg-amber-500 text-white">Degraded</Badge>;
+  return <Badge className="bg-rose-600 text-white">Down</Badge>;
+}
+
+function BotCard({ bot, onOpen }: { bot: BotHealthCardData; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`bot-card-${bot.id}`}
+      className="text-left rounded-md border p-3 hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium">{bot.label}</div>
+        {botStatusBadge(bot.status)}
+      </div>
+      <div className="text-[11px] font-mono text-muted-foreground mt-0.5">{bot.jobName}</div>
+      {bot.statusReason ? (
+        <div className="text-xs text-muted-foreground mt-1">{bot.statusReason}</div>
+      ) : null}
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 mt-3 text-xs">
+        <dt className="text-muted-foreground">Last success</dt>
+        <dd className="text-right">{relTime(bot.lastSuccessAt)}</dd>
+        <dt className="text-muted-foreground">Last failure</dt>
+        <dd className="text-right">{relTime(bot.lastFailureAt)}</dd>
+        {bot.queueDepth !== null ? (
+          <>
+            <dt className="text-muted-foreground">Queue depth</dt>
+            <dd className="text-right tabular-nums">
+              {bot.queueDepth}{bot.queueLabel ? ` ${bot.queueLabel}` : ""}
+            </dd>
+          </>
+        ) : null}
+        <dt className="text-muted-foreground">Avg run (7d)</dt>
+        <dd className="text-right tabular-nums">{fmtDuration(bot.avgDurationMs7d)}</dd>
+      </dl>
+      {bot.lastFailureMessage ? (
+        <div
+          className="mt-2 text-[11px] font-mono text-rose-600 line-clamp-2"
+          title={bot.lastFailureMessage}
+        >
+          {bot.lastFailureMessage}
+        </div>
+      ) : null}
+      <div className="mt-2">
+        <Sparkline values={bot.durationSparkline} />
+        <div className="text-[10px] text-muted-foreground mt-1 text-right">
+          {bot.runs7d} run{bot.runs7d === 1 ? "" : "s"} / 7d
+          {bot.failures7d > 0 ? <span className="text-rose-600"> · {bot.failures7d} failed</span> : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Tiny inline SVG sparkline. Days with no runs render as gaps so a
+// zero-duration bar doesn't mislead the reader.
+function Sparkline({ values }: { values: (number | null)[] }) {
+  const width = 100;
+  const height = 24;
+  const present = values.filter((v): v is number => v !== null);
+  if (present.length === 0) {
+    return <div className="h-6 text-[10px] text-muted-foreground italic">no runs in 7d</div>;
+  }
+  const max = Math.max(...present);
+  const min = Math.min(...present);
+  const range = Math.max(1, max - min);
+  const step = values.length > 1 ? width / (values.length - 1) : 0;
+  const points = values.map((v, i) => {
+    if (v === null) return null;
+    const x = i * step;
+    const y = height - ((v - min) / range) * (height - 2) - 1;
+    return { x, y, v };
+  });
+  // Build segmented polyline so null buckets create gaps.
+  const segments: { x: number; y: number }[][] = [];
+  let cur: { x: number; y: number }[] = [];
+  for (const p of points) {
+    if (p === null) {
+      if (cur.length > 0) { segments.push(cur); cur = []; }
+    } else {
+      cur.push({ x: p.x, y: p.y });
+    }
+  }
+  if (cur.length > 0) segments.push(cur);
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="text-blue-600"
+      aria-label="7-day duration sparkline"
+    >
+      {segments.map((seg, i) => (
+        <polyline
+          key={i}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          points={seg.map((p) => `${p.x},${p.y}`).join(" ")}
+        />
+      ))}
+      {points.map((p, i) => p ? (
+        <circle key={i} cx={p.x} cy={p.y} r="1.5" fill="currentColor" />
+      ) : null)}
+    </svg>
+  );
+}
+
+function fmtDuration(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  const remS = Math.round(s - m * 60);
+  return `${m}m ${remS}s`;
+}
+
+function BotRunsDrawer({
+  botId,
+  label,
+  onOpenChange,
+}: {
+  botId: string | null;
+  label: string | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const open = botId !== null;
+  const { data, isLoading } = useGetSystemHealthBotRuns(botId ?? "submit", {
+    query: {
+      enabled: open && botId !== null,
+      queryKey: getGetSystemHealthBotRunsQueryKey(botId ?? "submit"),
+      refetchInterval: open ? REFRESH_MS : false,
+    },
+  });
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto" data-testid="bot-runs-drawer">
+        <SheetHeader>
+          <SheetTitle>{label ?? "Bot"} — recent runs</SheetTitle>
+          <SheetDescription>
+            Last 20 runs recorded in <span className="font-mono">cron_runs</span>
+            {data?.jobName ? <> for <span className="font-mono">{data.jobName}</span></> : null}.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="mt-4">
+          <SkeletonSwap loading={isLoading} skeleton={<Skeleton className="h-32 w-full" />}>
+            {!data?.runs?.length ? (
+              <p className="text-sm text-muted-foreground">No runs recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-muted-foreground uppercase border-b">
+                    <tr>
+                      <th className="text-left px-2 py-2">Started</th>
+                      <th className="text-right px-2 py-2">Duration</th>
+                      <th className="text-left px-2 py-2">Status</th>
+                      <th className="text-left px-2 py-2">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.runs.map((r) => (
+                      <tr key={r.id} className="border-b last:border-0">
+                        <td className="px-2 py-1.5 text-xs">{relTime(r.startedAt)}</td>
+                        <td className="px-2 py-1.5 text-xs text-right tabular-nums">{fmtDuration(r.durationMs ?? null)}</td>
+                        <td className="px-2 py-1.5">{statusBadge(r.status)}</td>
+                        <td className="px-2 py-1.5 text-xs max-w-xs truncate" title={r.message ?? ""}>
+                          {r.message ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SkeletonSwap>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 }

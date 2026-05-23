@@ -4959,6 +4959,74 @@ export interface EmailBounceRecord {
   matchedOutboundId?: string | null;
 }
 
+export type BotHealthCardId =
+  (typeof BotHealthCardId)[keyof typeof BotHealthCardId];
+
+export const BotHealthCardId = {
+  submit: "submit",
+  payor_response_scan: "payor_response_scan",
+  portal_scrape: "portal_scrape",
+} as const;
+
+export type BotHealthCardStatus =
+  (typeof BotHealthCardStatus)[keyof typeof BotHealthCardStatus];
+
+export const BotHealthCardStatus = {
+  healthy: "healthy",
+  degraded: "degraded",
+  down: "down",
+} as const;
+
+export interface BotHealthCard {
+  id: BotHealthCardId;
+  /** Human-readable bot name for the card title. */
+  label: string;
+  /** Underlying cron_runs.job_name this bot reads from. */
+  jobName?: string;
+  status: BotHealthCardStatus;
+  /** One-line explanation of the current status pill. */
+  statusReason?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  /** Truncated error excerpt from the most recent failed run. */
+  lastFailureMessage?: string | null;
+  /** Current backlog the bot is responsible for draining. Submit
+reports pending portal_submissions that are due. The other
+bots report null when there is no meaningful queue concept.
+ */
+  queueDepth: number | null;
+  /** Optional human-readable suffix for queueDepth (e.g. "due"). */
+  queueLabel?: string | null;
+  /** Mean run duration in ms over the last 7 days of completed runs. */
+  avgDurationMs7d: number | null;
+  runs7d?: number;
+  failures7d?: number;
+  /** One bucket per day for the last 7 days (oldest first). Value
+is the mean duration in ms for runs that finished that day,
+or null if no runs landed.
+ */
+  durationSparkline: (number | null)[];
+}
+
+export interface BotHealthResponse {
+  bots: BotHealthCard[];
+}
+
+export interface BotRunRecord {
+  id: number;
+  startedAt: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  status: string;
+  message?: string | null;
+}
+
+export interface BotRunsResponse {
+  botId: string;
+  jobName?: string;
+  runs: BotRunRecord[];
+}
+
 export interface EmailBouncesResponse {
   bounces: EmailBounceRecord[];
 }

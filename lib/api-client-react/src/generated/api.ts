@@ -41,6 +41,8 @@ import type {
   BackfillInvoiceGroupsBody,
   BackfillInvoiceGroupsResponse,
   BotActivityLogResponse,
+  BotHealthResponse,
+  BotRunsResponse,
   BulkAddressBody,
   BulkAddressResponse,
   BulkApproveInvoiceGroups400,
@@ -16423,6 +16425,182 @@ export function useGetSystemHealthClassifierStats<
     params,
     options,
   );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Task #841. Per-bot rollup for the three risky surfaces (submit,
+payor response scan, portal scrape). Each card derives its
+status from cron_runs history + current queue depth, with a
+7-day duration sparkline for at-a-glance trend.
+
+ * @summary Per-bot health summary (admin only)
+ */
+export const getGetSystemHealthBotsUrl = () => {
+  return `/api/admin/system-health/bots`;
+};
+
+export const getSystemHealthBots = async (
+  options?: RequestInit,
+): Promise<BotHealthResponse> => {
+  return customFetch<BotHealthResponse>(getGetSystemHealthBotsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSystemHealthBotsQueryKey = () => {
+  return [`/api/admin/system-health/bots`] as const;
+};
+
+export const getGetSystemHealthBotsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthBots>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthBots>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSystemHealthBotsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthBots>>
+  > = ({ signal }) => getSystemHealthBots({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthBots>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthBotsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthBots>>
+>;
+export type GetSystemHealthBotsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-bot health summary (admin only)
+ */
+
+export function useGetSystemHealthBots<
+  TData = Awaited<ReturnType<typeof getSystemHealthBots>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthBots>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthBotsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Task #841. Last 20 cron_runs for the bot — powers the drawer
+opened from the per-bot card on the System Health page.
+
+ * @summary Recent runs for a specific bot (admin only)
+ */
+export const getGetSystemHealthBotRunsUrl = (
+  botId: "submit" | "payor_response_scan" | "portal_scrape",
+) => {
+  return `/api/admin/system-health/bots/${botId}/runs`;
+};
+
+export const getSystemHealthBotRuns = async (
+  botId: "submit" | "payor_response_scan" | "portal_scrape",
+  options?: RequestInit,
+): Promise<BotRunsResponse> => {
+  return customFetch<BotRunsResponse>(getGetSystemHealthBotRunsUrl(botId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSystemHealthBotRunsQueryKey = (
+  botId: "submit" | "payor_response_scan" | "portal_scrape",
+) => {
+  return [`/api/admin/system-health/bots/${botId}/runs`] as const;
+};
+
+export const getGetSystemHealthBotRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSystemHealthBotRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  botId: "submit" | "payor_response_scan" | "portal_scrape",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthBotRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSystemHealthBotRunsQueryKey(botId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSystemHealthBotRuns>>
+  > = ({ signal }) =>
+    getSystemHealthBotRuns(botId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!botId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSystemHealthBotRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSystemHealthBotRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSystemHealthBotRuns>>
+>;
+export type GetSystemHealthBotRunsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent runs for a specific bot (admin only)
+ */
+
+export function useGetSystemHealthBotRuns<
+  TData = Awaited<ReturnType<typeof getSystemHealthBotRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  botId: "submit" | "payor_response_scan" | "portal_scrape",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSystemHealthBotRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSystemHealthBotRunsQueryOptions(botId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

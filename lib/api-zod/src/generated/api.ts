@@ -33827,6 +33827,90 @@ export const GetSystemHealthClassifierStatsResponse = zod.object({
 });
 
 /**
+ * Task #841. Per-bot rollup for the three risky surfaces (submit,
+payor response scan, portal scrape). Each card derives its
+status from cron_runs history + current queue depth, with a
+7-day duration sparkline for at-a-glance trend.
+
+ * @summary Per-bot health summary (admin only)
+ */
+export const GetSystemHealthBotsResponse = zod.object({
+  bots: zod.array(
+    zod.object({
+      id: zod.enum(["submit", "payor_response_scan", "portal_scrape"]),
+      label: zod
+        .string()
+        .describe("Human-readable bot name for the card title."),
+      jobName: zod
+        .string()
+        .optional()
+        .describe("Underlying cron_runs.job_name this bot reads from."),
+      status: zod.enum(["healthy", "degraded", "down"]),
+      statusReason: zod
+        .string()
+        .nullish()
+        .describe("One-line explanation of the current status pill."),
+      lastSuccessAt: zod.string().nullish(),
+      lastFailureAt: zod.string().nullish(),
+      lastFailureMessage: zod
+        .string()
+        .nullish()
+        .describe("Truncated error excerpt from the most recent failed run."),
+      queueDepth: zod
+        .number()
+        .nullable()
+        .describe(
+          "Current backlog the bot is responsible for draining. Submit\nreports pending portal_submissions that are due. The other\nbots report null when there is no meaningful queue concept.\n",
+        ),
+      queueLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          'Optional human-readable suffix for queueDepth (e.g. \"due\").',
+        ),
+      avgDurationMs7d: zod
+        .number()
+        .nullable()
+        .describe(
+          "Mean run duration in ms over the last 7 days of completed runs.",
+        ),
+      runs7d: zod.number().optional(),
+      failures7d: zod.number().optional(),
+      durationSparkline: zod
+        .array(zod.number().nullable())
+        .describe(
+          "One bucket per day for the last 7 days (oldest first). Value\nis the mean duration in ms for runs that finished that day,\nor null if no runs landed.\n",
+        ),
+    }),
+  ),
+});
+
+/**
+ * Task #841. Last 20 cron_runs for the bot — powers the drawer
+opened from the per-bot card on the System Health page.
+
+ * @summary Recent runs for a specific bot (admin only)
+ */
+export const GetSystemHealthBotRunsParams = zod.object({
+  botId: zod.enum(["submit", "payor_response_scan", "portal_scrape"]),
+});
+
+export const GetSystemHealthBotRunsResponse = zod.object({
+  botId: zod.string(),
+  jobName: zod.string().optional(),
+  runs: zod.array(
+    zod.object({
+      id: zod.number(),
+      startedAt: zod.string(),
+      finishedAt: zod.string().nullish(),
+      durationMs: zod.number().nullish(),
+      status: zod.string(),
+      message: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary Recent email bounces (admin only)
  */
 export const GetSystemHealthBouncesQueryParams = zod.object({

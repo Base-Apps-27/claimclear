@@ -5784,6 +5784,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClassifierStatsResponse'
 
+  /admin/system-health/bots:
+    get:
+      operationId: getSystemHealthBots
+      tags: [systemHealth]
+      summary: Per-bot health summary (admin only)
+      description: |
+        Task #841. Per-bot rollup for the three risky surfaces (submit,
+        payor response scan, portal scrape). Each card derives its
+        status from cron_runs history + current queue depth, with a
+        7-day duration sparkline for at-a-glance trend.
+      responses:
+        '200':
+          description: Bot health cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotHealthResponse'
+
+  /admin/system-health/bots/{botId}/runs:
+    get:
+      operationId: getSystemHealthBotRuns
+      tags: [systemHealth]
+      summary: Recent runs for a specific bot (admin only)
+      description: |
+        Task #841. Last 20 cron_runs for the bot — powers the drawer
+        opened from the per-bot card on the System Health page.
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [submit, payor_response_scan, portal_scrape]
+      responses:
+        '200':
+          description: Recent runs for the bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotRunsResponse'
+
   /admin/system-health/bounces:
     get:
       operationId: getSystemHealthBounces
@@ -11924,6 +11965,107 @@ components:
         matchedOutboundId:
           type: string
           nullable: true
+
+    BotHealthCard:
+      type: object
+      required: [id, label, status, queueDepth, avgDurationMs7d, durationSparkline]
+      properties:
+        id:
+          type: string
+          enum: [submit, payor_response_scan, portal_scrape]
+        label:
+          type: string
+          description: Human-readable bot name for the card title.
+        jobName:
+          type: string
+          description: Underlying cron_runs.job_name this bot reads from.
+        status:
+          type: string
+          enum: [healthy, degraded, down]
+        statusReason:
+          type: string
+          nullable: true
+          description: One-line explanation of the current status pill.
+        lastSuccessAt:
+          type: string
+          nullable: true
+        lastFailureAt:
+          type: string
+          nullable: true
+        lastFailureMessage:
+          type: string
+          nullable: true
+          description: Truncated error excerpt from the most recent failed run.
+        queueDepth:
+          type: integer
+          nullable: true
+          description: |
+            Current backlog the bot is responsible for draining. Submit
+            reports pending portal_submissions that are due. The other
+            bots report null when there is no meaningful queue concept.
+        queueLabel:
+          type: string
+          nullable: true
+          description: Optional human-readable suffix for queueDepth (e.g. "due").
+        avgDurationMs7d:
+          type: integer
+          nullable: true
+          description: Mean run duration in ms over the last 7 days of completed runs.
+        runs7d:
+          type: integer
+        failures7d:
+          type: integer
+        durationSparkline:
+          type: array
+          description: |
+            One bucket per day for the last 7 days (oldest first). Value
+            is the mean duration in ms for runs that finished that day,
+            or null if no runs landed.
+          items:
+            type: integer
+            nullable: true
+
+    BotHealthResponse:
+      type: object
+      required: [bots]
+      properties:
+        bots:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotHealthCard'
+
+    BotRunRecord:
+      type: object
+      required: [id, startedAt, status]
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true
+
+    BotRunsResponse:
+      type: object
+      required: [botId, runs]
+      properties:
+        botId:
+          type: string
+        jobName:
+          type: string
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotRunRecord'
 
     EmailBouncesResponse:
       type: object
