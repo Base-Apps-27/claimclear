@@ -48,6 +48,7 @@ import { usePortalBatchEvents } from "@/hooks/use-portal-batch-events";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useRole } from "@/lib/role";
 import { useRetryPortalSubmission, useCancelPortalSubmission, useSandboxRunPortalSubmission, useConfirmPortalSubmission } from "@workspace/api-client-react";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const statusPillClass: Record<string, string> = {
   draft: "bg-blue-500/20 text-blue-700 border-blue-300",
@@ -457,6 +458,11 @@ export default function PortalSubmissions() {
   const buttonsDisabled = batchInFlight;
 
   const drawerSubmission = drawerId ? (submissions || []).find(s => s.id === drawerId) ?? null : null;
+
+  const drawerTitle = drawerId != null
+    ? `[Sub ${drawerId}]${drawerSubmission?.invoiceNumber ? ` ${drawerSubmission.invoiceNumber}` : ""} — ClaimClear`
+    : null;
+  usePageTitle(drawerTitle);
 
   return (
     <div className="space-y-4">

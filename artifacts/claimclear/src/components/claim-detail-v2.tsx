@@ -73,6 +73,7 @@ import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { useBreath } from "@/hooks/use-breath";
+import { usePageTitle, formatServiceDateShort } from "@/hooks/use-page-title";
 import { cn } from "@/lib/utils";
 import { TonePill } from "@/components/cohesion";
 import { StateBadge } from "@/components/state-badge";
@@ -341,6 +342,22 @@ export function ClaimDetailV2({
         tripOverridingErrorTypeIds,
       }),
     [parentGroup?.rides, claimId, tripOverridingErrorTypeIds],
+  );
+
+  const legIndex = useMemo(() => {
+    if (!claim || !parentGroup?.rides) return null;
+    const idx = parentGroup.rides.findIndex((r) => r.id === claim.id);
+    return idx >= 0 ? idx + 1 : null;
+  }, [claim, parentGroup?.rides]);
+  const invoiceRef = parentGroup?.invoiceNumber ?? (parentGroupId ? `#${parentGroupId}` : null);
+  const svcShort = formatServiceDateShort(parentGroup?.earliestDate ?? null);
+  // Task #845 — only the standalone claim detail page owns the
+  // browser tab title. Skip when embedded inside the queue so
+  // expanding an inline leg row doesn't clobber the queue's title.
+  usePageTitle(
+    !embedded && invoiceRef
+      ? `[${invoiceRef}${legIndex != null ? `·L${legIndex}` : ""}]${svcShort ? ` ${svcShort}` : ""} — ClaimClear`
+      : null,
   );
 
   const isDuplicate = claim?.duplicateOfClaimId != null;

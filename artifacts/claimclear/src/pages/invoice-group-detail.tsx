@@ -1,5 +1,7 @@
 import { useParams, useSearch } from "wouter";
 import { InvoiceGroupDetailV2 } from "@/components/invoice-group-detail-v2";
+import { useGetInvoiceGroup, getGetInvoiceGroupQueryKey } from "@workspace/api-client-react";
+import { usePageTitle, formatServiceDateShort } from "@/hooks/use-page-title";
 
 // Task #659 — read-only group dossier. Submission gauntlet lives only
 // in the queue right pane; operators reach it via the dossier's
@@ -14,6 +16,13 @@ export default function InvoiceGroupDetail() {
   const groupId = parseInt(params.id || "0", 10);
   const search = useSearch();
   const fromManual = new URLSearchParams(search).get("from") === "manual";
+
+  const { data: group } = useGetInvoiceGroup(groupId, {
+    query: { queryKey: getGetInvoiceGroupQueryKey(groupId), enabled: groupId > 0 },
+  });
+  const invoiceRef = group?.invoiceNumber ?? (groupId > 0 ? `#${groupId}` : null);
+  const svc = formatServiceDateShort(group?.earliestDate ?? null);
+  usePageTitle(invoiceRef ? `[${invoiceRef}]${svc ? ` ${svc}` : ""} — ClaimClear` : null);
 
   return (
     <div data-testid="invoice-group-detail-page">
