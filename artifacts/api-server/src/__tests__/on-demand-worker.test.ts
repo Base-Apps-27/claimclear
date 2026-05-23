@@ -72,6 +72,69 @@ test("workerGate releases even when the run throws", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Gate owner lifecycle (Task: scrape-vs-send pill bug)
+//
+// The header batch-status pill keys its label off `getCurrentOwner()` so the
+// read bot's portal scrape doesn't look like a real send. These tests pin
+// the owner's lifecycle:
+//   - null while idle
+//   - set to the caller's label while the run is in flight
+//   - cleared back to null on settle (success AND throw)
+//   - second concurrent run is skipped without clobbering the first owner
+// Regressing any of these silently re-introduces the "Sending batch during
+// scraping" bug.
+// ---------------------------------------------------------------------------
+
+test("workerGate.getCurrentOwner: null when idle", () => {
+  const gate = createWorkerGate<void>();
+  assert.equal(gate.getCurrentOwner(), null);
+});
+
+test("workerGate.getCurrentOwner: reflects caller while running, clears on success", async () => {
+  const gate = createWorkerGate<void>();
+  let release!: () => void;
+  const blocked = () => new Promise<void>((resolve) => { release = resolve; });
+
+  const started = await gate.run("submit", blocked);
+  assert.equal(started.kind, "started");
+  assert.equal(gate.getCurrentOwner(), "submit", "owner must be set while the gate is held");
+
+  release();
+  if (started.kind === "started") await started.result;
+  assert.equal(gate.getCurrentOwner(), null, "owner must clear when the run resolves");
+});
+
+test("workerGate.getCurrentOwner: clears on throw (jam-prevention parity with isInProgress)", async () => {
+  const gate = createWorkerGate<void>();
+  const outcome = await gate.run("scrape", async () => {
+    throw new Error("boom");
+  });
+  if (outcome.kind === "started") {
+    await assert.rejects(outcome.result, /boom/);
+  }
+  assert.equal(gate.getCurrentOwner(), null, "owner must clear even when the run throws");
+});
+
+test("workerGate.getCurrentOwner: concurrent acquire is skipped and does not clobber the first owner", async () => {
+  const gate = createWorkerGate<void>();
+  let release!: () => void;
+  const blocked = () => new Promise<void>((resolve) => { release = resolve; });
+
+  const first = await gate.run("scrape", blocked);
+  assert.equal(first.kind, "started");
+  assert.equal(gate.getCurrentOwner(), "scrape");
+
+  // Second caller loses the race — owner must still be the first caller's.
+  const second = await gate.run("submit", async () => undefined);
+  assert.equal(second.kind, "skipped");
+  assert.equal(gate.getCurrentOwner(), "scrape", "owner must not be overwritten by a skipped run");
+
+  release();
+  if (first.kind === "started") await first.result;
+  assert.equal(gate.getCurrentOwner(), null);
+});
+
+// ---------------------------------------------------------------------------
 // Rollup severity matrix
 // ---------------------------------------------------------------------------
 

@@ -114,7 +114,10 @@ interface DerivedState {
   degraded: boolean;
 }
 
-function deriveState(status: QueueStatus | undefined, now: number): DerivedState {
+// Exported for unit tests so the activity → label/count mapping can be
+// pinned without rendering the full pill (which requires a QueryClient and
+// an SSE EventSource). See `batch-status-pill.test.ts`.
+export function deriveState(status: QueueStatus | undefined, now: number): DerivedState {
   // Loading / no data — show muted skeleton-ish state.
   if (!status) {
     return {
