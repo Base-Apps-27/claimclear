@@ -6,6 +6,7 @@ export type RecentGroupVisit = {
   clientNumber?: string | null;
   phase?: string | null;
   visitedAt: number;
+  pinned?: boolean;
 };
 
 const MAX_ENTRIES = 10;
@@ -22,19 +23,39 @@ function readFromStorage(key: string | null): RecentGroupVisit[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (e): e is RecentGroupVisit =>
-          e != null &&
-          typeof e === "object" &&
-          typeof e.id === "number" &&
-          typeof e.invoiceNumber === "string" &&
-          typeof e.visitedAt === "number",
-      )
-      .slice(0, MAX_ENTRIES);
+    const entries = parsed.filter(
+      (e): e is RecentGroupVisit =>
+        e != null &&
+        typeof e === "object" &&
+        typeof e.id === "number" &&
+        typeof e.invoiceNumber === "string" &&
+        typeof e.visitedAt === "number",
+    );
+    return capUnpinned(entries);
   } catch {
     return [];
   }
+}
+
+// Apply the 10-entry FIFO cap only to *unpinned* entries. Pinned
+// entries persist alongside the cap (Task #851) — they're an explicit
+// "keep this one around" signal from the operator and shouldn't be
+// pushed out by routine browsing.
+function capUnpinned(entries: RecentGroupVisit[]): RecentGroupVisit[] {
+  const pinned: RecentGroupVisit[] = [];
+  const unpinned: RecentGroupVisit[] = [];
+  for (const e of entries) {
+    if (e.pinned) pinned.push(e);
+    else unpinned.push(e);
+  }
+  const cappedUnpinned = unpinned.slice(0, MAX_ENTRIES);
+  // Preserve insertion order from the source array so the rail keeps
+  // the most-recently-visited entry on top regardless of pin state.
+  const keep = new Set<number>([
+    ...pinned.map((e) => e.id),
+    ...cappedUnpinned.map((e) => e.id),
+  ]);
+  return entries.filter((e) => keep.has(e.id));
 }
 
 function writeToStorage(key: string | null, value: RecentGroupVisit[]): void {
@@ -52,16 +73,28 @@ function writeToStorage(key: string | null, value: RecentGroupVisit[]): void {
 // tabs, not within the same one.
 const SAME_TAB_EVENT = "claimclear:recent-groups-updated";
 
+function notifySameTab(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SAME_TAB_EVENT));
+}
+
 /**
  * Per-user localStorage-backed list of the last 10 invoice groups the
  * operator opened. Used by the sidebar "Recently viewed" rail
  * (Task #839). Per-user so two operators sharing a browser don't see
  * each other's history; local-only by design — no backend round trip
  * on each navigation.
+ *
+ * Task #851: pinned entries persist alongside the FIFO recents in the
+ * same store. Pinning keeps an entry from being evicted by the
+ * 10-entry cap; clearing wipes the per-user list (both pinned and
+ * unpinned).
  */
 export function useRecentGroupVisits(userId: string | undefined): {
   visits: RecentGroupVisit[];
-  recordVisit: (entry: Omit<RecentGroupVisit, "visitedAt">) => void;
+  recordVisit: (entry: Omit<RecentGroupVisit, "visitedAt" | "pinned">) => void;
+  togglePin: (id: number) => void;
+  clearRecents: () => void;
 } {
   const key = storageKey(userId);
   const [visits, setVisits] = useState<RecentGroupVisit[]>(() => readFromStorage(key));
@@ -87,20 +120,47 @@ export function useRecentGroupVisits(userId: string | undefined): {
   }, [key]);
 
   const recordVisit = useCallback(
-    (entry: Omit<RecentGroupVisit, "visitedAt">) => {
+    (entry: Omit<RecentGroupVisit, "visitedAt" | "pinned">) => {
       if (!key) return;
-      const next: RecentGroupVisit = { ...entry, visitedAt: Date.now() };
       const current = readFromStorage(key);
+      // Preserve the existing pinned flag if the operator had already
+      // pinned this group — revisiting shouldn't un-pin it.
+      const previous = current.find((v) => v.id === entry.id);
+      const next: RecentGroupVisit = {
+        ...entry,
+        visitedAt: Date.now(),
+        pinned: previous?.pinned,
+      };
       const deduped = current.filter((v) => v.id !== entry.id);
-      const merged = [next, ...deduped].slice(0, MAX_ENTRIES);
+      const merged = capUnpinned([next, ...deduped]);
       writeToStorage(key, merged);
       setVisits(merged);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(SAME_TAB_EVENT));
-      }
+      notifySameTab();
     },
     [key],
   );
 
-  return { visits, recordVisit };
+  const togglePin = useCallback(
+    (id: number) => {
+      if (!key) return;
+      const current = readFromStorage(key);
+      const toggled = current.map((v) =>
+        v.id === id ? { ...v, pinned: !v.pinned } : v,
+      );
+      const merged = capUnpinned(toggled);
+      writeToStorage(key, merged);
+      setVisits(merged);
+      notifySameTab();
+    },
+    [key],
+  );
+
+  const clearRecents = useCallback(() => {
+    if (!key) return;
+    writeToStorage(key, []);
+    setVisits([]);
+    notifySameTab();
+  }, [key]);
+
+  return { visits, recordVisit, togglePin, clearRecents };
 }

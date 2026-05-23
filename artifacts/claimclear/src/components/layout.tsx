@@ -17,15 +17,23 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WrapTooltip } from "@/components/info-tooltip";
@@ -60,6 +68,9 @@ import {
   FileMinus,
   ShieldCheck,
   Eye,
+  Pin,
+  PinOff,
+  MoreHorizontal,
 } from "lucide-react";
 
 type NavBadge = { count: number; tone: "amber" | "blue"; label: string };
@@ -559,13 +570,34 @@ function FullBleedAwareMain({ children }: { children: React.ReactNode }) {
 // operator navigates between detail pages. Hidden until there's at
 // least one entry so first-time operators don't see an empty rail.
 function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
-  const { visits } = useRecentGroupVisits(userId);
+  const { visits, togglePin, clearRecents } = useRecentGroupVisits(userId);
   if (visits.length === 0) return null;
   return (
-    <SidebarGroup data-testid="sidebar-recently-viewed">
+    <SidebarGroup data-testid="sidebar-recently-viewed" className="relative">
       <SidebarGroupLabel className="uppercase tracking-wider text-[10px] text-sidebar-foreground/50">
         Recently Viewed
       </SidebarGroupLabel>
+      {/* Task #851 — overflow menu on the rail header so operators can
+          wipe the per-user list (e.g. before a screenshare) without
+          digging through settings. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarGroupAction
+            aria-label="Recently viewed options"
+            data-testid="sidebar-recents-menu"
+          >
+            <MoreHorizontal />
+          </SidebarGroupAction>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start">
+          <DropdownMenuItem
+            onSelect={() => clearRecents()}
+            data-testid="sidebar-recents-clear"
+          >
+            Clear recents
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SidebarGroupContent>
         <SidebarMenu>
           {visits.map((v) => (
@@ -577,7 +609,7 @@ function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
               >
                 <Link
                   href={`/invoice-groups/${v.id}`}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 pr-7"
                   data-testid={`sidebar-recent-${v.id}`}
                 >
                   <span className="flex-1 min-w-0 flex flex-col leading-tight">
@@ -597,6 +629,25 @@ function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
                   )}
                 </Link>
               </SidebarMenuButton>
+              {/* Per-row pin affordance. Pinned entries are exempt from
+                  the 10-entry FIFO cap (Task #851). Shown persistently
+                  when pinned so operators can see which rows are
+                  protected at a glance; reveals on hover otherwise to
+                  keep the rail uncluttered. */}
+              <SidebarMenuAction
+                showOnHover={!v.pinned}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  togglePin(v.id);
+                }}
+                aria-label={v.pinned ? `Unpin ${v.invoiceNumber}` : `Pin ${v.invoiceNumber}`}
+                title={v.pinned ? "Unpin" : "Pin"}
+                data-testid={`sidebar-recent-pin-${v.id}`}
+                data-pinned={v.pinned ? "true" : "false"}
+              >
+                {v.pinned ? <PinOff /> : <Pin />}
+              </SidebarMenuAction>
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
