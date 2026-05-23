@@ -31327,6 +31327,112 @@ export const GetDashboardUrgentTodayTransitionsResponse = zod
   );
 
 /**
+ * Returns the exact rows composing a dashboard hero KPI together
+with a plain-English description of the filter logic. Powers the
+"Why?" drawer on the Dashboard (Task #834). For every supported
+`kpiKey`, `rows.length` MUST equal the count rendered on the
+corresponding KPI tile — that parity is asserted by a contract
+test so the math stays inspectable.
+
+Supported keys:
+  • `urgent`    — File today (groups whose deadline lands today).
+  • `stuck`     — Stuck after submission (Portal Queued past deadline).
+  • `recovered` — Recovered $ (groups whose verdict has landed
+                  and re-attestation has settled).
+  • `responses` — Responses to review (payor reply awaiting verdict).
+  • `reattests` — Reattests pending (claim legs awaiting attestation).
+
+ * @summary Why this number? Row-level breakdown for a dashboard KPI.
+ */
+export const GetDashboardExplainParams = zod.object({
+  kpiKey: zod.enum(["urgent", "stuck", "recovered", "responses", "reattests"]),
+});
+
+export const GetDashboardExplainResponse = zod
+  .object({
+    kpiKey: zod.enum([
+      "urgent",
+      "stuck",
+      "recovered",
+      "responses",
+      "reattests",
+    ]),
+    label: zod
+      .string()
+      .describe("Human-readable name of the KPI (drawer title)."),
+    value: zod
+      .number()
+      .describe("Row count for this KPI. Equals `rows.length`."),
+    valueDisplay: zod
+      .string()
+      .describe(
+        "Display string that matches the host KPI tile (e.g. '5' for a count, '$1,234.56' for a dollar KPI).",
+      ),
+    amountTotal: zod
+      .string()
+      .nullish()
+      .describe(
+        "Sum of `amount` across `rows` as a decimal string. Populated for dollar-shaped KPIs (recovered); null for count-only KPIs.",
+      ),
+    predicateText: zod
+      .string()
+      .describe(
+        "Plain-English statement of the filter logic (e.g. 'Groups where effectiveDaysRemaining ≤ 0 AND status ∈ {Portal Queued}').",
+      ),
+    rows: zod.array(
+      zod
+        .object({
+          id: zod
+            .union([zod.number(), zod.string()])
+            .describe(
+              "Group id (for invoice-group rows) or claim id (for claim-level rows like the reattests KPI).",
+            ),
+          kind: zod
+            .enum(["group", "claim"])
+            .describe(
+              "What kind of row this is. Drives icon and deep-link shape.",
+            ),
+          ref: zod
+            .string()
+            .describe(
+              "Human-readable reference (invoice number for groups, claim ref for claims).",
+            ),
+          payor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Payor identifier (payor_email on the group), null when not stamped.",
+            ),
+          serviceDate: zod
+            .string()
+            .nullish()
+            .describe(
+              "Service date (YYYY-MM-DD). May be null for claim-level rows when no clock is set.",
+            ),
+          status: zod.string().describe("Current status of the row."),
+          reason: zod
+            .string()
+            .describe(
+              "Plain-English reason this row is included in the KPI (e.g. 'Deadline today', 'Past deadline by 4d', 'Approved · attested').",
+            ),
+          href: zod.string().describe("Deep link to the row's detail surface."),
+          amount: zod
+            .string()
+            .nullish()
+            .describe(
+              "Optional per-row dollar contribution as a decimal string (e.g. for the Recovered $ KPI). Null when the KPI is count-only.",
+            ),
+        })
+        .describe(
+          "Single row contributing to a dashboard KPI. Surfaced inside the Why-this-number drawer.",
+        ),
+    ),
+  })
+  .describe(
+    "Why-this-number drawer payload for a dashboard KPI (Task #834).\nPairs a plain-English statement of the filter logic with the\nexact rows composing the number. For count-shaped KPIs (urgent,\nstuck, responses, reattests) `value` equals `rows.length`. For\ndollar-shaped KPIs (recovered) `value` is the row count and\n`valueDisplay` carries the formatted dollar string that matches\nthe host tile; `amountTotal` is the raw sum.\n",
+  );
+
+/**
  * @summary Daily activity time series for the summary page
  */
 export const getDashboardTimeseriesQueryDaysDefault = 30;

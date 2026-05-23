@@ -96,6 +96,7 @@ import type {
   DailyBriefDetailResponse,
   DailyBriefResponse,
   DashboardActivity,
+  DashboardExplain,
   DashboardInsights,
   DashboardRepeatOffenders,
   DashboardSummary,
@@ -12260,6 +12261,114 @@ export function useGetDashboardUrgentTodayTransitions<
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions =
     getGetDashboardUrgentTodayTransitionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the exact rows composing a dashboard hero KPI together
+with a plain-English description of the filter logic. Powers the
+"Why?" drawer on the Dashboard (Task #834). For every supported
+`kpiKey`, `rows.length` MUST equal the count rendered on the
+corresponding KPI tile — that parity is asserted by a contract
+test so the math stays inspectable.
+
+Supported keys:
+  • `urgent`    — File today (groups whose deadline lands today).
+  • `stuck`     — Stuck after submission (Portal Queued past deadline).
+  • `recovered` — Recovered $ (groups whose verdict has landed
+                  and re-attestation has settled).
+  • `responses` — Responses to review (payor reply awaiting verdict).
+  • `reattests` — Reattests pending (claim legs awaiting attestation).
+
+ * @summary Why this number? Row-level breakdown for a dashboard KPI.
+ */
+export const getGetDashboardExplainUrl = (
+  kpiKey: "urgent" | "stuck" | "recovered" | "responses" | "reattests",
+) => {
+  return `/api/dashboard/explain/${kpiKey}`;
+};
+
+export const getDashboardExplain = async (
+  kpiKey: "urgent" | "stuck" | "recovered" | "responses" | "reattests",
+  options?: RequestInit,
+): Promise<DashboardExplain> => {
+  return customFetch<DashboardExplain>(getGetDashboardExplainUrl(kpiKey), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDashboardExplainQueryKey = (
+  kpiKey: "urgent" | "stuck" | "recovered" | "responses" | "reattests",
+) => {
+  return [`/api/dashboard/explain/${kpiKey}`] as const;
+};
+
+export const getGetDashboardExplainQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardExplain>>,
+  TError = ErrorType<void>,
+>(
+  kpiKey: "urgent" | "stuck" | "recovered" | "responses" | "reattests",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardExplain>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDashboardExplainQueryKey(kpiKey);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardExplain>>
+  > = ({ signal }) =>
+    getDashboardExplain(kpiKey, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!kpiKey,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardExplain>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardExplainQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardExplain>>
+>;
+export type GetDashboardExplainQueryError = ErrorType<void>;
+
+/**
+ * @summary Why this number? Row-level breakdown for a dashboard KPI.
+ */
+
+export function useGetDashboardExplain<
+  TData = Awaited<ReturnType<typeof getDashboardExplain>>,
+  TError = ErrorType<void>,
+>(
+  kpiKey: "urgent" | "stuck" | "recovered" | "responses" | "reattests",
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDashboardExplain>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardExplainQueryOptions(kpiKey, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

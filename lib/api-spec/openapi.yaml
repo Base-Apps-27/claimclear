@@ -4526,6 +4526,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/UrgentTodayTransitions"
 
+  /dashboard/explain/{kpiKey}:
+    get:
+      operationId: getDashboardExplain
+      tags: [dashboard]
+      summary: "Why this number? Row-level breakdown for a dashboard KPI."
+      description: |
+        Returns the exact rows composing a dashboard hero KPI together
+        with a plain-English description of the filter logic. Powers the
+        "Why?" drawer on the Dashboard (Task #834). For every supported
+        `kpiKey`, `rows.length` MUST equal the count rendered on the
+        corresponding KPI tile — that parity is asserted by a contract
+        test so the math stays inspectable.
+
+        Supported keys:
+          • `urgent`    — File today (groups whose deadline lands today).
+          • `stuck`     — Stuck after submission (Portal Queued past deadline).
+          • `recovered` — Recovered $ (groups whose verdict has landed
+                          and re-attestation has settled).
+          • `responses` — Responses to review (payor reply awaiting verdict).
+          • `reattests` — Reattests pending (claim legs awaiting attestation).
+      parameters:
+        - name: kpiKey
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [urgent, stuck, recovered, responses, reattests]
+      responses:
+        "200":
+          description: Predicate + contributing rows for the requested KPI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardExplain"
+        "400":
+          description: Unknown kpiKey
+
   /dashboard/timeseries:
     get:
       operationId: getDashboardTimeseries
@@ -10728,6 +10765,89 @@ components:
         - daysLeft
         - effectiveDaysLeft
         - isUrgent
+
+    DashboardExplainRow:
+      type: object
+      description: "Single row contributing to a dashboard KPI. Surfaced inside the Why-this-number drawer."
+      properties:
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+          description: "Group id (for invoice-group rows) or claim id (for claim-level rows like the reattests KPI)."
+        kind:
+          type: string
+          enum: [group, claim]
+          description: "What kind of row this is. Drives icon and deep-link shape."
+        ref:
+          type: string
+          description: "Human-readable reference (invoice number for groups, claim ref for claims)."
+        payor:
+          type: ["string", "null"]
+          description: "Payor identifier (payor_email on the group), null when not stamped."
+        serviceDate:
+          type: ["string", "null"]
+          description: "Service date (YYYY-MM-DD). May be null for claim-level rows when no clock is set."
+        status:
+          type: string
+          description: "Current status of the row."
+        reason:
+          type: string
+          description: "Plain-English reason this row is included in the KPI (e.g. 'Deadline today', 'Past deadline by 4d', 'Approved · attested')."
+        href:
+          type: string
+          description: "Deep link to the row's detail surface."
+        amount:
+          type: ["string", "null"]
+          description: "Optional per-row dollar contribution as a decimal string (e.g. for the Recovered $ KPI). Null when the KPI is count-only."
+      required:
+        - id
+        - kind
+        - ref
+        - status
+        - reason
+        - href
+
+    DashboardExplain:
+      type: object
+      description: |
+        Why-this-number drawer payload for a dashboard KPI (Task #834).
+        Pairs a plain-English statement of the filter logic with the
+        exact rows composing the number. For count-shaped KPIs (urgent,
+        stuck, responses, reattests) `value` equals `rows.length`. For
+        dollar-shaped KPIs (recovered) `value` is the row count and
+        `valueDisplay` carries the formatted dollar string that matches
+        the host tile; `amountTotal` is the raw sum.
+      properties:
+        kpiKey:
+          type: string
+          enum: [urgent, stuck, recovered, responses, reattests]
+        label:
+          type: string
+          description: "Human-readable name of the KPI (drawer title)."
+        value:
+          type: integer
+          description: "Row count for this KPI. Equals `rows.length`."
+        valueDisplay:
+          type: string
+          description: "Display string that matches the host KPI tile (e.g. '5' for a count, '$1,234.56' for a dollar KPI)."
+        amountTotal:
+          type: ["string", "null"]
+          description: "Sum of `amount` across `rows` as a decimal string. Populated for dollar-shaped KPIs (recovered); null for count-only KPIs."
+        predicateText:
+          type: string
+          description: "Plain-English statement of the filter logic (e.g. 'Groups where effectiveDaysRemaining ≤ 0 AND status ∈ {Portal Queued}')."
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardExplainRow"
+      required:
+        - kpiKey
+        - label
+        - value
+        - valueDisplay
+        - predicateText
+        - rows
 
     NotificationPreferencesResponse:
       type: object

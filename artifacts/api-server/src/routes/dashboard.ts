@@ -2752,4 +2752,314 @@ export function etMidnightUtcInstant(ymd: string): Date {
   return new Date(utcGuess.getTime() - offsetMin * 60 * 1000);
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Task #834 — Why-this-number drawer for dashboard KPIs.
+//
+// `/dashboard/explain/:kpiKey` returns the exact rows composing each
+// hero KPI together with a plain-English statement of the filter logic.
+// Operators have asked for this affordance multiple times: the hero
+// counts have been re-derived enough times that nobody fully trusts
+// them. Making the math inspectable — drawer lists every contributing
+// row, and a contract test pins `rows.length === <count from summary>`
+// — closes that loop.
+//
+// The per-KPI predicates intentionally mirror the same SQL the
+// `/dashboard/summary` endpoint uses to produce the count, so the two
+// surfaces can never disagree. Supported keys:
+//   • urgent    — File today (groups whose deadline lands today,
+//                 mirrors `urgentCount`).
+//   • stuck     — Stuck after submission (mirrors `submittedStuckCount`).
+//   • recovered — Recovered $ (groups whose verdict landed and re-
+//                 attestation has settled — mirrors
+//                 `amounts.recoveredAmount`'s row set).
+//   • responses — Responses to review (mirrors
+//                 GET /responses/awaiting-review/count).
+//   • reattests — Reattests pending (mirrors GET /attestation/counts).
+// ─────────────────────────────────────────────────────────────────────
+export type DashboardExplainKpiKey =
+  | "urgent"
+  | "stuck"
+  | "recovered"
+  | "responses"
+  | "reattests";
+
+export const DASHBOARD_EXPLAIN_KPI_LABELS: Record<DashboardExplainKpiKey, string> = {
+  urgent: "File today",
+  stuck: "Stuck after submission",
+  recovered: "Recovered $",
+  responses: "Responses to review",
+  reattests: "Reattests pending",
+};
+
+export const DASHBOARD_EXPLAIN_PREDICATES: Record<DashboardExplainKpiKey, string> = {
+  urgent:
+    "Invoice groups where the filing deadline (service date + 30 days, with weekend deadlines shifted back to Friday) lands today AND status ∈ {New, Needs Evidence, On Hold, Generating Email}.",
+  stuck:
+    "Invoice groups where the effective filing deadline has already slipped (effectiveDaysRemaining ≤ 0) AND status ∈ {Portal Queued} AND phase = submitted.",
+  recovered:
+    "Invoice groups where outcome ∈ {Approved, Partially Approved}. The tile value is Σ approvedAmount over this cohort — the same SUM(CASE WHEN POSITIVE_OUTCOMES THEN approvedAmount) the /dashboard/summary endpoint exposes as amounts.recoveredAmount.",
+  responses:
+    "Invoice groups in the response-pending macro phase (status ∈ {Ready to Review, Needs Review}) with an Error Type assigned, NOT in the MAS-action-required state, with at least one reviewable payor response on file, and not currently suppressed by 'awaiting payor again'.",
+  reattests:
+    "Claim legs whose attestation_state ∈ {pending, queued} AND (outcome ∈ {Approved, Partially Approved} OR status = 'MAS Eligible').",
+};
+
+function formatStuckReason(effectiveDaysLeft: number): string {
+  if (effectiveDaysLeft === 0) return "Past deadline today";
+  const n = Math.abs(effectiveDaysLeft);
+  return `Past deadline by ${n} day${n === 1 ? "" : "s"}`;
+}
+
+interface ExplainRow {
+  id: number | string;
+  kind: "group" | "claim";
+  ref: string;
+  payor: string | null;
+  serviceDate: string | null;
+  status: string;
+  reason: string;
+  href: string;
+  /** Per-row dollar contribution as a decimal string. Populated for
+   *  the Recovered $ KPI so the drawer can both list the rows and
+   *  reconcile the running total to the tile. Null for count KPIs. */
+  amount: string | null;
+}
+
+async function buildExplainRows(kpi: DashboardExplainKpiKey, now: Date): Promise<ExplainRow[]> {
+  if (kpi === "urgent" || kpi === "stuck") {
+    const isStuck = kpi === "stuck";
+    const statusFilter = isStuck
+      ? and(
+          eq(invoiceGroupsTable.phase, "submitted"),
+          or(...GROUP_SUBMITTED_STUCK_STATUSES.map(s => eq(invoiceGroupsTable.status, s))),
+        )
+      : or(
+          eq(invoiceGroupsTable.phase, "triage"),
+          eq(invoiceGroupsTable.phase, "ready_to_submit"),
+          and(groupUnclassifiedSql(), needsOperatorAttentionSql()),
+        );
+    const rows = await db
+      .select({
+        id: invoiceGroupsTable.id,
+        invoiceNumber: invoiceGroupsTable.invoiceNumber,
+        status: invoiceGroupsTable.status,
+        payorEmail: invoiceGroupsTable.payorEmail,
+        earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(HIDE_TOUR_SAMPLE_GROUP, statusFilter, isNotNull(invoiceGroupsTable.serviceDate)));
+
+    return rows
+      .map(g => {
+        const eff = effectiveDaysRemaining(g.earliestDate, now);
+        const urgent = isUrgentDeadline(g.earliestDate, now);
+        return { g, eff, urgent };
+      })
+      .filter(({ eff, urgent }) =>
+        isStuck ? eff !== null && eff <= 0 : urgent,
+      )
+      .sort((a, b) => (a.eff ?? 0) - (b.eff ?? 0))
+      .map(({ g, eff }) => ({
+        id: g.id,
+        kind: "group" as const,
+        ref: g.invoiceNumber,
+        payor: g.payorEmail ?? null,
+        serviceDate: g.earliestDate ?? null,
+        status: g.status,
+        reason: isStuck
+          ? formatStuckReason(eff ?? 0)
+          : "Deadline today",
+        href: `/groups/${g.id}`,
+        amount: null,
+      }));
+  }
+
+  if (kpi === "recovered") {
+    // Mirrors the recoveredAmount aggregate in /dashboard/summary
+    // (line ~497): SUM(CASE WHEN outcome ∈ {Approved,Partially Approved}
+    // THEN COALESCE(approvedAmount,0) ELSE 0 END). The drawer lists
+    // one row per contributing group plus the per-row approvedAmount,
+    // and the route handler computes amountTotal = Σ amount so the
+    // drawer's running total equals the tile's dollar value.
+    const rows = await db
+      .select({
+        id: invoiceGroupsTable.id,
+        invoiceNumber: invoiceGroupsTable.invoiceNumber,
+        status: invoiceGroupsTable.status,
+        outcome: invoiceGroupsTable.outcome,
+        payorEmail: invoiceGroupsTable.payorEmail,
+        approvedAmount: invoiceGroupsTable.approvedAmount,
+        reattestCompletedAt: invoiceGroupsTable.reattestCompletedAt,
+        earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(
+        HIDE_TOUR_SAMPLE_GROUP,
+        inArray(invoiceGroupsTable.outcome, ["Approved", "Partially Approved"]),
+      ))
+      .orderBy(desc(invoiceGroupsTable.updatedAt));
+
+    return rows.map(g => {
+      const amt = g.approvedAmount ?? "0";
+      const attested = g.reattestCompletedAt !== null;
+      return {
+        id: g.id,
+        kind: "group" as const,
+        ref: g.invoiceNumber,
+        payor: g.payorEmail ?? null,
+        serviceDate: g.earliestDate ?? null,
+        status: g.status,
+        reason: attested
+          ? `${g.outcome} · attested · $${amt}`
+          : `${g.outcome} · awaiting reattest · $${amt}`,
+        href: `/groups/${g.id}`,
+        amount: amt,
+      };
+    });
+  }
+
+  if (kpi === "responses") {
+    // Mirrors /responses/awaiting-review/count exactly (see
+    // invoice-groups.ts `buildMacroPhaseCondition("response-pending")`)
+    // so the drawer's row count matches the badge. The macro phase
+    // "response-pending" maps to phase ∈ {response_received, reviewed}
+    // per the canonical PHASES_BY_MACRO map.
+    const rows = await db
+      .select({
+        id: invoiceGroupsTable.id,
+        invoiceNumber: invoiceGroupsTable.invoiceNumber,
+        status: invoiceGroupsTable.status,
+        payorEmail: invoiceGroupsTable.payorEmail,
+        earliestDate: sql<string | null>`to_char(${invoiceGroupsTable.serviceDate}, 'YYYY-MM-DD')`,
+      })
+      .from(invoiceGroupsTable)
+      .where(and(
+        inArray(invoiceGroupsTable.phase, ["response_received", "reviewed"]),
+        isNull(invoiceGroupsTable.reattestCompletedAt),
+        or(
+          isNull(invoiceGroupsTable.reattestRequired),
+          eq(invoiceGroupsTable.reattestRequired, false),
+        ),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${claimsTable} c
+          WHERE c.invoice_group_id = ${invoiceGroupsTable.id}
+            AND c.mas_action_required = 'cancel'
+            AND c.mas_action_completed_at IS NULL
+        )`,
+        sql`EXISTS (
+          SELECT 1 FROM portal_responses pr
+          WHERE pr.invoice_group_id = ${invoiceGroupsTable.id}
+            AND pr."responseType" IN ('approval','denial','partial_approval','info_request','other')
+        )`,
+        or(
+          isNull(invoiceGroupsTable.awaitingPayorAgainAt),
+          sql`EXISTS (
+            SELECT 1 FROM portal_responses pr
+            WHERE pr.invoice_group_id = ${invoiceGroupsTable.id}
+              AND pr.received_at > ${invoiceGroupsTable.awaitingPayorAgainAt}
+          )`,
+        ),
+        isNotNull(invoiceGroupsTable.errorTypeId),
+        ne(invoiceGroupsTable.errorTypeId, ""),
+      ))
+      .orderBy(desc(invoiceGroupsTable.updatedAt));
+
+    return rows.map(g => ({
+      id: g.id,
+      kind: "group" as const,
+      ref: g.invoiceNumber,
+      payor: g.payorEmail ?? null,
+      serviceDate: g.earliestDate ?? null,
+      status: g.status,
+      reason: "Payor response awaiting verdict",
+      href: `/responses-awaiting-review/${g.id}`,
+      amount: null,
+    }));
+  }
+
+  // reattests — claim legs (mirrors /attestation/counts).
+  const rows = await db
+    .select({
+      id: claimsTable.id,
+      confNumber: claimsTable.confNumber,
+      refNumber: claimsTable.refNumber,
+      status: claimsTable.status,
+      outcome: claimsTable.outcome,
+      attestationState: claimsTable.attestationState,
+      payorEmail: claimsTable.payorEmail,
+      date: sql<string | null>`to_char(${claimsTable.date}, 'YYYY-MM-DD')`,
+      invoiceGroupId: claimsTable.invoiceGroupId,
+    })
+    .from(claimsTable)
+    .where(and(
+      HIDE_TOUR_SAMPLE_CLAIM,
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
+      inArray(claimsTable.attestationState, ["pending", "queued"]),
+    ))
+    .orderBy(desc(claimsTable.updatedAt));
+
+  return rows.map(c => ({
+    id: c.id,
+    kind: "claim" as const,
+    ref: c.refNumber || c.confNumber || `Claim #${c.id}`,
+    payor: c.payorEmail ?? null,
+    serviceDate: c.date ?? null,
+    status: c.status,
+    reason:
+      c.attestationState === "queued"
+        ? `Queued for re-attest · ${c.outcome ?? c.status}`
+        : `Awaiting re-attest · ${c.outcome ?? c.status}`,
+    href: `/claims/${c.id}`,
+    amount: null,
+  }));
+}
+
+function formatUsd(n: number): string {
+  // Match the dashboard's `formatCurrency` output ($ + en-US grouped
+  // + 2dp) so the drawer header and the host tile read identically.
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const DASHBOARD_EXPLAIN_KPI_KEYS = new Set<DashboardExplainKpiKey>([
+  "urgent",
+  "stuck",
+  "recovered",
+  "responses",
+  "reattests",
+]);
+
+router.get("/dashboard/explain/:kpiKey", asyncHandler(async (req, res): Promise<void> => {
+  const kpiKey = req.params.kpiKey as DashboardExplainKpiKey;
+  if (!DASHBOARD_EXPLAIN_KPI_KEYS.has(kpiKey)) {
+    res.status(400).json({ error: `Unknown kpiKey: ${req.params.kpiKey}` });
+    return;
+  }
+  const rows = await buildExplainRows(kpiKey, new Date());
+  // For dollar-shaped KPIs the host tile shows a currency string, not
+  // a row count. `valueDisplay` carries that string so the drawer header
+  // can render the same value the operator just clicked on; `value`
+  // remains row count (== rows.length) for compatibility and structural
+  // checks. `amountTotal` is the Σ amount over rows, decimal string.
+  const isDollarKpi = kpiKey === "recovered";
+  const amountTotalNum = isDollarKpi
+    ? rows.reduce((acc, r) => acc + (parseFloat(r.amount ?? "0") || 0), 0)
+    : null;
+  const amountTotal = amountTotalNum === null ? null : amountTotalNum.toFixed(2);
+  const valueDisplay = isDollarKpi && amountTotalNum !== null
+    ? formatUsd(amountTotalNum)
+    : String(rows.length);
+  res.json({
+    kpiKey,
+    label: DASHBOARD_EXPLAIN_KPI_LABELS[kpiKey],
+    value: rows.length,
+    valueDisplay,
+    amountTotal,
+    predicateText: DASHBOARD_EXPLAIN_PREDICATES[kpiKey],
+    rows,
+  });
+}));
+
 export default router;

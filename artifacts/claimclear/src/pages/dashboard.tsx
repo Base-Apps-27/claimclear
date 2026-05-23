@@ -30,6 +30,7 @@ import { useNumberTicker } from "@/hooks/use-number-ticker";
 import { useServerDayRolloverInvalidator } from "@/lib/server-day-rollover";
 import { queueGroupHref } from "@/lib/queue-cta";
 import { PageHeader } from "@/components/cohesion";
+import { KpiExplainDrawer } from "@/components/kpi-explain-drawer";
 import { WorkerHealthBanner } from "@/components/worker-health-banner";
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -164,6 +165,7 @@ function KpiTile({
   tone = "neutral",
   tooltip,
   testid,
+  headerExtra,
 }: {
   label: string;
   value: React.ReactNode;
@@ -171,6 +173,9 @@ function KpiTile({
   tone?: KpiTone;
   tooltip?: string;
   testid?: string;
+  /** Optional inline element rendered next to the label (e.g. Task #834
+   *  "Why?" affordance for KPIs that have a contributing-row drawer). */
+  headerExtra?: React.ReactNode;
 }) {
   const valueColor =
     tone === "good"
@@ -185,6 +190,7 @@ function KpiTile({
       <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5 text-muted-foreground flex items-center gap-1">
         {label}
         {tooltip && <InfoTooltip content={tooltip} />}
+        {headerExtra && <span className="ml-auto normal-case">{headerExtra}</span>}
       </div>
       <div className="text-3xl font-bold tabular-nums" style={{ color: valueColor }}>
         {value}
@@ -649,6 +655,23 @@ export default function Dashboard() {
             reattest{reattestCount === 1 ? "" : "s"} pending.
           </span>
         </div>
+        {/* Task #834 — Why? affordances next to the two activity counters
+            on the daily-brief hero. Each opens a side panel listing the
+            exact rows composing the number. */}
+        <div className="mt-1.5 flex items-center gap-3 flex-wrap">
+          <KpiExplainDrawer
+            kpiKey="responses"
+            displayValue={String(responsesCount)}
+            titleOverride="Responses to review"
+            testid="readout-responses-explain"
+          />
+          <KpiExplainDrawer
+            kpiKey="reattests"
+            displayValue={String(reattestCount)}
+            titleOverride="Reattests pending"
+            testid="readout-reattests-explain"
+          />
+        </div>
         <div className="text-sm mt-1 text-muted-foreground" data-testid="readout-hint">
           {startHint}
         </div>
@@ -788,6 +811,14 @@ export default function Dashboard() {
             tone="good"
             tooltip="All-time Σ approvedAmount over invoice groups with outcome Approved or Partially Approved. A win counts the moment the payor rules — no phase or date gate. The 'Confirmed' sub-line is the slice where the payor's re-attestation has actually completed (paid back in the portal, not just won on paper). For 'what changed this week' see Net change to the right."
             testid="kpi-recovered"
+            headerExtra={
+              <KpiExplainDrawer
+                kpiKey="recovered"
+                displayValue={formatCurrency(parseFloat(amounts.recoveredAmount ?? "0") || 0)}
+                titleOverride="Recovered $"
+                testid="kpi-recovered-explain"
+              />
+            }
           />
         </HideForClerk>
         <HideForClerk>
@@ -911,6 +942,14 @@ export default function Dashboard() {
             title={`${fileTodayCount} due today · ${fileTomorrowOnlyCount} due tomorrow`}
             seeAllHref="/queue?expiring=today-tomorrow"
             isLoading={false}
+            headerExtra={
+              <KpiExplainDrawer
+                kpiKey="urgent"
+                displayValue={String(fileTodayCount)}
+                titleOverride="File today"
+                testid="hero-file-today-explain"
+              />
+            }
             itemsEmpty="No filings due today or tomorrow. Nice."
             items={fileTodayOrTomorrowItems.map(g => {
               // Day badge keeps the combined list scannable so the
@@ -979,6 +1018,14 @@ export default function Dashboard() {
             }
             seeAllHref="/portal-submissions"
             isLoading={false}
+            headerExtra={
+              <KpiExplainDrawer
+                kpiKey="stuck"
+                displayValue={String(stuckCount)}
+                titleOverride="Stuck after submission"
+                testid="hero-stuck-explain"
+              />
+            }
             itemsEmpty="No stuck submissions — portal confirmations are current."
             items={stuckItems.map(g => (
               <HeroRow

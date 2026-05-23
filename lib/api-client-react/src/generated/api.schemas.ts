@@ -4296,6 +4296,89 @@ export interface DashboardRepeatOffenders {
   memberGroupsTotal: number;
 }
 
+/**
+ * What kind of row this is. Drives icon and deep-link shape.
+ */
+export type DashboardExplainRowKind =
+  (typeof DashboardExplainRowKind)[keyof typeof DashboardExplainRowKind];
+
+export const DashboardExplainRowKind = {
+  group: "group",
+  claim: "claim",
+} as const;
+
+/**
+ * Single row contributing to a dashboard KPI. Surfaced inside the Why-this-number drawer.
+ */
+export interface DashboardExplainRow {
+  /** Group id (for invoice-group rows) or claim id (for claim-level rows like the reattests KPI). */
+  id: number | string;
+  /** What kind of row this is. Drives icon and deep-link shape. */
+  kind: DashboardExplainRowKind;
+  /** Human-readable reference (invoice number for groups, claim ref for claims). */
+  ref: string;
+  /**
+   * Payor identifier (payor_email on the group), null when not stamped.
+   * @nullable
+   */
+  payor?: string | null;
+  /**
+   * Service date (YYYY-MM-DD). May be null for claim-level rows when no clock is set.
+   * @nullable
+   */
+  serviceDate?: string | null;
+  /** Current status of the row. */
+  status: string;
+  /** Plain-English reason this row is included in the KPI (e.g. 'Deadline today', 'Past deadline by 4d', 'Approved · attested'). */
+  reason: string;
+  /** Deep link to the row's detail surface. */
+  href: string;
+  /**
+   * Optional per-row dollar contribution as a decimal string (e.g. for the Recovered $ KPI). Null when the KPI is count-only.
+   * @nullable
+   */
+  amount?: string | null;
+}
+
+export type DashboardExplainKpiKey =
+  (typeof DashboardExplainKpiKey)[keyof typeof DashboardExplainKpiKey];
+
+export const DashboardExplainKpiKey = {
+  urgent: "urgent",
+  stuck: "stuck",
+  recovered: "recovered",
+  responses: "responses",
+  reattests: "reattests",
+} as const;
+
+/**
+ * Why-this-number drawer payload for a dashboard KPI (Task #834).
+Pairs a plain-English statement of the filter logic with the
+exact rows composing the number. For count-shaped KPIs (urgent,
+stuck, responses, reattests) `value` equals `rows.length`. For
+dollar-shaped KPIs (recovered) `value` is the row count and
+`valueDisplay` carries the formatted dollar string that matches
+the host tile; `amountTotal` is the raw sum.
+
+ */
+export interface DashboardExplain {
+  kpiKey: DashboardExplainKpiKey;
+  /** Human-readable name of the KPI (drawer title). */
+  label: string;
+  /** Row count for this KPI. Equals `rows.length`. */
+  value: number;
+  /** Display string that matches the host KPI tile (e.g. '5' for a count, '$1,234.56' for a dollar KPI). */
+  valueDisplay: string;
+  /**
+   * Sum of `amount` across `rows` as a decimal string. Populated for dollar-shaped KPIs (recovered); null for count-only KPIs.
+   * @nullable
+   */
+  amountTotal?: string | null;
+  /** Plain-English statement of the filter logic (e.g. 'Groups where effectiveDaysRemaining ≤ 0 AND status ∈ {Portal Queued}'). */
+  predicateText: string;
+  rows: DashboardExplainRow[];
+}
+
 export interface NotificationPreferencesResponse {
   userId: string;
   dailyBrief: boolean;
