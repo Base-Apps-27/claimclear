@@ -58,6 +58,7 @@ function getSafeReturnTo(value: unknown): string {
 }
 
 async function upsertUser(claims: Record<string, unknown>) {
+  const now = new Date();
   const userData = {
     id: claims.sub as string,
     email: (claims.email as string) || null,
@@ -66,6 +67,7 @@ async function upsertUser(claims: Record<string, unknown>) {
     profileImageUrl: (claims.profile_image_url || claims.picture) as
       | string
       | null,
+    lastLoginAt: now,
   };
 
   const [{ value: userCount }] = await db.select({ value: count() }).from(usersTable);
@@ -87,7 +89,8 @@ async function upsertUser(claims: Record<string, unknown>) {
         firstName: sql`EXCLUDED.first_name`,
         lastName: sql`EXCLUDED.last_name`,
         profileImageUrl: sql`EXCLUDED.profile_image_url`,
-        updatedAt: new Date(),
+        lastLoginAt: now,
+        updatedAt: now,
       },
     })
     .returning();
@@ -182,6 +185,7 @@ router.get("/admin/users", requireAdmin, asyncHandler(async (req: Request, res: 
     role: u.role,
     status: u.status,
     createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt,
   })));
 }));
 

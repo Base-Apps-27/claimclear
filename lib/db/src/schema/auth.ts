@@ -20,6 +20,7 @@ export const usersTable = pgTable("users", {
   role: varchar("role").notNull().default("user"),
   status: varchar("status").notNull().default("pending"),
   tourVersionSeen: varchar("tour_version_seen"),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

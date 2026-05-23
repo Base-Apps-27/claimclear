@@ -11,7 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download } from "lucide-react";
+import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download, ArrowUpDown } from "lucide-react";
+import { formatRelative } from "@/lib/time";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useState, useEffect, useCallback } from "react";
 import { InfoTooltip, WrapTooltip } from "@/components/info-tooltip";
@@ -25,6 +26,20 @@ interface ManagedUser {
   role: string;
   status: string;
   createdAt: string;
+  lastLoginAt: string | null;
+}
+
+const DORMANT_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+
+type ApprovedSortKey = "name" | "lastLogin";
+type SortDirection = "asc" | "desc";
+
+function lastLoginSortValue(u: ManagedUser, direction: SortDirection): number {
+  // Never-logged-in users sort to the bottom regardless of direction so
+  // they're consistently grouped together rather than flipping with the
+  // sort toggle. Latest first when direction is "desc".
+  if (!u.lastLoginAt) return direction === "desc" ? -Infinity : Infinity;
+  return new Date(u.lastLoginAt).getTime();
 }
 
 function NotificationTogglesRow({ userId }: { userId: string }) {
@@ -220,9 +235,41 @@ export default function Settings() {
     }
   };
 
+  const [approvedSortKey, setApprovedSortKey] = useState<ApprovedSortKey>("name");
+  const [approvedSortDir, setApprovedSortDir] = useState<SortDirection>("desc");
+
   const pendingUsers = users.filter(u => u.status === "pending");
-  const approvedUsers = users.filter(u => u.status === "approved");
   const deniedUsers = users.filter(u => u.status === "denied");
+  const approvedUsers = users
+    .filter(u => u.status === "approved")
+    .slice()
+    .sort((a, b) => {
+      if (approvedSortKey === "lastLogin") {
+        const av = lastLoginSortValue(a, approvedSortDir);
+        const bv = lastLoginSortValue(b, approvedSortDir);
+        if (av === bv) return 0;
+        return approvedSortDir === "desc" ? bv - av : av - bv;
+      }
+      const aName = [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email || "";
+      const bName = [b.firstName, b.lastName].filter(Boolean).join(" ") || b.email || "";
+      const cmp = aName.localeCompare(bName, undefined, { sensitivity: "base" });
+      return approvedSortDir === "desc" ? -cmp : cmp;
+    });
+
+  const toggleApprovedSort = (key: ApprovedSortKey) => {
+    if (approvedSortKey === key) {
+      setApprovedSortDir(d => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setApprovedSortKey(key);
+      setApprovedSortDir(key === "lastLogin" ? "desc" : "asc");
+    }
+  };
+
+  const now = Date.now();
+  const isDormant = (u: ManagedUser): boolean => {
+    if (!u.lastLoginAt) return true;
+    return now - new Date(u.lastLoginAt).getTime() > DORMANT_THRESHOLD_MS;
+  };
 
   const getUserDisplayName = (u: ManagedUser) => {
     return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unknown";
@@ -337,7 +384,36 @@ export default function Settings() {
                 {approvedUsers.length > 0 && (
                   <div className="space-y-3">
                     {pendingUsers.length > 0 && <Separator />}
-                    <h4 className="text-sm font-semibold text-green-600">Approved Users</h4>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <h4 className="text-sm font-semibold text-green-600">Approved Users</h4>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span>Sort:</span>
+                        <Button
+                          size="sm"
+                          variant={approvedSortKey === "name" ? "secondary" : "ghost"}
+                          className="h-7 px-2 gap-1"
+                          onClick={() => toggleApprovedSort("name")}
+                          data-testid="sort-users-by-name"
+                        >
+                          Name
+                          {approvedSortKey === "name" && (
+                            <ArrowUpDown className="h-3 w-3" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={approvedSortKey === "lastLogin" ? "secondary" : "ghost"}
+                          className="h-7 px-2 gap-1"
+                          onClick={() => toggleApprovedSort("lastLogin")}
+                          data-testid="sort-users-by-last-login"
+                        >
+                          Last login
+                          {approvedSortKey === "lastLogin" && (
+                            <ArrowUpDown className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                     {approvedUsers.map(u => (
                       <div key={u.id} className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -348,6 +424,9 @@ export default function Settings() {
                           <div>
                             <p className="text-sm font-medium">{getUserDisplayName(u)}</p>
                             <p className="text-xs text-muted-foreground">{u.email}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5" data-testid={`last-login-${u.id}`}>
+                              Last login: {u.lastLoginAt ? formatRelative(u.lastLoginAt) : "Never"}
+                            </p>
                           </div>
                           <WrapTooltip content={
                             u.role === "admin"
@@ -358,6 +437,16 @@ export default function Settings() {
                           }>
                             <Badge variant={u.role === "admin" ? "default" : "outline"} className="cursor-help">{u.role}</Badge>
                           </WrapTooltip>
+                          {isDormant(u) && (
+                            <WrapTooltip content={u.lastLoginAt
+                              ? "This user has not signed in for more than 30 days. Consider reviewing their access."
+                              : "This user has never signed in."
+                            }>
+                              <Badge variant="outline" className="cursor-help border-amber-300 text-amber-700 dark:text-amber-400" data-testid={`dormant-badge-${u.id}`}>
+                                Dormant
+                              </Badge>
+                            </WrapTooltip>
+                          )}
                           <NotificationTogglesRow userId={u.id} />
                         </div>
                         <div className="flex items-center gap-2">
