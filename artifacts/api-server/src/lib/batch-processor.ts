@@ -1,12 +1,13 @@
 import { eq, and, or, isNull, isNotNull, lte, gte, inArray, desc, count } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable, portalBatchRunsTable } from "@workspace/db";
+import { portalSubmissionsTable, botActivityLogTable, claimsTable, notesTable, appSettingsTable, portalBatchRunsTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { broadcastPresenceEvent, broadcastBatchEvent } from "./sse";
 import { ObjectStorageService } from "./objectStorage";
 import { transitionGroupStatus } from "./group-transitions";
 import { invoiceGroupsTable } from "@workspace/db";
 import { scheduleRetryOrFail } from "./submission-retry";
+import { computeIdempotencyKey, isIdempotencyKeyDuplicate } from "./idempotency";
 import { createWorkerGate } from "./worker-gate";
 import { portalBrowserGate } from "./portal-browser-gate";
 import { primaryClaimIdForGroup } from "./group-claims";
@@ -1366,6 +1367,18 @@ async function persistPortalSubmissionSuccess(args: {
 }): Promise<void> {
   const { sub, batchId, ticketId, persistedLegs, submittedAtIso } = args;
 
+  // Task #842. Stamp a deterministic idempotency key on the row at the
+  // success-write site. Two concurrent batch workers picking up the
+  // same submission on the same day (claim race lost the protection)
+  // collide on `portal_submissions_idempotency_key_uidx` instead of
+  // double-writing. A duplicate is folded into success-on-retry: the
+  // prior call already landed the same logical mutation.
+  const submitKey = computeIdempotencyKey({
+    entityId: sub.id,
+    action: "submit_portal_submission",
+    extra: ticketId ?? "no-ticket",
+  });
+
   let idempotentRowId: number | null = null;
   if (ticketId) {
     const dup = await db.select({ id: portalSubmissionsTable.id })
@@ -1384,15 +1397,38 @@ async function persistPortalSubmissionSuccess(args: {
     && priorTicketId !== ticketId
     && idempotentRowId === null;
 
+  // Task #842. Try-write helper: every status='submitted' write on this
+  // path stamps `submitKey`. A duplicate is the "another worker already
+  // committed this exact mutation today" case — log + return so the
+  // caller sees the same success the original write produced.
+  const tryStamp = async (writer: () => Promise<void>, where: string): Promise<boolean> => {
+    try {
+      await writer();
+      return true;
+    } catch (err) {
+      if (isIdempotencyKeyDuplicate(err)) {
+        logger.info(
+          { submissionId: sub.id, ticketId, submitKey, where },
+          "persistPortalSubmissionSuccess: duplicate idempotency key — first call already won, treating as success-on-retry",
+        );
+        return false;
+      }
+      throw err;
+    }
+  };
+
   if (idempotentRowId !== null && idempotentRowId !== sub.id) {
-    await db.update(portalSubmissionsTable).set({
-      status: "submitted",
-      portalTicketId: ticketId,
-      submittedAt: submittedAtIso,
-      submittedInBatchId: batchId ?? null,
-      errorMessage: null,
-      legs: persistedLegs,
-    }).where(eq(portalSubmissionsTable.id, idempotentRowId));
+    await tryStamp(async () => {
+      await db.update(portalSubmissionsTable).set({
+        status: "submitted",
+        portalTicketId: ticketId,
+        submittedAt: submittedAtIso,
+        submittedInBatchId: batchId ?? null,
+        errorMessage: null,
+        legs: persistedLegs,
+        idempotencyKey: submitKey,
+      }).where(eq(portalSubmissionsTable.id, idempotentRowId));
+    }, "idempotent_adopt");
     await db.update(portalSubmissionsTable).set({
       status: "cancelled",
       errorMessage: `Idempotent retry: portal ticket ${ticketId} already tracked on row ${idempotentRowId}`,
@@ -1438,6 +1474,7 @@ async function persistPortalSubmissionSuccess(args: {
       lastScrapedAt: null,
       lastScrapeOutcome: null,
       lastScrapeError: null,
+      idempotencyKey: submitKey,
     });
     await db.update(portalSubmissionsTable).set({
       status: "submitted",
@@ -1449,14 +1486,45 @@ async function persistPortalSubmissionSuccess(args: {
       "persistPortalSubmissionSuccess: bot/index returned a new portal ticket id — inserted a new portal_submissions row to preserve the prior ticket id",
     );
   } else {
-    await db.update(portalSubmissionsTable).set({
-      status: "submitted",
-      portalTicketId: ticketId,
-      submittedAt: submittedAtIso,
-      submittedInBatchId: batchId ?? null,
-      errorMessage: null,
-      legs: persistedLegs,
-    }).where(eq(portalSubmissionsTable.id, sub.id));
+    await tryStamp(async () => {
+      await db.update(portalSubmissionsTable).set({
+        status: "submitted",
+        portalTicketId: ticketId,
+        submittedAt: submittedAtIso,
+        submittedInBatchId: batchId ?? null,
+        errorMessage: null,
+        legs: persistedLegs,
+        idempotencyKey: submitKey,
+      }).where(eq(portalSubmissionsTable.id, sub.id));
+    }, "happy_path");
+  }
+
+  // Task #842. Mirror the audit-row write the HTTP path does: persist
+  // the matching `${submitKey}:audit` on `audit_logs` so a future
+  // concurrent retry that somehow gets past the submissions-table guard
+  // still collides at the audit table. Best-effort and idempotent — a
+  // duplicate is silently swallowed because the first call already
+  // wrote the operator-visible audit.
+  try {
+    await db.insert(auditLogsTable).values({
+      claimId: await primaryClaimIdForGroup(sub.invoiceGroupId).catch(() => null),
+      invoiceGroupId: sub.invoiceGroupId,
+      action: "portal_submission_submitted",
+      details: `Portal submission #${sub.id} submitted${ticketId ? ` (ticket ${ticketId})` : ""} via batch ${batchId ?? "(adhoc)"}`,
+      metadata: {
+        submissionId: sub.id,
+        ticketId,
+        batchId: batchId ?? null,
+        submittedAt: submittedAtIso,
+      },
+      userEmail: null,
+      userName: "Batch Processor",
+      idempotencyKey: `${submitKey}:audit`,
+    });
+  } catch (err) {
+    if (!isIdempotencyKeyDuplicate(err)) {
+      logger.warn({ err, submissionId: sub.id }, "persistPortalSubmissionSuccess: audit row insert failed (non-fatal)");
+    }
   }
 }
 

@@ -28,6 +28,8 @@ import {
   type PortalReaderResult,
   type ReadPortalTicketOpts,
 } from "../bot/portal-reader";
+import { botMutationFetch } from "./bot-mutation-client";
+import { computeIdempotencyKey, IDEMPOTENCY_HEADER, DUPLICATE_IDEMPOTENCY_KEY_CODE } from "./idempotency";
 
 // ---------------------------------------------------------------------------
 // Diff logic — pure
@@ -96,17 +98,24 @@ export function __setRecordPortalPosterForTests(poster: RecordPortalPoster | nul
 
 async function defaultPoster(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; data: unknown }> {
   const port = process.env.PORT || 8080;
-  const res = await fetch(`http://localhost:${port}/api/responses/record-portal`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-bot-token": process.env.BOT_SERVICE_TOKEN ?? "",
+  // Task #842: route through the bot mutation wrapper so every call
+  // carries an `Idempotency-Key` header derived from
+  // `(submissionId, action, day-bucket, externalMessageId)`. A 409 with
+  // `code:"duplicate_idempotency_key"` is folded into `ok=true` so a
+  // retried POST (e.g. the cron firing again after a network hiccup)
+  // never resurfaces as a transport failure.
+  const submissionId = typeof body.submissionId === "number" ? body.submissionId : Number(body.submissionId);
+  const externalMessageId = typeof body.externalMessageId === "string" ? body.externalMessageId : null;
+  const out = await botMutationFetch(
+    `http://localhost:${port}/api/responses/record-portal`,
+    body,
+    {
+      entityId: submissionId,
+      action: "record_portal_response",
+      extra: externalMessageId,
     },
-    body: JSON.stringify(body),
-  });
-  let data: unknown;
-  try { data = await res.json(); } catch { data = null; }
-  return { ok: res.ok, status: res.status, data };
+  );
+  return { ok: out.effectivelyOk, status: out.status, data: out.data };
 }
 
 /**
@@ -207,7 +216,27 @@ export async function inProcessRecordPortalPoster(
     extractedAmount: typeof body.extractedAmount === "string" ? body.extractedAmount : undefined,
     extractedDeadline: typeof body.extractedDeadline === "string" ? body.extractedDeadline : undefined,
     requestedAction: typeof body.requestedAction === "string" ? body.requestedAction : undefined,
+    // Task #842: the in-process backfill poster gets the same idempotency
+    // guarantee as the HTTP route. Either an explicit key from the caller
+    // (rare; --replay scripts can pin a value) or one derived from the
+    // canonical `(submissionId, action, day, externalMessageId)` shape.
+    idempotencyKey: typeof body.idempotencyKey === "string"
+      ? body.idempotencyKey
+      : computeIdempotencyKey({
+          entityId: submissionId,
+          action: "record_portal_response",
+          extra: typeof body.externalMessageId === "string" ? body.externalMessageId : null,
+        }),
   });
+  if (responseId === null) {
+    // Duplicate idempotency-key collision — the first call already won.
+    // Match the HTTP route's 409 shape so the caller can disambiguate.
+    return {
+      ok: false,
+      status: 409,
+      data: { error: "duplicate idempotency key", code: DUPLICATE_IDEMPOTENCY_KEY_CODE },
+    };
+  }
   // Mirror the route-layer side effect so the operator queue updates
   // live during a backfill --apply just like it does on a normal POST.
   broadcastGroupEvent({

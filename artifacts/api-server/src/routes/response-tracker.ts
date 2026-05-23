@@ -19,6 +19,7 @@ import { downloadAttachmentsWithRetry } from "../lib/email-attachments";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { resolveReplyAttachments, markStagedAttachmentsConsumed } from "../lib/reply-attachments";
 import { matchEmailToClaim, processEmailResponse, processPortalResponse, shouldTransitionToNeedsReview, typeLabelFor, MATCHER_CLASSIFIED_TARGET_STATUS } from "../lib/response-matcher";
+import { IDEMPOTENCY_HEADER, DUPLICATE_IDEMPOTENCY_KEY_CODE } from "../lib/idempotency";
 import type { ClassifiedDecision } from "../lib/inbound-email-classifier";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
 import { tryEmitApprovalStreak } from "../lib/streak-pulses";
@@ -409,6 +410,17 @@ recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res
     return;
   }
 
+  // Task #842. Persist the bot's idempotency header on the
+  // portal_responses row (and the audit row written downstream) so a
+  // retried POST trips the partial unique index instead of inserting a
+  // duplicate. The header is optional — operator-initiated callers and
+  // legacy bots that pre-date the wrapper still work, they just don't
+  // get the structural guarantee.
+  const headerValue = req.headers[IDEMPOTENCY_HEADER.toLowerCase()];
+  const idempotencyKey = typeof headerValue === "string" && headerValue.length > 0
+    ? headerValue
+    : null;
+
   const normalizedBodyFormat: "html" | "text" | undefined =
     bodyFormat === "html" ? "html" : bodyFormat === "text" ? "text" : undefined;
 
@@ -442,7 +454,19 @@ recordPortalRouter.post("/responses/record-portal", asyncHandler(async (req, res
     extractedAmount: typeof extractedAmount === "string" ? extractedAmount : undefined,
     extractedDeadline: typeof extractedDeadline === "string" ? extractedDeadline : undefined,
     requestedAction: typeof requestedAction === "string" ? requestedAction : undefined,
+    idempotencyKey,
   });
+
+  if (responseId === null) {
+    // Task #842. Partial unique index tripped — a previous call with the
+    // same `Idempotency-Key` already won. The bot client wrapper treats
+    // this as success-on-retry.
+    res.status(409).json({
+      error: "Duplicate idempotency key — original mutation already applied",
+      code: DUPLICATE_IDEMPOTENCY_KEY_CODE,
+    });
+    return;
+  }
 
   broadcastGroupEvent({
     type: "response_received",

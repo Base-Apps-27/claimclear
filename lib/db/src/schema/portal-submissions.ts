@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, numeric, jsonb, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { invoiceGroupsTable } from "./invoice-groups";
@@ -104,12 +105,25 @@ export const portalSubmissionsTable = pgTable("portal_submissions", {
   lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
   lastScrapeOutcome: portalScrapeOutcomeEnum("last_scrape_outcome"),
   lastScrapeError: text("last_scrape_error"),
+  // Task #842. Idempotency key for bot-originated submission mutations
+  // (submit / retry). Derived from `(invoiceGroupId, action, day-bucket)`
+  // in the bot client wrapper and persisted on insert / state-changing
+  // mutation. Operator-initiated rows leave this null. A partial unique
+  // index (`WHERE idempotency_key IS NOT NULL`) rejects a second insert
+  // with the same key at the DB level — belt-and-suspenders on top of
+  // the existing per-group `active submission` short-circuit.
+  idempotencyKey: text("idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
   index("portal_submissions_invoice_group_id_idx").on(table.invoiceGroupId),
   index("portal_submissions_status_idx").on(table.status),
   index("portal_submissions_last_scraped_at_idx").on(table.lastScrapedAt),
+  // Task #842. Partial unique index — operator-initiated rows leave the
+  // key null and must not collide with each other.
+  uniqueIndex("portal_submissions_idempotency_key_uidx")
+    .on(table.idempotencyKey)
+    .where(sql`idempotency_key IS NOT NULL`),
 ]);
 
 export const insertPortalSubmissionSchema = createInsertSchema(portalSubmissionsTable).omit({ id: true, createdAt: true, updatedAt: true });

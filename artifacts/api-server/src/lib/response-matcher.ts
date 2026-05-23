@@ -8,6 +8,7 @@ import { transitionGroupStatus } from "./group-transitions";
 import { tryClassifyInboundEmail, type ClassifiedDecision, type InboundEmailContext } from "./inbound-email-classifier";
 import { computeCostUsd } from "./llm-pricing";
 import { classifyByPhrase } from "./email-phrase-classifier";
+import { isIdempotencyKeyDuplicate } from "./idempotency";
 import type { GroupStatus } from "./group-transitions";
 
 /**
@@ -639,7 +640,17 @@ export async function processPortalResponse(data: {
   extractedAmount?: string | null;
   extractedDeadline?: string | null;
   requestedAction?: string | null;
-}): Promise<number> {
+  /**
+   * Task #842. Idempotency key derived in the bot client wrapper from
+   * `(submissionId, action, day-bucket, externalMessageId)`. Persisted
+   * on both the new portal_responses row and the matching audit row,
+   * each protected by a partial unique index. When the index trips this
+   * function returns `null` instead of a row id so callers can map it to
+   * a 409 + `code:"duplicate_idempotency_key"` response. Operator-
+   * initiated callers omit the key and bypass the structural guarantee.
+   */
+  idempotencyKey?: string | null;
+}): Promise<number | null> {
   // Post-cutover all portal submissions are group-scoped. Reject any caller
   // still passing a claim-only payload so we surface stragglers immediately.
   if (data.invoiceGroupId === null || data.invoiceGroupId === undefined) {
@@ -655,33 +666,53 @@ export async function processPortalResponse(data: {
   // "abstain" so behaviour stays the legacy "always processed=false".
   const classifierSource = data.classifierSource ?? "abstain";
   const autoMarkProcessed = shouldAutoMarkProcessed(data.responseType, classifierSource);
+  const idempotencyKey = data.idempotencyKey ?? null;
 
-  const [response] = await db.insert(portalResponsesTable).values({
-    claimId: null,
-    invoiceGroupId,
-    submissionId: data.submissionId,
-    source: "portal",
-    responseType: data.responseType,
-    subject: data.subject ?? null,
-    content: data.content,
-    rawContent: data.rawContent ?? null,
-    bodyFormat: data.bodyFormat ?? "text",
-    senderEmail: data.senderEmail ?? null,
-    senderName: data.senderName ?? null,
-    portalTicketId: data.portalTicketId,
-    externalMessageId: data.externalMessageId ?? null,
-    matchedVia: `portal_ticket_id:${data.portalTicketId}`,
-    matchConfidence: "high",
-    autoLinked: true,
-    processed: autoMarkProcessed,
-    aiSummary: data.aiSummary ?? null,
-    extractedAmount: data.extractedAmount ?? null,
-    extractedDeadline: data.extractedDeadline ?? null,
-    requestedAction: data.requestedAction ?? null,
-    classifierSource,
-    classifierConfidence: data.classifierConfidence ?? null,
-    metadata: data.metadata || null,
-  }).returning();
+  let response: typeof portalResponsesTable.$inferSelect;
+  try {
+    const inserted = await db.insert(portalResponsesTable).values({
+      claimId: null,
+      invoiceGroupId,
+      submissionId: data.submissionId,
+      source: "portal",
+      responseType: data.responseType,
+      subject: data.subject ?? null,
+      content: data.content,
+      rawContent: data.rawContent ?? null,
+      bodyFormat: data.bodyFormat ?? "text",
+      senderEmail: data.senderEmail ?? null,
+      senderName: data.senderName ?? null,
+      portalTicketId: data.portalTicketId,
+      externalMessageId: data.externalMessageId ?? null,
+      matchedVia: `portal_ticket_id:${data.portalTicketId}`,
+      matchConfidence: "high",
+      autoLinked: true,
+      processed: autoMarkProcessed,
+      aiSummary: data.aiSummary ?? null,
+      extractedAmount: data.extractedAmount ?? null,
+      extractedDeadline: data.extractedDeadline ?? null,
+      requestedAction: data.requestedAction ?? null,
+      classifierSource,
+      classifierConfidence: data.classifierConfidence ?? null,
+      metadata: data.metadata || null,
+      idempotencyKey,
+    }).returning();
+    response = inserted[0];
+  } catch (err) {
+    // Task #842. Partial unique index on `idempotency_key` tripped — a
+    // previous bot mutation with the same key already inserted. Surface
+    // null so the caller can map it to 409 + `code:"duplicate_..."`.
+    // Any other unique violation (or any other class of error) is a
+    // real bug and must keep propagating.
+    if (isIdempotencyKeyDuplicate(err)) {
+      logger.info(
+        { submissionId: data.submissionId, idempotencyKey },
+        "processPortalResponse: duplicate idempotency key — skipping (first call already won)",
+      );
+      return null;
+    }
+    throw err;
+  }
 
   // Match the email path's note voice so the timeline reads the same
   // regardless of inbound channel. Acknowledgments → "Acknowledged",
@@ -707,21 +738,43 @@ export async function processPortalResponse(data: {
     author: "Response Tracker",
   });
 
-  await db.insert(auditLogsTable).values({
-    invoiceGroupId,
-    action: "response_received",
-    details: `${data.responseType} response from portal (ticket: ${data.portalTicketId}, source: ${classifierSource})`,
-    metadata: {
-      responseId: response.id,
-      source: "portal",
-      responseType: data.responseType,
-      portalTicketId: data.portalTicketId,
-      classifierSource,
-      aiSummary: data.aiSummary ?? undefined,
-    },
-    userEmail: "system",
-    userName: "Response Tracker",
-  });
+  try {
+    await db.insert(auditLogsTable).values({
+      invoiceGroupId,
+      action: "response_received",
+      details: `${data.responseType} response from portal (ticket: ${data.portalTicketId}, source: ${classifierSource})`,
+      metadata: {
+        responseId: response.id,
+        source: "portal",
+        responseType: data.responseType,
+        portalTicketId: data.portalTicketId,
+        classifierSource,
+        aiSummary: data.aiSummary ?? undefined,
+      },
+      userEmail: "system",
+      userName: "Response Tracker",
+      // Task #842: matched to the portal_responses row's key so a future
+      // bot retry that somehow gets past the responses-table guard still
+      // collides at the audit table. The keys are scoped to different
+      // unique indexes (one per table), so reusing the same value here
+      // does not interfere with the responses-table dedup.
+      idempotencyKey: idempotencyKey ? `${idempotencyKey}:audit` : null,
+    });
+  } catch (err) {
+    if (isIdempotencyKeyDuplicate(err)) {
+      // The responses row was inserted successfully on this call (we got
+      // past the earlier try/catch), so a duplicate audit means a prior
+      // call wrote its audit row but our process retried after the
+      // responses INSERT raced. Log and swallow — the operator-visible
+      // audit already exists.
+      logger.info(
+        { invoiceGroupId, idempotencyKey },
+        "processPortalResponse: audit row already exists for this idempotency key — skipping audit insert",
+      );
+    } else {
+      throw err;
+    }
+  }
 
   // Mirror the email-path transition gate: acknowledgments (silent
   // receipts) and abstain rows must NOT promote the group to "Ready

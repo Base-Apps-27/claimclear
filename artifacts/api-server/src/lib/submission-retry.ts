@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { portalSubmissionsTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { primaryClaimIdForGroup } from "./group-claims";
+import { computeIdempotencyKey, isIdempotencyKeyDuplicate } from "./idempotency";
 
 const RETRY_BACKOFF_MINUTES = [5, 30, 240, 480];
 
@@ -88,26 +89,47 @@ export async function scheduleRetryOrFail({
   }
 
   const auditClaimId = await primaryClaimIdForGroup(updated.invoiceGroupId);
-  if (exhausted) {
+  // Task #842. The retry-helper audit row is the durable evidence that
+  // attempt N happened. Stamp it with a deterministic idempotency key
+  // so two concurrent callers (e.g. the bot's `/fail` endpoint and the
+  // in-process catch block firing for the same submission/attempt)
+  // can't double-log. The key is scoped by attempt number so a later,
+  // legitimate retry produces a distinct key.
+  const action = exhausted ? "submission_retries_exhausted" : "submission_retry_scheduled";
+  const retryAuditKey = computeIdempotencyKey({
+    entityId: submissionId,
+    action,
+    extra: `attempt-${attemptsSoFar}`,
+  });
+  const baseValues = exhausted
+    ? {
+        action,
+        details: `Portal submission #${submissionId} failed after ${attemptsSoFar} attempt${attemptsSoFar === 1 ? "" : "s"} (max ${maxAttempts}) [source: ${source}]: ${errMsg.slice(0, 200)}`,
+        metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, lastError: errMsg },
+      }
+    : {
+        action,
+        details: `Portal submission #${submissionId} retry ${attemptsSoFar + 1}/${maxAttempts} scheduled for ${nextRetryAt!.toISOString()} [source: ${source}] (after: ${errMsg.slice(0, 200)})`,
+        metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, nextRetryAt: nextRetryAt!.toISOString(), lastError: errMsg },
+      };
+  try {
     await db.insert(auditLogsTable).values({
       claimId: auditClaimId,
       invoiceGroupId: updated.invoiceGroupId,
-      action: "submission_retries_exhausted",
-      details: `Portal submission #${submissionId} failed after ${attemptsSoFar} attempt${attemptsSoFar === 1 ? "" : "s"} (max ${maxAttempts}) [source: ${source}]: ${errMsg.slice(0, 200)}`,
-      metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, lastError: errMsg },
+      ...baseValues,
       userEmail: null,
       userName: auditUserName,
+      idempotencyKey: retryAuditKey,
     });
-  } else {
-    await db.insert(auditLogsTable).values({
-      claimId: auditClaimId,
-      invoiceGroupId: updated.invoiceGroupId,
-      action: "submission_retry_scheduled",
-      details: `Portal submission #${submissionId} retry ${attemptsSoFar + 1}/${maxAttempts} scheduled for ${nextRetryAt!.toISOString()} [source: ${source}] (after: ${errMsg.slice(0, 200)})`,
-      metadata: { submissionId, attempts: attemptsSoFar, maxAttempts, source, nextRetryAt: nextRetryAt!.toISOString(), lastError: errMsg },
-      userEmail: null,
-      userName: auditUserName,
-    });
+  } catch (err) {
+    if (isIdempotencyKeyDuplicate(err)) {
+      logger.info(
+        { submissionId, attempts: attemptsSoFar, action, retryAuditKey },
+        "scheduleRetryOrFail: duplicate audit idempotency key — another caller already logged this attempt",
+      );
+    } else {
+      throw err;
+    }
   }
 
   logger.info({ submissionId, attempts: attemptsSoFar, maxAttempts, exhausted, source, nextRetryAt }, "scheduleRetryOrFail completed");

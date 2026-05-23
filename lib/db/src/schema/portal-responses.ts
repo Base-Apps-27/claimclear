@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, timestamp, boolean, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, jsonb, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { claimsTable } from "./claims";
@@ -40,6 +41,14 @@ export const portalResponsesTable = pgTable("portal_responses", {
   classifierSource: text("classifier_source").notNull().default("keyword"),
   classifierConfidence: text("classifier_confidence"),
   metadata: jsonb("metadata"),
+  // Task #842. Idempotency key supplied by bot-originated mutation calls
+  // (header `Idempotency-Key`). Derived from `(submissionId, action,
+  // day-bucket)` in the bot client wrapper. A partial unique index
+  // (`WHERE idempotency_key IS NOT NULL`) gives a structural duplicate
+  // guarantee on top of the existing per-submission externalMessageId
+  // dedup, so a retried `/responses/record-portal` POST with the same key
+  // can never insert twice. Operator-initiated rows leave this null.
+  idempotencyKey: text("idempotency_key"),
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
@@ -71,6 +80,12 @@ export const portalResponsesTable = pgTable("portal_responses", {
     table.responseType,
     table.receivedAt,
   ),
+  // Task #842. Structural duplicate guarantee for bot-originated
+  // mutations. Partial because operator-initiated rows leave the key
+  // null and must not collide with each other.
+  uniqueIndex("portal_responses_idempotency_key_uidx")
+    .on(table.idempotencyKey)
+    .where(sql`idempotency_key IS NOT NULL`),
 ]);
 
 export const insertPortalResponseSchema = createInsertSchema(portalResponsesTable).omit({ id: true, createdAt: true, updatedAt: true });
