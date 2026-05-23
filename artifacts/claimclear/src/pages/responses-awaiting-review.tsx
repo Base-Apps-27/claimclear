@@ -37,10 +37,13 @@ import {
 import { ApiError, type BulkApproveProgress } from "@workspace/api-client-react";
 import type {
   ClaimResponse,
+  ClaimVerdictResponse,
   InvoiceGroupDetailResponse,
   InvoiceGroupResponse,
   PortalResponseItem,
 } from "@workspace/api-client-react";
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation";
+import { patchGroupLeg } from "@/lib/optimistic-cache-patches";
 import { outcomeRole } from "@workspace/leg-state";
 import { PerLegVerdictPicker } from "@/components/per-leg-verdict-picker";
 import { useAiCalibrations } from "@/hooks/use-ai-calibration";
@@ -2415,6 +2418,50 @@ function PerLegVerdictRailSection({
   const queryClient = useQueryClient();
   const recordVerdict = useRecordLegVerdict();
   const clearVerdictDraft = useClearLegVerdictDraft();
+  // Task #835 — wrap the per-leg "Approve response" draft + clear
+  // mutations with the shared optimistic hook. The visible flip is the
+  // verdict pill lighting up (or clearing) without waiting for the
+  // refetch round-trip; on error the snapshot rolls back and the
+  // standardized destructive toast surfaces the failure reason.
+  const recordVerdictOptimistic = useOptimisticMutation<
+    { id: number; outcome: ClaimVerdictResponse["outcome"]; confNumber: string },
+    unknown
+  >({
+    mutationFn: (vars) =>
+      recordVerdict.mutateAsync({
+        id: vars.id,
+        data: { source: "operator_draft", outcome: vars.outcome },
+      }),
+    errorTitle: "Couldn't save selection — reverted",
+    buildPatches: (vars) => [
+      {
+        queryKey: getGetInvoiceGroupQueryKey(groupId),
+        updater: (old) =>
+          patchGroupLeg(old, vars.id, {
+            latestDraft: {
+              id: -1,
+              claimId: vars.id,
+              source: "operator_draft",
+              outcome: vars.outcome,
+              createdAt: new Date().toISOString(),
+            } as unknown as ClaimVerdictResponse,
+          }),
+      },
+    ],
+  });
+  const clearVerdictOptimistic = useOptimisticMutation<
+    { id: number; confNumber: string },
+    unknown
+  >({
+    mutationFn: (vars) => clearVerdictDraft.mutateAsync({ id: vars.id }),
+    errorTitle: "Couldn't clear selection — reverted",
+    buildPatches: (vars) => [
+      {
+        queryKey: getGetInvoiceGroupQueryKey(groupId),
+        updater: (old) => patchGroupLeg(old, vars.id, { latestDraft: null }),
+      },
+    ],
+  });
   const { calibrationByErrorType } = useAiCalibrations(
     actionableRides.map((r) => r.errorTypeId),
   );
@@ -2474,40 +2521,35 @@ function PerLegVerdictRailSection({
                   : undefined
               }
               onSelect={async (outcome) => {
-                // Task #343: Step 3 saves a draft only — no MAS, no
-                // attestation, no group transition. Step 4 commit
-                // (re-attest / queue / closure) is what later promotes
-                // the drafts to `operator_confirmed` atomically.
-                await recordVerdict.mutateAsync({
-                  id: claim.id,
-                  data: {
-                    source: "operator_draft",
+                // Task #343 + #835: Step 3 saves a draft only —
+                // wrapped in useOptimisticMutation so the pill lights
+                // up within a frame and rolls back on error.
+                try {
+                  await recordVerdictOptimistic.run({
+                    id: claim.id,
                     outcome,
-                  },
-                });
-                // Only invalidate what's needed to reflect the lit-up
-                // state. The master list + Responses-Awaiting-Review
-                // count are deliberately NOT touched here — drafts
-                // don't move the group out of `response-pending`, so
-                // re-fetching them would either no-op or, worse, race
-                // with the auto-navigate effect on the page.
-                queryClient.invalidateQueries({
-                  queryKey: getGetInvoiceGroupQueryKey(groupId),
-                });
+                    confNumber: claim.confNumber,
+                  });
+                } catch {
+                  return;
+                }
                 queryClient.invalidateQueries({
                   queryKey: getGetClaimQueryKey(claim.id),
                 });
                 onAfterVerdict(`Selection saved for #${claim.confNumber}.`);
               }}
               onClear={async () => {
-                // Task #344: clicking the lit pill clears the draft.
-                // Same invalidation set as `onSelect` because the
-                // change is also draft-only (no group transition, no
-                // master-list re-count) — Step 4 hasn't been touched.
-                await clearVerdictDraft.mutateAsync({ id: claim.id });
-                queryClient.invalidateQueries({
-                  queryKey: getGetInvoiceGroupQueryKey(groupId),
-                });
+                // Task #344 + #835: clicking the lit pill clears the
+                // draft. Same optimistic wrapping so the pill goes
+                // dark within a frame and rolls back on error.
+                try {
+                  await clearVerdictOptimistic.run({
+                    id: claim.id,
+                    confNumber: claim.confNumber,
+                  });
+                } catch {
+                  return;
+                }
                 queryClient.invalidateQueries({
                   queryKey: getGetClaimQueryKey(claim.id),
                 });

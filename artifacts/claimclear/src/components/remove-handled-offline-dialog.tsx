@@ -7,6 +7,7 @@ import {
   getListInvoiceGroupsQueryKey,
   getListClaimAuditLogsQueryKey,
 } from "@workspace/api-client-react";
+import { patchGroupLeg } from "@/lib/optimistic-cache-patches";
 import {
   Dialog,
   DialogContent,
@@ -18,8 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Link2Off } from "lucide-react";
-import { useToast, successToast } from "@/hooks/use-toast";
+import { successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation";
+import { SavingIndicator } from "@/components/saving-indicator";
 import {
   HANDLED_OFFLINE_NOTE_MIN as HANDLED_OFFLINE_NOTE_MIN_HELPER,
   trimmedNoteLength,
@@ -67,8 +70,31 @@ export function RemoveHandledOfflineDialog({
   onRemoved,
 }: Props) {
   const qc = useQueryClient();
-  const { toast } = useToast();
   const excludeMutation = useExcludeLeg();
+  // Task #835 — optimistic flip: the leg should disappear from the
+  // surrounding queue/detail view within a frame. We patch the parent
+  // group cache to flip `includedInDispute` false and stamp
+  // `dropReason = 'handled_offline'`; on error the snapshot rolls back
+  // and the standardized toast surfaces the failure reason.
+  const optimistic = useOptimisticMutation<
+    { id: number; data: ReturnType<typeof buildHandledOfflinePayload> },
+    unknown
+  >({
+    mutationFn: (vars) => excludeMutation.mutateAsync(vars),
+    errorTitle: "Couldn't remove leg — reverted",
+    buildPatches: (vars) => {
+      if (groupId == null) return [];
+      return [
+        {
+          queryKey: getGetInvoiceGroupQueryKey(groupId),
+          updater: (old) => patchGroupLeg(old, vars.id, {
+            includedInDispute: false,
+            dropReason: "handled_offline",
+          }),
+        },
+      ];
+    },
+  });
   const [note, setNote] = useState("");
   const [confirmed, setConfirmed] = useState(false);
 
@@ -86,48 +112,38 @@ export function RemoveHandledOfflineDialog({
   const canSubmit = canSubmitHandledOffline({
     note,
     confirmed,
-    isPending: excludeMutation.isPending,
+    isPending: optimistic.isPending,
   });
 
-  function onConfirm() {
+  async function onConfirm() {
     if (!canSubmit) return;
-    excludeMutation.mutate(
-      {
+    try {
+      await optimistic.run({
         id: claimId,
         data: buildHandledOfflinePayload(note),
-      },
-      {
-        onSuccess: () => {
-          markLocalAction(`claim:${claimId}`);
-          successToast({
-            title: "Done",
-            description: "Leg removed — handled offline",
-          });
-          // Cache invalidations + close + onRemoved live in a pure
-          // helper so the post-success contract is exercised by the
-          // dialog's interaction test.
-          runHandledOfflineSuccessSideEffects({
-            qc,
-            keys: {
-              getGetClaimQueryKey,
-              getListClaimAuditLogsQueryKey,
-              getGetInvoiceGroupQueryKey,
-              getListInvoiceGroupsQueryKey,
-            },
-            claimId,
-            groupId,
-            onOpenChange,
-            onRemoved,
-          });
+      });
+      markLocalAction(`claim:${claimId}`);
+      successToast({
+        title: "Done",
+        description: "Leg removed — handled offline",
+      });
+      runHandledOfflineSuccessSideEffects({
+        qc,
+        keys: {
+          getGetClaimQueryKey,
+          getListClaimAuditLogsQueryKey,
+          getGetInvoiceGroupQueryKey,
+          getListInvoiceGroupsQueryKey,
         },
-        onError: (e: unknown) =>
-          toast({
-            title: "Could not remove leg",
-            description: e instanceof Error ? e.message : String(e),
-            variant: "destructive",
-          }),
-      },
-    );
+        claimId,
+        groupId,
+        onOpenChange,
+        onRemoved,
+      });
+    } catch {
+      // useOptimisticMutation already rolled the cache back and fired
+      // the destructive toast — nothing further to do here.
+    }
   }
 
   return (
@@ -188,12 +204,13 @@ export function RemoveHandledOfflineDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
+          <SavingIndicator show={optimistic.showSaving} />
           <Button
             onClick={onConfirm}
             disabled={!canSubmit}
             data-testid="remove-handled-offline-confirm"
           >
-            {excludeMutation.isPending ? (
+            {optimistic.isPending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
             ) : (
               <Link2Off className="h-3.5 w-3.5 mr-1" />

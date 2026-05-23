@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useCompleteGroupReattest,
   useBulkQueueGroupReattest,
+  getGetInvoiceGroupQueryKey,
 } from "@workspace/api-client-react";
 import type { ClaimResponse, InvoiceGroupResponse } from "@workspace/api-client-react";
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation";
+import { patchGroupLegs } from "@/lib/optimistic-cache-patches";
 import {
   Dialog,
   DialogContent,
@@ -133,6 +136,45 @@ export function ReattestModal({
   // also stamps awaiting_payor_again_at in the same transaction, so
   // we no longer need a separate markWaiting call on the queue path.
   const bulkQueueReattest = useBulkQueueGroupReattest();
+  // Task #835 — wrap the bulk-queue-reattest mutation with the shared
+  // optimistic hook. The visible flip operators care about: every
+  // approved leg's `attestationState` jumps to `queued` and the group
+  // stamps `awaitingPayorAgainAt`, which drops it off Responses
+  // Awaiting Review within a frame. On error the snapshot rolls back
+  // and the standardized destructive toast surfaces the failure
+  // reason.
+  const queueReattestOptimistic = useOptimisticMutation<
+    {
+      id: number;
+      data: { note: string; renameInvoiceNumberTo?: string; renameSourceResponseId?: number };
+      approvedLegIds: readonly number[];
+    },
+    Awaited<ReturnType<typeof bulkQueueReattest.mutateAsync>>
+  >({
+    mutationFn: (vars) =>
+      bulkQueueReattest.mutateAsync({ id: vars.id, data: vars.data }),
+    errorTitle: "Couldn't queue for re-attest — reverted",
+    buildPatches: (vars) => {
+      const legPatches = new Map<number, Partial<ClaimResponse>>();
+      const stampedAt = new Date().toISOString();
+      for (const legId of vars.approvedLegIds) {
+        legPatches.set(legId, {
+          attestationState: "queued",
+          attestationQueuedAt: stampedAt,
+        });
+      }
+      return [
+        {
+          queryKey: getGetInvoiceGroupQueryKey(vars.id),
+          updater: (old) => {
+            const patched = patchGroupLegs(old, legPatches);
+            if (!patched || typeof patched !== "object") return patched;
+            return { ...(patched as InvoiceGroupResponse), awaitingPayorAgainAt: stampedAt };
+          },
+        },
+      ];
+    },
+  });
   // 2026-05-14 — there used to be a `useMarkAwaitingPayorAgain()` hook
   // here that was called after `complete-reattest` on the `now` and
   // `offline` paths to "drop the row off Responses Awaiting Review."
@@ -320,13 +362,14 @@ export function ReattestModal({
     }
     setPromoting(false);
     try {
-      // Single atomic call: queues every eligible leg and stamps
-      // awaiting_payor_again_at on the group in one transaction. A
-      // partial failure now rolls back instead of leaving half the
-      // group queued and the other half not.
-      const result = await bulkQueueReattest.mutateAsync({
+      // Task #835 — fires the optimistic patch first (flips approved
+      // legs to `queued` + stamps `awaitingPayorAgainAt`) then the
+      // server call. On error the rollback + destructive toast are
+      // handled inside the hook.
+      const result = await queueReattestOptimistic.run({
         id: group.id,
         data: { note: fullNote, ...(renamePayload ?? {}) },
+        approvedLegIds: approvedLegs.map((l) => l.id),
       });
       const queuedCount = result.queuedLegIds.length;
       // Task #780 (A) — queueing for re-attestation IS the operator's
@@ -343,12 +386,17 @@ export function ReattestModal({
       );
       close();
     } catch (err: unknown) {
-      const msg = renameConflictMessage(err) ?? (err instanceof Error ? err.message : "Could not queue.");
-      toast({
-        title: "Queue failed",
-        description: msg,
-        variant: "destructive",
-      });
+      // Rollback + standardized destructive toast already handled by
+      // useOptimisticMutation; we only surface rename-conflict here for
+      // the call sites that still rely on the legacy message format.
+      const msg = renameConflictMessage(err);
+      if (msg) {
+        toast({
+          title: "Queue failed",
+          description: msg,
+          variant: "destructive",
+        });
+      }
     }
   };
 

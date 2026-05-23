@@ -28,6 +28,8 @@ import type {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useOptimisticMutation } from "@/hooks/use-optimistic-mutation";
+import { patchGroupLeg, patchGroupLegs } from "@/lib/optimistic-cache-patches";
 import { RefNumber } from "@/components/ref-number";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,6 +111,32 @@ export function QueueNeedsReviewPanel({
 
   const classifyLeg = useClassifyLeg();
   const excludeLeg = useExcludeLeg();
+  // Task #835 — wrap per-row "Mark no-issue" with the shared optimistic
+  // hook so the leg's `includedInDispute` flips false in the group cache
+  // within a frame; on error the snapshot rolls back and a standardized
+  // destructive toast surfaces the reason.
+  const excludeOptimistic = useOptimisticMutation<
+    {
+      id: number;
+      data: { reason: ExcludeLegBodyReason; note?: string };
+      groupId: number;
+    },
+    unknown
+  >({
+    mutationFn: (vars) =>
+      excludeLeg.mutateAsync({ id: vars.id, data: vars.data }),
+    errorTitle: "Couldn't mark no-issue — reverted",
+    buildPatches: (vars) => [
+      {
+        queryKey: getGetInvoiceGroupQueryKey(vars.groupId),
+        updater: (old) =>
+          patchGroupLeg(old, vars.id, {
+            includedInDispute: false,
+            dropReason: vars.data.reason,
+          }),
+      },
+    ],
+  });
   // Task #795 — single-leg Classify entry points (Queue row, claim-detail
   // Classify / Change, leg-conclusion row, gauntlet reclassify) can be
   // opened on legs that are excluded or already classified. POSTing
@@ -409,6 +437,24 @@ export function QueueNeedsReviewPanel({
     const et = errorTypes.find((t) => String(t.id) === reclassifyTargetErrorTypeId);
     if (!et) return;
     setBulkPending(true);
+    // Task #835 — optimistic bulk flip: patch every visible leg's
+    // errorType in the group cache up front so the rows repaint within
+    // a frame. We snapshot the prior cache value so per-leg failures
+    // can revert ONLY the failed legs, preserving the partial-failure
+    // contract (succeeded keep the flip, skipped roll back).
+    const patches = new Map<number, Partial<ClaimResponse>>();
+    for (const c of bulkVisibleClaims) {
+      patches.set(c.id, {
+        errorTypeId: String(et.id),
+        errorTypeName: et.name,
+      });
+    }
+    const groupKey = getGetInvoiceGroupQueryKey(inboxGroup.id);
+    await queryClient.cancelQueries({ queryKey: groupKey });
+    const groupSnapshot = queryClient.getQueryData(groupKey);
+    queryClient.setQueryData(groupKey, (old: unknown) =>
+      patchGroupLegs(old, patches),
+    );
     const succeeded: { id: string; ref: string }[] = [];
     const skipped: { id: string; ref: string; reason: string }[] = [];
     const previewById = new Map(
@@ -443,6 +489,27 @@ export function QueueNeedsReviewPanel({
         });
       }
     }
+    // Task #835 — partial-failure rollback: if any legs failed we
+    // restore the pre-mutation snapshot first, then re-apply ONLY the
+    // succeeded legs' patches so the cache reflects the truth (succeeded
+    // legs keep the flip, skipped legs revert) until the invalidation
+    // refetch confirms. This preserves the {succeeded, skipped}
+    // contract while keeping the UI in sync immediately.
+    if (skipped.length > 0) {
+      queryClient.setQueryData(groupKey, groupSnapshot);
+      if (succeeded.length > 0) {
+        const succeededPatches = new Map<number, Partial<ClaimResponse>>();
+        for (const s of succeeded) {
+          succeededPatches.set(Number(s.id), {
+            errorTypeId: String(et.id),
+            errorTypeName: et.name,
+          });
+        }
+        queryClient.setQueryData(groupKey, (old: unknown) =>
+          patchGroupLegs(old, succeededPatches),
+        );
+      }
+    }
     invalidateAll();
     setBulkPending(false);
     setBulkErrorTypeId("");
@@ -456,10 +523,13 @@ export function QueueNeedsReviewPanel({
     }
     const skippedPreview = skipped.slice(0, 5).map((s) => s.ref).join(", ");
     const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
+    const allFailed = skipped.length === bulkVisibleClaims.length;
     toast({
-      title: `Bulk reclassify partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
+      title: allFailed
+        ? "Couldn't reclassify legs — reverted"
+        : `Bulk reclassify partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
       description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
-      variant: skipped.length === ids.length ? "destructive" : "default",
+      variant: allFailed ? "destructive" : "default",
     });
   }
 
@@ -795,19 +865,22 @@ export function QueueNeedsReviewPanel({
                   }
                 }}
                 onExclude={async (reason, note) => {
+                  // Task #835 — per-row "Mark no-issue" optimistically
+                  // flips the leg in the group cache so the row chip
+                  // updates within a frame. On error, snapshot rollback
+                  // and standardized toast restore the prior state and
+                  // explain the failure.
                   try {
-                    await excludeLeg.mutateAsync({
+                    await excludeOptimistic.run({
                       id: c.id,
                       data: { reason, note: note || undefined },
+                      groupId: inboxGroup.id,
                     });
                     invalidateAll();
                     onCompleted(`Claim ${c.confNumber || `#${c.id}`} marked ${reason.replace("_", " ")}`);
-                  } catch (e) {
-                    toast({
-                      title: "Exclude failed",
-                      description: e instanceof Error ? e.message : String(e),
-                      variant: "destructive",
-                    });
+                  } catch {
+                    // Rollback + destructive toast already handled by
+                    // useOptimisticMutation.
                   }
                 }}
                 onCreateErrorType={async (input) => {
