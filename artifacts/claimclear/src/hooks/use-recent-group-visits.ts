@@ -90,11 +90,14 @@ function notifySameTab(): void {
  * 10-entry cap; clearing wipes the per-user list (both pinned and
  * unpinned).
  */
+export type RailPhaseUpdate = { id: number; phase?: string | null };
+
 export function useRecentGroupVisits(userId: string | undefined): {
   visits: RecentGroupVisit[];
   recordVisit: (entry: Omit<RecentGroupVisit, "visitedAt" | "pinned">) => void;
   togglePin: (id: number) => void;
   clearRecents: () => void;
+  applyPhaseUpdates: (updates: Iterable<RailPhaseUpdate>) => void;
 } {
   const key = storageKey(userId);
   const [visits, setVisits] = useState<RecentGroupVisit[]>(() => readFromStorage(key));
@@ -155,6 +158,38 @@ export function useRecentGroupVisits(userId: string | undefined): {
     [key],
   );
 
+  // Opportunistically refresh the cached phase for any rail entries
+  // whose ids appear in `updates` (Task #852). The rail snapshots a
+  // group's phase at visit time, so when a teammate moves a group
+  // forward elsewhere we can piggy-back on list/detail query results
+  // already in the React Query cache to keep the pill honest — no
+  // extra HTTP requests. Entries not in `updates` are left untouched.
+  const applyPhaseUpdates = useCallback(
+    (updates: Iterable<RailPhaseUpdate>) => {
+      if (!key) return;
+      const byId = new Map<number, string | null | undefined>();
+      for (const u of updates) {
+        if (u && typeof u.id === "number") byId.set(u.id, u.phase);
+      }
+      if (byId.size === 0) return;
+      const current = readFromStorage(key);
+      let changed = false;
+      const next = current.map((v) => {
+        if (!byId.has(v.id)) return v;
+        const freshPhase = byId.get(v.id) ?? null;
+        const currentPhase = v.phase ?? null;
+        if (freshPhase === currentPhase) return v;
+        changed = true;
+        return { ...v, phase: freshPhase };
+      });
+      if (!changed) return;
+      writeToStorage(key, next);
+      setVisits(next);
+      notifySameTab();
+    },
+    [key],
+  );
+
   const clearRecents = useCallback(() => {
     if (!key) return;
     writeToStorage(key, []);
@@ -162,5 +197,5 @@ export function useRecentGroupVisits(userId: string | undefined): {
     notifySameTab();
   }, [key]);
 
-  return { visits, recordVisit, togglePin, clearRecents };
+  return { visits, recordVisit, togglePin, clearRecents, applyPhaseUpdates };
 }

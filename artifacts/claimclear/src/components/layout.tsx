@@ -1,4 +1,6 @@
 import { Link, useLocation } from "wouter";
+import { useEffect } from "react";
+import { useQueryClient, type Query } from "@tanstack/react-query";
 import { useAuth } from "@workspace/replit-auth-web";
 import {
   useListAttestationPending,
@@ -570,7 +572,9 @@ function FullBleedAwareMain({ children }: { children: React.ReactNode }) {
 // operator navigates between detail pages. Hidden until there's at
 // least one entry so first-time operators don't see an empty rail.
 function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
-  const { visits, togglePin, clearRecents } = useRecentGroupVisits(userId);
+  const { visits, togglePin, clearRecents, applyPhaseUpdates } =
+    useRecentGroupVisits(userId);
+  useRailPhaseReconciler(applyPhaseUpdates);
   if (visits.length === 0) return null;
   return (
     <SidebarGroup data-testid="sidebar-recently-viewed" className="relative">
@@ -654,6 +658,76 @@ function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
       </SidebarGroupContent>
     </SidebarGroup>
   );
+}
+
+// Task #852 — opportunistically refresh the Recently Viewed rail's
+// cached phase pills using payloads already flowing through the React
+// Query cache. The rail snapshots a group's phase at visit time, so
+// if a teammate (or a portal event) moves a group forward while the
+// operator is sitting on the dashboard / queue / list, the pill goes
+// stale until the operator re-visits the detail page. By subscribing
+// to the QueryCache and harvesting `{id, phase}` pairs from list
+// (`/api/invoice-groups`) and detail (`/api/invoice-groups/{id}`)
+// responses as they land, we keep the rail honest with zero extra
+// HTTP requests. Cross-tab updates continue to flow through the
+// existing `storage` event in `useRecentGroupVisits`.
+type RailReconcileFn = (
+  updates: Iterable<{ id: number; phase?: string | null }>,
+) => void;
+
+function useRailPhaseReconciler(applyPhaseUpdates: RailReconcileFn) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const cache = queryClient.getQueryCache();
+    const harvest = (query: Query) => {
+      const key = query.queryKey;
+      if (!Array.isArray(key) || typeof key[0] !== "string") return;
+      const path = key[0] as string;
+      const data = query.state.data as unknown;
+      if (!data) return;
+      if (path === "/api/invoice-groups") {
+        const groups = (data as { groups?: unknown }).groups;
+        if (!Array.isArray(groups)) return;
+        const updates: { id: number; phase?: string | null }[] = [];
+        for (const g of groups) {
+          if (g && typeof g === "object") {
+            const { id, phase } = g as { id?: unknown; phase?: unknown };
+            if (typeof id === "number") {
+              updates.push({
+                id,
+                phase: typeof phase === "string" ? phase : null,
+              });
+            }
+          }
+        }
+        if (updates.length > 0) applyPhaseUpdates(updates);
+      } else if (path.startsWith("/api/invoice-groups/")) {
+        // Detail endpoint key is `["/api/invoice-groups/{id}"]` —
+        // ignore nested sub-resources (history, threads, etc.) which
+        // share the prefix but carry extra path segments.
+        const rest = path.slice("/api/invoice-groups/".length);
+        if (rest.length === 0 || rest.includes("/")) return;
+        const idNum = Number(rest);
+        if (!Number.isInteger(idNum)) return;
+        const phase = (data as { phase?: unknown }).phase;
+        applyPhaseUpdates([
+          { id: idNum, phase: typeof phase === "string" ? phase : null },
+        ]);
+      }
+    };
+
+    // Reconcile against whatever is already in the cache when the
+    // sidebar mounts (e.g. the operator navigated from the queue to
+    // the dashboard — the list query already lives in the cache).
+    for (const q of cache.getAll()) harvest(q);
+
+    const unsub = cache.subscribe((event) => {
+      if (event.type === "updated" && event.action?.type === "success") {
+        harvest(event.query);
+      }
+    });
+    return () => unsub();
+  }, [queryClient, applyPhaseUpdates]);
 }
 
 // Display-timezone chip (#562). Tiny header label so operators always
