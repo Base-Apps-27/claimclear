@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useListAttestationPending,
+  getExportAttestationPendingCsvUrl,
 } from "@workspace/api-client-react";
+import { ExportCsvControl } from "@/components/export-csv-control";
+import { buildCsvFilename } from "@/lib/csv-export-filename";
 import { useRowSettle } from "@/hooks/use-row-settle";
 import type {
   ClaimResponse,
@@ -295,6 +298,24 @@ export function QueueWorkspace() {
                 {totalPendingItems} item{totalPendingItems === 1 ? "" : "s"}{" "}
                 pending
               </span>
+              <ExportCsvControl
+                testIdPrefix="attestation-export-csv"
+                buildUrl={(allFields) =>
+                  getExportAttestationPendingCsvUrl({
+                    sort,
+                    allFields: allFields || undefined,
+                    filename: buildCsvFilename("attestation-open", [
+                      `sort${sort === "service-desc" ? "Desc" : "Asc"}`,
+                    ]),
+                  })
+                }
+                buildFilename={(allFields) =>
+                  buildCsvFilename("attestation-open", [
+                    `sort${sort === "service-desc" ? "Desc" : "Asc"}`,
+                    allFields ? "allFields" : null,
+                  ])
+                }
+              />
               <Select
                 value={sort}
                 onValueChange={(v) => onSortChange(v as SortMode)}

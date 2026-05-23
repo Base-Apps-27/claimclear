@@ -119,6 +119,7 @@ import type {
   EvidenceTypeBody,
   EvidenceTypeResponse,
   ExcludeLegBody,
+  ExportAttestationPendingCsvParams,
   ExportClaimsCsvParams,
   ExportInvoiceGroupsCsvParams,
   ExportWithdrawalsCsvParams,
@@ -5841,6 +5842,112 @@ export function useListAttestationPending<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListAttestationPendingQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export the attestation queue as CSV, honouring the active state + sort filters
+ */
+export const getExportAttestationPendingCsvUrl = (
+  params?: ExportAttestationPendingCsvParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/claims/attestation-pending/export-csv?${stringifiedParams}`
+    : `/api/claims/attestation-pending/export-csv`;
+};
+
+export const exportAttestationPendingCsv = async (
+  params?: ExportAttestationPendingCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportAttestationPendingCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportAttestationPendingCsvQueryKey = (
+  params?: ExportAttestationPendingCsvParams,
+) => {
+  return [
+    `/api/claims/attestation-pending/export-csv`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportAttestationPendingCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportAttestationPendingCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportAttestationPendingCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAttestationPendingCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportAttestationPendingCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportAttestationPendingCsv>>
+  > = ({ signal }) =>
+    exportAttestationPendingCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportAttestationPendingCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportAttestationPendingCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportAttestationPendingCsv>>
+>;
+export type ExportAttestationPendingCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export the attestation queue as CSV, honouring the active state + sort filters
+ */
+
+export function useExportAttestationPendingCsv<
+  TData = Awaited<ReturnType<typeof exportAttestationPendingCsv>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportAttestationPendingCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAttestationPendingCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportAttestationPendingCsvQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

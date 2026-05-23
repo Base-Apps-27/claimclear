@@ -11,32 +11,15 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { ExportClaimsCsvExpiring } from "./exportClaimsCsvExpiring";
+import type { ExportAttestationPendingCsvSort } from "./exportAttestationPendingCsvSort";
+import type { ExportAttestationPendingCsvState } from "./exportAttestationPendingCsvState";
 
-export type ExportClaimsCsvParams = {
-  status?: string;
-  outcome?: string;
-  search?: string;
-  errorTypeId?: string;
-  createdFrom?: string;
-  createdTo?: string;
-  amountMin?: string;
-  amountMax?: string;
-  serviceDateFrom?: string;
-  serviceDateTo?: string;
-  carNumber?: string;
-  clientNumber?: string;
-  expiring?: ExportClaimsCsvExpiring;
+export type ExportAttestationPendingCsvParams = {
   /**
-   * When true, include rows with status=Expired in the export. Off by default.
+   * Optional state narrowing; omit to export pending+queued (Open tab).
    */
-  includeExpired?: boolean;
-  sort?: string;
-  dir?: string;
-  /**
-   * Comma-separated list of column keys to include in export
-   */
-  columns?: string;
+  state?: ExportAttestationPendingCsvState;
+  sort?: ExportAttestationPendingCsvSort;
   /**
    * When true, include every column on the row object (raw dump)
    */

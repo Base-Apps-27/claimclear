@@ -536,6 +536,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: q
+          in: query
+          description: Free-text search (alias of `search`; wins when both sent)
+          schema:
+            type: string
         - name: search
           in: query
           schema:
@@ -548,11 +553,51 @@ paths:
           in: query
           schema:
             type: string
+        - name: errorTypeAssigned
+          in: query
+          schema:
+            type: boolean
+        - name: clientNumber
+          in: query
+          schema:
+            type: string
+        - name: carNumber
+          in: query
+          schema:
+            type: string
         - name: createdFrom
           in: query
           schema:
             type: string
         - name: createdTo
+          in: query
+          schema:
+            type: string
+        - name: serviceDateFrom
+          in: query
+          schema:
+            type: string
+        - name: serviceDateTo
+          in: query
+          schema:
+            type: string
+        - name: responseReceivedFrom
+          in: query
+          schema:
+            type: string
+        - name: responseReceivedTo
+          in: query
+          schema:
+            type: string
+        - name: responseType
+          in: query
+          schema:
+            type: string
+        - name: macroPhase
+          in: query
+          schema:
+            type: string
+        - name: inboxHiddenBucket
           in: query
           schema:
             type: string
@@ -574,6 +619,38 @@ paths:
           description: When true, include rows with status=Expired in the export. Off by default.
           schema:
             type: boolean
+        - name: outlook
+          in: query
+          schema:
+            type: string
+        - name: draftReviewed
+          in: query
+          schema:
+            type: string
+        - name: excludeReason
+          in: query
+          schema:
+            type: string
+        - name: legSubStatus
+          in: query
+          schema:
+            type: string
+        - name: readyToGenerate
+          in: query
+          schema:
+            type: boolean
+        - name: missingServiceDate
+          in: query
+          schema:
+            type: boolean
+        - name: missingServiceDateReason
+          in: query
+          schema:
+            type: string
+        - name: importBatch
+          in: query
+          schema:
+            type: string
         - name: sort
           in: query
           schema:
@@ -585,6 +662,16 @@ paths:
         - name: columns
           in: query
           description: Comma-separated list of column keys to include in export
+          schema:
+            type: string
+        - name: allFields
+          in: query
+          description: When true, include every column on the row object (raw dump)
+          schema:
+            type: boolean
+        - name: filename
+          in: query
+          description: Caller-supplied filename (already filter-signed); server sanitises
           schema:
             type: string
       responses:
@@ -2444,6 +2531,16 @@ paths:
           description: Comma-separated list of column keys to include in export
           schema:
             type: string
+        - name: allFields
+          in: query
+          description: When true, include every column on the row object (raw dump)
+          schema:
+            type: boolean
+        - name: filename
+          in: query
+          description: Caller-supplied filename (already filter-signed); server sanitises
+          schema:
+            type: string
       responses:
         "200":
           description: CSV file
@@ -2655,6 +2752,41 @@ paths:
                       without forcing a second roundtrip per row.
                     additionalProperties:
                       $ref: "#/components/schemas/AttestationPendingExtras"
+
+  /claims/attestation-pending/export-csv:
+    get:
+      operationId: exportAttestationPendingCsv
+      tags: [attestation]
+      summary: Export the attestation queue as CSV, honouring the active state + sort filters
+      parameters:
+        - name: state
+          in: query
+          description: Optional state narrowing; omit to export pending+queued (Open tab).
+          schema:
+            type: string
+            enum: ["pending", "queued", "completed"]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: ["service-asc", "service-desc"]
+        - name: allFields
+          in: query
+          description: When true, include every column on the row object (raw dump)
+          schema:
+            type: boolean
+        - name: filename
+          in: query
+          description: Caller-supplied filename (already filter-signed); server sanitises
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
 
   /claims/{id}/attest:
     post:

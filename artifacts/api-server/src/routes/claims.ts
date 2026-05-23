@@ -31,6 +31,7 @@ import { buildClaimExpiringCondition, parseExpiringMode } from "../lib/expiring-
 import { effectiveDaysRemaining, isAtOrPastEffectiveDeadline, isUrgentDeadline } from "../lib/dates";
 import { canSeeAmounts, dropAmountFiltersForUser, scrubMoneyFields, scrubMoneyFieldsArray } from "../lib/role";
 import { denyClerk } from "../middlewares/denyClerk";
+import { sanitiseCsvFilename, csvCell } from "../lib/csv-export";
 import {
   CLAIM_EXPIRING_ACTIONABLE_STATUSES,
   CLAIM_SUBMITTED_STUCK_STATUSES,
@@ -508,9 +509,14 @@ router.get("/claims/export-csv", denyClerk, asyncHandler(async (req, res): Promi
 
   const claims = await db.select().from(claimsTable).where(where).orderBy(...orderBy);
 
+  const allFieldsFlag = String(req.query.allFields ?? "").toLowerCase() === "true";
   const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
 
-  const allColumns = [
+  // Task #848 — narrow default column set; `allFields=true` widens to
+  // every column on the row object so the "with all fields" toggle on
+  // the Queue / Responses Awaiting Review / Attestation pages can dump
+  // the full row without code edits.
+  const defaultColumns = [
     { key: "confNumber", label: "Conf #" },
     { key: "date", label: "Service Date" },
     { key: "clientNumber", label: "Client" },
@@ -522,16 +528,13 @@ router.get("/claims/export-csv", denyClerk, asyncHandler(async (req, res): Promi
     { key: "createdAt", label: "Created Date" },
   ];
 
-  const cols = requestedColumns
-    ? allColumns.filter(c => requestedColumns.includes(c.key))
-    : allColumns;
+  const widenedColumns = allFieldsFlag && claims.length > 0
+    ? Object.keys(claims[0]).map(k => ({ key: k, label: k }))
+    : defaultColumns;
 
-  const csvCell = (val: unknown): string => {
-    if (val === null || val === undefined) return "";
-    const str = String(val);
-    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
-    return `"${safe.replace(/"/g, '""')}"`;
-  };
+  const cols = requestedColumns
+    ? widenedColumns.filter(c => requestedColumns.includes(c.key))
+    : widenedColumns;
 
   const header = cols.map(c => csvCell(c.label)).join(",");
   const rows = claims.map(claim => {
@@ -539,9 +542,11 @@ router.get("/claims/export-csv", denyClerk, asyncHandler(async (req, res): Promi
     return row.join(",");
   });
 
+  const filenameRaw = typeof req.query.filename === "string" ? req.query.filename : "";
   const today = new Date().toISOString().slice(0, 10);
+  const filename = sanitiseCsvFilename(filenameRaw) || `claims-${today}.csv`;
   res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="claims-${today}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send([header, ...rows].join("\r\n"));
 }));
 
@@ -669,6 +674,78 @@ router.get("/claims/attestation-pending", asyncHandler(async (req, res): Promise
   }
 
   res.json({ claims: rows, extras });
+}));
+
+// Task #848 — CSV export companion to /claims/attestation-pending.
+// Honours the same `state` filter and `sort` order the queue page is
+// showing, plus the shared `allFields` / `filename` query-param contract
+// (see lib/csv-export.ts). Registered ahead of /claims/:id so the
+// literal "attestation-pending" segment isn't swallowed by the
+// parametric route.
+router.get("/claims/attestation-pending/export-csv", denyClerk, asyncHandler(async (req, res): Promise<void> => {
+  const stateRaw = typeof req.query.state === "string" ? req.query.state : "";
+  // `state` is intentionally optional on the export — operators
+  // frequently want a single CSV that spans pending + queued (the two
+  // states the Open tab merges on screen). When omitted we admit both;
+  // when present we narrow to that single state.
+  const stateFilter = ["pending", "queued", "completed"].includes(stateRaw)
+    ? (stateRaw as "pending" | "queued" | "completed")
+    : null;
+  if (req.query.state != null && stateFilter === null) {
+    res.status(400).json({ error: "state must be one of pending | queued | completed" });
+    return;
+  }
+  const sortRaw = typeof req.query.sort === "string" ? req.query.sort : "service-asc";
+  const sortMode: "service-asc" | "service-desc" =
+    sortRaw === "service-desc" ? "service-desc" : "service-asc";
+  const allFieldsFlag = String(req.query.allFields ?? "").toLowerCase() === "true";
+
+  const stateCondition = stateFilter
+    ? eq(claimsTable.attestationState, stateFilter)
+    : inArray(claimsTable.attestationState, ["pending", "queued"]);
+
+  const rows = await db
+    .select()
+    .from(claimsTable)
+    .where(and(
+      HIDE_TOUR_SAMPLE_CLAIM,
+      stateCondition,
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
+    ))
+    .orderBy(
+      sortMode === "service-desc" ? desc(claimsTable.date) : asc(claimsTable.date),
+      asc(claimsTable.id),
+    );
+
+  const defaultColumns = [
+    { key: "confNumber", label: "Conf #" },
+    { key: "refNumber", label: "Ref #" },
+    { key: "date", label: "Service Date" },
+    { key: "clientNumber", label: "Client" },
+    { key: "carNumber", label: "Driver" },
+    { key: "claimAmount", label: "Amount" },
+    { key: "status", label: "Status" },
+    { key: "outcome", label: "Outcome" },
+    { key: "attestationState", label: "Attestation State" },
+    { key: "attestationQueuedAt", label: "Queued At" },
+    { key: "invoiceGroupId", label: "Invoice Group" },
+  ];
+  const cols = allFieldsFlag && rows.length > 0
+    ? Object.keys(rows[0]).map(k => ({ key: k, label: k }))
+    : defaultColumns;
+
+  const header = cols.map(c => csvCell(c.label)).join(",");
+  const body = rows.map(r => cols.map(c => csvCell((r as Record<string, unknown>)[c.key])).join(","));
+
+  const filenameRaw = typeof req.query.filename === "string" ? req.query.filename : "";
+  const today = new Date().toISOString().slice(0, 10);
+  const filename = sanitiseCsvFilename(filenameRaw) || `attestation-${stateFilter ?? "open"}-${today}.csv`;
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send([header, ...body].join("\r\n"));
 }));
 
 router.get("/claims/:id", asyncHandler(async (req, res): Promise<void> => {

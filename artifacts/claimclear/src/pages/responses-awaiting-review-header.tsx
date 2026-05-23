@@ -77,6 +77,9 @@ export interface ReviewHeaderProps {
   selectionEligibleAllCount: number;
   onSelectAllEligible: () => void;
   bulkBar: ReactNode;
+  /** Task #848 — optional trailing action (e.g. Export CSV). Rendered
+   *  on the right side of the title row, before the inbox caption. */
+  actionsSlot?: ReactNode;
 }
 
 /**
@@ -111,6 +114,7 @@ export function ReviewHeader({
   selectionEligibleAllCount,
   onSelectAllEligible,
   bulkBar,
+  actionsSlot = null,
 }: ReviewHeaderProps) {
   const hasSelection = bulkBar !== null;
   // Task #813 — when a hidden bucket is the current view, the "Hiding"
@@ -161,8 +165,11 @@ export function ReviewHeader({
             Queue page.
           </TooltipContent>
         </Tooltip>
-        <span className="ml-auto text-xs text-muted-foreground">
-          Stage 2 inbox · oldest first
+        <span className="ml-auto flex items-center gap-3">
+          {actionsSlot}
+          <span className="text-xs text-muted-foreground">
+            Stage 2 inbox · oldest first
+          </span>
         </span>
       </div>
 

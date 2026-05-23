@@ -5,6 +5,8 @@ import {
   type HiddenItemsSlots,
   type SortMode,
 } from "./responses-awaiting-review-header";
+import { ExportCsvControl } from "@/components/export-csv-control";
+import { buildCsvFilename } from "@/lib/csv-export-filename";
 import { useRowSettle } from "@/hooks/use-row-settle";
 import { Link, useLocation, useParams } from "wouter";
 import { resolveBodyRender } from "@/lib/email-body-render";
@@ -12,6 +14,7 @@ import { useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   useListInvoiceGroups,
   getListInvoiceGroupsQueryKey,
+  getExportInvoiceGroupsCsvUrl,
   useGetInvoiceGroup,
   getInvoiceGroup,
   getGetInvoiceGroupQueryKey,
@@ -259,6 +262,22 @@ function VerdictPendingTabContent() {
     responseReceivedTo: filterResponseReceivedTo,
     hiddenBucket: activeHiddenBucket,
   };
+  // Task #848 — short signature for the RAR CSV filename. Each token
+  // mirrors a knob from buildVerdictPendingQuery so the filename
+  // honestly reflects what's in the export.
+  const rarFilterTokens = (s: VerdictPendingFilterState): string[] => {
+    const tokens: string[] = [];
+    if (s.hiddenBucket) tokens.push(`bucket${s.hiddenBucket}`);
+    if (s.q && s.q.trim()) tokens.push(`q${s.q.trim()}`);
+    if (s.statuses.length) tokens.push(`status${s.statuses.length}`);
+    if (s.responseTypes.length) tokens.push(`resp${s.responseTypes.length}`);
+    if (s.errorTypeIds.length) tokens.push(`err${s.errorTypeIds.length}`);
+    if (s.clientNumbers.length) tokens.push(`client${s.clientNumbers.length}`);
+    if (s.serviceDateFrom || s.serviceDateTo) tokens.push("svcDate");
+    if (s.responseReceivedFrom || s.responseReceivedTo) tokens.push("rcvd");
+    return tokens;
+  };
+
   const verdictPendingQuery = useMemo(
     () => buildVerdictPendingQuery(filterState),
     [
@@ -937,6 +956,27 @@ function VerdictPendingTabContent() {
         clearAllFilters={clearAllFilters}
         selectionEligibleAllCount={selectionPreview.eligibleAll.length}
         onSelectAllEligible={selectAllEligible}
+        actionsSlot={
+          <ExportCsvControl
+            testIdPrefix="rar-export-csv"
+            buildUrl={(allFields) =>
+              getExportInvoiceGroupsCsvUrl({
+                ...(verdictPendingQuery as Record<string, unknown>),
+                allFields: allFields || undefined,
+                filename: buildCsvFilename(
+                  "responses-awaiting-review",
+                  rarFilterTokens(filterState),
+                ),
+              } as Parameters<typeof getExportInvoiceGroupsCsvUrl>[0])
+            }
+            buildFilename={(allFields) =>
+              buildCsvFilename("responses-awaiting-review", [
+                ...rarFilterTokens(filterState),
+                allFields ? "allFields" : null,
+              ])
+            }
+          />
+        }
         bulkBar={
           selectedGroupIds.size > 0 ? (
             <BulkApproveBar

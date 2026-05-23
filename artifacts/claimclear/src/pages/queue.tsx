@@ -8,7 +8,10 @@ import {
   useListInvoiceGroups,
   useListErrorTypes,
   getListInvoiceGroupsQueryKey,
+  getExportInvoiceGroupsCsvUrl,
 } from "@workspace/api-client-react";
+import { ExportCsvControl } from "@/components/export-csv-control";
+import { buildCsvFilename } from "@/lib/csv-export-filename";
 import type {
   InvoiceGroupResponse,
   NeedsClassificationInboxGroup,
@@ -816,6 +819,23 @@ export default function Queue() {
 
   const excludeReasonForLanes = filters.excludeReason ?? undefined;
 
+  // Task #848 — short, human-readable filename signature for CSV
+  // exports of the queue view. We only sign with the filter knobs the
+  // server-side export actually honours, so the filename stays
+  // honest about what's in the file (no client-only narrowing like
+  // expiring=tomorrow leaking into the signature).
+  const queueFilterTokens = (f: ParityFilters): string[] => {
+    const tokens: string[] = [];
+    if (f.expiring) tokens.push(`exp${f.expiring}`);
+    if (f.showPastDeadline) tokens.push("inclExpired");
+    if (f.outlook) tokens.push(`out${f.outlook}`);
+    if (f.errorTypeIds.length > 0) tokens.push(`err${f.errorTypeIds.length}`);
+    if (f.draftReviewed) tokens.push(`draft${f.draftReviewed}`);
+    if (f.excludeReason) tokens.push(`xr${f.excludeReason}`);
+    if (f.qSearch && f.qSearch.trim()) tokens.push(`q${f.qSearch.trim()}`);
+    return tokens;
+  };
+
   const baseQueryShape = {
     limit: 500 as const,
     expiring: expiringForLanes,
@@ -1192,6 +1212,32 @@ export default function Queue() {
                   { value: "show", label: "Show past-deadline", testid: "queue-past-deadline-show" },
                 ]}
                 onChange={(v) => applyFilters({ showPastDeadline: v === "show" })}
+              />
+              <ExportCsvControl
+                testIdPrefix="queue-export-csv"
+                buildUrl={(allFields) =>
+                  getExportInvoiceGroupsCsvUrl({
+                    status: "New,Needs Evidence,Generating Email,On Hold",
+                    expiring: expiringForLanes,
+                    includeExpired: includeExpiredForLanes,
+                    outlook: outlookForLanes,
+                    errorTypeId: errorTypeForLanes,
+                    draftReviewed: draftReviewedForLanes,
+                    excludeReason: excludeReasonForLanes,
+                    q: filters.qSearch || undefined,
+                    allFields: allFields || undefined,
+                    filename: buildCsvFilename(
+                      "queue",
+                      queueFilterTokens(filters),
+                    ),
+                  } as Parameters<typeof getExportInvoiceGroupsCsvUrl>[0])
+                }
+                buildFilename={(allFields) =>
+                  buildCsvFilename(
+                    "queue",
+                    [...queueFilterTokens(filters), allFields ? "allFields" : null],
+                  )
+                }
               />
               <div className="flex items-center gap-1.5 flex-1 min-w-[200px] rounded-md border border-border bg-background px-2">
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />

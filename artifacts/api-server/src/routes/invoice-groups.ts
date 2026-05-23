@@ -24,6 +24,7 @@ import { collectGroupReplyEvidence } from "../lib/reply-evidence";
 import { logger } from "../lib/logger";
 import { broadcastGroupEvent, broadcastClaimEvent } from "../lib/sse";
 import { blockMutationOnTourSampleGroup } from "../lib/tour-sample";
+import { sanitiseCsvFilename } from "../lib/csv-export";
 import {
   transitionGroupStatus,
   transitionGroupOutcome,
@@ -1357,9 +1358,13 @@ router.get("/invoice-groups/export-csv", denyClerk, asyncHandler(async (req, res
 
   const groups = await db.select().from(invoiceGroupsTable).where(where).orderBy(...orderBy);
 
+  const allFieldsFlag = String(req.query.allFields ?? "").toLowerCase() === "true";
   const requestedColumns = typeof columnsParam === "string" ? columnsParam.split(",").map(c => c.trim()) : null;
 
-  const allColumns = [
+  // Task #848 — narrow default column set; `allFields=true` widens to
+  // every column on the row object so operators who need the raw
+  // export (audit / spreadsheet pivot) can grab it without code edits.
+  const defaultColumns = [
     { key: "invoiceNumber", label: "Invoice #" },
     { key: "rideCount", label: "Rides" },
     { key: "clientNumber", label: "Client" },
@@ -1371,9 +1376,13 @@ router.get("/invoice-groups/export-csv", denyClerk, asyncHandler(async (req, res
     { key: "createdAt", label: "Created Date" },
   ];
 
+  const widenedColumns = allFieldsFlag && groups.length > 0
+    ? Object.keys(groups[0]).map(k => ({ key: k, label: k }))
+    : defaultColumns;
+
   const cols = requestedColumns
-    ? allColumns.filter(c => requestedColumns.includes(c.key))
-    : allColumns;
+    ? widenedColumns.filter(c => requestedColumns.includes(c.key))
+    : widenedColumns;
 
   const csvCell = (val: unknown): string => {
     if (val === null || val === undefined) return "";
@@ -1388,9 +1397,15 @@ router.get("/invoice-groups/export-csv", denyClerk, asyncHandler(async (req, res
     return row.join(",");
   });
 
+  // Task #848 — caller may pass an explicit `filename` (already URL-safe,
+  // built from the page's filter signature). Falls back to the generic
+  // dated name when omitted so deep-link/script callers still get a sane
+  // default. Sanitise to belt-and-braces against header injection.
+  const filenameRaw = typeof req.query.filename === "string" ? req.query.filename : "";
   const today = new Date().toISOString().slice(0, 10);
+  const filename = sanitiseCsvFilename(filenameRaw) || `invoice-groups-${today}.csv`;
   res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="invoice-groups-${today}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send([header, ...rows].join("\r\n"));
 }));
 

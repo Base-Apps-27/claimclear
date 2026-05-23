@@ -943,11 +943,25 @@ export const CreateInvoiceGroupBody = zod.object({
 export const ExportInvoiceGroupsCsvQueryParams = zod.object({
   status: zod.coerce.string().optional(),
   outcome: zod.coerce.string().optional(),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text search (alias of `search`; wins when both sent)"),
   search: zod.coerce.string().optional(),
   errorDetails: zod.coerce.string().optional(),
   errorTypeId: zod.coerce.string().optional(),
+  errorTypeAssigned: zod.coerce.boolean().optional(),
+  clientNumber: zod.coerce.string().optional(),
+  carNumber: zod.coerce.string().optional(),
   createdFrom: zod.coerce.string().optional(),
   createdTo: zod.coerce.string().optional(),
+  serviceDateFrom: zod.coerce.string().optional(),
+  serviceDateTo: zod.coerce.string().optional(),
+  responseReceivedFrom: zod.coerce.string().optional(),
+  responseReceivedTo: zod.coerce.string().optional(),
+  responseType: zod.coerce.string().optional(),
+  macroPhase: zod.coerce.string().optional(),
+  inboxHiddenBucket: zod.coerce.string().optional(),
   amountMin: zod.coerce.string().optional(),
   amountMax: zod.coerce.string().optional(),
   expiring: zod.enum(["soon", "urgent", "stuck"]).optional(),
@@ -957,12 +971,30 @@ export const ExportInvoiceGroupsCsvQueryParams = zod.object({
     .describe(
       "When true, include rows with status=Expired in the export. Off by default.",
     ),
+  outlook: zod.coerce.string().optional(),
+  draftReviewed: zod.coerce.string().optional(),
+  excludeReason: zod.coerce.string().optional(),
+  legSubStatus: zod.coerce.string().optional(),
+  readyToGenerate: zod.coerce.boolean().optional(),
+  missingServiceDate: zod.coerce.boolean().optional(),
+  missingServiceDateReason: zod.coerce.string().optional(),
+  importBatch: zod.coerce.string().optional(),
   sort: zod.coerce.string().optional(),
   dir: zod.coerce.string().optional(),
   columns: zod.coerce
     .string()
     .optional()
     .describe("Comma-separated list of column keys to include in export"),
+  allFields: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, include every column on the row object (raw dump)"),
+  filename: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Caller-supplied filename (already filter-signed); server sanitises",
+    ),
 });
 
 /**
@@ -15268,6 +15300,16 @@ export const ExportClaimsCsvQueryParams = zod.object({
     .string()
     .optional()
     .describe("Comma-separated list of column keys to include in export"),
+  allFields: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, include every column on the row object (raw dump)"),
+  filename: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Caller-supplied filename (already filter-signed); server sanitises",
+    ),
 });
 
 /**
@@ -17466,6 +17508,29 @@ export const ListAttestationPendingResponse = zod.object({
     )
     .describe(
       "Per-claim review-pane context, keyed by claim id (as a\nstring). Surfaces the data the queue-review UI needs\nwithout forcing a second roundtrip per row.\n",
+    ),
+});
+
+/**
+ * @summary Export the attestation queue as CSV, honouring the active state + sort filters
+ */
+export const ExportAttestationPendingCsvQueryParams = zod.object({
+  state: zod
+    .enum(["pending", "queued", "completed"])
+    .optional()
+    .describe(
+      "Optional state narrowing; omit to export pending+queued (Open tab).",
+    ),
+  sort: zod.enum(["service-asc", "service-desc"]).optional(),
+  allFields: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, include every column on the row object (raw dump)"),
+  filename: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Caller-supplied filename (already filter-signed); server sanitises",
     ),
 });
 

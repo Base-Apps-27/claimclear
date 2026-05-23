@@ -5967,11 +5967,25 @@ export const ListInvoiceGroupsDir = {
 export type ExportInvoiceGroupsCsvParams = {
   status?: string;
   outcome?: string;
+  /**
+   * Free-text search (alias of `search`; wins when both sent)
+   */
+  q?: string;
   search?: string;
   errorDetails?: string;
   errorTypeId?: string;
+  errorTypeAssigned?: boolean;
+  clientNumber?: string;
+  carNumber?: string;
   createdFrom?: string;
   createdTo?: string;
+  serviceDateFrom?: string;
+  serviceDateTo?: string;
+  responseReceivedFrom?: string;
+  responseReceivedTo?: string;
+  responseType?: string;
+  macroPhase?: string;
+  inboxHiddenBucket?: string;
   amountMin?: string;
   amountMax?: string;
   expiring?: ExportInvoiceGroupsCsvExpiring;
@@ -5979,12 +5993,28 @@ export type ExportInvoiceGroupsCsvParams = {
    * When true, include rows with status=Expired in the export. Off by default.
    */
   includeExpired?: boolean;
+  outlook?: string;
+  draftReviewed?: string;
+  excludeReason?: string;
+  legSubStatus?: string;
+  readyToGenerate?: boolean;
+  missingServiceDate?: boolean;
+  missingServiceDateReason?: string;
+  importBatch?: string;
   sort?: string;
   dir?: string;
   /**
    * Comma-separated list of column keys to include in export
    */
   columns?: string;
+  /**
+   * When true, include every column on the row object (raw dump)
+   */
+  allFields?: boolean;
+  /**
+   * Caller-supplied filename (already filter-signed); server sanitises
+   */
+  filename?: string;
 };
 
 export type ExportInvoiceGroupsCsvExpiring =
@@ -6342,6 +6372,14 @@ export type ExportClaimsCsvParams = {
    * Comma-separated list of column keys to include in export
    */
   columns?: string;
+  /**
+   * When true, include every column on the row object (raw dump)
+   */
+  allFields?: boolean;
+  /**
+   * Caller-supplied filename (already filter-signed); server sanitises
+   */
+  filename?: string;
 };
 
 export type ExportClaimsCsvExpiring =
@@ -6429,6 +6467,39 @@ without forcing a second roundtrip per row.
  */
   extras: ListAttestationPending200Extras;
 };
+
+export type ExportAttestationPendingCsvParams = {
+  /**
+   * Optional state narrowing; omit to export pending+queued (Open tab).
+   */
+  state?: ExportAttestationPendingCsvState;
+  sort?: ExportAttestationPendingCsvSort;
+  /**
+   * When true, include every column on the row object (raw dump)
+   */
+  allFields?: boolean;
+  /**
+   * Caller-supplied filename (already filter-signed); server sanitises
+   */
+  filename?: string;
+};
+
+export type ExportAttestationPendingCsvState =
+  (typeof ExportAttestationPendingCsvState)[keyof typeof ExportAttestationPendingCsvState];
+
+export const ExportAttestationPendingCsvState = {
+  pending: "pending",
+  queued: "queued",
+  completed: "completed",
+} as const;
+
+export type ExportAttestationPendingCsvSort =
+  (typeof ExportAttestationPendingCsvSort)[keyof typeof ExportAttestationPendingCsvSort];
+
+export const ExportAttestationPendingCsvSort = {
+  "service-asc": "service-asc",
+  "service-desc": "service-desc",
+} as const;
 
 export type GetAiCalibrationParams = {
   errorTypeId: string;
