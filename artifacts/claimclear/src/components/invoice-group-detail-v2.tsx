@@ -419,7 +419,7 @@ function LegColumn({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold mono leading-tight">
-                {ride.confNumber ? <RefNumber value={ride.confNumber} variant="inline" /> : <>#{ride.id}</>}
+                {ride.confNumber ? <RefNumber value={ride.confNumber} variant="inline" kind="confirmation" /> : <>#{ride.id}</>}
               </h2>
               <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded border" style={{ background: "var(--cc-card)", color: "var(--cc-muted-fg)", borderColor: "var(--cc-border)" }}>
                 Leg {legNumber}

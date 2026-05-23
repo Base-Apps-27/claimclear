@@ -28,6 +28,7 @@ import { absoluteTooltip, formatRelative } from "@/lib/time";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { useEvidencePreview } from "@/components/evidence-preview-dialog";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
+import { CopyConfirmationButton } from "@/components/ref-number";
 
 // Task #564 — display labels for the parent group's macro-phase chip
 // shown alongside the submission stage. Mirrors the canonical 7-bucket
@@ -340,6 +341,12 @@ export function PortalSubmissionDrawer({
               <span className="font-mono font-bold text-sm truncate">
                 {submission?.invoiceNumber || submission?.confNumber || `#${submissionId}`}
               </span>
+              {/* Task #844 — copy-confirmation-number affordance next
+                  to the drawer's primary identifier when the row has
+                  one, even if it's displaying the invoice number. */}
+              {submission?.confNumber && (
+                <CopyConfirmationButton value={submission.confNumber} />
+              )}
               {/* Task #564: phase-first chip layout — the macro phase of
                   the parent invoice group is the *primary* state chip,
                   the submission Stage is subordinate (rendered as a
@@ -532,7 +539,7 @@ export function PortalSubmissionDrawer({
                         <FieldDisplay label="GPS Breadcrumbs" value={submission.gpsBreadcrumbsAvailable} />
                       )}
                       <FieldDisplay label="Service Date" value={submission.serviceDate} />
-                      <FieldDisplay label="Conf #" value={submission.confNumber} mono />
+                      <FieldDisplay label="Conf #" value={submission.confNumber} mono copyConf />
                     </div>
                   )}
                 </DrawerSection>
@@ -613,8 +620,11 @@ export function PortalSubmissionDrawer({
                                 data-testid={`drawer-snapshot-leg-${leg.legId}`}
                               >
                                 <LegSubStatusPill subStatus="ready" className="text-[10px] h-4 px-1.5 flex-shrink-0" />
-                                <span className="font-mono flex-shrink-0">
+                                <span className="font-mono flex-shrink-0 inline-flex items-center gap-1">
                                   {leg.confNumber || `Leg #${leg.legId}`}
+                                  {leg.confNumber && (
+                                    <CopyConfirmationButton value={leg.confNumber} />
+                                  )}
                                 </span>
                                 {readyAt && (
                                   <span
@@ -662,8 +672,11 @@ export function PortalSubmissionDrawer({
                           ) : (
                             <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                           )}
-                          <span className="font-mono flex-shrink-0">
+                          <span className="font-mono flex-shrink-0 inline-flex items-center gap-1">
                             {leg.confNumber || `Leg #${leg.legId}`}
+                            {leg.confNumber && (
+                              <CopyConfirmationButton value={leg.confNumber} />
+                            )}
                           </span>
                           <span className="flex-1 min-w-0 truncate text-muted-foreground">
                             {leg.ticked
@@ -901,12 +914,15 @@ export function PortalSubmissionDrawer({
   );
 }
 
-function FieldDisplay({ label, value, required, mono }: { label: string; value: string | null | undefined; required?: boolean; mono?: boolean }) {
+function FieldDisplay({ label, value, required, mono, copyConf }: { label: string; value: string | null | undefined; required?: boolean; mono?: boolean; copyConf?: boolean }) {
   return (
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`text-xs mt-0.5 ${mono ? "font-mono" : ""} ${value ? "" : required ? "text-red-600 italic" : "text-muted-foreground italic"}`}>
-        {value || (required ? "Not set" : "—")}
+      <div className={`text-xs mt-0.5 flex items-center gap-1 ${mono ? "font-mono" : ""} ${value ? "" : required ? "text-red-600 italic" : "text-muted-foreground italic"}`}>
+        <span>{value || (required ? "Not set" : "—")}</span>
+        {/* Task #844 — render the copy-confirmation chirp inline next
+            to the rendered conf number when the caller opts in. */}
+        {copyConf && value && <CopyConfirmationButton value={value} />}
       </div>
     </div>
   );

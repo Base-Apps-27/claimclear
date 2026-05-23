@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LegSubStatusPill } from "@/components/leg-sub-status-pill";
+import { CopyConfirmationButton } from "@/components/ref-number";
 import { partitionOverdue } from "@/lib/queue-urgency";
 
 // Disputed-legs table extracted from invoice-group-detail-v2 so the queue
@@ -56,7 +57,12 @@ export function InvoiceGroupLegsList({ rides, excludedCount }: Props) {
                 {visibleRides.map((r) => (
                   <tr key={r.id} className="border-b last:border-b-0" data-testid={`legs-queue-row-${r.id}`}>
                     <td className="py-2 pr-2 font-medium">
-                      #{r.id} · {r.confNumber || "—"}
+                      <span className="inline-flex items-center gap-1">
+                        #{r.id} · {r.confNumber || "—"}
+                        {r.confNumber && (
+                          <CopyConfirmationButton value={r.confNumber} />
+                        )}
+                      </span>
                     </td>
                     <td className="py-2 pr-2 text-muted-foreground">
                       {r.date ? formatDate(r.date) : "—"}

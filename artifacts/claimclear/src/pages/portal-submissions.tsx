@@ -29,6 +29,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { WrapTooltip } from "@/components/info-tooltip";
 import { PortalSubmissionDrawer } from "@/components/portal-submission-drawer";
+import { CopyConfirmationButton } from "@/components/ref-number";
 import {
   getInitialCollapsedGroups,
   getCheckedDraftIds,
@@ -1139,6 +1140,11 @@ function SubmissionRow({
 
       <span className="font-mono font-semibold text-xs text-primary min-w-[112px] truncate flex items-center gap-1.5" data-testid={`row-conf-${sub.id}`}>
         <span className="truncate">{sub.invoiceNumber || sub.confNumber || `#${sub.id}`}</span>
+        {/* Task #844 — copy-confirmation-number affordance. Shown
+            whenever the row carries a portal confirmation number,
+            regardless of which identifier the label falls back to
+            displaying. */}
+        {sub.confNumber && <CopyConfirmationButton value={sub.confNumber} />}
         {(() => {
           // Task #485: this row IS the group submission — show the per-leg
           // count from the `legs` JSONB so operators see at a glance how
