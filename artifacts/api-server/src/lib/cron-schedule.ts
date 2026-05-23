@@ -116,6 +116,16 @@ export const URGENT_SNAPSHOT: CronJobSchedule = {
 // queue when they sit down. Past-due rows remain visible (badged
 // red) between the moment their effective deadline lands today and
 // the next morning's sweep, by design (see `lib/expired-sweep.ts`).
+// Task #838 — daily purge of rows past the 30-day undo window for
+// soft-deleted claims/groups and discarded dispute drafts. Fires once
+// at 3 AM ET, after the Expired sweep, so the morning admin "Recent
+// removals" page already reflects last night's purge.
+export const REMOVALS_PURGE: CronJobSchedule = {
+  name: "removals_purge",
+  cron: "0 3 * * *",
+  tz: "America/New_York",
+};
+
 export const EXPIRED_SWEEP: CronJobSchedule = {
   name: "expired_sweep",
   cron: "0 1 * * *",

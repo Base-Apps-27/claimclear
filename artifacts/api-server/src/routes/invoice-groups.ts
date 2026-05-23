@@ -3654,6 +3654,83 @@ router.post("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<
   res.json(updated);
 }));
 
+// Task #838 — DELETE /invoice-groups/:id/draft. Discards the editable
+// dispute draft (subject + descriptionHtml) and snapshots both into
+// `draft_discarded_subject` / `draft_discarded_description_html` so the
+// admin "Recent removals" page can list it and the restore endpoint
+// can repopulate the live draft fields. Stamps `draft_discarded_at`
+// for the 30-day undo window.
+//
+// Idempotent: a second discard when both draft fields are already
+// null is a no-op (the snapshot is left alone so a previous discard
+// stays restorable until the purge cron sweeps it).
+//
+// Same pre-submit gate as POST /draft — once a group is past pre-submit
+// the draft is locked.
+router.delete("/invoice-groups/:id/draft", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  if (await blockMutationOnTourSampleGroup(id, res)) return;
+
+  const group = await loadGroupOr404(id, res);
+  if (!group) return;
+
+  const phase = getGroupMacroPhase(group);
+  if (phase !== "pre-submit") {
+    res.status(409).json({
+      error: "Draft can only be discarded in pre-submit",
+      expectedState: "pre-submit",
+      actualState: phase,
+    });
+    return;
+  }
+
+  const hasContent =
+    (group.draftSubject != null && group.draftSubject !== "") ||
+    (group.draftDescriptionHtml != null && group.draftDescriptionHtml !== "");
+  if (!hasContent) {
+    res.status(409).json({
+      error: "No draft to discard",
+      expectedState: "draft_present",
+      actualState: "draft_empty",
+    });
+    return;
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(invoiceGroupsTable)
+    .set({
+      draftDiscardedAt: now,
+      draftDiscardedSubject: group.draftSubject,
+      draftDiscardedDescriptionHtml: group.draftDescriptionHtml,
+      draftSubject: null,
+      draftDescriptionHtml: null,
+      draftEditedAt: now,
+      draftEditedBy: req.user?.email ?? null,
+      draftReviewedAt: null,
+      draftReviewedBy: null,
+    })
+    .where(eq(invoiceGroupsTable.id, id))
+    .returning();
+
+  await createGroupAuditLog(id, "group_draft_discarded", "Dispute draft discarded", req, {
+    subjectLength: group.draftSubject?.length ?? 0,
+    descriptionLength: group.draftDescriptionHtml?.length ?? 0,
+  });
+  await emitStateEvent({
+    eventKey: "group.draft_discarded",
+    invoiceGroupId: id,
+    actorUserId: req.user?.email ?? null,
+    metadata: {
+      subjectLength: group.draftSubject?.length ?? 0,
+      descriptionLength: group.draftDescriptionHtml?.length ?? 0,
+    },
+  });
+  emitGroupEvent(id, "draft_discarded", req);
+  res.json(updated);
+}));
+
 router.post("/invoice-groups/:id/draft/regenerate", asyncHandler(async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

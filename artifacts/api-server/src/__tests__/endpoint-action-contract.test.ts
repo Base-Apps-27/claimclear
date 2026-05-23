@@ -11,6 +11,7 @@ import claimsRouter from "../routes/claims";
 import notesRouter from "../routes/notes";
 import anthropicRouter from "../routes/anthropic";
 import claimEvidenceRouter from "../routes/claim-evidence";
+import adminRemovalsRouter from "../routes/admin-removals";
 import { ObjectStorageService } from "../lib/objectStorage";
 import {
   db,
@@ -92,6 +93,7 @@ before(async () => {
   app.use("/api", notesRouter);
   app.use("/api", claimEvidenceRouter);
   app.use("/api/anthropic/conversations", anthropicRouter);
+  app.use("/api", adminRemovalsRouter);
 
   await new Promise<void>((resolveListen, rejectListen) => {
     server = app.listen(0, () => {
@@ -914,5 +916,196 @@ test("Task #413: row-insert failure must NOT delete the blob when another claim_
     assert.equal(stillThere[0].claimId, sharedClaim.id, "the surviving row must be the original owning leg's");
   } finally {
     await cleanupClaim(sharedClaim.id);
+  }
+});
+
+// =====================================================================
+// Task #838 — soft-delete + 30-day undo contract tests.
+//
+// Each destructive action must (a) stamp the right soft-delete column
+// on the row instead of hard-deleting it, (b) surface that row through
+// GET /api/admin/removals, and (c) be reversible via POST
+// /api/admin/removals/:kind/:id/restore (which clears the stamp + writes
+// a dedicated `*_restored` / `*_undone` audit row).
+//
+// Without these the "Undo" affordance is a lie — the row would already
+// be gone (or worse, still gone but listed as restorable).
+// =====================================================================
+
+test("Task #838: PATCH /invoice-groups/:id/outcome Withdrawn stamps withdrawn_at; admin restore clears it", async () => {
+  const group = await createSeedGroup();
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/outcome`, {
+      method: "PATCH",
+      body: { outcome: "Withdrawn", closureReason: "cannot_dispute", cannotDisputeReason: "duplicate" },
+    });
+    assert.equal(res.status, 200, `expected 200 from Withdrawn outcome, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [afterWithdraw] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.ok(afterWithdraw.withdrawnAt, "withdrawn_at must be stamped on Withdrawn outcome");
+    assert.equal(afterWithdraw.outcome, "Withdrawn");
+
+    const list = await fetchJson<{ items: Array<{ kind: string; refId: number }> }>("/api/admin/removals");
+    assert.equal(list.status, 200);
+    assert.ok(
+      list.json.items.some((i) => i.kind === "group_withdrawn" && i.refId === group.id),
+      "Recent removals listing must include the withdrawn group",
+    );
+
+    const restoreRes = await fetchJson(`/api/admin/removals/group_withdrawn/${group.id}/restore`, { method: "POST" });
+    assert.equal(restoreRes.status, 200, `restore must succeed, got ${restoreRes.status} (${JSON.stringify(restoreRes.json)})`);
+
+    const [afterRestore] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(afterRestore.withdrawnAt, null, "withdrawn_at must be cleared after restore");
+    assert.equal(afterRestore.outcome, "Pending", "outcome must reset to Pending after restore");
+
+    const restoredAudit = await db.select().from(auditLogsTable).where(
+      and(eq(auditLogsTable.invoiceGroupId, group.id), eq(auditLogsTable.action, "group_withdraw_restored")),
+    );
+    assert.equal(restoredAudit.length, 1, "exactly one group_withdraw_restored audit row must be written");
+    const restoredMeta = (restoredAudit[0]?.metadata ?? {}) as Record<string, unknown>;
+    assert.ok(
+      typeof restoredMeta.restoredFromAuditLogId === "number" && restoredMeta.restoredFromAuditLogId > 0,
+      "restore audit metadata must reference the originating removal audit row id",
+    );
+  } finally {
+    await cleanupGroup(group.id);
+  }
+});
+
+test("Task #838: PATCH /claims/:id/outcome Withdrawn stamps withdrawn_at; admin restore clears it", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup();
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const res = await fetchJson(`/api/claims/${claim.id}/outcome`, {
+      method: "PATCH",
+      body: { outcome: "Withdrawn", closureReason: "cannot_dispute", cannotDisputeReason: "duplicate" },
+    });
+    assert.equal(res.status, 200, `expected 200 from claim Withdrawn outcome, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [afterWithdraw] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.ok(afterWithdraw.withdrawnAt, "withdrawn_at must be stamped on claim Withdrawn outcome");
+    assert.equal(afterWithdraw.outcome, "Withdrawn");
+
+    const list = await fetchJson<{ items: Array<{ kind: string; refId: number; actorEmail: string | null; reasonNote: string | null; auditLogId: number | null }> }>("/api/admin/removals");
+    assert.equal(list.status, 200);
+    const listed = list.json.items.find((i) => i.kind === "claim_withdrawn" && i.refId === claim.id);
+    assert.ok(listed, "Recent removals listing must include the withdrawn claim");
+    assert.ok(
+      typeof listed!.auditLogId === "number" && listed!.auditLogId > 0,
+      "listing item must carry the originating removal audit row id",
+    );
+
+    const restoreRes = await fetchJson(`/api/admin/removals/claim_withdrawn/${claim.id}/restore`, { method: "POST" });
+    assert.equal(restoreRes.status, 200, `restore must succeed, got ${restoreRes.status} (${JSON.stringify(restoreRes.json)})`);
+
+    const [afterRestore] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(afterRestore.withdrawnAt, null, "withdrawn_at must be cleared after restore");
+    assert.equal(afterRestore.outcome, "Pending", "outcome must reset to Pending after restore");
+
+    const restoredAudit = await db.select().from(auditLogsTable).where(
+      and(eq(auditLogsTable.claimId, claim.id), eq(auditLogsTable.action, "claim_withdraw_restored")),
+    );
+    assert.equal(restoredAudit.length, 1, "exactly one claim_withdraw_restored audit row must be written");
+    const meta = (restoredAudit[0]?.metadata ?? {}) as Record<string, unknown>;
+    assert.equal(meta.restoredFromAuditLogId, listed!.auditLogId, "restore audit must link back to the originating removal audit row id");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Task #838: POST /claims/:id/exclude reason=handled_offline stamps removed_offline_at; admin restore clears it", async () => {
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup();
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+  });
+  try {
+    const excludeRes = await fetchJson(`/api/claims/${claim.id}/exclude`, {
+      method: "POST",
+      body: { reason: "handled_offline", note: "Resolved via phone call with rep, ticket #ABC123." },
+    });
+    assert.equal(excludeRes.status, 200, `expected 200 from handled_offline exclude, got ${excludeRes.status} (${JSON.stringify(excludeRes.json)})`);
+
+    const [afterExclude] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.ok(afterExclude.removedOfflineAt, "removed_offline_at must be stamped on handled_offline exclude");
+
+    const list = await fetchJson<{ items: Array<{ kind: string; refId: number; actorEmail: string | null; reasonNote: string | null; auditLogId: number | null }> }>("/api/admin/removals");
+    const listed = list.json.items.find((i) => i.kind === "claim_removed_offline" && i.refId === claim.id);
+    assert.ok(listed, "Recent removals listing must include the handled-offline claim");
+    assert.ok(listed!.reasonNote && listed!.reasonNote.includes("Resolved via phone call"), "listing item must surface the original reason note");
+    assert.ok(typeof listed!.auditLogId === "number" && listed!.auditLogId > 0, "listing item must surface the originating removal audit row id");
+
+    const restoreRes = await fetchJson(`/api/admin/removals/claim_removed_offline/${claim.id}/restore`, { method: "POST" });
+    assert.equal(restoreRes.status, 200, `restore must succeed, got ${restoreRes.status} (${JSON.stringify(restoreRes.json)})`);
+
+    const [afterRestore] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(afterRestore.removedOfflineAt, null, "removed_offline_at must be cleared after restore");
+    assert.equal(afterRestore.includedInDispute, true, "included_in_dispute must flip back to true after restore");
+
+    const restoredAudit = await db.select().from(auditLogsTable).where(
+      and(eq(auditLogsTable.claimId, claim.id), eq(auditLogsTable.action, "claim_removed_handled_offline_undone")),
+    );
+    assert.equal(restoredAudit.length, 1, "exactly one claim_removed_handled_offline_undone audit row must be written");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("Task #838: DELETE /invoice-groups/:id/draft snapshots and clears the live draft; admin restore repopulates it", async () => {
+  const group = await createSeedGroup();
+  try {
+    const subject = "Original draft subject";
+    const descriptionHtml = "<p>Original drafted body for the dispute payload.</p>";
+    await db.update(invoiceGroupsTable)
+      .set({ draftSubject: subject, draftDescriptionHtml: descriptionHtml })
+      .where(eq(invoiceGroupsTable.id, group.id));
+
+    const delRes = await fetchJson(`/api/invoice-groups/${group.id}/draft`, { method: "DELETE" });
+    assert.equal(delRes.status, 200, `expected 200 from DELETE /draft, got ${delRes.status} (${JSON.stringify(delRes.json)})`);
+
+    const [afterDiscard] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(afterDiscard.draftSubject, null, "draft_subject must be cleared after discard");
+    assert.equal(afterDiscard.draftDescriptionHtml, null, "draft_description_html must be cleared after discard");
+    assert.equal(afterDiscard.draftDiscardedSubject, subject, "discarded snapshot must preserve the prior subject");
+    assert.equal(afterDiscard.draftDiscardedDescriptionHtml, descriptionHtml, "discarded snapshot must preserve the prior body");
+    assert.ok(afterDiscard.draftDiscardedAt, "draft_discarded_at must be stamped on discard");
+
+    const discardAudit = await db.select().from(auditLogsTable).where(
+      and(eq(auditLogsTable.invoiceGroupId, group.id), eq(auditLogsTable.action, "group_draft_discarded")),
+    );
+    assert.equal(discardAudit.length, 1, "exactly one group_draft_discarded audit row must be written");
+
+    const list = await fetchJson<{ items: Array<{ kind: string; refId: number }> }>("/api/admin/removals");
+    assert.ok(
+      list.json.items.some((i) => i.kind === "group_draft_discarded" && i.refId === group.id),
+      "Recent removals listing must include the discarded draft",
+    );
+
+    const restoreRes = await fetchJson(`/api/admin/removals/group_draft_discarded/${group.id}/restore`, { method: "POST" });
+    assert.equal(restoreRes.status, 200, `restore must succeed, got ${restoreRes.status} (${JSON.stringify(restoreRes.json)})`);
+
+    const [afterRestore] = await db.select().from(invoiceGroupsTable).where(eq(invoiceGroupsTable.id, group.id));
+    assert.equal(afterRestore.draftSubject, subject, "live draft_subject must be repopulated from the snapshot");
+    assert.equal(afterRestore.draftDescriptionHtml, descriptionHtml, "live draft body must be repopulated from the snapshot");
+    assert.equal(afterRestore.draftDiscardedAt, null, "draft_discarded_at must be cleared after restore");
+    assert.equal(afterRestore.draftDiscardedSubject, null, "snapshot subject column must be cleared after restore");
+    assert.equal(afterRestore.draftDiscardedDescriptionHtml, null, "snapshot body column must be cleared after restore");
+
+    const restoreAudit = await db.select().from(auditLogsTable).where(
+      and(eq(auditLogsTable.invoiceGroupId, group.id), eq(auditLogsTable.action, "group_draft_discard_restored")),
+    );
+    assert.equal(restoreAudit.length, 1, "exactly one group_draft_discard_restored audit row must be written");
+  } finally {
+    await cleanupGroup(group.id);
   }
 });

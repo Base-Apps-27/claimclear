@@ -28,6 +28,7 @@ import responseTrackerRouter, { checkEmailRouter, recordPortalRouter } from "./r
 import invoiceGroupsRouter from "./invoice-groups";
 import withdrawalsRouter from "./withdrawals";
 import adminRouter from "./admin";
+import adminRemovalsRouter from "./admin-removals";
 import systemHealthRouter from "./system-health";
 import aiCalibrationRouter from "./ai-calibration";
 import searchRouter from "./search";
@@ -82,6 +83,7 @@ router.use(responseTrackerRouter);
 router.use(invoiceGroupsRouter);
 router.use(withdrawalsRouter);
 router.use(adminRouter);
+router.use(adminRemovalsRouter);
 router.use(systemHealthRouter);
 router.use(aiCalibrationRouter);
 router.use(searchRouter);

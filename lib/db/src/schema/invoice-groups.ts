@@ -166,6 +166,18 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   // 0029_tour_sample.sql for the singleton-enforcement partial unique
   // index and the seed.
   isTourSample: boolean("is_tour_sample").notNull().default(false),
+  // Task #838 — soft-delete / 30-day-undo markers. See migration 0050
+  // and the matching block on `claims` for the design notes.
+  //
+  // `withdrawnAt` — set when a group is withdrawn (outcome=Withdrawn,
+  // closureReason=cannot_dispute). Cleared on restore.
+  // `draftDiscardedAt` + the two `draftDiscarded*` snapshot columns
+  // — set when DELETE /invoice-groups/:id/draft fires; the snapshot
+  // lets the admin Restore button repopulate the live draft fields.
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  draftDiscardedAt: timestamp("draft_discarded_at", { withTimezone: true }),
+  draftDiscardedSubject: text("draft_discarded_subject"),
+  draftDiscardedDescriptionHtml: text("draft_discarded_description_html"),
   // Wave D-PR1 (2026-05-07). GENERATED ALWAYS AS (status IN (…OPEN_STATUSES…))
   // STORED column, populated by Postgres on every UPDATE that touches `status`.
   // Do NOT write to this column. Lockstep with `OPEN_STATUSES` in

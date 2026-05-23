@@ -327,6 +327,11 @@ export async function transitionClaimOutcome(opts: {
   const parentGroupForAtt = await loadParentGroupForAttestation(old.invoiceGroupId, db);
   Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome, parentGroupForAtt));
   updateData.closureReason = closureReason ?? null;
+  // Task #838 — soft-delete stamp for the "withdraw claim" undo lane.
+  // Set on the Withdrawn flip, cleared on any other outcome so a manual
+  // bounce-back (Withdrawn → Needs Review, etc.) drops it out of the
+  // Recent-Removals listing without an explicit Restore click.
+  updateData.withdrawnAt = newOutcome === "Withdrawn" ? new Date() : null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;
@@ -559,6 +564,8 @@ export async function transitionClaimStatusAndOutcome(opts: {
   // Same Task #196 gate as transitionClaimOutcome — see note above.
   const parentGroupForAtt2 = await loadParentGroupForAttestation(old.invoiceGroupId, db);
   Object.assign(updateData, computeAttestationDelta(old.outcome, newOutcome, parentGroupForAtt2));
+  // Task #838 — see transitionClaimOutcome for the rationale.
+  updateData.withdrawnAt = newOutcome === "Withdrawn" ? new Date() : null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;
@@ -727,13 +734,29 @@ export async function excludeLegCore(params: ExcludeLegParams): Promise<ExcludeL
   // (`included_in_dispute = true`) so a double-exclude is a no-op
   // and the existing row is returned unchanged.
   const setNonIssueSopOutcome = reason === "non_issue" && leg.sopOutcome == null;
-  const claim = (await setClaimDisposition(claimId, "disposed_nonissue", {
+  let claim = (await setClaimDisposition(claimId, "disposed_nonissue", {
     isTerminal: false,
     mirror: reason === "non_issue" ? "derived" : "skip",
     includedInDispute: false,
     onlyWhenIncluded: true,
     ex: executor,
   })) ?? leg;
+
+  // Task #838 — stamp `removed_offline_at` for the handled-offline
+  // reason so the admin Recent-Removals page can list and restore it,
+  // and the daily purge can hard-delete the row past the 30-day
+  // window. Restricted to the handled-offline reason because the
+  // other exclusion reasons (clean_leg, non_issue, out_of_scope,
+  // other) already have their own undo affordances in the UI and
+  // were never the target of this task.
+  if (reason === "handled_offline") {
+    const [stamped] = await executor
+      .update(claimsTable)
+      .set({ removedOfflineAt: new Date() })
+      .where(eq(claimsTable.id, claimId))
+      .returning();
+    if (stamped) claim = stamped;
+  }
 
   const metadata: Record<string, unknown> = {
     reason,

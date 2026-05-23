@@ -3123,7 +3123,13 @@ router.post("/claims/:id/include", asyncHandler(async (req, res): Promise<void> 
 
   const [updated] = await db
     .update(claimsTable)
-    .set({ includedInDispute: true })
+    .set({
+      includedInDispute: true,
+      // Task #838 — clear the soft-delete stamp so the leg drops out of
+      // the admin Recent-Removals listing once it's been re-included
+      // (manual undo or admin Restore, both flow through here).
+      ...(undoHandledOffline ? { removedOfflineAt: null } : {}),
+    })
     .where(eq(claimsTable.id, id))
     .returning();
 

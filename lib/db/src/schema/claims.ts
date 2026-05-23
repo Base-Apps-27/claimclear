@@ -234,6 +234,17 @@ export const claimsTable = pgTable("claims", {
   // 0029_tour_sample.sql for the singleton-enforcement partial unique
   // index and the seed.
   isTourSample: boolean("is_tour_sample").notNull().default(false),
+  // Task #838 — soft-delete / 30-day-undo markers. Stamped when the
+  // four destructive actions fire so the admin "Recent removals" page
+  // can list and restore them, and the daily purge job can hard-delete
+  // anything older than 30 days. See migration 0050.
+  //
+  // `withdrawnAt` — set when a leg is withdrawn (outcome=Withdrawn,
+  // closureReason=cannot_dispute). Cleared on restore.
+  // `removedOfflineAt` — set when a leg is excluded via
+  // /claims/:id/exclude with reason=handled_offline. Cleared on restore.
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  removedOfflineAt: timestamp("removed_offline_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [

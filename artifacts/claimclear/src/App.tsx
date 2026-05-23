@@ -26,6 +26,7 @@ import ResponsesAwaitingReview from "@/pages/responses-awaiting-review";
 import AttestationQueue from "@/pages/attestation-queue";
 import Settings from "@/pages/settings";
 import AdminUserActivity from "@/pages/admin-user-activity";
+import AdminRecentRemovals from "@/pages/admin-recent-removals";
 import SystemHealth from "@/pages/system-health";
 import NotFound from "@/pages/not-found";
 import ClerkNotAvailable from "@/pages/clerk-not-available";
@@ -135,6 +136,7 @@ function Router() {
         <Route path="/summary" component={() => <Redirect to="/insights" />} />
         <Route path="/settings" component={() => <DenyClerk component={Settings} />} />
         <Route path="/admin/users/activity" component={() => <DenyClerk component={AdminUserActivity} />} />
+        <Route path="/admin/recent-removals" component={() => <DenyClerk component={AdminRecentRemovals} />} />
         <Route path="/system-health" component={() => <DenyClerk component={SystemHealth} />} />
         <Route component={NotFound} />
       </Switch>

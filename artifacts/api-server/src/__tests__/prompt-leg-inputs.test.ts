@@ -156,6 +156,11 @@ function makeGroup(overrides: Partial<InvoiceGroup> = {}): InvoiceGroup {
     payorDenialReasonBy: null,
     awaitingPayorAgainAt: null,
     importBatch: null,
+    // Task #838 — soft-delete + 30-day undo snapshot columns.
+    withdrawnAt: null,
+    draftDiscardedAt: null,
+    draftDiscardedSubject: null,
+    draftDiscardedDescriptionHtml: null,
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
     isTourSample: false,
@@ -242,6 +247,9 @@ function makeClaim(overrides: Partial<Claim> & Pick<Claim, "id" | "confNumber">)
     attestationNote: null,
     attestationQueuedAt: null,
     attestationQueuedBy: null,
+    // Task #838 — soft-delete + 30-day undo timestamps.
+    withdrawnAt: null,
+    removedOfflineAt: null,
     createdAt: FIXED_TS,
     updatedAt: FIXED_TS,
     isTourSample: false,

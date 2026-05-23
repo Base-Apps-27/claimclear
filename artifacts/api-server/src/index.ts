@@ -25,7 +25,9 @@ import {
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,
   EXPIRED_SWEEP,
+  REMOVALS_PURGE,
 } from "./lib/cron-schedule";
+import { purgeExpiredRemovals } from "./lib/removals-purge";
 import { recheckPreviousRunBounces } from "./routes/daily-brief";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 import { sweepExpiredGroups } from "./lib/expired-sweep";
@@ -473,6 +475,28 @@ cron.schedule(EXPIRED_SWEEP.cron, async () => {
     };
   });
 }, { timezone: EXPIRED_SWEEP.tz });
+
+// Task #838 — daily purge of expired soft-deletes. Hard-deletes
+// claims/groups whose only remaining undo signal is past the
+// REMOVALS_RETENTION_DAYS window, and clears the discarded-draft
+// snapshot columns on groups whose `draft_discarded_at` is also past
+// the cutoff. Audit rows survive (FK is ON DELETE SET NULL).
+cron.schedule(REMOVALS_PURGE.cron, async () => {
+  await recordCronRun(REMOVALS_PURGE.name, async () => {
+    const result = await purgeExpiredRemovals();
+    const total =
+      result.claimsWithdrawnPurged +
+      result.claimsRemovedOfflinePurged +
+      result.groupsWithdrawnPurged +
+      result.groupDraftSnapshotsCleared;
+    return {
+      message: total === 0
+        ? "No expired soft-deletes to purge"
+        : `Purged ${total} expired soft-delete${total === 1 ? "" : "s"} (claims_withdrawn=${result.claimsWithdrawnPurged}, claims_removed_offline=${result.claimsRemovedOfflinePurged}, groups_withdrawn=${result.groupsWithdrawnPurged}, group_draft_snapshots=${result.groupDraftSnapshotsCleared})`,
+      metadata: { ...result },
+    };
+  });
+}, { timezone: REMOVALS_PURGE.tz });
 
 cron.schedule(STUCK_SUBMISSION_RESET.cron, async () => {
   await recordCronRun(STUCK_SUBMISSION_RESET.name, async () => {

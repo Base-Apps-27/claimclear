@@ -692,6 +692,10 @@ export async function transitionGroupOutcome(opts: {
     updateData.approvedAmount = cleaned === "" ? null : cleaned ? String(cleaned) : null;
   }
   updateData.closureReason = closureReason ?? null;
+  // Task #838 — soft-delete stamp for the "withdraw group" undo lane.
+  // See claim-transitions.ts for the design notes (set on Withdrawn,
+  // cleared on every other outcome).
+  updateData.withdrawnAt = newOutcome === "Withdrawn" ? new Date() : null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;
@@ -944,6 +948,8 @@ export async function transitionGroupStatusAndOutcome(opts: {
   if (closureReason !== undefined && extraFields?.closureReason === undefined) {
     updateData.closureReason = closureReason ?? null;
   }
+  // Task #838 — see transitionGroupOutcome for the rationale.
+  updateData.withdrawnAt = newOutcome === "Withdrawn" ? new Date() : null;
   if (closure) {
     updateData.closureCategory = closure.closureCategory;
     updateData.closureCategoryOther = closure.closureCategoryOther;
