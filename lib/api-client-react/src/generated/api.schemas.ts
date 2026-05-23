@@ -3169,6 +3169,36 @@ export interface ErrorTypeVersionSummary {
   treeNodeCount: number;
 }
 
+/**
+ * Full persisted snapshot of the error type at save time. Shape
+matches the live ErrorTypeResponse (with createdAt/updatedAt
+as ISO strings).
+
+ */
+export type ErrorTypeVersionDetailSnapshot = { [key: string]: unknown };
+
+/**
+ * Task #847 — full snapshot for a single SOP version, used by the
+history drawer to compute side-by-side diffs. Includes the same
+metadata as ErrorTypeVersionSummary plus the persisted snapshot
+blob (shaped like the live error-type row).
+
+ */
+export interface ErrorTypeVersionDetail {
+  id: number;
+  createdAt: string;
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  comment?: string | null;
+  treeNodeCount: number;
+  /** Full persisted snapshot of the error type at save time. Shape
+matches the live ErrorTypeResponse (with createdAt/updatedAt
+as ISO strings).
+ */
+  snapshot: ErrorTypeVersionDetailSnapshot;
+}
+
 export type UpdateErrorTypeBodyDisputeReasonsLibrary = {
   [key: string]: unknown;
 };

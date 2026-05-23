@@ -220,6 +220,8 @@ export * from "./errorTypeResponse";
 export * from "./errorTypeResponseDecisionTree";
 export * from "./errorTypeResponseDisputeReasonsLibrary";
 export * from "./errorTypeResponseEvidenceRequirements";
+export * from "./errorTypeVersionDetail";
+export * from "./errorTypeVersionDetailSnapshot";
 export * from "./errorTypeVersionSummary";
 export * from "./evidenceFileRef";
 export * from "./evidenceTypeBody";

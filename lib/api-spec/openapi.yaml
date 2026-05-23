@@ -3836,6 +3836,38 @@ paths:
                 items:
                   $ref: "#/components/schemas/ErrorTypeVersionSummary"
 
+  /error-types/{id}/versions/{versionId}:
+    get:
+      operationId: getErrorTypeVersion
+      tags: [errorTypes]
+      summary: Get a single SOP version snapshot (Task #847)
+      description: |
+        Returns the full snapshot blob for a single version, so the
+        version-history UI can compute a side-by-side diff between two
+        snapshots (or between a snapshot and the current draft). The
+        list endpoint deliberately omits this blob to keep listings
+        cheap; callers fetch it on demand per row.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Single snapshot with full payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorTypeVersionDetail"
+        "404":
+          description: Error type or version not found
+
   /error-types/{id}/versions/{versionId}/restore:
     post:
       operationId: restoreErrorTypeVersion
@@ -8895,6 +8927,36 @@ components:
         - id
         - createdAt
         - treeNodeCount
+
+    ErrorTypeVersionDetail:
+      type: object
+      description: |
+        Task #847 — full snapshot for a single SOP version, used by the
+        history drawer to compute side-by-side diffs. Includes the same
+        metadata as ErrorTypeVersionSummary plus the persisted snapshot
+        blob (shaped like the live error-type row).
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+        createdBy:
+          type: ["string", "null"]
+        comment:
+          type: ["string", "null"]
+        treeNodeCount:
+          type: integer
+        snapshot:
+          type: object
+          description: |
+            Full persisted snapshot of the error type at save time. Shape
+            matches the live ErrorTypeResponse (with createdAt/updatedAt
+            as ISO strings).
+      required:
+        - id
+        - createdAt
+        - treeNodeCount
+        - snapshot
 
     UpdateErrorTypeBody:
       type: object

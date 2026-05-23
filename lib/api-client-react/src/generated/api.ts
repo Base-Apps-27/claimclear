@@ -109,6 +109,7 @@ import type {
   EmailThreadMessage,
   EmailThreadResponse,
   ErrorTypeResponse,
+  ErrorTypeVersionDetail,
   ErrorTypeVersionSummary,
   EvidenceTypeBody,
   EvidenceTypeResponse,
@@ -9532,6 +9533,114 @@ export function useListErrorTypeVersions<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListErrorTypeVersionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the full snapshot blob for a single version, so the
+version-history UI can compute a side-by-side diff between two
+snapshots (or between a snapshot and the current draft). The
+list endpoint deliberately omits this blob to keep listings
+cheap; callers fetch it on demand per row.
+
+ * @summary Get a single SOP version snapshot (Task
+ */
+export const getGetErrorTypeVersionUrl = (id: number, versionId: number) => {
+  return `/api/error-types/${id}/versions/${versionId}`;
+};
+
+export const getErrorTypeVersion = async (
+  id: number,
+  versionId: number,
+  options?: RequestInit,
+): Promise<ErrorTypeVersionDetail> => {
+  return customFetch<ErrorTypeVersionDetail>(
+    getGetErrorTypeVersionUrl(id, versionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetErrorTypeVersionQueryKey = (
+  id: number,
+  versionId: number,
+) => {
+  return [`/api/error-types/${id}/versions/${versionId}`] as const;
+};
+
+export const getGetErrorTypeVersionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getErrorTypeVersion>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  versionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getErrorTypeVersion>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetErrorTypeVersionQueryKey(id, versionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getErrorTypeVersion>>
+  > = ({ signal }) =>
+    getErrorTypeVersion(id, versionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && versionId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getErrorTypeVersion>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetErrorTypeVersionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getErrorTypeVersion>>
+>;
+export type GetErrorTypeVersionQueryError = ErrorType<void>;
+
+/**
+ * @summary Get a single SOP version snapshot (Task
+ */
+
+export function useGetErrorTypeVersion<
+  TData = Awaited<ReturnType<typeof getErrorTypeVersion>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  versionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getErrorTypeVersion>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetErrorTypeVersionQueryOptions(
+    id,
+    versionId,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

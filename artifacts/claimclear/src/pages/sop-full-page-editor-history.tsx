@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListErrorTypeVersions,
   useRestoreErrorTypeVersion,
+  useGetErrorTypeVersion,
+  useGetErrorType,
   getListErrorTypesQueryKey,
   getListErrorTypeVersionsQueryKey,
   type ErrorTypeVersionSummary,
@@ -25,25 +27,28 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { History, Loader2, RotateCcw, Inbox } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import {
+  diffSopSnapshots,
+  formatDiffSummary,
+  type DiffSegment,
+  type NodeDiff,
+} from "@/lib/sop-diff";
 
 // ---------------------------------------------------------------------------
-// HistoryDrawer — Task #779
+// HistoryDrawer — Task #779 (list + restore) + Task #847 (diff highlight)
 //
 // Side drawer (shadcn Sheet) opened from the editor's toolbar. Lists
 // every saved snapshot of the current error type newest-first via
-// useListErrorTypeVersions. Clicking a row shows a read-only METADATA
-// summary on the right: saved-at timestamp, author, node count, and
-// optional comment. The right pane intentionally does NOT render the
-// snapshot's tree contents (root question / node questions /
-// outcomes) — the list endpoint deliberately omits the snapshot blob
-// to keep responses small, and the task guardrails forbid modifying
-// the backend or generated client. Follow-up task #789 covers adding
-// a per-version GET so older versions can show full structural
-// contents.
+// useListErrorTypeVersions. Clicking a row fetches the full snapshot
+// (Task #847) and renders a side-by-side diff against the live
+// error-type draft so the actual change between then and now is
+// obvious — added nodes in green, removed nodes in red strikethrough,
+// edited node text with character-level diff.
 //
 // A Restore button per row opens a confirmation (warning explicitly
 // when there are unsaved tree OR settings changes vs the loaded
@@ -68,48 +73,235 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-function VersionSummary({
+// Render diff segments inline. "added" -> green; "removed" -> red
+// with strikethrough; "equal" -> neutral. Whitespace is preserved
+// (the parent block uses whitespace-pre-wrap) so multi-line option
+// strings render readably.
+function DiffSegments({ segments }: { segments: ReadonlyArray<DiffSegment> }) {
+  return (
+    <>
+      {segments.map((s, i) => {
+        if (s.op === "added") {
+          return (
+            <span
+              key={i}
+              className="bg-green-100 text-green-800 rounded-sm px-0.5"
+              data-testid="diff-added"
+            >
+              {s.text}
+            </span>
+          );
+        }
+        if (s.op === "removed") {
+          return (
+            <span
+              key={i}
+              className="bg-red-100 text-red-800 line-through rounded-sm px-0.5"
+              data-testid="diff-removed"
+            >
+              {s.text}
+            </span>
+          );
+        }
+        return <span key={i}>{s.text}</span>;
+      })}
+    </>
+  );
+}
+
+function NodeDiffCard({ node }: { node: NodeDiff }) {
+  const isAdded = node.status === "added";
+  const isRemoved = node.status === "removed";
+  const isEdited = node.status === "edited";
+  const tone = isAdded
+    ? "border-green-300 bg-green-50/60"
+    : isRemoved
+    ? "border-red-300 bg-red-50/60"
+    : isEdited
+    ? "border-amber-300 bg-amber-50/40"
+    : "border-border bg-background";
+  const badge = isAdded
+    ? { label: "Added", cls: "bg-green-100 text-green-800" }
+    : isRemoved
+    ? { label: "Removed", cls: "bg-red-100 text-red-800" }
+    : isEdited
+    ? { label: "Edited", cls: "bg-amber-100 text-amber-800" }
+    : { label: "Unchanged", cls: "bg-muted text-muted-foreground" };
+
+  return (
+    <div
+      className={`border rounded-md p-2.5 ${tone}`}
+      data-testid={`diff-node-${node.id}`}
+      data-status={node.status}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div
+          className={`text-xs font-medium truncate ${
+            isRemoved ? "line-through text-red-800" : ""
+          }`}
+          title={node.label}
+        >
+          {node.label}
+        </div>
+        <span
+          className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 shrink-0 ${badge.cls}`}
+        >
+          {badge.label}
+        </span>
+      </div>
+      {node.fields.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground italic">
+          No field-level changes.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {node.fields.map((f) => (
+            <div key={f.field}>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+                {f.field}
+              </div>
+              <div className="text-xs whitespace-pre-wrap break-words leading-snug">
+                <DiffSegments segments={f.segments} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VersionDiffView({
+  errorTypeId,
+  versionId,
+}: {
+  errorTypeId: number;
+  versionId: number;
+}) {
+  const versionQ = useGetErrorTypeVersion(errorTypeId, versionId);
+  const liveQ = useGetErrorType(errorTypeId);
+  const [hideUnchanged, setHideUnchanged] = useState(true);
+
+  const diff = useMemo(() => {
+    if (!versionQ.data || !liveQ.data) return null;
+    const before =
+      (versionQ.data.snapshot as { decisionTree?: unknown } | null | undefined)
+        ?.decisionTree ?? null;
+    const after = liveQ.data.decisionTree ?? null;
+    return diffSopSnapshots(before, after);
+  }, [versionQ.data, liveQ.data]);
+
+  if (versionQ.isLoading || liveQ.isLoading) {
+    return (
+      <div className="p-3 space-y-2" data-testid="diff-loading">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    );
+  }
+  if (versionQ.isError || liveQ.isError || !diff) {
+    return (
+      <div className="p-4 text-xs text-destructive">
+        Couldn't load this version's snapshot.
+      </div>
+    );
+  }
+
+  const visibleNodes = hideUnchanged
+    ? diff.nodes.filter((n) => n.status !== "unchanged")
+    : diff.nodes;
+  const unchangedCount = diff.nodes.filter((n) => n.status === "unchanged")
+    .length;
+
+  return (
+    <div className="p-3 space-y-3" data-testid="history-version-diff">
+      <div className="space-y-1.5">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Changes vs. current draft
+        </div>
+        <div
+          className="text-xs font-medium"
+          data-testid="diff-summary"
+        >
+          {formatDiffSummary(diff.summary)}
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <Switch
+            id="hide-unchanged-toggle"
+            checked={hideUnchanged}
+            onCheckedChange={setHideUnchanged}
+            data-testid="diff-hide-unchanged-toggle"
+          />
+          <label
+            htmlFor="hide-unchanged-toggle"
+            className="text-[11px] text-muted-foreground cursor-pointer"
+          >
+            Hide unchanged sections
+            {unchangedCount > 0 ? ` (${unchangedCount})` : ""}
+          </label>
+        </div>
+      </div>
+      {visibleNodes.length === 0 ? (
+        <div
+          className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md p-3 text-center"
+          data-testid="diff-no-changes"
+        >
+          {diff.nodes.length === 0
+            ? "This snapshot has no decision-tree nodes to compare."
+            : "No node-level differences — the snapshot matches the current draft."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {visibleNodes.map((n) => (
+            <NodeDiffCard key={n.id} node={n} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VersionMetadata({
   version,
 }: {
   version: ErrorTypeVersionSummary;
 }) {
-  // The list endpoint intentionally omits the snapshot blob to keep
-  // responses small (see backend comment on /error-types/:id/versions).
-  // Surface only the metadata we actually have for the selected row so
-  // we never display contents that may belong to a different version.
   return (
-    <div className="p-3 space-y-3" data-testid="history-version-summary">
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Saved
+    <div
+      className="p-3 border-b border-border space-y-2"
+      data-testid="history-version-summary"
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-0.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Saved
+          </div>
+          <div className="text-xs font-medium">
+            {formatTimestamp(version.createdAt)}
+          </div>
         </div>
-        <div className="text-xs font-medium">
-          {formatTimestamp(version.createdAt)}
+        <div className="space-y-0.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Author
+          </div>
+          <div className="text-xs truncate">{version.createdBy || "—"}</div>
         </div>
-      </div>
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Author
+        <div className="space-y-0.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Nodes
+          </div>
+          <div className="text-xs">{version.treeNodeCount}</div>
         </div>
-        <div className="text-xs">{version.createdBy || "—"}</div>
-      </div>
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Nodes
-        </div>
-        <div className="text-xs">{version.treeNodeCount}</div>
       </div>
       {version.comment ? (
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Comment
           </div>
           <div className="text-xs italic">{version.comment}</div>
         </div>
       ) : null}
-      <p className="text-[10px] text-muted-foreground italic">
-        Restore to load this snapshot's full contents into the editor.
-      </p>
     </div>
   );
 }
@@ -191,7 +383,7 @@ export function HistoryDrawer({
       <Sheet open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
         <SheetContent
           side="right"
-          className="w-[640px] sm:max-w-[640px] p-0 flex flex-col"
+          className="w-[760px] sm:max-w-[760px] p-0 flex flex-col"
           data-testid="history-drawer"
         >
           <SheetHeader className="px-4 pt-4 pb-2 border-b border-border">
@@ -276,12 +468,18 @@ export function HistoryDrawer({
             </div>
             <div className="flex-1 overflow-y-auto">
               {selectedVersion ? (
-                <VersionSummary version={selectedVersion} />
+                <>
+                  <VersionMetadata version={selectedVersion} />
+                  <VersionDiffView
+                    errorTypeId={errorTypeId}
+                    versionId={selectedVersion.id}
+                  />
+                </>
               ) : (
                 <EmptyState
                   icon={History}
                   title="Select a version"
-                  description="Pick a snapshot on the left to preview its summary."
+                  description="Pick a snapshot on the left to see what changed since then."
                 />
               )}
             </div>

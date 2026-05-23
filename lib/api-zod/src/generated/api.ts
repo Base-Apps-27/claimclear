@@ -27443,6 +27443,38 @@ export const ListErrorTypeVersionsResponse = zod.array(
 );
 
 /**
+ * Returns the full snapshot blob for a single version, so the
+version-history UI can compute a side-by-side diff between two
+snapshots (or between a snapshot and the current draft). The
+list endpoint deliberately omits this blob to keep listings
+cheap; callers fetch it on demand per row.
+
+ * @summary Get a single SOP version snapshot (Task
+ */
+export const GetErrorTypeVersionParams = zod.object({
+  id: zod.coerce.number(),
+  versionId: zod.coerce.number(),
+});
+
+export const GetErrorTypeVersionResponse = zod
+  .object({
+    id: zod.number(),
+    createdAt: zod.string(),
+    createdBy: zod.string().nullish(),
+    comment: zod.string().nullish(),
+    treeNodeCount: zod.number(),
+    snapshot: zod
+      .object({})
+      .passthrough()
+      .describe(
+        "Full persisted snapshot of the error type at save time. Shape\nmatches the live ErrorTypeResponse (with createdAt\/updatedAt\nas ISO strings).\n",
+      ),
+  })
+  .describe(
+    "Task #847 — full snapshot for a single SOP version, used by the\nhistory drawer to compute side-by-side diffs. Includes the same\nmetadata as ErrorTypeVersionSummary plus the persisted snapshot\nblob (shaped like the live error-type row).\n",
+  );
+
+/**
  * Loads the snapshot and writes it back through the same internal
 update path the PATCH handler uses, so all guards (e.g. the
 `appliesPerInvoice` validator) still run. The restore itself

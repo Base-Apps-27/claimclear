@@ -312,6 +312,36 @@ router.get("/error-types/:id/versions", asyncHandler(async (req, res): Promise<v
   res.json(rows);
 }));
 
+// Task #847 — GET a single version row with its full snapshot blob,
+// so the history drawer can render a side-by-side diff against the
+// current draft (or another snapshot). Kept separate from the list
+// endpoint above on purpose: listings stay cheap by omitting the
+// snapshot, and the diff UI fetches the blob lazily per selected row.
+router.get("/error-types/:id/versions/:versionId", asyncHandler(async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const versionId = parseId(req.params.versionId);
+  if (isNaN(id) || isNaN(versionId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [version] = await db
+    .select()
+    .from(errorTypeVersionsTable)
+    .where(eq(errorTypeVersionsTable.id, versionId));
+
+  if (!version || version.errorTypeId !== id) {
+    res.status(404).json({ error: "Version not found" });
+    return;
+  }
+
+  res.json({
+    id: version.id,
+    createdAt: version.createdAt,
+    createdBy: version.createdBy,
+    comment: version.comment,
+    treeNodeCount: version.treeNodeCount,
+    snapshot: version.snapshot,
+  });
+}));
+
 // POST restores a snapshot by funneling its fields through
 // `applyErrorTypeUpdate` — the same internal update path the PATCH
 // handler uses. That guarantees validators (e.g.
