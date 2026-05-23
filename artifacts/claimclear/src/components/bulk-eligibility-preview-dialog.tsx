@@ -41,6 +41,26 @@ export interface BulkEligibilitySkippedRow extends BulkEligibilityRow {
   reason: string;
 }
 
+// Task #876 — per-leg outcome the parent collects while looping the
+// real bulk action. When `progress` is provided the dialog renders a
+// live progress bar instead of just spinning the confirm button, and
+// after the run ends (`phase === "results"`) it surfaces the full
+// failure list inline so the operator can audit which specific legs
+// failed instead of getting only a truncated toast.
+export interface BulkActionFailure {
+  id: number;
+  label: string | null;
+  reason: string;
+}
+
+export interface BulkActionProgress {
+  processed: number;
+  total: number;
+  succeeded: number;
+  failed: BulkActionFailure[];
+  cancelled?: boolean;
+}
+
 export interface BulkEligibilityPreviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,6 +76,17 @@ export interface BulkEligibilityPreviewDialogProps {
   isLoadingPreview: boolean;
   isSubmitting: boolean;
   onConfirm: () => void | Promise<void>;
+  // Task #876 — optional live progress + cancel + results support.
+  // When `progress` is non-null the dialog enters "running" mode while
+  // isSubmitting and "results" mode once isSubmitting flips back off
+  // (or the parent sets `showResults`). `onCancel` enables a Cancel
+  // button during the run; `onClose` is called from the results-phase
+  // close button so the parent can reset its progress state.
+  progress?: BulkActionProgress | null;
+  onCancel?: () => void;
+  cancelRequested?: boolean;
+  showResults?: boolean;
+  onClose?: () => void;
 }
 
 export function BulkEligibilityPreviewDialog({
@@ -70,10 +101,17 @@ export function BulkEligibilityPreviewDialog({
   isLoadingPreview,
   isSubmitting,
   onConfirm,
+  progress,
+  onCancel,
+  cancelRequested,
+  showResults,
+  onClose,
 }: BulkEligibilityPreviewDialogProps) {
   const submitDisabled =
     isSubmitting || isLoadingPreview || eligible.length === 0;
   const pluralNoun = eligible.length === 1 ? rowNoun : `${rowNoun}s`;
+  const inResults = !isSubmitting && !!showResults && !!progress;
+  const inRunning = isSubmitting && !!progress;
   return (
     <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
       <DialogContent className="max-w-xl" data-testid="bulk-eligibility-dialog">
@@ -106,6 +144,13 @@ export function BulkEligibilityPreviewDialog({
                 {isLoadingPreview ? "…" : skipped.length}
               </span>
             </div>
+            {(inRunning || inResults) && progress && (
+              <BulkActionProgressBlock
+                progress={progress}
+                rowNoun={rowNoun}
+                phase={inResults ? "results" : "running"}
+              />
+            )}
             {skipped.length > 0 && (() => {
               const counts = new Map<string, number>();
               for (const s of skipped) {
@@ -168,38 +213,175 @@ export function BulkEligibilityPreviewDialog({
             )}
           </div>
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 mt-4">
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-              data-testid="bulk-eligibility-dialog-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void onConfirm()}
-              disabled={submitDisabled}
-              data-testid="bulk-eligibility-dialog-confirm"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Working…
-                </>
-              ) : isLoadingPreview ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Checking…
-                </>
-              ) : (
-                `${actionVerb} ${eligible.length} ${pluralNoun}`
-              )}
-            </Button>
+            {inResults ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  if (onClose) onClose();
+                  else onOpenChange(false);
+                }}
+                data-testid="bulk-eligibility-dialog-close"
+              >
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    if (inRunning && onCancel) {
+                      onCancel();
+                    } else {
+                      onOpenChange(false);
+                    }
+                  }}
+                  disabled={
+                    inRunning
+                      ? !onCancel || !!cancelRequested
+                      : isSubmitting
+                  }
+                  data-testid="bulk-eligibility-dialog-cancel"
+                >
+                  {inRunning
+                    ? cancelRequested
+                      ? "Cancelling…"
+                      : "Cancel run"
+                    : "Cancel"}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void onConfirm()}
+                  disabled={submitDisabled}
+                  data-testid="bulk-eligibility-dialog-confirm"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {progress
+                        ? `Working… ${progress.processed} / ${progress.total}`
+                        : "Working…"}
+                    </>
+                  ) : isLoadingPreview ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Checking…
+                    </>
+                  ) : (
+                    `${actionVerb} ${eligible.length} ${pluralNoun}`
+                  )}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Task #876 — live progress bar + finished-run results pane shared by
+// the bulk-exclude and bulk-reclassify flows on the Classification
+// Inbox panel. Renders inline inside the dialog body. While the loop
+// is in flight (`phase === "running"`) it shows "X / N processed",
+// the current succeeded/failed counts, and a green fill bar — the
+// same shape as BulkApproveProgressBar so the two flows feel the
+// same. Once the loop ends (`phase === "results"`) it switches to a
+// summary line and renders the full failure list (label + reason)
+// so the operator can act on each one instead of only seeing the
+// first reason in a toast.
+export interface BulkActionProgressBlockProps {
+  progress: BulkActionProgress;
+  rowNoun: string;
+  phase: "running" | "results";
+}
+
+export function BulkActionProgressBlock({
+  progress,
+  rowNoun,
+  phase,
+}: BulkActionProgressBlockProps) {
+  const total = progress.total;
+  const processed = progress.processed;
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const failedCount = progress.failed.length;
+  const succeeded = progress.succeeded;
+  const remaining = Math.max(0, total - processed);
+  return (
+    <div
+      className="rounded-md border bg-muted/40 px-3 py-2 space-y-1.5"
+      data-testid="bulk-eligibility-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center justify-between text-xs">
+        <span
+          className="font-medium text-foreground"
+          data-testid="bulk-eligibility-progress-summary"
+        >
+          {phase === "running" ? (
+            <>
+              {processed} / {total} processed
+              {succeeded > 0 ? ` · ${succeeded} succeeded` : ""}
+              {failedCount > 0 ? ` · ${failedCount} failed` : ""}
+            </>
+          ) : (
+            <>
+              {progress.cancelled ? "Cancelled — " : "Done — "}
+              {succeeded} succeeded
+              {failedCount > 0 ? ` · ${failedCount} failed` : ""}
+              {progress.cancelled && remaining > 0
+                ? ` · ${remaining} not attempted`
+                : ""}
+            </>
+          )}
+        </span>
+        <span
+          className="text-[11px] text-muted-foreground tabular-nums"
+          data-testid="bulk-eligibility-progress-pct"
+        >
+          {pct}%
+        </span>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        aria-hidden="true"
+      >
+        <div
+          className={
+            "h-full transition-all duration-200 " +
+            (phase === "results" && failedCount > 0
+              ? "bg-amber-500"
+              : "bg-emerald-500")
+          }
+          style={{ width: `${pct}%` }}
+          data-testid="bulk-eligibility-progress-fill"
+        />
+      </div>
+      {phase === "results" && failedCount > 0 && (
+        <div
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs space-y-1 mt-2"
+          data-testid="bulk-eligibility-failures-list"
+        >
+          <p className="font-semibold text-amber-900">
+            Failed {rowNoun}
+            {failedCount === 1 ? "" : "s"}:
+          </p>
+          <ul className="list-disc pl-5 text-amber-900 space-y-0.5 max-h-40 overflow-auto">
+            {progress.failed.map((f) => (
+              <li
+                key={f.id}
+                data-testid={`bulk-eligibility-failure-${f.id}`}
+              >
+                <span className="font-semibold">
+                  {f.label ? f.label : `#${f.id}`}
+                </span>{" "}
+                — {f.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

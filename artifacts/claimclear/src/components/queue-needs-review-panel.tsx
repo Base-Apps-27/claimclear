@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   useListErrorTypes,
@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-client-react";
 import {
   BulkEligibilityPreviewDialog,
+  type BulkActionProgress,
   type BulkEligibilityRow,
   type BulkEligibilitySkippedRow,
 } from "@/components/bulk-eligibility-preview-dialog";
@@ -181,6 +182,27 @@ export function QueueNeedsReviewPanel({
   const [reclassifyTargetErrorTypeId, setReclassifyTargetErrorTypeId] =
     useState<string>("");
 
+  // Task #876 — live per-leg progress for the in-flight bulk run.
+  // While the loop is mid-flight we update this snapshot after every
+  // leg so the dialog can show "X / N processed · Y succeeded · Z
+  // failed" with a fill bar; when the loop ends with failures (or is
+  // cancelled mid-run), the snapshot stays put and the dialog
+  // switches to a "results" view that lists every failed leg with
+  // its server reason. Cleared back to null when the operator
+  // dismisses the dialog after a clean run or hits Close on the
+  // results pane.
+  const [excludeProgress, setExcludeProgress] =
+    useState<BulkActionProgress | null>(null);
+  const [excludeShowResults, setExcludeShowResults] = useState(false);
+  const [excludeCancelRequested, setExcludeCancelRequested] = useState(false);
+  const excludeCancelRef = useRef(false);
+  const [reclassifyProgress, setReclassifyProgress] =
+    useState<BulkActionProgress | null>(null);
+  const [reclassifyShowResults, setReclassifyShowResults] = useState(false);
+  const [reclassifyCancelRequested, setReclassifyCancelRequested] =
+    useState(false);
+  const reclassifyCancelRef = useRef(false);
+
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: getListInvoiceGroupsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(inboxGroup.id) });
@@ -338,14 +360,22 @@ export function QueueNeedsReviewPanel({
   async function runBulkExclude(ids: number[]) {
     if (bulkPending || ids.length === 0) return;
     setBulkPending(true);
-    const succeeded: { id: string; ref: string }[] = [];
-    const skipped: { id: string; ref: string; reason: string }[] = [];
+    // Task #876 — reset the cancel/progress trackers for this run so a
+    // previous run's failures don't leak into the new one's results view.
+    excludeCancelRef.current = false;
+    setExcludeCancelRequested(false);
+    setExcludeShowResults(false);
+    const total = ids.length;
+    let processed = 0;
+    let succeededCount = 0;
+    const failed: { id: number; label: string | null; reason: string }[] = [];
+    setExcludeProgress({ processed, total, succeeded: 0, failed: [] });
     const previewById = new Map(
       excludePreview.eligible.map((e) => [e.id, e.label]),
     );
     for (const id of ids) {
-      const idStr = String(id);
-      const ref = previewById.get(id) ?? idStr;
+      if (excludeCancelRef.current) break;
+      const label = previewById.get(id) ?? null;
       try {
         await excludeLeg.mutateAsync({
           id,
@@ -354,31 +384,58 @@ export function QueueNeedsReviewPanel({
             note: "Bulk no-issue from Classification Inbox (all-blank group)",
           },
         });
-        succeeded.push({ id: idStr, ref });
+        succeededCount += 1;
       } catch (e) {
-        skipped.push({
-          id: idStr,
-          ref,
+        failed.push({
+          id,
+          label,
           reason: e instanceof Error ? e.message : String(e),
         });
       }
+      processed += 1;
+      setExcludeProgress({
+        processed,
+        total,
+        succeeded: succeededCount,
+        failed: [...failed],
+      });
     }
+    const cancelled = excludeCancelRef.current && processed < total;
     invalidateAll();
     setBulkPending(false);
-    setExcludeDialogOpen(false);
 
-    if (skipped.length === 0) {
+    // Clean run: close the dialog and fire onCompleted as before.
+    if (failed.length === 0 && !cancelled) {
+      setExcludeDialogOpen(false);
+      setExcludeProgress(null);
       onCompleted(
-        `Marked ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as no-issue`,
+        `Marked ${succeededCount} leg${succeededCount === 1 ? "" : "s"} as no-issue`,
       );
       return;
     }
-    const skippedPreview = skipped.slice(0, 5).map((s) => s.ref).join(", ");
-    const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
+    // Otherwise leave the dialog open in results phase so the operator
+    // can audit every failed leg inline. We still fire a toast for
+    // visibility once the dialog is closed.
+    setExcludeProgress({
+      processed,
+      total,
+      succeeded: succeededCount,
+      failed: [...failed],
+      cancelled,
+    });
+    setExcludeShowResults(true);
+    const skippedPreview = failed.slice(0, 5).map((s) => s.label ?? `#${s.id}`).join(", ");
+    const skippedSuffix = failed.length > 5 ? `, +${failed.length - 5} more` : "";
     toast({
-      title: `Bulk no-issue partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
-      description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
-      variant: skipped.length === ids.length ? "destructive" : "default",
+      title: cancelled
+        ? `Bulk no-issue cancelled: ${succeededCount} succeeded, ${failed.length} failed, ${total - processed} not attempted`
+        : `Bulk no-issue partial: ${succeededCount} succeeded, ${failed.length} failed`,
+      description:
+        failed.length > 0
+          ? `Failed: ${skippedPreview}${skippedSuffix}. First reason: ${failed[0].reason}`
+          : "Run cancelled before all legs were processed.",
+      variant:
+        failed.length === processed && processed > 0 ? "destructive" : "default",
     });
   }
 
@@ -437,14 +494,25 @@ export function QueueNeedsReviewPanel({
     const et = errorTypes.find((t) => String(t.id) === reclassifyTargetErrorTypeId);
     if (!et) return;
     setBulkPending(true);
-    // Task #835 — optimistic bulk flip: patch every visible leg's
+    // Task #876 — reset cancel/progress for the new run.
+    reclassifyCancelRef.current = false;
+    setReclassifyCancelRequested(false);
+    setReclassifyShowResults(false);
+    const total = ids.length;
+    let processed = 0;
+    let succeededCount = 0;
+    const failed: { id: number; label: string | null; reason: string }[] = [];
+    const succeededIds: number[] = [];
+    setReclassifyProgress({ processed, total, succeeded: 0, failed: [] });
+    // Task #835 — optimistic bulk flip: patch every targeted leg's
     // errorType in the group cache up front so the rows repaint within
     // a frame. We snapshot the prior cache value so per-leg failures
-    // can revert ONLY the failed legs, preserving the partial-failure
-    // contract (succeeded keep the flip, skipped roll back).
+    // (and any not-attempted legs after a cancel) can revert while the
+    // succeeded legs keep the flip until the invalidation refetch
+    // confirms.
     const patches = new Map<number, Partial<ClaimResponse>>();
-    for (const c of bulkVisibleClaims) {
-      patches.set(c.id, {
+    for (const id of ids) {
+      patches.set(id, {
         errorTypeId: String(et.id),
         errorTypeName: et.name,
       });
@@ -455,14 +523,12 @@ export function QueueNeedsReviewPanel({
     queryClient.setQueryData(groupKey, (old: unknown) =>
       patchGroupLegs(old, patches),
     );
-    const succeeded: { id: string; ref: string }[] = [];
-    const skipped: { id: string; ref: string; reason: string }[] = [];
     const previewById = new Map(
       reclassifyPreview.eligible.map((e) => [e.id, e.label]),
     );
     for (const id of ids) {
-      const idStr = String(id);
-      const ref = previewById.get(id) ?? idStr;
+      if (reclassifyCancelRef.current) break;
+      const label = previewById.get(id) ?? null;
       const live = liveClaimById.get(id);
       const sub = live ? deriveLegSubStatus(live) : "needs_classification";
       try {
@@ -480,27 +546,36 @@ export function QueueNeedsReviewPanel({
           id,
           data: { errorTypeId: String(et.id) },
         });
-        succeeded.push({ id: idStr, ref });
+        succeededCount += 1;
+        succeededIds.push(id);
       } catch (e) {
-        skipped.push({
-          id: idStr,
-          ref,
+        failed.push({
+          id,
+          label,
           reason: e instanceof Error ? e.message : String(e),
         });
       }
+      processed += 1;
+      setReclassifyProgress({
+        processed,
+        total,
+        succeeded: succeededCount,
+        failed: [...failed],
+      });
     }
-    // Task #835 — partial-failure rollback: if any legs failed we
-    // restore the pre-mutation snapshot first, then re-apply ONLY the
-    // succeeded legs' patches so the cache reflects the truth (succeeded
-    // legs keep the flip, skipped legs revert) until the invalidation
-    // refetch confirms. This preserves the {succeeded, skipped}
-    // contract while keeping the UI in sync immediately.
-    if (skipped.length > 0) {
+    const cancelled = reclassifyCancelRef.current && processed < total;
+    // Task #835 — partial-failure / cancel rollback: if anything didn't
+    // succeed (failed mid-run OR was never attempted because the
+    // operator cancelled) we restore the pre-mutation snapshot first,
+    // then re-apply ONLY the succeeded legs' patches so the cache
+    // reflects the truth — succeeded legs keep the flip, every other
+    // leg reverts — until the invalidation refetch confirms.
+    if (failed.length > 0 || cancelled) {
       queryClient.setQueryData(groupKey, groupSnapshot);
-      if (succeeded.length > 0) {
+      if (succeededIds.length > 0) {
         const succeededPatches = new Map<number, Partial<ClaimResponse>>();
-        for (const s of succeeded) {
-          succeededPatches.set(Number(s.id), {
+        for (const sid of succeededIds) {
+          succeededPatches.set(sid, {
             errorTypeId: String(et.id),
             errorTypeName: et.name,
           });
@@ -512,24 +587,43 @@ export function QueueNeedsReviewPanel({
     }
     invalidateAll();
     setBulkPending(false);
-    setBulkErrorTypeId("");
-    setReclassifyDialogOpen(false);
 
-    if (skipped.length === 0) {
+    if (failed.length === 0 && !cancelled) {
+      setReclassifyDialogOpen(false);
+      setReclassifyProgress(null);
+      setBulkErrorTypeId("");
       onCompleted(
-        `Reclassified ${succeeded.length} leg${succeeded.length === 1 ? "" : "s"} as "${et.name}"`,
+        `Reclassified ${succeededCount} leg${succeededCount === 1 ? "" : "s"} as "${et.name}"`,
       );
       return;
     }
-    const skippedPreview = skipped.slice(0, 5).map((s) => s.ref).join(", ");
-    const skippedSuffix = skipped.length > 5 ? `, +${skipped.length - 5} more` : "";
-    const allFailed = skipped.length === bulkVisibleClaims.length;
+    setReclassifyProgress({
+      processed,
+      total,
+      succeeded: succeededCount,
+      failed: [...failed],
+      cancelled,
+    });
+    setReclassifyShowResults(true);
+    const skippedPreview = failed.slice(0, 5).map((s) => s.label ?? `#${s.id}`).join(", ");
+    const skippedSuffix = failed.length > 5 ? `, +${failed.length - 5} more` : "";
+    // Task #835 — when EVERY attempted leg failed (and no cancel),
+    // call out that the optimistic flip was reverted so the operator
+    // doesn't see the toast and assume something stuck.
+    const allFailed =
+      !cancelled && succeededCount === 0 && failed.length === processed && processed > 0;
     toast({
-      title: allFailed
-        ? "Couldn't reclassify legs — reverted"
-        : `Bulk reclassify partial: ${succeeded.length} succeeded, ${skipped.length} skipped`,
-      description: `Skipped: ${skippedPreview}${skippedSuffix}. First reason: ${skipped[0].reason}`,
-      variant: allFailed ? "destructive" : "default",
+      title: cancelled
+        ? `Bulk reclassify cancelled: ${succeededCount} succeeded, ${failed.length} failed, ${total - processed} not attempted`
+        : allFailed
+          ? "Couldn't reclassify legs — reverted"
+          : `Bulk reclassify partial: ${succeededCount} succeeded, ${failed.length} failed`,
+      description:
+        failed.length > 0
+          ? `Failed: ${skippedPreview}${skippedSuffix}. First reason: ${failed[0].reason}`
+          : "Run cancelled before all legs were processed.",
+      variant:
+        failed.length === processed && processed > 0 ? "destructive" : "default",
     });
   }
 
@@ -897,7 +991,15 @@ export function QueueNeedsReviewPanel({
     </Card>
     <BulkEligibilityPreviewDialog
       open={excludeDialogOpen}
-      onOpenChange={(o) => { if (!bulkPending) setExcludeDialogOpen(o); }}
+      onOpenChange={(o) => {
+        if (bulkPending) return;
+        setExcludeDialogOpen(o);
+        if (!o) {
+          setExcludeProgress(null);
+          setExcludeShowResults(false);
+          setExcludeCancelRequested(false);
+        }
+      }}
       title="Mark legs as no-issue"
       description="Each eligible leg will be excluded with reason 'non_issue'. Legs that are already classified, excluded, or otherwise locked are skipped."
       rowNoun="leg"
@@ -907,10 +1009,39 @@ export function QueueNeedsReviewPanel({
       isLoadingPreview={excludePreviewLoading}
       isSubmitting={bulkPending}
       onConfirm={() => runBulkExclude(excludePreview.eligible.map((e) => e.id))}
+      progress={excludeProgress}
+      cancelRequested={excludeCancelRequested}
+      onCancel={() => {
+        excludeCancelRef.current = true;
+        setExcludeCancelRequested(true);
+      }}
+      showResults={excludeShowResults}
+      onClose={() => {
+        setExcludeDialogOpen(false);
+        setExcludeProgress(null);
+        setExcludeShowResults(false);
+        setExcludeCancelRequested(false);
+        // Surface the completed-but-with-failures run as a soft
+        // onCompleted so the parent collapses the triage selection
+        // the same way a clean run would.
+        if (excludeProgress && excludeProgress.succeeded > 0) {
+          onCompleted(
+            `Marked ${excludeProgress.succeeded} leg${excludeProgress.succeeded === 1 ? "" : "s"} as no-issue (${excludeProgress.failed.length} failed)`,
+          );
+        }
+      }}
     />
     <BulkEligibilityPreviewDialog
       open={reclassifyDialogOpen}
-      onOpenChange={(o) => { if (!bulkPending) setReclassifyDialogOpen(o); }}
+      onOpenChange={(o) => {
+        if (bulkPending) return;
+        setReclassifyDialogOpen(o);
+        if (!o) {
+          setReclassifyProgress(null);
+          setReclassifyShowResults(false);
+          setReclassifyCancelRequested(false);
+        }
+      }}
       title="Reclassify legs"
       description={
         (() => {
@@ -925,6 +1056,27 @@ export function QueueNeedsReviewPanel({
       isLoadingPreview={reclassifyPreviewLoading}
       isSubmitting={bulkPending}
       onConfirm={() => runBulkReclassify(reclassifyPreview.eligible.map((e) => e.id))}
+      progress={reclassifyProgress}
+      cancelRequested={reclassifyCancelRequested}
+      onCancel={() => {
+        reclassifyCancelRef.current = true;
+        setReclassifyCancelRequested(true);
+      }}
+      showResults={reclassifyShowResults}
+      onClose={() => {
+        const et = errorTypes.find((t) => String(t.id) === reclassifyTargetErrorTypeId);
+        const snapshot = reclassifyProgress;
+        setReclassifyDialogOpen(false);
+        setReclassifyProgress(null);
+        setReclassifyShowResults(false);
+        setReclassifyCancelRequested(false);
+        setBulkErrorTypeId("");
+        if (snapshot && snapshot.succeeded > 0 && et) {
+          onCompleted(
+            `Reclassified ${snapshot.succeeded} leg${snapshot.succeeded === 1 ? "" : "s"} as "${et.name}" (${snapshot.failed.length} failed)`,
+          );
+        }
+      }}
     />
     </>
   );
