@@ -72,6 +72,7 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { formatRelative, absoluteTooltip } from "@/lib/time";
 import { HideForClerk } from "@/lib/role";
 import { ServiceDateBanner, type ServiceDateReason } from "@/components/service-date-cell";
+import { GroupActionBanner } from "@/components/group-action-banner";
 import { StateBadge } from "@/components/state-badge";
 import { outcomeLabel } from "@workspace/vocab";
 import { RefNumber } from "@/components/ref-number";
@@ -1472,37 +1473,14 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
                   {inDisputeCount > 0
                     ? ` · ${inDisputeCount} of ${allRides.length} legs in dispute`
                     : null}
-                  {/* #687 — read-only hold meta line. Place/release lives
-                      in the V3HoldExit hero in A only. */}
-                  {group.holdReason ? (
-                    <>
-                      {" · "}
-                      <span
-                        data-testid="group-header-hold-meta"
-                        title={
-                          (group as { holdPlacedAt?: string | null }).holdPlacedAt
-                            ? `Placed ${formatDateTime(
-                                (group as { holdPlacedAt?: string | null })
-                                  .holdPlacedAt as string,
-                              )}${
-                                (group as { holdPendingFrom?: string | null })
-                                  .holdPendingFrom
-                                  ? ` · pending from ${
-                                      (group as { holdPendingFrom?: string | null })
-                                        .holdPendingFrom
-                                    }`
-                                  : ""
-                              }`
-                            : undefined
-                        }
-                      >
-                        On hold:{" "}
-                        <span className="font-medium" style={{ color: "var(--cc-fg)" }}>
-                          {group.holdReason}
-                        </span>
-                      </span>
-                    </>
-                  ) : null}
+                  {/* Task #837 — the inline "On hold: {reason}" meta
+                      string that used to live here has been removed.
+                      The GroupActionBanner mounted directly under the
+                      hero (below) now owns the on-hold surface, along
+                      with its primary "Clear hold" action and the
+                      "Why this banner?" anchor into the activity log,
+                      so the same information no longer needs to
+                      repeat in the header's meta strip. */}
                 </div>
                 {/* Service-date strip (Task #353). Re-uses the same enum
                     the list cell consumes so the empty-state language is
@@ -1636,6 +1614,13 @@ export function InvoiceGroupDetailV2({ groupId, fromManual = false }: Props) {
             </div>
           </div>
         </div>
+
+        {/* Task #837 — single contextual blocker banner. Renders only
+            when the group is in a non-default state (on hold, stuck,
+            expiring today, needs evidence, awaiting payor again) and
+            names both the blocker and the one action that clears it.
+            Default-state groups render nothing here. */}
+        <GroupActionBanner group={group} />
 
         {/* Response-received banner — D2 polish: compact blue strip with
             a one-line truncated preview and a Jump-to-thread anchor that
