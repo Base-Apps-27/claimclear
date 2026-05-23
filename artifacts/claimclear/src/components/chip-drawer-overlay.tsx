@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { SaveStatus, type SaveStatusState } from "@/components/save-status";
 import {
   Dialog,
   DialogContent,
@@ -439,6 +440,9 @@ function NotesPanel({
   const create = useCreateClaimNote();
   const remove = useDeleteNote();
   const [draft, setDraft] = useState("");
+  // Task #846 — visible "Saved Xs ago" indicator. Bumped whenever a
+  // note is successfully added in this session.
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   // Task #681 — delete-note now requires an explicit confirm step.
   // Ported from the per-leg detail page (claim-detail-v2.tsx) so the
   // canonical notes surface (this drawer) gates accidental deletes
@@ -457,6 +461,7 @@ function NotesPanel({
       {
         onSuccess: () => {
           setDraft("");
+          setLastSavedAt(Date.now());
           refreshNotes();
           successToast({ title: "Done", description: "Note added" });
         },
@@ -543,7 +548,7 @@ function NotesPanel({
           rows={2}
           data-testid="mini-note-composer"
         />
-        <div className="flex justify-start">
+        <div className="flex items-center justify-between gap-2">
           <Button
             size="sm"
             onClick={submit}
@@ -555,6 +560,16 @@ function NotesPanel({
             ) : null}
             Add note
           </Button>
+          <SaveStatus
+            state={((): SaveStatusState => {
+              if (create.isPending) return "saving";
+              if (draft.trim().length > 0) return "unsaved";
+              if (lastSavedAt !== null) return "saved";
+              return "idle";
+            })()}
+            lastSavedAt={lastSavedAt}
+            testId="mini-note-save-status"
+          />
         </div>
       </div>
 

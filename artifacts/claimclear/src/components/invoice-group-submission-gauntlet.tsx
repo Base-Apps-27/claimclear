@@ -56,6 +56,7 @@ import { RefNumber } from "@/components/ref-number";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { markLocalAction } from "@/hooks/use-local-action-mark";
 import { PromptContextBadge } from "@/components/prompt-context-badge";
+import { SaveStatus, type SaveStatusState } from "@/components/save-status";
 import { buildLegResolvedIndex } from "@workspace/leg-state";
 import { derivePreviewGateState } from "@/lib/whats-next-derivation";
 
@@ -121,6 +122,9 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
   // successful save so the Button's `breathTrigger` prop can detect the
   // change and replay the animation cleanly across consecutive saves.
   const [draftSaveBreath, setDraftSaveBreath] = useState(0);
+  // Task #846 — visible "Saved Xs ago" line on the draft body. Set on
+  // a successful save in this session; null until then.
+  const [draftLastSavedAt, setDraftLastSavedAt] = useState<number | null>(null);
 
   // Task #745 — split the operator's note from the AI restatement.
   // `notes` mirrors `group.specialCircumstances` (the operator's text);
@@ -408,6 +412,7 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
         onSuccess: () => {
           // Quiet in-place "breath" on the Save-draft button instead of a toast.
           setDraftSaveBreath((n) => n + 1);
+          setDraftLastSavedAt(Date.now());
           invalidateGroup();
         },
         onError: (e: unknown) =>
@@ -463,7 +468,13 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
           id: groupId,
           data: { subject: draftSubject, descriptionHtml: draftBody },
         },
-        { onSuccess: finalize, onError: finalize },
+        {
+          onSuccess: () => {
+            setDraftLastSavedAt(Date.now());
+            finalize();
+          },
+          onError: finalize,
+        },
       );
     } else {
       finalize();
@@ -1311,6 +1322,18 @@ export function InvoiceGroupSubmissionGauntlet({ group, groupId, onJumpToLeg, on
                     saves automatically).
                   </p>
                 )}
+                <div className="flex justify-end">
+                  <SaveStatus
+                    state={((): SaveStatusState => {
+                      if (saveDraftMutation.isPending) return "saving";
+                      if (draftDirty) return "unsaved";
+                      if (draftLastSavedAt !== null) return "saved";
+                      return "idle";
+                    })()}
+                    lastSavedAt={draftLastSavedAt}
+                    testId="draft-save-status"
+                  />
+                </div>
                 {draftBodyEmpty && (
                   <p
                     className="text-xs text-muted-foreground italic"

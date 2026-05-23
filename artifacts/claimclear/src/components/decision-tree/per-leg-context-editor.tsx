@@ -39,6 +39,7 @@ import * as React from "react";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useUnsavedDraftLeaveGuard } from "@/hooks/use-unsaved-draft-leave-guard";
+import { SaveStatus, type SaveStatusState } from "@/components/save-status";
 
 void React; // JSX runtime: keep React in scope under tsx --test.
 
@@ -122,6 +123,11 @@ export function PerLegContextEditor({
   const [raw, setRaw] = useState<string>("");
   const [clarified, setClarified] = useState<string>("");
   const [savedClarified, setSavedClarified] = useState<string>(initialSaved);
+  // Task #846 — visible "Saved Xs ago" line. We only know the
+  // timestamp of saves that happen in this session (server doesn't
+  // return a per-leg-context updatedAt), so pre-existing saved
+  // context renders as "idle" until the operator saves again.
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   // Re-sync when the parent refetches the leg and `perLegContext`
   // changes underneath us (e.g. a teammate saved context, then the
@@ -207,6 +213,7 @@ export function PerLegContextEditor({
       setMode("edit");
       setRaw("");
       setClarified("");
+      setLastSavedAt(Date.now());
     },
     onError: (err: Error) => {
       setMode("review");
@@ -239,6 +246,7 @@ export function PerLegContextEditor({
       setRaw("");
       setClarified("");
       setMode("edit");
+      setLastSavedAt(Date.now());
     },
     onError: (err: Error) => {
       toast({
@@ -361,6 +369,19 @@ export function PerLegContextEditor({
       {disabled && disabledReason && (
         <p className="text-[11px] text-muted-foreground italic">{disabledReason}</p>
       )}
+
+      <div className="flex justify-end pt-0.5">
+        <SaveStatus
+          state={((): SaveStatusState => {
+            if (mode === "saving" || clearSaved.isPending) return "saving";
+            if (hasUnsavedDraft) return "unsaved";
+            if (lastSavedAt !== null) return "saved";
+            return "idle";
+          })()}
+          lastSavedAt={lastSavedAt}
+          testId="per-leg-context-save-status"
+        />
+      </div>
 
       <AlertDialog
         open={leaveConfirmOpen}

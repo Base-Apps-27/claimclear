@@ -13,6 +13,7 @@ import {
   Sparkles, Save, Undo2, Loader2, Check, X, Pencil,
   CheckCheck, XCircle, FileText, AlertCircle,
 } from "lucide-react";
+import { SaveStatus, type SaveStatusState } from "@/components/save-status";
 
 type FieldKind =
   | "question"
@@ -296,6 +297,10 @@ export function PlainTextEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Task #846 — visible "Saved Xs ago" line. Bumps whenever a save
+  // lands locally (Save all here, or a parent-driven save bumping
+  // `savedVersion`).
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   // Baseline snapshot for "X unsaved" change tracking. Captured on
   // mount; reset whenever a different tree (different rootId) is loaded
@@ -322,6 +327,7 @@ export function PlainTextEditor({
     if (savedVersion !== undefined && lastSavedVersion.current !== savedVersion) {
       lastSavedVersion.current = savedVersion;
       setBaselineTree(tree);
+      setLastSavedAt(Date.now());
       setSuggestions(prev => {
         const next: typeof prev = {};
         for (const [k, v] of Object.entries(prev)) {
@@ -416,6 +422,7 @@ export function PlainTextEditor({
     try {
       await onSave(tree);
       setBaselineTree(tree);
+      setLastSavedAt(Date.now());
       setSuggestions(prev => {
         const next: typeof prev = {};
         for (const [k, v] of Object.entries(prev)) {
@@ -615,6 +622,16 @@ export function PlainTextEditor({
                 ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving...</>
                 : <><Save className="h-3.5 w-3.5" />Save all</>}
             </Button>
+            <SaveStatus
+              state={((): SaveStatusState => {
+                if (isSaving) return "saving";
+                if (pendingChangeCount > 0) return "unsaved";
+                if (lastSavedAt !== null) return "saved";
+                return "idle";
+              })()}
+              lastSavedAt={lastSavedAt}
+              testId="plain-text-save-status"
+            />
           </div>
         </div>
         {(error || info) && (
