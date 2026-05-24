@@ -14,6 +14,8 @@ import {
   useAddressMyClosure,
   useReopenMyClosure,
   getListMyClosuresQueryKey,
+  getExportWithdrawalsCsvByRoleUrl,
+  ExportWithdrawalsCsvByRoleRole,
 } from "@workspace/api-client-react";
 import type {
   WithdrawalRow,
@@ -28,7 +30,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Inbox, ShieldCheck, CheckCircle2, RotateCcw, ExternalLink } from "lucide-react";
+import { Inbox, ShieldCheck, CheckCircle2, RotateCcw, ExternalLink, Download } from "lucide-react";
 import { PageHeader } from "@/components/cohesion";
 import { TONE_STYLE, type Tone } from "@/components/cohesion/tone";
 import { EmptyState } from "@/components/empty-state";
@@ -209,6 +211,39 @@ export default function MyClosuresPage() {
           <span data-testid="count-total-ever"><span className="font-semibold text-foreground">{counts.total}</span> total ever</span>
         </div>
       </div>
+
+      {/* Task #890 — "Download for follow-up" / Export this list.
+          The active tab's date implication is baked into the URL so the
+          file matches what the supervisor is currently looking at. */}
+      {activeRole && (
+        <div className="mt-3 flex items-center gap-2">
+          {(() => {
+            const closedFrom = tab === "addressed90"
+              ? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+              : undefined;
+            const url = getExportWithdrawalsCsvByRoleUrl({
+              role: activeRole as typeof ExportWithdrawalsCsvByRoleRole[keyof typeof ExportWithdrawalsCsvByRoleRole],
+              closedFrom,
+              hideAddressed: tab === "outstanding" ? "true" : "false",
+            } as Parameters<typeof getExportWithdrawalsCsvByRoleUrl>[0]);
+            const empty = tabRows.length === 0;
+            return (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                data-testid="my-closures-export-csv"
+                title={empty ? "No items match this scope" : undefined}
+                className={empty ? "opacity-60" : ""}
+              >
+                <a href={url} download>
+                  <Download className="mr-2 h-3.5 w-3.5" /> Export this list
+                </a>
+              </Button>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Tab model — Outstanding / Addressed (90d) / All time. */}
       <div className="mt-3 inline-flex items-center gap-1 border rounded-md p-0.5 bg-muted/40" role="tablist" data-testid="my-closures-tabs">

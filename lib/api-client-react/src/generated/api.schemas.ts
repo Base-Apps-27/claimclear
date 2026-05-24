@@ -7232,6 +7232,35 @@ export const ExportWithdrawalsCsvDir = {
   desc: "desc",
 } as const;
 
+export type ExportWithdrawalsCsvByRoleParams = {
+  /**
+   * The responsible role to scope the export to.
+   */
+  role: ExportWithdrawalsCsvByRoleRole;
+  search?: string;
+  reason?: string;
+  hideAddressed?: ExportWithdrawalsCsvByRoleHideAddressed;
+  closedFrom?: string;
+  closedTo?: string;
+};
+
+export type ExportWithdrawalsCsvByRoleRole =
+  (typeof ExportWithdrawalsCsvByRoleRole)[keyof typeof ExportWithdrawalsCsvByRoleRole];
+
+export const ExportWithdrawalsCsvByRoleRole = {
+  contact_center_manager: "contact_center_manager",
+  contractor_relations_coordinator: "contractor_relations_coordinator",
+  it_coordinator_or_coo: "it_coordinator_or_coo",
+} as const;
+
+export type ExportWithdrawalsCsvByRoleHideAddressed =
+  (typeof ExportWithdrawalsCsvByRoleHideAddressed)[keyof typeof ExportWithdrawalsCsvByRoleHideAddressed];
+
+export const ExportWithdrawalsCsvByRoleHideAddressed = {
+  true: "true",
+  false: "false",
+} as const;
+
 export type GlobalSearchParams = {
   /**
    * Free-text query. Substring/ILIKE match against the same fields the dedicated list pages search.

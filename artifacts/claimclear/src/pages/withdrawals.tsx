@@ -4,11 +4,29 @@ import {
   useBulkAddressWithdrawals,
   getListWithdrawalsQueryKey,
   getExportWithdrawalsCsvUrl,
+  getExportWithdrawalsCsvByRoleUrl,
   ListWithdrawalsSort,
   ListWithdrawalsDir,
   ListWithdrawalsHideAddressed,
   ListWithdrawalsAwaitingParty,
+  ExportWithdrawalsCsvByRoleRole,
 } from "@workspace/api-client-react";
+import {
+  CLOSURE_RESPONSIBLE_ROLES,
+  RESPONSIBILITY_TO_ROLE,
+  closureResponsibleRoleLabel,
+  type ClosureResponsibleRole,
+  type ClosureResponsibility,
+} from "@workspace/vocab";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import type {
   ListWithdrawalsParams,
   WithdrawalRow,
@@ -486,11 +504,59 @@ export default function WithdrawalsPage() {
         totalApplied={totalAppliedFilters}
         onClearAllFilters={clearFilters}
         extras={
-          <Button asChild variant="outline" size="sm" data-testid="withdrawals-export-csv">
-            <a href={csvUrl} download>
-              <Download className="mr-2 h-4 w-4" /> Export CSV
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" data-testid="withdrawals-export-csv">
+              <a href={csvUrl} download>
+                <Download className="mr-2 h-4 w-4" /> Export CSV
+              </a>
+            </Button>
+            {/* Task #890 — per-responsibility CSV split-button. Counts
+                come from the currently-fetched rows so the menu is
+                zero-network. External Payor stays in the menu even at
+                count 0 (FYI), all other roles dim at 0. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="withdrawals-export-by-role-trigger">
+                  Export by responsibility <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[260px]">
+                <DropdownMenuLabel>Party-safe CSV (no operator emails)</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {(CLOSURE_RESPONSIBLE_ROLES as readonly ClosureResponsibleRole[]).map((role) => {
+                  const count = rows.filter((r) => {
+                    if (!r.closureResponsibility) return false;
+                    return RESPONSIBILITY_TO_ROLE[r.closureResponsibility as ClosureResponsibility] === role;
+                  }).length;
+                  const url = getExportWithdrawalsCsvByRoleUrl({
+                    role: role as typeof ExportWithdrawalsCsvByRoleRole[keyof typeof ExportWithdrawalsCsvByRoleRole],
+                    search: search || undefined,
+                    reason: reasons.length > 0 ? reasons.join(",") : undefined,
+                    hideAddressed: hideAddressed ? "true" : "false",
+                    closedFrom: closedFrom || undefined,
+                    closedTo: closedTo || undefined,
+                  } as Parameters<typeof getExportWithdrawalsCsvByRoleUrl>[0]);
+                  const isExternalPayor = false; // CLOSURE_RESPONSIBLE_ROLES doesn't include external_payor as a role — all three listed are real owners.
+                  const dim = count === 0 && !isExternalPayor;
+                  return (
+                    <DropdownMenuItem key={role} asChild>
+                      <a
+                        href={url}
+                        download
+                        data-testid={`withdrawals-export-by-role-${role}`}
+                        className={dim ? "opacity-50" : ""}
+                      >
+                        {closureResponsibleRoleLabel(role)}
+                        <span className="ml-auto tabular-nums text-muted-foreground text-xs">
+                          ({count})
+                        </span>
+                      </a>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         }
       >
         <Card>

@@ -6577,6 +6577,65 @@ paths:
               schema:
                 type: string
 
+  /withdrawals/export-csv/by-role:
+    get:
+      operationId: exportWithdrawalsCsvByRole
+      tags: [withdrawals]
+      summary: Export closures scoped to one responsible role as a party-safe CSV
+      description: |
+        Task #890. Returns a smaller column set tailored for handoff to a
+        responsible-party supervisor (or onward to an out-of-system
+        stakeholder). Excludes operator emails, raw enums, accountability
+        tag json, and internal review-state strings.
+
+        Requires the caller to either (a) hold the requested role on
+        `users.responsible_roles`, or (b) hold any admin-tier role.
+        Anything else returns 403 with no audit row written.
+
+        Stamps a single `withdrawals_csv_exported` audit row on success
+        with `metadata = { scope: "by_role", role, filters, rowCount }`.
+        Empty rowsets still return a header-only CSV (not 204, not HTML).
+      parameters:
+        - name: role
+          in: query
+          required: true
+          description: The responsible role to scope the export to.
+          schema:
+            type: string
+            enum: [contact_center_manager, contractor_relations_coordinator, it_coordinator_or_coo]
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: reason
+          in: query
+          schema:
+            type: string
+        - name: hideAddressed
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: closedFrom
+          in: query
+          schema:
+            type: string
+        - name: closedTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Missing or invalid role parameter
+        "403":
+          description: Caller does not hold the requested role and is not an admin
+
   /withdrawals/bulk-address:
     post:
       operationId: bulkAddressWithdrawals

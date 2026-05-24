@@ -23,6 +23,11 @@ const PORTAL_ALLOWED_PREFIXES = [
   "/auth/",
   "/health",
   "/tour",
+  // Task #890 — by-role CSV export. The route itself enforces the
+  // role-or-admin gate; the guard just has to let portal-only users
+  // reach it. The unscoped /withdrawals/export-csv is NOT in this list
+  // (operator surface only).
+  "/withdrawals/export-csv/by-role",
 ];
 
 function isAllowedForPortal(pathname: string): boolean {

@@ -37418,6 +37418,37 @@ export const ExportWithdrawalsCsvQueryParams = zod.object({
 });
 
 /**
+ * Task #890. Returns a smaller column set tailored for handoff to a
+responsible-party supervisor (or onward to an out-of-system
+stakeholder). Excludes operator emails, raw enums, accountability
+tag json, and internal review-state strings.
+
+Requires the caller to either (a) hold the requested role on
+`users.responsible_roles`, or (b) hold any admin-tier role.
+Anything else returns 403 with no audit row written.
+
+Stamps a single `withdrawals_csv_exported` audit row on success
+with `metadata = { scope: "by_role", role, filters, rowCount }`.
+Empty rowsets still return a header-only CSV (not 204, not HTML).
+
+ * @summary Export closures scoped to one responsible role as a party-safe CSV
+ */
+export const ExportWithdrawalsCsvByRoleQueryParams = zod.object({
+  role: zod
+    .enum([
+      "contact_center_manager",
+      "contractor_relations_coordinator",
+      "it_coordinator_or_coo",
+    ])
+    .describe("The responsible role to scope the export to."),
+  search: zod.coerce.string().optional(),
+  reason: zod.coerce.string().optional(),
+  hideAddressed: zod.enum(["true", "false"]).optional(),
+  closedFrom: zod.coerce.string().optional(),
+  closedTo: zod.coerce.string().optional(),
+});
+
+/**
  * @summary Mark multiple closures as addressed in one request
  */
 export const BulkAddressWithdrawalsBody = zod.object({

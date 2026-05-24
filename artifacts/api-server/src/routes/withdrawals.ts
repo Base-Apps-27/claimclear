@@ -1,9 +1,20 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { claimsTable, invoiceGroupsTable, auditLogsTable, usersTable } from "@workspace/db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { broadcastClaimEvent, broadcastGroupEvent } from "../lib/sse";
+import {
+  CLOSURE_RESPONSIBLE_ROLES,
+  CLOSURE_RESPONSIBILITIES,
+  RESPONSIBILITY_TO_ROLE,
+  closureResponsibilityLabel,
+  closureResponsibleRoleLabel,
+  type ClosureResponsibleRole,
+  type ClosureResponsibility,
+} from "@workspace/closure-responsibility";
+import { closureReasonLabel } from "@workspace/vocab";
+import { getResponsibleRoles } from "../lib/role";
 
 const router: IRouter = Router();
 
@@ -486,6 +497,168 @@ router.get("/withdrawals", asyncHandler(async (req, res): Promise<void> => {
   res.json({ rows: paged, total: rows.length, counts, closers });
 }));
 
+// Task #890 — shared CSV-injection guard, exported so both the operator
+// and by-role exporters render cells identically.
+export function csvCell(val: unknown): string {
+  if (val === null || val === undefined) return '""';
+  const str = typeof val === "boolean" ? (val ? "Yes" : "No") : String(val);
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+// Task #890 — pure filename builder so the convention is unit-testable
+// and identical on both export surfaces. See `task-890.md` § D.
+export const ROLE_SLUG: Record<ClosureResponsibleRole, string> = {
+  contact_center_manager: "contact-center-manager",
+  contractor_relations_coordinator: "contractor-relations",
+  it_coordinator_or_coo: "it-coordinator",
+};
+const REASON_SLUG: Record<string, string> = {
+  cannot_dispute: "cannot-dispute",
+  non_issue: "non-issue",
+  denied_by_payor: "denied-by-payor",
+};
+export function buildByRoleFilename(args: {
+  role: ClosureResponsibleRole;
+  reasons: string[] | null; // null/empty/all-three → "all"
+  closedFrom: string | null;
+  closedTo: string | null;
+  today?: string; // override for unit tests
+}): string {
+  const roleSlug = ROLE_SLUG[args.role];
+  const allReasons = !args.reasons || args.reasons.length === 0 || args.reasons.length >= 3;
+  const reasonSlug = allReasons
+    ? "all"
+    : args.reasons!.map(r => REASON_SLUG[r] ?? r).sort().join("-");
+  const today = args.today ?? new Date().toISOString().slice(0, 10);
+  const isoDate = (s: string): string => s.slice(0, 10);
+  const from = args.closedFrom ? isoDate(args.closedFrom) : "alltime";
+  const to = args.closedTo ? isoDate(args.closedTo) : today;
+  return `closures-${roleSlug}-${reasonSlug}-${from}-to-${to}.csv`;
+}
+
+// Task #890 — party-safe row shape (no operator emails, no raw enums,
+// no audit ids, no accountability tags). Exported for column-set diff
+// tests.
+export const PARTY_SAFE_HEADERS = [
+  "Identifier",
+  "Kind",
+  "Member #",
+  "Error Type",
+  "Closure Reason",
+  "Category",
+  "Narrative",
+  "Specifics",
+  "Amount",
+  "Closed At",
+  "Days Open",
+  "Responsible Role",
+  "Currently Addressed?",
+  "Addressed By",
+  "Addressed At",
+  "Addressed Note",
+] as const;
+
+function daysBetween(iso: string | null, now: Date): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((now.getTime() - t) / (24 * 60 * 60 * 1000)));
+}
+
+export function partySafeRow(r: WithdrawalRow, now: Date = new Date()): string[] {
+  const kindLabel = r.kind === "claim" ? "Claim" : "Group";
+  // Category label: blank if "Other"; fall back to closureCommunicatedTo
+  // (which the operator modal uses as the Specifics field) when blank.
+  const rawCat = r.closureCategory ?? "";
+  const isOther = rawCat.toLowerCase() === "other";
+  const categoryOut = (!rawCat || isOther) ? "" : rawCat;
+  const role = r.closureResponsibility
+    ? RESPONSIBILITY_TO_ROLE[r.closureResponsibility as ClosureResponsibility]
+    : null;
+  return [
+    r.identifier,
+    kindLabel,
+    r.clientNumber ?? "",
+    r.errorTypeName ?? "",
+    closureReasonLabel(r.closureReason),
+    categoryOut,
+    r.closureNarrative ?? r.errorDetails ?? "",
+    r.closureCommunicatedTo ?? "",
+    r.amount ?? "",
+    r.closedAt ? r.closedAt.slice(0, 10) : "",
+    daysBetween(r.closedAt, now)?.toString() ?? "",
+    role ? closureResponsibleRoleLabel(role) : "",
+    r.addressed ? "Yes" : "No",
+    r.closureAddressedBy ?? "", // display name only — no email
+    r.closureAddressedAt ? r.closureAddressedAt.slice(0, 10) : "",
+    r.closureReviewNotes ?? "",
+  ];
+}
+
+// Task #890 — small audit-write helper so the operator and by-role
+// exports stay in lockstep. Inserts one row only; failure is fatal so
+// the user does not silently lose the egress receipt.
+async function writeCsvExportAudit(
+  req: Request,
+  scope: "operator" | "by_role",
+  filters: Record<string, unknown>,
+  rowCount: number,
+  role?: ClosureResponsibleRole,
+): Promise<void> {
+  await db.insert(auditLogsTable).values({
+    action: "withdrawals_csv_exported",
+    details: scope === "by_role"
+      ? `Exported by-role CSV (${role ?? "?"}) — ${rowCount} rows`
+      : `Exported operator CSV — ${rowCount} rows`,
+    userEmail: req.user?.email ?? null,
+    userName: req.user?.displayName ?? null,
+    metadata: { scope, role: role ?? null, filters, rowCount },
+  });
+}
+
+// Task #890 — role-or-admin gate, expressed as middleware so future
+// export variants reuse the same check. Reads roles live from the DB
+// (not the session-cached AuthUser) so an admin revocation takes
+// effect on the next request. Refusal paths write no audit rows.
+function isOperatorTier(user: { role?: string | null; isPortalOnly?: boolean | null } | undefined): boolean {
+  if (!user) return false;
+  // Admins and clerks are never portal-isolated and always operator-
+  // tier. A plain `user` role is operator-tier only when NOT flagged
+  // is_portal_only — portal-only supervisors must still pass the
+  // role-membership check below for any role they request.
+  if (user.role === "admin" || user.role === "clerk") return true;
+  if (user.role === "user" && !user.isPortalOnly) return true;
+  return false;
+}
+
+async function requireRoleOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const requested = typeof req.query.role === "string" ? req.query.role : "";
+  if (!requested || !(CLOSURE_RESPONSIBLE_ROLES as readonly string[]).includes(requested)) {
+    res.status(400).json({ error: "role query parameter is required" });
+    return;
+  }
+  const user = req.user;
+  if (!user?.id) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  if (isOperatorTier(user)) {
+    next();
+    return;
+  }
+  const [row] = await db
+    .select({ responsibleRoles: usersTable.responsibleRoles })
+    .from(usersTable)
+    .where(eq(usersTable.id, String(user.id)));
+  const roles = getResponsibleRoles(row?.responsibleRoles ?? null);
+  if (roles.includes(requested as ClosureResponsibleRole)) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "You do not hold this responsible role" });
+}
+
 router.get("/withdrawals/export-csv", asyncHandler(async (req, res): Promise<void> => {
   const sortKey = (typeof req.query.sort === "string" && req.query.sort) ? req.query.sort : "closedAt";
   const dir = (req.query.dir === "asc" ? "asc" : "desc");
@@ -514,20 +687,64 @@ router.get("/withdrawals/export-csv", asyncHandler(async (req, res): Promise<voi
     { key: "closureAddressedBy", label: "Addressed By" },
   ];
 
-  const csvCell = (val: unknown): string => {
-    if (val === null || val === undefined) return '""';
-    const str = typeof val === "boolean" ? (val ? "Yes" : "No") : String(val);
-    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
-    return `"${safe.replace(/"/g, '""')}"`;
-  };
-
   const header = cols.map(c => csvCell(c.label)).join(",");
   const body = sorted.map(r => cols.map(c => csvCell(r[c.key])).join(",")).join("\r\n");
+
+  await writeCsvExportAudit(req, "operator", {
+    search: req.query.search ?? null,
+    reason: req.query.reason ?? null,
+    closedFrom: req.query.closedFrom ?? null,
+    closedTo: req.query.closedTo ?? null,
+    hideAddressed: req.query.hideAddressed ?? null,
+    closedBy: req.query.closedBy ?? null,
+  }, sorted.length);
 
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="withdrawals-${today}.csv"`);
   res.send([header, body].join("\r\n"));
+}));
+
+// Task #890 — per-responsibility CSV variant. Party-safe column set,
+// scoped by role, available both to operators (admin/user/clerk) and
+// to portal-only supervisors holding the requested role.
+router.get("/withdrawals/export-csv/by-role", asyncHandler(requireRoleOrAdmin), asyncHandler(async (req, res): Promise<void> => {
+  const role = req.query.role as ClosureResponsibleRole;
+  // Pull the closure_responsibility values that route to this role
+  // (most map 1:1 but it_coordinator_or_coo covers three).
+  const responsibilities = CLOSURE_RESPONSIBILITIES.filter(r => RESPONSIBILITY_TO_ROLE[r] === role);
+
+  const closedFrom = typeof req.query.closedFrom === "string" && req.query.closedFrom ? req.query.closedFrom : null;
+  const closedTo = typeof req.query.closedTo === "string" && req.query.closedTo ? req.query.closedTo : null;
+  const reasonRaw = typeof req.query.reason === "string" && req.query.reason ? req.query.reason : null;
+  const reasons = reasonRaw ? reasonRaw.split(",").map(s => s.trim()).filter(Boolean) : null;
+
+  // Forward filters into fetchAllRows; injecting the responsibility
+  // scope as a comma-separated list so the existing parser handles it.
+  const rows = await fetchAllRows({
+    ...req.query,
+    closureResponsibility: responsibilities.join(","),
+  } as Record<string, unknown>);
+  const sorted = sortRows(rows, "closedAt", "desc");
+
+  const now = new Date();
+  const header = (PARTY_SAFE_HEADERS as readonly string[]).map(csvCell).join(",");
+  const body = sorted.map(r => partySafeRow(r, now).map(csvCell).join(",")).join("\r\n");
+
+  await writeCsvExportAudit(req, "by_role", {
+    role,
+    search: req.query.search ?? null,
+    reason: reasonRaw,
+    closedFrom,
+    closedTo,
+    hideAddressed: req.query.hideAddressed ?? null,
+  }, sorted.length, role);
+
+  const filename = buildByRoleFilename({ role, reasons, closedFrom, closedTo });
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  // Header-only when empty rowset; both branches still emit `\r\n`-joined CSV.
+  res.send(sorted.length === 0 ? header : [header, body].join("\r\n"));
 }));
 
 router.post("/withdrawals/bulk-address", asyncHandler(async (req, res): Promise<void> => {

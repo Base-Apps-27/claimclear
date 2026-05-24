@@ -124,6 +124,7 @@ import type {
   ExportAttestationPendingCsvParams,
   ExportClaimsCsvParams,
   ExportInvoiceGroupsCsvParams,
+  ExportWithdrawalsCsvByRoleParams,
   ExportWithdrawalsCsvParams,
   GenerateEmailBody,
   GetAiCalibrationParams,
@@ -18564,6 +18565,125 @@ export function useExportWithdrawalsCsv<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getExportWithdrawalsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Task #890. Returns a smaller column set tailored for handoff to a
+responsible-party supervisor (or onward to an out-of-system
+stakeholder). Excludes operator emails, raw enums, accountability
+tag json, and internal review-state strings.
+
+Requires the caller to either (a) hold the requested role on
+`users.responsible_roles`, or (b) hold any admin-tier role.
+Anything else returns 403 with no audit row written.
+
+Stamps a single `withdrawals_csv_exported` audit row on success
+with `metadata = { scope: "by_role", role, filters, rowCount }`.
+Empty rowsets still return a header-only CSV (not 204, not HTML).
+
+ * @summary Export closures scoped to one responsible role as a party-safe CSV
+ */
+export const getExportWithdrawalsCsvByRoleUrl = (
+  params: ExportWithdrawalsCsvByRoleParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/withdrawals/export-csv/by-role?${stringifiedParams}`
+    : `/api/withdrawals/export-csv/by-role`;
+};
+
+export const exportWithdrawalsCsvByRole = async (
+  params: ExportWithdrawalsCsvByRoleParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportWithdrawalsCsvByRoleUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportWithdrawalsCsvByRoleQueryKey = (
+  params?: ExportWithdrawalsCsvByRoleParams,
+) => {
+  return [
+    `/api/withdrawals/export-csv/by-role`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportWithdrawalsCsvByRoleQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>,
+  TError = ErrorType<void>,
+>(
+  params: ExportWithdrawalsCsvByRoleParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportWithdrawalsCsvByRoleQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>
+  > = ({ signal }) =>
+    exportWithdrawalsCsvByRole(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportWithdrawalsCsvByRoleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>
+>;
+export type ExportWithdrawalsCsvByRoleQueryError = ErrorType<void>;
+
+/**
+ * @summary Export closures scoped to one responsible role as a party-safe CSV
+ */
+
+export function useExportWithdrawalsCsvByRole<
+  TData = Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>,
+  TError = ErrorType<void>,
+>(
+  params: ExportWithdrawalsCsvByRoleParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportWithdrawalsCsvByRole>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportWithdrawalsCsvByRoleQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

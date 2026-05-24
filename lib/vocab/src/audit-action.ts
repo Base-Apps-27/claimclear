@@ -46,6 +46,10 @@ const SHARED: Record<string, string> = {
   // Other
   connector_unhealthy: "Connector unhealthy",
   notification_opt_out_changed: "Notification preferences changed",
+
+  // Task #890 — privileged data egress event (CSV export of closures).
+  // Stamped on both the operator CSV and the new by-role CSV variants.
+  withdrawals_csv_exported: "Withdrawals CSV exported",
 };
 
 const CLAIM_ONLY: Record<string, string> = {
