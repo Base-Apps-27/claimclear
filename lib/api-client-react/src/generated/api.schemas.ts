@@ -15,6 +15,15 @@ export interface HealthStatus {
   status: string;
 }
 
+export type AuthUserResponsibleRolesItem =
+  (typeof AuthUserResponsibleRolesItem)[keyof typeof AuthUserResponsibleRolesItem];
+
+export const AuthUserResponsibleRolesItem = {
+  contact_center_manager: "contact_center_manager",
+  contractor_relations_coordinator: "contractor_relations_coordinator",
+  it_coordinator_or_coo: "it_coordinator_or_coo",
+} as const;
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -24,6 +33,190 @@ export interface AuthUser {
   profileImageUrl?: string | null;
   role: string;
   status: string;
+  responsibleRoles: AuthUserResponsibleRolesItem[];
+}
+
+export type MyClosuresListResponseCounts = {
+  total: number;
+  awaiting: number;
+  addressed: number;
+};
+
+export type WithdrawalRowKind =
+  (typeof WithdrawalRowKind)[keyof typeof WithdrawalRowKind];
+
+export const WithdrawalRowKind = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;
+
+export type WithdrawalRowClosureReason =
+  (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
+
+export const WithdrawalRowClosureReason = {
+  cannot_dispute: "cannot_dispute",
+  non_issue: "non_issue",
+  denied_by_payor: "denied_by_payor",
+} as const;
+
+/**
+ * Task #888 — five-value canonical responsibility recorded by the
+slim closure intake modal. Mirrors `@workspace/closure-responsibility`.
+Each value maps to exactly one supervisor "responsible role":
+agent_mistake → Contact Center Manager,
+driver_mistake → Contractor Relations Coordinator,
+system_error / external_payor / no_one_process_limit → IT Coordinator / COO.
+
+ */
+export type ClosureResponsibility =
+  (typeof ClosureResponsibility)[keyof typeof ClosureResponsibility];
+
+export const ClosureResponsibility = {
+  agent_mistake: "agent_mistake",
+  driver_mistake: "driver_mistake",
+  system_error: "system_error",
+  external_payor: "external_payor",
+  no_one_process_limit: "no_one_process_limit",
+} as const;
+
+/**
+ * A unified row representing a closed claim or invoice group.
+ */
+export interface WithdrawalRow {
+  kind: WithdrawalRowKind;
+  id: number;
+  /** Conf */
+  identifier: string;
+  /** @nullable */
+  clientNumber?: string | null;
+  /** @nullable */
+  errorTypeName?: string | null;
+  /** @nullable */
+  errorDetails?: string | null;
+  outcome: string;
+  closureReason: WithdrawalRowClosureReason;
+  /** @nullable */
+  closureCategory?: string | null;
+  /** @nullable */
+  closureRootCause?: string | null;
+  /** @nullable */
+  closureNarrative?: string | null;
+  /** @nullable */
+  closureAccountabilityTags?: string[] | null;
+  /** Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify. */
+  closureResponsibility?: ClosureResponsibility | null;
+  /** @nullable */
+  amount?: string | null;
+  /** @nullable */
+  closedAt?: string | null;
+  /**
+   * User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.
+   * @nullable
+   */
+  closedBy?: string | null;
+  /**
+   * Display name of the staff member who closed this item.
+   * @nullable
+   */
+  closedByName?: string | null;
+  /**
+   * Email of the staff member who closed this item.
+   * @nullable
+   */
+  closedByEmail?: string | null;
+  /** @nullable */
+  closureReviewState?: string | null;
+  /** @nullable */
+  closureCommunicatedTo?: string | null;
+  /** @nullable */
+  closureReviewNotes?: string | null;
+  /** @nullable */
+  closureAddressedAt?: string | null;
+  /** @nullable */
+  closureAddressedBy?: string | null;
+  /**
+   * Email of the responsible-party supervisor who acknowledged this closure (Task
+   * @nullable
+   */
+  closureAddressedByEmail?: string | null;
+  addressed: boolean;
+}
+
+export interface MyClosuresListResponse {
+  rows: WithdrawalRow[];
+  roles: string[];
+  activeRoles?: string[];
+  counts: MyClosuresListResponseCounts;
+}
+
+export interface MyClosuresAddressBody {
+  /** @minLength 10 */
+  note: string;
+  /**
+   * Optional client snapshot of the row's updatedAt for stale-write protection
+   * @nullable
+   */
+  updatedAt?: string | null;
+}
+
+export type MyClosuresAddressResponseKind =
+  (typeof MyClosuresAddressResponseKind)[keyof typeof MyClosuresAddressResponseKind];
+
+export const MyClosuresAddressResponseKind = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;
+
+export interface MyClosuresAddressResponse {
+  ok: boolean;
+  kind: MyClosuresAddressResponseKind;
+  id: number;
+  reviewState: string;
+  addressedAt?: string;
+  /** @nullable */
+  addressedBy?: string | null;
+  /** @nullable */
+  addressedByEmail?: string | null;
+}
+
+export interface MyClosuresReopenBody {
+  /** @minLength 10 */
+  note: string;
+}
+
+export interface MyClosuresReopenResponse {
+  ok: boolean;
+  kind: string;
+  id: number;
+  reviewState: string;
+}
+
+export type AdminResponsibleRolesBodyResponsibleRolesItem =
+  (typeof AdminResponsibleRolesBodyResponsibleRolesItem)[keyof typeof AdminResponsibleRolesBodyResponsibleRolesItem];
+
+export const AdminResponsibleRolesBodyResponsibleRolesItem = {
+  contact_center_manager: "contact_center_manager",
+  contractor_relations_coordinator: "contractor_relations_coordinator",
+  it_coordinator_or_coo: "it_coordinator_or_coo",
+} as const;
+
+export interface AdminResponsibleRolesBody {
+  responsibleRoles: AdminResponsibleRolesBodyResponsibleRolesItem[];
+}
+
+export type AdminResponsibleRolesReadoutUsersItem = {
+  id: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  displayName?: string | null;
+  role: string;
+  status: string;
+  responsibleRoles: string[];
+};
+
+export interface AdminResponsibleRolesReadout {
+  users: AdminResponsibleRolesReadoutUsersItem[];
 }
 
 /**
@@ -236,26 +429,6 @@ export interface ClosurePersonRef {
   /** @nullable */
   id?: string | null;
 }
-
-/**
- * Task #888 — five-value canonical responsibility recorded by the
-slim closure intake modal. Mirrors `@workspace/closure-responsibility`.
-Each value maps to exactly one supervisor "responsible role":
-agent_mistake → Contact Center Manager,
-driver_mistake → Contractor Relations Coordinator,
-system_error / external_payor / no_one_process_limit → IT Coordinator / COO.
-
- */
-export type ClosureResponsibility =
-  (typeof ClosureResponsibility)[keyof typeof ClosureResponsibility];
-
-export const ClosureResponsibility = {
-  agent_mistake: "agent_mistake",
-  driver_mistake: "driver_mistake",
-  system_error: "system_error",
-  external_payor: "external_payor",
-  no_one_process_limit: "no_one_process_limit",
-} as const;
 
 /**
  * Single attachment row stored on a claim's, invoice group's, or
@@ -2027,81 +2200,6 @@ export interface ClosureReviewBody {
   closureReviewState?: ClosureReviewBodyClosureReviewState;
   /** Convenience flag — when true, sets closureReviewState=acknowledged and stamps closureAddressedAt/By; when false, clears those fields. */
   addressed?: boolean;
-}
-
-export type WithdrawalRowKind =
-  (typeof WithdrawalRowKind)[keyof typeof WithdrawalRowKind];
-
-export const WithdrawalRowKind = {
-  claim: "claim",
-  invoice_group: "invoice_group",
-} as const;
-
-export type WithdrawalRowClosureReason =
-  (typeof WithdrawalRowClosureReason)[keyof typeof WithdrawalRowClosureReason];
-
-export const WithdrawalRowClosureReason = {
-  cannot_dispute: "cannot_dispute",
-  non_issue: "non_issue",
-  denied_by_payor: "denied_by_payor",
-} as const;
-
-/**
- * A unified row representing a closed claim or invoice group.
- */
-export interface WithdrawalRow {
-  kind: WithdrawalRowKind;
-  id: number;
-  /** Conf */
-  identifier: string;
-  /** @nullable */
-  clientNumber?: string | null;
-  /** @nullable */
-  errorTypeName?: string | null;
-  /** @nullable */
-  errorDetails?: string | null;
-  outcome: string;
-  closureReason: WithdrawalRowClosureReason;
-  /** @nullable */
-  closureCategory?: string | null;
-  /** @nullable */
-  closureRootCause?: string | null;
-  /** @nullable */
-  closureNarrative?: string | null;
-  /** @nullable */
-  closureAccountabilityTags?: string[] | null;
-  /** Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify. */
-  closureResponsibility?: ClosureResponsibility | null;
-  /** @nullable */
-  amount?: string | null;
-  /** @nullable */
-  closedAt?: string | null;
-  /**
-   * User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.
-   * @nullable
-   */
-  closedBy?: string | null;
-  /**
-   * Display name of the staff member who closed this item.
-   * @nullable
-   */
-  closedByName?: string | null;
-  /**
-   * Email of the staff member who closed this item.
-   * @nullable
-   */
-  closedByEmail?: string | null;
-  /** @nullable */
-  closureReviewState?: string | null;
-  /** @nullable */
-  closureCommunicatedTo?: string | null;
-  /** @nullable */
-  closureReviewNotes?: string | null;
-  /** @nullable */
-  closureAddressedAt?: string | null;
-  /** @nullable */
-  closureAddressedBy?: string | null;
-  addressed: boolean;
 }
 
 /**
@@ -7007,6 +7105,22 @@ export type BackfillInvoiceGroupsBody = {
   dryRun?: boolean;
 };
 
+export type ListMyClosuresParams = {
+  /**
+   * Optional role filter for multi-role users
+   */
+  role?: ListMyClosuresRole;
+};
+
+export type ListMyClosuresRole =
+  (typeof ListMyClosuresRole)[keyof typeof ListMyClosuresRole];
+
+export const ListMyClosuresRole = {
+  contact_center_manager: "contact_center_manager",
+  contractor_relations_coordinator: "contractor_relations_coordinator",
+  it_coordinator_or_coo: "it_coordinator_or_coo",
+} as const;
+
 export type ListWithdrawalsParams = {
   search?: string;
   /**
@@ -7023,6 +7137,14 @@ export type ListWithdrawalsParams = {
    * Comma-separated user ids — only return rows whose closer matches one of these users
    */
   closedBy?: string;
+  /**
+   * Comma-separated five-value closure responsibility filter (Task
+   */
+  closureResponsibility?: string;
+  /**
+   * When "true", return only rows assigned to a responsible role and not yet acknowledged
+   */
+  awaitingParty?: ListWithdrawalsAwaitingParty;
   sort?: ListWithdrawalsSort;
   dir?: ListWithdrawalsDir;
   limit?: number;
@@ -7033,6 +7155,14 @@ export type ListWithdrawalsHideAddressed =
   (typeof ListWithdrawalsHideAddressed)[keyof typeof ListWithdrawalsHideAddressed];
 
 export const ListWithdrawalsHideAddressed = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type ListWithdrawalsAwaitingParty =
+  (typeof ListWithdrawalsAwaitingParty)[keyof typeof ListWithdrawalsAwaitingParty];
+
+export const ListWithdrawalsAwaitingParty = {
   true: "true",
   false: "false",
 } as const;

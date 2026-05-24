@@ -6317,6 +6317,143 @@ paths:
               schema:
                 $ref: "#/components/schemas/InvoiceGroupResponse"
 
+  /my-closures:
+    get:
+      operationId: listMyClosures
+      tags: [my-closures]
+      summary: List closures routed to the current user's responsible role(s)
+      parameters:
+        - name: role
+          in: query
+          description: Optional role filter for multi-role users
+          schema:
+            type: string
+            enum:
+              - contact_center_manager
+              - contractor_relations_coordinator
+              - it_coordinator_or_coo
+      responses:
+        "200":
+          description: My closures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClosuresListResponse"
+
+  /my-closures/{kind}/{id}/address:
+    post:
+      operationId: addressMyClosure
+      tags: [my-closures]
+      summary: Mark a single closure as addressed (≥10-char note required)
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [claim, invoice_group]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MyClosuresAddressBody"
+      responses:
+        "200":
+          description: Addressed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClosuresAddressResponse"
+        "400":
+          description: Invalid body
+        "403":
+          description: Closure is not assigned to your role
+        "404":
+          description: Closure not found
+        "409":
+          description: Closure already addressed or row changed since last fetch
+
+  /my-closures/{kind}/{id}/reopen:
+    post:
+      operationId: reopenMyClosure
+      tags: [my-closures]
+      summary: Reopen a closure within 24h of your own acknowledgement
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [claim, invoice_group]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MyClosuresReopenBody"
+      responses:
+        "200":
+          description: Reopened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClosuresReopenResponse"
+        "400":
+          description: Invalid body
+        "403":
+          description: Not the acknowledger or self-reopen window expired
+        "409":
+          description: Not currently in acknowledged_by_party state
+
+  /admin/users/{userId}/responsible-roles:
+    patch:
+      operationId: setUserResponsibleRoles
+      tags: [admin]
+      summary: Set the responsible-party portal roles for a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminResponsibleRolesBody"
+      responses:
+        "200":
+          description: Updated
+        "400":
+          description: Invalid roles
+        "404":
+          description: User not found
+
+  /admin/responsible-roles:
+    get:
+      operationId: getResponsibleRolesReadout
+      tags: [admin]
+      summary: List every user grouped by their assigned responsible roles
+      responses:
+        "200":
+          description: Readout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminResponsibleRolesReadout"
+
   /withdrawals:
     get:
       operationId: listWithdrawals
@@ -6351,6 +6488,17 @@ paths:
           description: Comma-separated user ids — only return rows whose closer matches one of these users
           schema:
             type: string
+        - name: closureResponsibility
+          in: query
+          description: Comma-separated five-value closure responsibility filter (Task #889)
+          schema:
+            type: string
+        - name: awaitingParty
+          in: query
+          description: When "true", return only rows assigned to a responsible role and not yet acknowledged
+          schema:
+            type: string
+            enum: ["true", "false"]
         - name: sort
           in: query
           schema:
@@ -6493,11 +6641,143 @@ components:
           type: string
         status:
           type: string
+        # Task #889 — responsible-party portal roles. Independent of `role`
+        # so a user can be operator + responsible supervisor simultaneously.
+        # Empty array for users with no portal access.
+        responsibleRoles:
+          type: array
+          items:
+            type: string
+            enum:
+              - contact_center_manager
+              - contractor_relations_coordinator
+              - it_coordinator_or_coo
       required:
         - id
         - email
         - role
         - status
+        - responsibleRoles
+
+    # Task #889 — Responsible-Party portal row. Reuses the WithdrawalRow
+    # shape so the client can share a single renderer between
+    # /withdrawals and /my-closures.
+    MyClosuresListResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/WithdrawalRow"
+        roles:
+          type: array
+          items:
+            type: string
+        activeRoles:
+          type: array
+          items:
+            type: string
+        counts:
+          type: object
+          properties:
+            total:
+              type: integer
+            awaiting:
+              type: integer
+            addressed:
+              type: integer
+          required: [total, awaiting, addressed]
+      required: [rows, roles, counts]
+
+    MyClosuresAddressBody:
+      type: object
+      properties:
+        note:
+          type: string
+          minLength: 10
+        updatedAt:
+          type: ["string", "null"]
+          description: Optional client snapshot of the row's updatedAt for stale-write protection
+      required: [note]
+
+    MyClosuresAddressResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        kind:
+          type: string
+          enum: [claim, invoice_group]
+        id:
+          type: integer
+        reviewState:
+          type: string
+        addressedAt:
+          type: string
+        addressedBy:
+          type: ["string", "null"]
+        addressedByEmail:
+          type: ["string", "null"]
+      required: [ok, kind, id, reviewState]
+
+    MyClosuresReopenBody:
+      type: object
+      properties:
+        note:
+          type: string
+          minLength: 10
+      required: [note]
+
+    MyClosuresReopenResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        kind:
+          type: string
+        id:
+          type: integer
+        reviewState:
+          type: string
+      required: [ok, kind, id, reviewState]
+
+    AdminResponsibleRolesBody:
+      type: object
+      properties:
+        responsibleRoles:
+          type: array
+          items:
+            type: string
+            enum:
+              - contact_center_manager
+              - contractor_relations_coordinator
+              - it_coordinator_or_coo
+      required: [responsibleRoles]
+
+    AdminResponsibleRolesReadout:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              email:
+                type: ["string", "null"]
+              displayName:
+                type: ["string", "null"]
+              role:
+                type: string
+              status:
+                type: string
+              responsibleRoles:
+                type: array
+                items:
+                  type: string
+            required: [id, role, status, responsibleRoles]
+      required: [users]
 
     ClaimResponse:
       type: object
@@ -7957,6 +8237,9 @@ components:
           type: ["string", "null"]
         closureAddressedBy:
           type: ["string", "null"]
+        closureAddressedByEmail:
+          type: ["string", "null"]
+          description: Email of the responsible-party supervisor who acknowledged this closure (Task #889). Null until acknowledged.
         addressed:
           type: boolean
       required:

@@ -356,6 +356,13 @@ export async function transitionClaimOutcome(opts: {
 
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
 
+  // Task #889 — heads-up email to the responsible role. Debounced + gated
+  // by NOTIFY_RESPONSIBLE_PARTY_ENABLED; a no-op in tests.
+  if (closure?.closureResponsibility) {
+    const { scheduleResponsiblePartyDigest } = await import("./responsible-party-notify.js");
+    scheduleResponsiblePartyDigest({ kind: "claim", id: claimId, responsibility: closure.closureResponsibility });
+  }
+
   const closureLabel = closureReason ? CLOSURE_REASON_LABELS[closureReason] : null;
   const overrideAuditFragment = overrideApplied
     ? { override: { applied: true, sourceStatus: old.status, targetOutcome: newOutcome, reason: overrideReason } }
@@ -593,6 +600,12 @@ export async function transitionClaimStatusAndOutcome(opts: {
   }
 
   const [claim] = await db.update(claimsTable).set(updateData).where(eq(claimsTable.id, claimId)).returning();
+
+  // Task #889 — heads-up email to the responsible role (debounced).
+  if (closure?.closureResponsibility) {
+    const { scheduleResponsiblePartyDigest } = await import("./responsible-party-notify.js");
+    scheduleResponsiblePartyDigest({ kind: "claim", id: claimId, responsibility: closure.closureResponsibility });
+  }
 
   const changes: string[] = [];
   if (old.status !== newStatus) changes.push(`status: ${old.status} → ${newStatus}`);

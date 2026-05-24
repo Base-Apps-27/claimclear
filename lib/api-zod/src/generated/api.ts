@@ -32,6 +32,13 @@ export const GetCurrentAuthUserResponse = zod.object({
       profileImageUrl: zod.string().nullish(),
       role: zod.string(),
       status: zod.string(),
+      responsibleRoles: zod.array(
+        zod.enum([
+          "contact_center_manager",
+          "contractor_relations_coordinator",
+          "it_coordinator_or_coo",
+        ]),
+      ),
     }),
     zod.null(),
   ]),
@@ -66,6 +73,13 @@ export const GetAuthSessionResponse = zod.object({
     profileImageUrl: zod.string().nullish(),
     role: zod.string(),
     status: zod.string(),
+    responsibleRoles: zod.array(
+      zod.enum([
+        "contact_center_manager",
+        "contractor_relations_coordinator",
+        "it_coordinator_or_coo",
+      ]),
+    ),
   }),
 });
 
@@ -37058,6 +37072,183 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
 });
 
 /**
+ * @summary List closures routed to the current user's responsible role(s)
+ */
+export const ListMyClosuresQueryParams = zod.object({
+  role: zod
+    .enum([
+      "contact_center_manager",
+      "contractor_relations_coordinator",
+      "it_coordinator_or_coo",
+    ])
+    .optional()
+    .describe("Optional role filter for multi-role users"),
+});
+
+export const ListMyClosuresResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        kind: zod.enum(["claim", "invoice_group"]),
+        id: zod.number(),
+        identifier: zod.string().describe("Conf"),
+        clientNumber: zod.string().nullish(),
+        errorTypeName: zod.string().nullish(),
+        errorDetails: zod.string().nullish(),
+        outcome: zod.string(),
+        closureReason: zod.enum([
+          "cannot_dispute",
+          "non_issue",
+          "denied_by_payor",
+        ]),
+        closureCategory: zod.string().nullish(),
+        closureRootCause: zod.string().nullish(),
+        closureNarrative: zod.string().nullish(),
+        closureAccountabilityTags: zod.array(zod.string()).nullish(),
+        closureResponsibility: zod
+          .union([
+            zod
+              .enum([
+                "agent_mistake",
+                "driver_mistake",
+                "system_error",
+                "external_payor",
+                "no_one_process_limit",
+              ])
+              .describe(
+                'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+              ),
+            zod.null(),
+          ])
+          .optional()
+          .describe(
+            "Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify.",
+          ),
+        amount: zod.string().nullish(),
+        closedAt: zod.string().nullish(),
+        closedBy: zod
+          .string()
+          .nullish()
+          .describe(
+            "User id of the staff member who closed this item, derived from the latest closure-related audit log. Null if the closer can no longer be resolved.",
+          ),
+        closedByName: zod
+          .string()
+          .nullish()
+          .describe("Display name of the staff member who closed this item."),
+        closedByEmail: zod
+          .string()
+          .nullish()
+          .describe("Email of the staff member who closed this item."),
+        closureReviewState: zod.string().nullish(),
+        closureCommunicatedTo: zod.string().nullish(),
+        closureReviewNotes: zod.string().nullish(),
+        closureAddressedAt: zod.string().nullish(),
+        closureAddressedBy: zod.string().nullish(),
+        closureAddressedByEmail: zod
+          .string()
+          .nullish()
+          .describe(
+            "Email of the responsible-party supervisor who acknowledged this closure (Task",
+          ),
+        addressed: zod.boolean(),
+      })
+      .describe("A unified row representing a closed claim or invoice group."),
+  ),
+  roles: zod.array(zod.string()),
+  activeRoles: zod.array(zod.string()).optional(),
+  counts: zod.object({
+    total: zod.number(),
+    awaiting: zod.number(),
+    addressed: zod.number(),
+  }),
+});
+
+/**
+ * @summary Mark a single closure as addressed (≥10-char note required)
+ */
+export const AddressMyClosureParams = zod.object({
+  kind: zod.enum(["claim", "invoice_group"]),
+  id: zod.coerce.number(),
+});
+
+export const addressMyClosureBodyNoteMin = 10;
+
+export const AddressMyClosureBody = zod.object({
+  note: zod.string().min(addressMyClosureBodyNoteMin),
+  updatedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional client snapshot of the row's updatedAt for stale-write protection",
+    ),
+});
+
+export const AddressMyClosureResponse = zod.object({
+  ok: zod.boolean(),
+  kind: zod.enum(["claim", "invoice_group"]),
+  id: zod.number(),
+  reviewState: zod.string(),
+  addressedAt: zod.string().optional(),
+  addressedBy: zod.string().nullish(),
+  addressedByEmail: zod.string().nullish(),
+});
+
+/**
+ * @summary Reopen a closure within 24h of your own acknowledgement
+ */
+export const ReopenMyClosureParams = zod.object({
+  kind: zod.enum(["claim", "invoice_group"]),
+  id: zod.coerce.number(),
+});
+
+export const reopenMyClosureBodyNoteMin = 10;
+
+export const ReopenMyClosureBody = zod.object({
+  note: zod.string().min(reopenMyClosureBodyNoteMin),
+});
+
+export const ReopenMyClosureResponse = zod.object({
+  ok: zod.boolean(),
+  kind: zod.string(),
+  id: zod.number(),
+  reviewState: zod.string(),
+});
+
+/**
+ * @summary Set the responsible-party portal roles for a user
+ */
+export const SetUserResponsibleRolesParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const SetUserResponsibleRolesBody = zod.object({
+  responsibleRoles: zod.array(
+    zod.enum([
+      "contact_center_manager",
+      "contractor_relations_coordinator",
+      "it_coordinator_or_coo",
+    ]),
+  ),
+});
+
+/**
+ * @summary List every user grouped by their assigned responsible roles
+ */
+export const GetResponsibleRolesReadoutResponse = zod.object({
+  users: zod.array(
+    zod.object({
+      id: zod.string(),
+      email: zod.string().nullish(),
+      displayName: zod.string().nullish(),
+      role: zod.string(),
+      status: zod.string(),
+      responsibleRoles: zod.array(zod.string()),
+    }),
+  ),
+});
+
+/**
  * @summary List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups
  */
 export const listWithdrawalsQueryLimitDefault = 50;
@@ -37080,6 +37271,16 @@ export const ListWithdrawalsQueryParams = zod.object({
     .optional()
     .describe(
       "Comma-separated user ids — only return rows whose closer matches one of these users",
+    ),
+  closureResponsibility: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated five-value closure responsibility filter (Task"),
+  awaitingParty: zod
+    .enum(["true", "false"])
+    .optional()
+    .describe(
+      'When \"true\", return only rows assigned to a responsible role and not yet acknowledged',
     ),
   sort: zod
     .enum(["closedAt", "reason", "kind", "identifier", "amount", "addressed"])
@@ -37149,6 +37350,12 @@ export const ListWithdrawalsResponse = zod.object({
         closureReviewNotes: zod.string().nullish(),
         closureAddressedAt: zod.string().nullish(),
         closureAddressedBy: zod.string().nullish(),
+        closureAddressedByEmail: zod
+          .string()
+          .nullish()
+          .describe(
+            "Email of the responsible-party supervisor who acknowledged this closure (Task",
+          ),
         addressed: zod.boolean(),
       })
       .describe("A unified row representing a closed claim or invoice group."),

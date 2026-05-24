@@ -7,6 +7,7 @@ import {
   ListWithdrawalsSort,
   ListWithdrawalsDir,
   ListWithdrawalsHideAddressed,
+  ListWithdrawalsAwaitingParty,
 } from "@workspace/api-client-react";
 import type {
   ListWithdrawalsParams,
@@ -86,6 +87,10 @@ export default function WithdrawalsPage() {
   const closedTo = get("closedTo");
   const closedByIds = getAll("closedBy");
   const hideAddressed = get("hideAddressed") !== "false"; // default true
+  // Task #889 — when on, restricts the list to closures that the
+  // responsible party has acknowledged but operations hasn't closed
+  // yet. Stored as a single URL flag so it survives reloads/shares.
+  const awaitingParty = get("awaitingParty") === "true";
 
   const activeTab: TabKey = (() => {
     if (reasons.length === 1) {
@@ -106,6 +111,7 @@ export default function WithdrawalsPage() {
     closedFrom: closedFrom || undefined,
     closedTo: closedTo || undefined,
     closedBy: closedByIds.length > 0 ? closedByIds.join(",") : undefined,
+    awaitingParty: awaitingParty ? ListWithdrawalsAwaitingParty.true : undefined,
     sort: sortCol as typeof ListWithdrawalsSort[keyof typeof ListWithdrawalsSort],
     dir: sortDir as typeof ListWithdrawalsDir[keyof typeof ListWithdrawalsDir],
     limit: pageSize,
@@ -269,7 +275,7 @@ export default function WithdrawalsPage() {
 
   const clearFilters = () => {
     set(
-      { q: null, reason: null, closedFrom: null, closedTo: null, closedBy: null, hideAddressed: null, page: null },
+      { q: null, reason: null, closedFrom: null, closedTo: null, closedBy: null, hideAddressed: null, awaitingParty: null, page: null },
       false,
     );
   };
@@ -304,8 +310,15 @@ export default function WithdrawalsPage() {
         onRemove: () => set({ hideAddressed: null, page: null }, false),
       });
     }
+    if (awaitingParty) {
+      out.push({
+        key: "awaitingParty",
+        label: "Awaiting party follow-through",
+        onRemove: () => set({ awaitingParty: null, page: null }, false),
+      });
+    }
     return out;
-  }, [search, reasons, activeTab, closedFrom, closedTo, closedByIds, closerLookup, hideAddressed, set]);
+  }, [search, reasons, activeTab, closedFrom, closedTo, closedByIds, closerLookup, hideAddressed, awaitingParty, set]);
 
   const tabs: FilterStripTab<TabKey>[] = TABS.map((t) => ({
     key: t.key,
@@ -324,7 +337,10 @@ export default function WithdrawalsPage() {
   const closedDateCount = closedFrom || closedTo ? 1 : 0;
   const closedByCount = closedByIds.length;
   const visibilityCount = !hideAddressed ? 1 : 0;
-  const totalAppliedFilters = closedDateCount + closedByCount + visibilityCount;
+  // Task #889 — surface awaiting-party flag in the rail total so the
+  // operator sees at a glance that the list is narrowed.
+  const awaitingPartyCount = awaitingParty ? 1 : 0;
+  const totalAppliedFilters = closedDateCount + closedByCount + visibilityCount + awaitingPartyCount;
 
   const toggleClosedBy = (id: string, next: boolean) => {
     const nextIds = next
@@ -334,6 +350,24 @@ export default function WithdrawalsPage() {
   };
 
   const filterCategories: FacetedFilterCategory[] = useMemo(() => [
+    {
+      id: "followThrough",
+      label: "Follow-through",
+      icon: Eye,
+      appliedCount: awaitingPartyCount,
+      render: () => (
+        <FacetCheckboxList
+          heading="Responsible-party status"
+          options={[{ id: "awaiting", label: "Awaiting party follow-through" }]}
+          selected={awaitingParty ? ["awaiting"] : []}
+          onToggle={(_id, next) =>
+            set({ awaitingParty: next ? "true" : null, page: null }, false)
+          }
+          hint="Show only closures the responsible party hasn't acknowledged yet."
+          testIdPrefix="facet-awaitingParty"
+        />
+      ),
+    },
     {
       id: "closedDate",
       label: "Closed Date",
@@ -393,7 +427,7 @@ export default function WithdrawalsPage() {
         />
       ),
     },
-  ], [closedDateCount, closedByCount, visibilityCount, closedFrom, closedTo, closerOptions, closedByIds, hideAddressed, set]);
+  ], [closedDateCount, closedByCount, visibilityCount, awaitingPartyCount, awaitingParty, closedFrom, closedTo, closerOptions, closedByIds, hideAddressed, set]);
 
   const colCount = 8;
 
@@ -431,6 +465,12 @@ export default function WithdrawalsPage() {
         <StatusDot tone="green" />
         <span className="font-medium text-foreground">Addressed</span>
         <span className="tabular-nums text-muted-foreground">{counts.addressed}</span>
+        <span className="text-muted-foreground">·</span>
+        {/* Task #889 — informational dot. Acknowledged-by-party means
+            the responsible supervisor confirmed follow-through but the
+            operator hasn't yet closed the row out. */}
+        <StatusDot tone="muted" />
+        <span className="font-medium text-foreground">Acknowledged by party</span>
       </StatusStrip>
 
       <ListTableHeaderStrip

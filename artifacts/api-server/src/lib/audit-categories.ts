@@ -26,6 +26,12 @@ const CLAIM_CATEGORY_MAP: Record<string, ActionCategory> = {
   status_changed: "status",
   outcome_changed: "status",
   closure_addressed: "status",
+  // Task #889 — portal-side acknowledgement / reopen by the responsible
+  // supervisor. Distinguished from `closure_addressed` (operator bulk
+  // action) so the activity feed and any role-attribution reporting can
+  // tell who actually followed through.
+  closure_addressed_by_responsible_party: "status",
+  closure_reopened_by_responsible_party: "status",
   closure_review_updated: "other",
   evidence_updated: "evidence",
   hold_placed: "hold",
@@ -71,6 +77,8 @@ const GROUP_CATEGORY_MAP: Record<string, ActionCategory> = {
   group_resolved: "status",
   group_denied: "status",
   closure_addressed: "status",
+  closure_addressed_by_responsible_party: "status",
+  closure_reopened_by_responsible_party: "status",
   closure_review_updated: "other",
   portal_understanding_preflight: "draft",
   portal_draft_created: "draft",
@@ -92,6 +100,8 @@ const CLAIM_LABELS: Record<string, string> = {
   status_changed: "Status changed",
   outcome_changed: "Outcome changed",
   closure_addressed: "Addressed",
+  closure_addressed_by_responsible_party: "Acknowledged by responsible party",
+  closure_reopened_by_responsible_party: "Reopened by responsible party",
   closure_review_updated: "Review notes updated",
   evidence_updated: "Evidence updated",
   hold_placed: "Placed on hold",
@@ -133,6 +143,8 @@ const GROUP_LABELS: Record<string, string> = {
   group_resolved: "Group resolved",
   group_denied: "Group denied",
   closure_addressed: "Addressed",
+  closure_addressed_by_responsible_party: "Acknowledged by responsible party",
+  closure_reopened_by_responsible_party: "Reopened by responsible party",
   closure_review_updated: "Review notes updated",
   portal_understanding_preflight: "AI understanding checked",
   portal_draft_created: "Dispute write-up generated",

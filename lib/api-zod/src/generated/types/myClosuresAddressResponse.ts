@@ -11,16 +11,16 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuthUserResponsibleRolesItem } from "./authUserResponsibleRolesItem";
+import type { MyClosuresAddressResponseKind } from "./myClosuresAddressResponseKind";
 
-export interface AuthUser {
-  id: string;
-  email: string;
+export interface MyClosuresAddressResponse {
+  ok: boolean;
+  kind: MyClosuresAddressResponseKind;
+  id: number;
+  reviewState: string;
+  addressedAt?: string;
   /** @nullable */
-  displayName?: string | null;
+  addressedBy?: string | null;
   /** @nullable */
-  profileImageUrl?: string | null;
-  role: string;
-  status: string;
-  responsibleRoles: AuthUserResponsibleRolesItem[];
+  addressedByEmail?: string | null;
 }

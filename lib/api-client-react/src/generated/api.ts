@@ -27,6 +27,8 @@ import type {
   AdminAuditLogsResponse,
   AdminExportAuditLogsCsvParams,
   AdminListAuditLogsParams,
+  AdminResponsibleRolesBody,
+  AdminResponsibleRolesReadout,
   AiCalibrationResponse,
   AnalyzeSOPBody,
   AnthropicConversation,
@@ -164,6 +166,7 @@ import type {
   ListEvidenceTypes200,
   ListInvoiceGroupEvidence200,
   ListInvoiceGroupsParams,
+  ListMyClosuresParams,
   ListPortalSubmissionsParams,
   ListResponses200,
   ListResponsesParams,
@@ -176,6 +179,11 @@ import type {
   MarkInvoiceGroupMasEligibleBody,
   MarkLegDuplicateBody,
   MyActivitySummary,
+  MyClosuresAddressBody,
+  MyClosuresAddressResponse,
+  MyClosuresListResponse,
+  MyClosuresReopenBody,
+  MyClosuresReopenResponse,
   MyProcessedTodayCount,
   NeedsClassificationInboxResponse,
   NoteResponse,
@@ -17880,6 +17888,495 @@ export const useUpdateInvoiceGroupClosureReview = <
     getUpdateInvoiceGroupClosureReviewMutationOptions(options),
   );
 };
+
+/**
+ * @summary List closures routed to the current user's responsible role(s)
+ */
+export const getListMyClosuresUrl = (params?: ListMyClosuresParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/my-closures?${stringifiedParams}`
+    : `/api/my-closures`;
+};
+
+export const listMyClosures = async (
+  params?: ListMyClosuresParams,
+  options?: RequestInit,
+): Promise<MyClosuresListResponse> => {
+  return customFetch<MyClosuresListResponse>(getListMyClosuresUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMyClosuresQueryKey = (params?: ListMyClosuresParams) => {
+  return [`/api/my-closures`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMyClosuresQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMyClosures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListMyClosuresParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMyClosures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMyClosuresQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyClosures>>> = ({
+    signal,
+  }) => listMyClosures(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMyClosures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMyClosuresQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMyClosures>>
+>;
+export type ListMyClosuresQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List closures routed to the current user's responsible role(s)
+ */
+
+export function useListMyClosures<
+  TData = Awaited<ReturnType<typeof listMyClosures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListMyClosuresParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMyClosures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMyClosuresQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mark a single closure as addressed (≥10-char note required)
+ */
+export const getAddressMyClosureUrl = (
+  kind: "claim" | "invoice_group",
+  id: number,
+) => {
+  return `/api/my-closures/${kind}/${id}/address`;
+};
+
+export const addressMyClosure = async (
+  kind: "claim" | "invoice_group",
+  id: number,
+  myClosuresAddressBody: MyClosuresAddressBody,
+  options?: RequestInit,
+): Promise<MyClosuresAddressResponse> => {
+  return customFetch<MyClosuresAddressResponse>(
+    getAddressMyClosureUrl(kind, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(myClosuresAddressBody),
+    },
+  );
+};
+
+export const getAddressMyClosureMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addressMyClosure>>,
+    TError,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresAddressBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addressMyClosure>>,
+  TError,
+  {
+    kind: "claim" | "invoice_group";
+    id: number;
+    data: BodyType<MyClosuresAddressBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["addressMyClosure"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addressMyClosure>>,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresAddressBody>;
+    }
+  > = (props) => {
+    const { kind, id, data } = props ?? {};
+
+    return addressMyClosure(kind, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddressMyClosureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addressMyClosure>>
+>;
+export type AddressMyClosureMutationBody = BodyType<MyClosuresAddressBody>;
+export type AddressMyClosureMutationError = ErrorType<void>;
+
+/**
+ * @summary Mark a single closure as addressed (≥10-char note required)
+ */
+export const useAddressMyClosure = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addressMyClosure>>,
+    TError,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresAddressBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addressMyClosure>>,
+  TError,
+  {
+    kind: "claim" | "invoice_group";
+    id: number;
+    data: BodyType<MyClosuresAddressBody>;
+  },
+  TContext
+> => {
+  return useMutation(getAddressMyClosureMutationOptions(options));
+};
+
+/**
+ * @summary Reopen a closure within 24h of your own acknowledgement
+ */
+export const getReopenMyClosureUrl = (
+  kind: "claim" | "invoice_group",
+  id: number,
+) => {
+  return `/api/my-closures/${kind}/${id}/reopen`;
+};
+
+export const reopenMyClosure = async (
+  kind: "claim" | "invoice_group",
+  id: number,
+  myClosuresReopenBody: MyClosuresReopenBody,
+  options?: RequestInit,
+): Promise<MyClosuresReopenResponse> => {
+  return customFetch<MyClosuresReopenResponse>(
+    getReopenMyClosureUrl(kind, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(myClosuresReopenBody),
+    },
+  );
+};
+
+export const getReopenMyClosureMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reopenMyClosure>>,
+    TError,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresReopenBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reopenMyClosure>>,
+  TError,
+  {
+    kind: "claim" | "invoice_group";
+    id: number;
+    data: BodyType<MyClosuresReopenBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["reopenMyClosure"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reopenMyClosure>>,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresReopenBody>;
+    }
+  > = (props) => {
+    const { kind, id, data } = props ?? {};
+
+    return reopenMyClosure(kind, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReopenMyClosureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reopenMyClosure>>
+>;
+export type ReopenMyClosureMutationBody = BodyType<MyClosuresReopenBody>;
+export type ReopenMyClosureMutationError = ErrorType<void>;
+
+/**
+ * @summary Reopen a closure within 24h of your own acknowledgement
+ */
+export const useReopenMyClosure = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reopenMyClosure>>,
+    TError,
+    {
+      kind: "claim" | "invoice_group";
+      id: number;
+      data: BodyType<MyClosuresReopenBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reopenMyClosure>>,
+  TError,
+  {
+    kind: "claim" | "invoice_group";
+    id: number;
+    data: BodyType<MyClosuresReopenBody>;
+  },
+  TContext
+> => {
+  return useMutation(getReopenMyClosureMutationOptions(options));
+};
+
+/**
+ * @summary Set the responsible-party portal roles for a user
+ */
+export const getSetUserResponsibleRolesUrl = (userId: string) => {
+  return `/api/admin/users/${userId}/responsible-roles`;
+};
+
+export const setUserResponsibleRoles = async (
+  userId: string,
+  adminResponsibleRolesBody: AdminResponsibleRolesBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getSetUserResponsibleRolesUrl(userId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(adminResponsibleRolesBody),
+  });
+};
+
+export const getSetUserResponsibleRolesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setUserResponsibleRoles>>,
+    TError,
+    { userId: string; data: BodyType<AdminResponsibleRolesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setUserResponsibleRoles>>,
+  TError,
+  { userId: string; data: BodyType<AdminResponsibleRolesBody> },
+  TContext
+> => {
+  const mutationKey = ["setUserResponsibleRoles"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setUserResponsibleRoles>>,
+    { userId: string; data: BodyType<AdminResponsibleRolesBody> }
+  > = (props) => {
+    const { userId, data } = props ?? {};
+
+    return setUserResponsibleRoles(userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetUserResponsibleRolesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setUserResponsibleRoles>>
+>;
+export type SetUserResponsibleRolesMutationBody =
+  BodyType<AdminResponsibleRolesBody>;
+export type SetUserResponsibleRolesMutationError = ErrorType<void>;
+
+/**
+ * @summary Set the responsible-party portal roles for a user
+ */
+export const useSetUserResponsibleRoles = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setUserResponsibleRoles>>,
+    TError,
+    { userId: string; data: BodyType<AdminResponsibleRolesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setUserResponsibleRoles>>,
+  TError,
+  { userId: string; data: BodyType<AdminResponsibleRolesBody> },
+  TContext
+> => {
+  return useMutation(getSetUserResponsibleRolesMutationOptions(options));
+};
+
+/**
+ * @summary List every user grouped by their assigned responsible roles
+ */
+export const getGetResponsibleRolesReadoutUrl = () => {
+  return `/api/admin/responsible-roles`;
+};
+
+export const getResponsibleRolesReadout = async (
+  options?: RequestInit,
+): Promise<AdminResponsibleRolesReadout> => {
+  return customFetch<AdminResponsibleRolesReadout>(
+    getGetResponsibleRolesReadoutUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetResponsibleRolesReadoutQueryKey = () => {
+  return [`/api/admin/responsible-roles`] as const;
+};
+
+export const getGetResponsibleRolesReadoutQueryOptions = <
+  TData = Awaited<ReturnType<typeof getResponsibleRolesReadout>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsibleRolesReadout>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetResponsibleRolesReadoutQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getResponsibleRolesReadout>>
+  > = ({ signal }) => getResponsibleRolesReadout({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsibleRolesReadout>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetResponsibleRolesReadoutQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getResponsibleRolesReadout>>
+>;
+export type GetResponsibleRolesReadoutQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every user grouped by their assigned responsible roles
+ */
+
+export function useGetResponsibleRolesReadout<
+  TData = Awaited<ReturnType<typeof getResponsibleRolesReadout>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getResponsibleRolesReadout>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetResponsibleRolesReadoutQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List closures (cannot_dispute / non_issue / denied_by_payor) across claims and invoice groups

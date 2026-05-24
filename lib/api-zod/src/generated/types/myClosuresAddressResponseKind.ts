@@ -11,16 +11,11 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuthUserResponsibleRolesItem } from "./authUserResponsibleRolesItem";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  /** @nullable */
-  displayName?: string | null;
-  /** @nullable */
-  profileImageUrl?: string | null;
-  role: string;
-  status: string;
-  responsibleRoles: AuthUserResponsibleRolesItem[];
-}
+export type MyClosuresAddressResponseKind =
+  (typeof MyClosuresAddressResponseKind)[keyof typeof MyClosuresAddressResponseKind];
+
+export const MyClosuresAddressResponseKind = {
+  claim: "claim",
+  invoice_group: "invoice_group",
+} as const;

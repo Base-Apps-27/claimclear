@@ -22,6 +22,8 @@ import Insights from "@/pages/insights";
 import InvoiceGroupsList from "@/pages/invoice-groups";
 import InvoiceGroupDetail from "@/pages/invoice-group-detail";
 import Withdrawals from "@/pages/withdrawals";
+import MyClosures from "@/pages/my-closures";
+import AdminResponsibleRoles from "@/pages/admin-responsible-roles";
 import ResponsesAwaitingReview from "@/pages/responses-awaiting-review";
 import AttestationQueue from "@/pages/attestation-queue";
 import Settings from "@/pages/settings";
@@ -125,6 +127,8 @@ function Router() {
         <Route path="/invoice-groups/:id" component={InvoiceGroupDetail} />
         <Route path="/claims" component={() => <Redirect to="/invoice-groups" />} />
         <Route path="/withdrawals" component={Withdrawals} />
+        <Route path="/my-closures" component={MyClosures} />
+        <Route path="/admin/responsible-roles" component={() => <DenyClerk component={AdminResponsibleRoles} />} />
         <Route path="/claims/new" component={ClaimNew} />
         <Route path="/invoices/new" component={() => <DenyClerk component={InvoiceNew} />} />
         <Route path="/claims/:id" component={ClaimToGroupRedirect} />

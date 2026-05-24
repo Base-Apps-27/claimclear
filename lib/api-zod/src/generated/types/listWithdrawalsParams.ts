@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ListWithdrawalsAwaitingParty } from "./listWithdrawalsAwaitingParty";
 import type { ListWithdrawalsDir } from "./listWithdrawalsDir";
 import type { ListWithdrawalsHideAddressed } from "./listWithdrawalsHideAddressed";
 import type { ListWithdrawalsSort } from "./listWithdrawalsSort";
@@ -31,6 +32,14 @@ export type ListWithdrawalsParams = {
    * Comma-separated user ids — only return rows whose closer matches one of these users
    */
   closedBy?: string;
+  /**
+   * Comma-separated five-value closure responsibility filter (Task
+   */
+  closureResponsibility?: string;
+  /**
+   * When "true", return only rows assigned to a responsible role and not yet acknowledged
+   */
+  awaitingParty?: ListWithdrawalsAwaitingParty;
   sort?: ListWithdrawalsSort;
   dir?: ListWithdrawalsDir;
   limit?: number;

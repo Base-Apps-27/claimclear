@@ -69,6 +69,8 @@ import {
   HeartPulse,
   FileMinus,
   ShieldCheck,
+  Inbox,
+  UserCog,
   Eye,
   Pin,
   PinOff,
@@ -96,6 +98,8 @@ const navDescriptions: Record<string, string> = {
   "Responses Awaiting Review": "Stage-2 inbox: payor sent something back and a verdict is owed. Master/detail review with response thread, AI hint, and verdict actions.",
   "All Invoices": "Browse, search, and filter every invoice (the dispute unit).",
   "Withdrawals": "Review closed claims and groups (withdrawn, non-issue, accepted loss) — capture lessons, who was told, and mark addressed.",
+  "My Closures": "Closures routed to you (responsible-party portal). Acknowledge what you've fixed with a short note.",
+  "Responsible Roles": "Admin — assign which supervisors own follow-through on closures.",
   "Import": "Upload CSV or Excel files to bulk-import invoices and the legs that belong to them.",
   "Error Types": "Configure error classifications, SOPs, evidence requirements, and decision trees.",
   "Portal Submissions": "Monitor automated MAS portal submissions and bot activity.",
@@ -212,9 +216,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const adminItems: NavItem[] = [
     { label: "Insights", href: "/insights", icon: BarChart3 },
     ...(isAdmin
-      ? [{ label: "System Health", href: "/system-health", icon: HeartPulse }]
+      ? [
+          { label: "Responsible Roles", href: "/admin/responsible-roles", icon: UserCog },
+          { label: "System Health", href: "/system-health", icon: HeartPulse },
+        ]
       : []),
   ];
+
+  // Task #889 — gate the My Closures entry on the new
+  // `users.responsible_roles` array surfaced via /auth/user. Users
+  // with no assigned role never see the link at all.
+  const responsibleRoles = user?.responsibleRoles ?? [];
+  const myClosuresItems: NavItem[] = responsibleRoles.length > 0
+    ? [{ label: "My Closures", href: "/my-closures", icon: Inbox }]
+    : [];
 
   // Setup section — Import, Error Types, Settings — is admin/user
   // only. Clerks lose the whole section (the empty-array filter in
@@ -252,6 +267,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "All Invoices", href: "/invoice-groups", icon: FolderOpen },
         { label: "Withdrawals", href: "/withdrawals", icon: FileMinus },
+        ...myClosuresItems,
       ],
     },
     {

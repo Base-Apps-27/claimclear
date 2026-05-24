@@ -125,5 +125,36 @@ export function dropAmountFiltersForUser(
   return query;
 }
 
+// ── Responsible-party roles (Task #889) ────────────────────────────────
+//
+// Modelled as a jsonb array on `users.responsible_roles` so a user can
+// hold zero, one, or multiple supervisor roles. The portal scopes its
+// queries by the row's `closure_responsibility` value resolved to a
+// role via `roleForResponsibility()` in @workspace/closure-responsibility.
+//
+// These helpers re-fetch from DB in route handlers (not from the
+// session-cached AuthUser) so an admin revocation takes effect on the
+// next request, not on the next login.
+
+import type { ClosureResponsibleRole } from "@workspace/closure-responsibility";
+
+export function hasResponsibleRole(
+  responsibleRoles: unknown,
+  role: ClosureResponsibleRole,
+): boolean {
+  if (!Array.isArray(responsibleRoles)) return false;
+  return responsibleRoles.includes(role);
+}
+
+export function getResponsibleRoles(
+  responsibleRoles: unknown,
+): ClosureResponsibleRole[] {
+  if (!Array.isArray(responsibleRoles)) return [];
+  return responsibleRoles.filter((r): r is ClosureResponsibleRole =>
+    typeof r === "string" &&
+    ["contact_center_manager", "contractor_relations_coordinator", "it_coordinator_or_coo"].includes(r),
+  );
+}
+
 // Re-exports for convenience so callers don't need a second import.
 export type { AuthUser };

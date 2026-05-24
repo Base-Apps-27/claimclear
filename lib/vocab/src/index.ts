@@ -11,6 +11,7 @@ export * from "./outcome";
 export * from "./leg-sub-status";
 export * from "./leg-conclusion";
 export * from "./closure-reason";
+export * from "./closure-review-state";
 export * from "./hold-reason";
 export * from "./submission-stage";
 export * from "./audit-action";

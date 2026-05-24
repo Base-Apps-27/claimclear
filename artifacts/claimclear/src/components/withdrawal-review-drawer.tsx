@@ -258,11 +258,31 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
             <p className="text-[10px] text-muted-foreground text-right">{notes.length}/2000</p>
           </section>
 
-          {(row.closureAddressedAt || row.closureAddressedBy) && (
+          {/* Task #889 — when a responsible party has acknowledged
+              the closure but operations hasn't closed it yet, surface
+              who acknowledged it, when, and the note they left. This
+              keeps the operator from re-pinging the supervisor while
+              the row is in flight. */}
+          {row.closureReviewState === "acknowledged_by_party" && (
+            <section className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1">
+              <div className="font-semibold">Follow-through acknowledged</div>
+              <div>
+                {row.closureAddressedBy ?? "—"}
+                {row.closureAddressedByEmail && <> ({row.closureAddressedByEmail})</>}
+                {row.closureAddressedAt && <> · {formatDate(row.closureAddressedAt)}</>}
+              </div>
+              {row.closureReviewNotes && (
+                <p className="whitespace-pre-wrap italic">"{row.closureReviewNotes}"</p>
+              )}
+            </section>
+          )}
+
+          {(row.closureAddressedAt || row.closureAddressedBy) && row.addressed && (
             <section className="rounded-md bg-green-50 border border-green-200 p-3 text-xs text-green-900">
               <div className="font-semibold mb-0.5">Addressed</div>
               <div>
                 {row.closureAddressedBy ?? "—"}
+                {row.closureAddressedByEmail && <> ({row.closureAddressedByEmail})</>}
                 {row.closureAddressedAt && <> · {formatDate(row.closureAddressedAt)}</>}
               </div>
             </section>

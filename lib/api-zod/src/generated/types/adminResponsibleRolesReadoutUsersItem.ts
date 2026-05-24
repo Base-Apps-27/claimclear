@@ -11,16 +11,14 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuthUserResponsibleRolesItem } from "./authUserResponsibleRolesItem";
 
-export interface AuthUser {
+export type AdminResponsibleRolesReadoutUsersItem = {
   id: string;
-  email: string;
+  /** @nullable */
+  email?: string | null;
   /** @nullable */
   displayName?: string | null;
-  /** @nullable */
-  profileImageUrl?: string | null;
   role: string;
   status: string;
-  responsibleRoles: AuthUserResponsibleRolesItem[];
-}
+  responsibleRoles: string[];
+};

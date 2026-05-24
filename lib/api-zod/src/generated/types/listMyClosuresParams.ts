@@ -11,16 +11,11 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuthUserResponsibleRolesItem } from "./authUserResponsibleRolesItem";
+import type { ListMyClosuresRole } from "./listMyClosuresRole";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  /** @nullable */
-  displayName?: string | null;
-  /** @nullable */
-  profileImageUrl?: string | null;
-  role: string;
-  status: string;
-  responsibleRoles: AuthUserResponsibleRolesItem[];
-}
+export type ListMyClosuresParams = {
+  /**
+   * Optional role filter for multi-role users
+   */
+  role?: ListMyClosuresRole;
+};

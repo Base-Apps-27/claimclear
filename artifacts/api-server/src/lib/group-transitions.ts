@@ -464,6 +464,16 @@ export async function transitionGroupStatus(opts: {
 
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
+  // Task #889 — heads-up email to the responsible role (debounced).
+  if ((updateData as { closureResponsibility?: string | null }).closureResponsibility) {
+    const { scheduleResponsiblePartyDigest } = await import("./responsible-party-notify.js");
+    scheduleResponsiblePartyDigest({
+      kind: "invoice_group",
+      id: groupId,
+      responsibility: (updateData as { closureResponsibility?: string | null }).closureResponsibility ?? null,
+    });
+  }
+
   const statusChanged = old.status !== newStatus;
   if (statusChanged) {
     await ex.insert(auditLogsTable).values({
@@ -735,6 +745,16 @@ export async function transitionGroupOutcome(opts: {
 
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
 
+  // Task #889 — heads-up email to the responsible role (debounced).
+  if ((updateData as { closureResponsibility?: string | null }).closureResponsibility) {
+    const { scheduleResponsiblePartyDigest } = await import("./responsible-party-notify.js");
+    scheduleResponsiblePartyDigest({
+      kind: "invoice_group",
+      id: groupId,
+      responsibility: (updateData as { closureResponsibility?: string | null }).closureResponsibility ?? null,
+    });
+  }
+
   // Cascade the attestation flip to all disputed children so the queue
   // counter and dashboard math stay in sync. The group itself does not
   // carry attestation state (the claim is the source of truth) but the
@@ -988,6 +1008,16 @@ export async function transitionGroupStatusAndOutcome(opts: {
   const priorConcluded = await snapshotDayConcludedForGroup(groupId, ex);
 
   const [group] = await ex.update(invoiceGroupsTable).set(updateData).where(eq(invoiceGroupsTable.id, groupId)).returning();
+
+  // Task #889 — heads-up email to the responsible role (debounced).
+  if ((updateData as { closureResponsibility?: string | null }).closureResponsibility) {
+    const { scheduleResponsiblePartyDigest } = await import("./responsible-party-notify.js");
+    scheduleResponsiblePartyDigest({
+      kind: "invoice_group",
+      id: groupId,
+      responsibility: (updateData as { closureResponsibility?: string | null }).closureResponsibility ?? null,
+    });
+  }
 
   // Cascade attestation flip to disputed children — see note in
   // transitionGroupOutcome.

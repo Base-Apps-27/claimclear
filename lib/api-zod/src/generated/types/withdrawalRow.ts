@@ -70,5 +70,10 @@ export interface WithdrawalRow {
   closureAddressedAt?: string | null;
   /** @nullable */
   closureAddressedBy?: string | null;
+  /**
+   * Email of the responsible-party supervisor who acknowledged this closure (Task
+   * @nullable
+   */
+  closureAddressedByEmail?: string | null;
   addressed: boolean;
 }

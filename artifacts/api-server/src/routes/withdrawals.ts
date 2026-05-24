@@ -33,6 +33,12 @@ type WithdrawalRow = {
   closureReviewNotes: string | null;
   closureAddressedAt: string | null;
   closureAddressedBy: string | null;
+  closureAddressedByEmail: string | null;
+  // Task #888/#889 — five-value responsibility column. Surfaced on every
+  // withdrawal row so the drawer can render the responsibility badge and
+  // the my-closures portal can scope its query through the same fetcher
+  // (passing `closureResponsibility=foo,bar` in the query bag).
+  closureResponsibility: string | null;
   addressed: boolean;
 };
 
@@ -69,8 +75,32 @@ function parseClosedBy(raw: unknown): string[] {
 }
 
 function isAddressed(reviewState: string | null, addressedAt: string | Date | null): boolean {
-  if (reviewState === "acknowledged" || reviewState === "resolved") return true;
+  // Task #889 — `acknowledged_by_party` (portal-side acknowledgement) is a
+  // terminal state alongside the operator-side `acknowledged`/`resolved`.
+  if (
+    reviewState === "acknowledged" ||
+    reviewState === "acknowledged_by_party" ||
+    reviewState === "resolved"
+  ) {
+    return true;
+  }
   return !!addressedAt;
+}
+
+// Task #889 — parse the closureResponsibility filter (comma-separated list
+// of five-value enum strings). Empty / unparseable returns `null` so the
+// fetcher knows to skip the filter entirely.
+function parseResponsibilities(raw: unknown): string[] | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const allowed = new Set([
+    "agent_mistake",
+    "driver_mistake",
+    "system_error",
+    "external_payor",
+    "no_one_process_limit",
+  ]);
+  const parts = raw.split(",").map(s => s.trim()).filter(s => allowed.has(s));
+  return parts.length > 0 ? parts : null;
 }
 
 // Pull the latest closure-related audit-log entry per claim and per group in
@@ -170,9 +200,24 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
   const closedTo = typeof query.closedTo === "string" ? query.closedTo : "";
   const hideAddressed = String(query.hideAddressed ?? "true") !== "false";
   const closedByIds = parseClosedBy(query.closedBy);
+  const responsibilities = parseResponsibilities(query.closureResponsibility);
+  // Task #889 — "awaiting party follow-through": only rows assigned to a
+  // responsible role (closureResponsibility IS NOT NULL) and not yet
+  // acknowledged by anyone. Used by both the Withdrawals filter chip and
+  // (implicitly true) by /my-closures.
+  const awaitingPartyOnly = String(query.awaitingParty ?? "false") === "true";
 
   const claimWhere: SQL[] = [inArray(claimsTable.closureReason, reasons as unknown as string[])];
   const groupWhere: SQL[] = [inArray(invoiceGroupsTable.closureReason, reasons as unknown as string[])];
+
+  if (responsibilities) {
+    claimWhere.push(inArray(claimsTable.closureResponsibility, responsibilities));
+    groupWhere.push(inArray(invoiceGroupsTable.closureResponsibility, responsibilities));
+  }
+  if (awaitingPartyOnly) {
+    claimWhere.push(isNotNull(claimsTable.closureResponsibility));
+    groupWhere.push(isNotNull(invoiceGroupsTable.closureResponsibility));
+  }
 
   if (search) {
     const pat = `%${search}%`;
@@ -223,6 +268,8 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     closureReviewNotes: invoiceGroupsTable.closureReviewNotes,
     closureAddressedAt: invoiceGroupsTable.closureAddressedAt,
     closureAddressedBy: invoiceGroupsTable.closureAddressedBy,
+    closureAddressedByEmail: invoiceGroupsTable.closureAddressedByEmail,
+    closureResponsibility: invoiceGroupsTable.closureResponsibility,
     updatedAt: invoiceGroupsTable.updatedAt,
   }).from(invoiceGroupsTable).where(and(...groupWhere));
 
@@ -250,6 +297,8 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     closureReviewNotes: claimsTable.closureReviewNotes,
     closureAddressedAt: claimsTable.closureAddressedAt,
     closureAddressedBy: claimsTable.closureAddressedBy,
+    closureAddressedByEmail: claimsTable.closureAddressedByEmail,
+    closureResponsibility: claimsTable.closureResponsibility,
     updatedAt: claimsTable.updatedAt,
   }).from(claimsTable).where(and(...claimWhere));
 
@@ -276,6 +325,8 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     closureReviewNotes: g.closureReviewNotes,
     closureAddressedAt: g.closureAddressedAt ? (g.closureAddressedAt as Date).toISOString() : null,
     closureAddressedBy: g.closureAddressedBy,
+    closureAddressedByEmail: g.closureAddressedByEmail,
+    closureResponsibility: g.closureResponsibility,
     addressed: isAddressed(g.closureReviewState, g.closureAddressedAt as Date | null),
   }));
 
@@ -304,6 +355,8 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
       closureReviewNotes: c.closureReviewNotes,
       closureAddressedAt: c.closureAddressedAt ? (c.closureAddressedAt as Date).toISOString() : null,
       closureAddressedBy: c.closureAddressedBy,
+      closureAddressedByEmail: c.closureAddressedByEmail,
+      closureResponsibility: c.closureResponsibility,
       addressed: isAddressed(c.closureReviewState, c.closureAddressedAt as Date | null),
     }));
 
@@ -522,5 +575,10 @@ router.post("/withdrawals/bulk-address", asyncHandler(async (req, res): Promise<
 
   res.json({ updated });
 }));
+
+// Task #889 — exported so /my-closures can reuse the canonical fetcher
+// (with `closureResponsibility=...` injected). Keeping the underlying
+// query in one place avoids two row-shaping codepaths diverging.
+export { fetchAllRows, type WithdrawalRow };
 
 export default router;

@@ -4,9 +4,14 @@ import {
   GetCurrentAuthUserResponse,
 } from "@workspace/api-zod";
 import { db, usersTable, notificationPreferencesTable, auditLogsTable } from "@workspace/db";
-import { eq, sql, count } from "drizzle-orm";
+import { eq, sql, count, asc } from "drizzle-orm";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
+import { getResponsibleRoles } from "../lib/role";
+import {
+  CLOSURE_RESPONSIBLE_ROLES,
+  type ClosureResponsibleRole,
+} from "@workspace/closure-responsibility";
 import {
   clearSession,
   getOidcConfig,
@@ -97,7 +102,7 @@ async function upsertUser(claims: Record<string, unknown>) {
   return user;
 }
 
-router.get("/auth/user", (req: Request, res: Response) => {
+router.get("/auth/user", asyncHandler(async (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
     const response: Record<string, unknown> = { user: null };
     if (req.sessionExpiry) {
@@ -106,6 +111,12 @@ router.get("/auth/user", (req: Request, res: Response) => {
     res.json(response);
     return;
   }
+  // Task #889 — read responsibleRoles fresh from DB so admin revocations
+  // take effect on the next request, not the next login.
+  const [row] = await db
+    .select({ responsibleRoles: usersTable.responsibleRoles })
+    .from(usersTable)
+    .where(eq(usersTable.id, String(req.user.id)));
   res.json({
     user: {
       id: String(req.user.id),
@@ -114,9 +125,10 @@ router.get("/auth/user", (req: Request, res: Response) => {
       profileImageUrl: req.user.profileImageUrl ?? null,
       role: req.user.role,
       status: req.user.status ?? "pending",
+      responsibleRoles: getResponsibleRoles(row?.responsibleRoles),
     },
   });
-});
+}));
 
 router.get("/auth/user/tour-state", asyncHandler(async (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
@@ -149,11 +161,15 @@ router.patch("/auth/user/tour-state", asyncHandler(async (req: Request, res: Res
   res.json({ tourVersionSeen: row?.tourVersionSeen ?? null });
 }));
 
-router.get("/auth/session", (req: Request, res: Response) => {
+router.get("/auth/session", asyncHandler(async (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
     res.status(401).json({ error: "Not authenticated" });
     return;
   }
+  const [row] = await db
+    .select({ responsibleRoles: usersTable.responsibleRoles })
+    .from(usersTable)
+    .where(eq(usersTable.id, String(req.user.id)));
   res.json({
     user: {
       id: String(req.user.id),
@@ -162,9 +178,10 @@ router.get("/auth/session", (req: Request, res: Response) => {
       profileImageUrl: req.user.profileImageUrl ?? null,
       role: req.user.role,
       status: req.user.status ?? "pending",
+      responsibleRoles: getResponsibleRoles(row?.responsibleRoles),
     },
   });
-});
+}));
 
 router.get("/auth/session-info", (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user || !req.sessionTiming) {
@@ -234,6 +251,74 @@ router.patch("/admin/users/:userId/role", requireAdmin, asyncHandler(async (req:
     return;
   }
   res.json({ message: "Role updated", user: { id: user.id, email: user.email, role: user.role } });
+}));
+
+// Task #889 — set the responsible-party portal roles for a user.
+router.patch("/admin/users/:userId/responsible-roles", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const body = req.body ?? {};
+  const incoming = body.responsibleRoles;
+  if (!Array.isArray(incoming) || !incoming.every(r => typeof r === "string" && (CLOSURE_RESPONSIBLE_ROLES as readonly string[]).includes(r))) {
+    res.status(400).json({ error: "responsibleRoles must be an array of valid role strings" });
+    return;
+  }
+  const next = Array.from(new Set(incoming)) as ClosureResponsibleRole[];
+  const [existing] = await db
+    .select({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  if (!existing) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  const [updated] = await db
+    .update(usersTable)
+    .set({ responsibleRoles: next, updatedAt: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles });
+  const actor = req.user;
+  await db.insert(auditLogsTable).values({
+    action: "responsible_roles_changed",
+    details: `Responsible roles for ${existing.email ?? userId} set to [${next.join(", ")}]`,
+    metadata: {
+      targetUserId: userId,
+      previous: getResponsibleRoles(existing.responsibleRoles),
+      next,
+    },
+    userEmail: actor?.email ?? null,
+    userName: actor?.displayName ?? null,
+  });
+  res.json({
+    userId: updated.id,
+    email: updated.email,
+    responsibleRoles: getResponsibleRoles(updated.responsibleRoles),
+  });
+}));
+
+// Task #889 — read-out of every user grouped by responsibleRoles.
+router.get("/admin/responsible-roles", requireAdmin, asyncHandler(async (_req: Request, res: Response) => {
+  const rows = await db
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      firstName: usersTable.firstName,
+      lastName: usersTable.lastName,
+      role: usersTable.role,
+      status: usersTable.status,
+      responsibleRoles: usersTable.responsibleRoles,
+    })
+    .from(usersTable)
+    .orderBy(asc(usersTable.email));
+  res.json({
+    users: rows.map(u => ({
+      id: u.id,
+      email: u.email,
+      displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
+      role: u.role,
+      status: u.status,
+      responsibleRoles: getResponsibleRoles(u.responsibleRoles),
+    })),
+  });
 }));
 
 router.get("/admin/users/:userId/notification-preferences", requireAdmin, asyncHandler(async (req: Request, res: Response) => {

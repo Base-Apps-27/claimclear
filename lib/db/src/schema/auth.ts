@@ -19,6 +19,12 @@ export const usersTable = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").notNull().default("user"),
   status: varchar("status").notNull().default("pending"),
+  // Task #889 — jsonb array of responsible-role identifiers
+  // (contact_center_manager / contractor_relations_coordinator /
+  // it_coordinator_or_coo). Scopes the /my-closures portal. Independent
+  // of `role` so a COO can hold both operator access AND a responsible
+  // role. Vocabulary lives in `@workspace/closure-responsibility`.
+  responsibleRoles: jsonb("responsible_roles").$type<string[]>().notNull().default([]),
   tourVersionSeen: varchar("tour_version_seen"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

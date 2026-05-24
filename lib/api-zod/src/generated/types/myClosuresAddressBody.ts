@@ -11,16 +11,13 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
-import type { AuthUserResponsibleRolesItem } from "./authUserResponsibleRolesItem";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  /** @nullable */
-  displayName?: string | null;
-  /** @nullable */
-  profileImageUrl?: string | null;
-  role: string;
-  status: string;
-  responsibleRoles: AuthUserResponsibleRolesItem[];
+export interface MyClosuresAddressBody {
+  /** @minLength 10 */
+  note: string;
+  /**
+   * Optional client snapshot of the row's updatedAt for stale-write protection
+   * @nullable
+   */
+  updatedAt?: string | null;
 }
