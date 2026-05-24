@@ -22,6 +22,9 @@
     },
     {
       "path": "../../lib/closure-responsibility"
+    },
+    {
+      "path": "../../lib/attestation-counts"
     }
   ]
 }

@@ -19,6 +19,9 @@
       "path": "../../lib/api-client-react"
     },
     {
+      "path": "../../lib/attestation-counts"
+    },
+    {
       "path": "../../lib/object-storage-web"
     },
     {

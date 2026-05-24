@@ -93,6 +93,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/attestation-counts':
+        specifier: workspace:*
+        version: link:../../lib/attestation-counts
       '@workspace/closure-responsibility':
         specifier: workspace:*
         version: link:../../lib/closure-responsibility
@@ -398,6 +401,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/attestation-counts':
+        specifier: workspace:*
+        version: link:../../lib/attestation-counts
       '@workspace/object-storage-web':
         specifier: workspace:*
         version: link:../../lib/object-storage-web
@@ -931,6 +937,15 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/attestation-counts:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
 
   lib/closure-options: {}
 

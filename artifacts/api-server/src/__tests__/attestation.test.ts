@@ -21,6 +21,7 @@ import { eq, desc } from "drizzle-orm";
 import claimsRouter from "../routes/claims";
 import invoiceGroupsRouter from "../routes/invoice-groups";
 import { computeAttestationDelta } from "../lib/attestation";
+import { countDistinctAttestationGroups } from "@workspace/attestation-counts";
 import {
   db,
   pool,
@@ -417,6 +418,95 @@ test("GET /attestation/counts splits pending and queued correctly", async () => 
   } finally {
     await cleanupClaim(a.id);
     await cleanupClaim(b.id);
+  }
+});
+
+test("Task #895: GET /attestation/counts `groups` field equals countDistinctAttestationGroups() over the same pending+queued payload", async () => {
+  // Regression guard for the four-counter parity contract (Task #893).
+  // The api-server's `groups` field and the client-side helper must
+  // count the same way (distinct invoice_group_id, with NULL group
+  // ids each counting as their own `c:<claim-id>` bucket) so the
+  // sidebar badge, the Open header pill, the Open tab badge, the
+  // Queue section subhead and the server count never drift apart.
+  // Seed a deliberate mix:
+  //   - group A: 2 pending legs (collapses to 1 bucket)
+  //   - group B: 1 queued leg                (1 bucket)
+  //   - ungrouped: 1 pending leg, NULL group (1 bucket via c:<id>)
+  // → expected distinct-groups = 3 regardless of leg count.
+  const groupA = await createSeedGroup();
+  const groupB = await createSeedGroup();
+  await db.update(invoiceGroupsTable)
+    .set({ reattestRequired: true, reattestCompletedAt: new Date() })
+    .where(eq(invoiceGroupsTable.id, groupA.id));
+  await db.update(invoiceGroupsTable)
+    .set({ reattestRequired: true, reattestCompletedAt: new Date() })
+    .where(eq(invoiceGroupsTable.id, groupB.id));
+  const a1 = await createSeedClaim({ invoiceGroupId: groupA.id });
+  const a2 = await createSeedClaim({ invoiceGroupId: groupA.id });
+  const b1 = await createSeedClaim({ invoiceGroupId: groupB.id });
+  const lone = await createSeedClaim();
+  try {
+    for (const c of [a1, a2, b1, lone]) {
+      const out = await fetchJson(`/api/claims/${c.id}/outcome`, {
+        method: "PATCH", body: { outcome: "Approved", approvedAmount: "100.00" },
+      });
+      assert.equal(out.status, 200);
+    }
+    // Move b1 to attestationState=queued so the parity check exercises
+    // BOTH list endpoints. We bypass /attest/queue here because that
+    // writer calls `refreshClaimDenormalizedCache`, which recomputes
+    // `outcome` from `claim_verdict` rows — and the lightweight PATCH
+    // /outcome fixture path above doesn't seed those rows, so the
+    // refresh would silently flip the outcome back to "Pending" and
+    // drop b1 out of the queue admit predicate. The parity contract we
+    // are guarding lives at the LIST/COUNTS layer, not the per-leg
+    // engagement layer, so a direct DB update is the right fixture
+    // shape here.
+    await db.update(claimsTable)
+      .set({
+        attestationState: "queued",
+        attestationQueuedAt: new Date(),
+        attestationQueuedBy: "test-fixture",
+      })
+      .where(eq(claimsTable.id, b1.id));
+
+    const pendingList = await fetchJson<{ claims: Array<{ id: number; invoiceGroupId: number | null }> }>(
+      `/api/claims/attestation-pending?state=pending`,
+    );
+    const queuedList = await fetchJson<{ claims: Array<{ id: number; invoiceGroupId: number | null }> }>(
+      `/api/claims/attestation-pending?state=queued`,
+    );
+    const counts = await fetchJson<{ pending: number; queued: number; groups: number }>(
+      `/api/attestation/counts`,
+    );
+    assert.equal(pendingList.status, 200);
+    assert.equal(queuedList.status, 200);
+    assert.equal(counts.status, 200);
+
+    // The helper run over the same admit predicate the server uses
+    // must agree with the server's `groups` field, claim-for-claim.
+    const helperGroups = countDistinctAttestationGroups([
+      pendingList.json,
+      queuedList.json,
+    ]);
+    assert.equal(
+      counts.json.groups,
+      helperGroups,
+      `Server /attestation/counts.groups (${counts.json.groups}) must equal countDistinctAttestationGroups() over the pending+queued payload (${helperGroups}) — drift here means the sidebar badge and the server's distinct-group count have diverged.`,
+    );
+    // And both must see at least the three buckets this scenario added,
+    // proving the mix of grouped + ungrouped legs collapses correctly.
+    assert.ok(
+      helperGroups >= 3,
+      `helper saw ${helperGroups} groups; expected at least the 3 this fixture seeded (other concurrent tests may add more)`,
+    );
+  } finally {
+    await cleanupClaim(a1.id);
+    await cleanupClaim(a2.id);
+    await cleanupClaim(b1.id);
+    await cleanupClaim(lone.id);
+    await cleanupGroup(groupA.id);
+    await cleanupGroup(groupB.id);
   }
 });
 

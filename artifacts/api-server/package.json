@@ -17,6 +17,7 @@
     "@microsoft/microsoft-graph-client": "3.0.7",
     "@types/pg": "^8.18.0",
     "@workspace/api-zod": "workspace:*",
+    "@workspace/attestation-counts": "workspace:*",
     "@workspace/closure-responsibility": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",
