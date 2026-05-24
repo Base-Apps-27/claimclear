@@ -467,10 +467,10 @@ export default function WithdrawalsPage() {
         <span className="tabular-nums text-muted-foreground">{counts.addressed}</span>
         <span className="text-muted-foreground">·</span>
         {/* Task #889 — informational dot. Acknowledged-by-party means
-            the responsible supervisor confirmed follow-through but the
-            operator hasn't yet closed the row out. */}
-        <StatusDot tone="muted" />
+            the responsible supervisor confirmed follow-through. */}
+        <StatusDot tone="blue" />
         <span className="font-medium text-foreground">Acknowledged by party</span>
+        <span className="tabular-nums text-muted-foreground">{(counts as { acknowledgedByParty?: number }).acknowledgedByParty ?? 0}</span>
       </StatusStrip>
 
       <ListTableHeaderStrip

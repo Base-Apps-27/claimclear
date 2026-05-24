@@ -72,7 +72,38 @@ export default function MyClosuresPage() {
   });
 
   const rows: WithdrawalRow[] = data?.rows ?? [];
-  const counts = data?.counts ?? { total: 0, awaiting: 0, addressed: 0 };
+  const counts = (data?.counts ?? { total: 0, awaiting: 0, addressed: 0, addressedLast30d: 0 }) as {
+    total: number; awaiting: number; addressed: number; addressedLast30d?: number;
+  };
+  const addressedLast30d = counts.addressedLast30d ?? 0;
+
+  // Task #889 — tab model from spec: Outstanding (default, oldest
+  // first), Addressed (last 90 days), All time. Each tab is bounded by
+  // the active role's responsibility (handled server-side already).
+  type TabKey = "outstanding" | "addressed90" | "all";
+  const tab = ((get("tab") as TabKey) || "outstanding");
+  const SELF_REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000;
+
+  const tabRows: WithdrawalRow[] = useMemo(() => {
+    if (tab === "outstanding") {
+      return rows
+        .filter(r => !r.addressed)
+        .sort((a, b) => {
+          const da = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+          const db = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+          return da - db; // oldest first
+        });
+    }
+    if (tab === "addressed90") {
+      return rows.filter(r => {
+        if (!r.addressed || !r.closureAddressedAt) return false;
+        const t = new Date(r.closureAddressedAt).getTime();
+        return Number.isFinite(t) && t >= cutoff90d;
+      });
+    }
+    return rows;
+  }, [rows, tab, cutoff90d]);
 
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -151,13 +182,38 @@ export default function MyClosuresPage() {
             </Button>
           ))}
         </div>
-        <div className="text-xs text-muted-foreground flex items-center gap-3">
-          <span data-testid="count-awaiting"><span className="font-semibold text-foreground">{counts.awaiting}</span> awaiting</span>
+        {/* Task #889 spec status strip: Outstanding · Addressed (last
+            30 days) · Total ever (this role). */}
+        <div className="text-xs text-muted-foreground flex items-center gap-3" data-testid="my-closures-status-strip">
+          <span data-testid="count-outstanding"><span className="font-semibold text-foreground">{counts.awaiting}</span> outstanding</span>
           <span>·</span>
-          <span data-testid="count-addressed"><span className="font-semibold text-foreground">{counts.addressed}</span> addressed</span>
+          <span data-testid="count-addressed-30d"><span className="font-semibold text-foreground">{addressedLast30d}</span> addressed (last 30 days)</span>
           <span>·</span>
-          <span data-testid="count-total"><span className="font-semibold text-foreground">{counts.total}</span> total</span>
+          <span data-testid="count-total-ever"><span className="font-semibold text-foreground">{counts.total}</span> total ever</span>
         </div>
+      </div>
+
+      {/* Tab model — Outstanding / Addressed (90d) / All time. */}
+      <div className="mt-3 inline-flex items-center gap-1 border rounded-md p-0.5 bg-muted/40" role="tablist" data-testid="my-closures-tabs">
+        {([
+          { key: "outstanding", label: `Outstanding (${counts.awaiting})` },
+          { key: "addressed90", label: `Addressed 90d (${addressedLast30d})` },
+          { key: "all",         label: `All time (${counts.total})` },
+        ] as { key: TabKey; label: string }[]).map(t => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => set({ tab: t.key === "outstanding" ? null : t.key })}
+            data-testid={`tab-${t.key}`}
+            className={
+              "px-3 py-1 text-xs font-medium rounded transition-colors " +
+              (tab === t.key ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="mt-4 space-y-3">
@@ -169,15 +225,15 @@ export default function MyClosuresPage() {
           <Card><CardContent className="py-6 text-sm text-red-600">Failed to load your closures.</CardContent></Card>
         )}
 
-        {!isLoading && !isError && rows.length === 0 && (
+        {!isLoading && !isError && tabRows.length === 0 && (
           <EmptyState
             icon={Inbox}
-            title="All clear"
-            description="No closures are waiting on your follow-through right now."
+            title="Nothing waiting on you"
+            description="Items land here when the dispute team records a closure tagged to your role."
           />
         )}
 
-        {!isLoading && !isError && rows.map((row) => {
+        {!isLoading && !isError && tabRows.map((row) => {
           const tone = REASON_TONE[row.closureReason] ?? "muted";
           const accent = TONE_STYLE[tone];
           const detailHref = row.kind === "claim" ? `/claims/${row.id}` : `/invoice-groups/${row.id}`;
@@ -213,11 +269,16 @@ export default function MyClosuresPage() {
                     {row.closedAt && <><span>·</span><span>Closed {formatDate(row.closedAt)}</span></>}
                     {row.errorTypeName && <><span>·</span><span>{row.errorTypeName}</span></>}
                   </div>
+                  {/* Task #889 spec: narrative shown in full, not
+                      truncated — this is the whole reason the
+                      responsible party is on the page. */}
                   {row.errorDetails && (
-                    <p className="text-sm mt-2 line-clamp-2 whitespace-pre-wrap">{row.errorDetails}</p>
+                    <p className="text-sm mt-2 whitespace-pre-wrap" data-testid={`narrative-${row.kind}-${row.id}`}>
+                      {row.errorDetails}
+                    </p>
                   )}
                   {row.closureReviewNotes && acknowledged && (
-                    <p className="text-xs mt-2 text-muted-foreground italic line-clamp-2">
+                    <p className="text-xs mt-2 text-muted-foreground italic whitespace-pre-wrap">
                       Your note: {row.closureReviewNotes}
                     </p>
                   )}
@@ -231,11 +292,20 @@ export default function MyClosuresPage() {
                       <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Mark addressed
                     </Button>
                   )}
-                  {acknowledged && (
-                    <Button size="sm" variant="outline" onClick={() => { setDialogError(null); setDialog({ row, mode: "reopen" }); }} data-testid={`reopen-${row.kind}-${row.id}`}>
-                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reopen
-                    </Button>
-                  )}
+                  {/* Task #889 spec: Reopen affordance disappears 24h
+                      after the user's own acknowledgement. Past the
+                      window only an operator can reopen via the
+                      Withdrawals admin page. */}
+                  {acknowledged && (() => {
+                    const ackAt = row.closureAddressedAt ? new Date(row.closureAddressedAt).getTime() : 0;
+                    const withinWindow = ackAt > 0 && (Date.now() - ackAt) < SELF_REOPEN_WINDOW_MS;
+                    if (!withinWindow) return null;
+                    return (
+                      <Button size="sm" variant="outline" onClick={() => { setDialogError(null); setDialog({ row, mode: "reopen" }); }} data-testid={`reopen-${row.kind}-${row.id}`}>
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reopen
+                      </Button>
+                    );
+                  })()}
                 </div>
               </CardContent>
             </Card>

@@ -454,6 +454,10 @@ router.get("/withdrawals", asyncHandler(async (req, res): Promise<void> => {
     non_issue:       countsRows.filter(r => r.closureReason === "non_issue").length,
     denied_by_payor: countsRows.filter(r => r.closureReason === "denied_by_payor").length,
     addressed:       countsRows.filter(r => r.addressed).length,
+    // Task #889 — separate dot for portal-side follow-through so
+    // operators can see how many of the addressed rows came from a
+    // responsible-party acknowledgement vs operator-side bulk mark.
+    acknowledgedByParty: countsRows.filter(r => r.closureReviewState === "acknowledged_by_party").length,
   };
 
   // Closers list mirrors the counts approach: we ignore both hideAddressed

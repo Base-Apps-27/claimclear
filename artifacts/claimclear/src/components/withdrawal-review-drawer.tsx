@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { CheckCircle2, RotateCcw, ExternalLink, Loader2, X } from "lucide-react";
 import { TONE_STYLE, type Tone } from "@/components/cohesion/tone";
+import { RESPONSIBILITY_TO_ROLE as ROLE_BY_RESPONSIBILITY } from "@workspace/vocab";
 import {
   useUpdateClaimClosureReview,
   useUpdateInvoiceGroupClosureReview,
@@ -264,11 +265,18 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
               keeps the operator from re-pinging the supervisor while
               the row is in flight. */}
           {row.closureReviewState === "acknowledged_by_party" && (
-            <section className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1">
+            <section className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1" data-testid="drawer-follow-through-section">
               <div className="font-semibold">Follow-through acknowledged</div>
+              {/* Task #889 — include the responsible role next to the
+                  person, so operators see WHO closed the loop in what
+                  capacity (Sarah Wu — Contact Center Manager). */}
               <div>
                 {row.closureAddressedBy ?? "—"}
                 {row.closureAddressedByEmail && <> ({row.closureAddressedByEmail})</>}
+                {row.closureResponsibility && (() => {
+                  const r = ROLE_BY_RESPONSIBILITY[row.closureResponsibility as keyof typeof ROLE_BY_RESPONSIBILITY];
+                  return r ? <> · <span className="font-medium">{closureResponsibleRoleLabel(r)}</span></> : null;
+                })()}
                 {row.closureAddressedAt && <> · {formatDate(row.closureAddressedAt)}</>}
               </div>
               {row.closureReviewNotes && (

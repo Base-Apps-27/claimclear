@@ -115,17 +115,31 @@ router.get("/my-closures", asyncHandler(async (req: Request, res: Response): Pro
     return;
   }
 
-  // Optional ?role=foo for multi-role users — narrows to one role at a
-  // time. An unrecognised value falls back to "all my roles" rather than
-  // 400ing, mirroring how the page's tabs work.
-  const requestedRole = typeof req.query.role === "string" ? req.query.role : "";
-  const activeRoles = roles.includes(requestedRole as ClosureResponsibleRole)
-    ? [requestedRole as ClosureResponsibleRole]
-    : roles;
+  // Task #889 spec: multi-role users MUST pass ?role=<role_id>;
+  // server returns 400 if missing, 403 if the user doesn't hold the
+  // role they requested. Single-role users may omit it.
+  const requestedRole = typeof req.query.role === "string" ? req.query.role.trim() : "";
+  let activeRoles: ClosureResponsibleRole[];
+  if (roles.length > 1) {
+    if (!requestedRole) {
+      res.status(400).json({ error: "role query parameter is required for multi-role users", roles });
+      return;
+    }
+    if (!roles.includes(requestedRole as ClosureResponsibleRole)) {
+      res.status(403).json({ error: "You do not hold the requested role" });
+      return;
+    }
+    activeRoles = [requestedRole as ClosureResponsibleRole];
+  } else if (requestedRole && !roles.includes(requestedRole as ClosureResponsibleRole)) {
+    res.status(403).json({ error: "You do not hold the requested role" });
+    return;
+  } else {
+    activeRoles = roles;
+  }
 
   const responsibilities = responsibilitiesForRoles(activeRoles);
   if (responsibilities.length === 0) {
-    res.json({ rows: [], roles, counts: { total: 0, awaiting: 0, addressed: 0 } });
+    res.json({ rows: [], roles, activeRoles, counts: { total: 0, awaiting: 0, addressed: 0, addressedLast30d: 0 } });
     return;
   }
 
@@ -133,6 +147,13 @@ router.get("/my-closures", asyncHandler(async (req: Request, res: Response): Pro
     closureResponsibility: responsibilities.join(","),
     hideAddressed: "false",
   });
+
+  const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const addressedLast30d = rows.filter(r => {
+    if (!r.addressed || !r.closureAddressedAt) return false;
+    const t = new Date(r.closureAddressedAt).getTime();
+    return Number.isFinite(t) && t >= cutoff30d;
+  }).length;
 
   res.json({
     rows,
@@ -142,6 +163,7 @@ router.get("/my-closures", asyncHandler(async (req: Request, res: Response): Pro
       total: rows.length,
       awaiting: rows.filter(r => !r.addressed).length,
       addressed: rows.filter(r => r.addressed).length,
+      addressedLast30d,
     },
   });
 }));
