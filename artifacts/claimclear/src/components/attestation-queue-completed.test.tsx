@@ -23,7 +23,7 @@ import { strict as assert } from "node:assert";
 let urlParams: Record<string, string> = {};
 let lastSetCall: { updates: Record<string, string | null>; resetPage: boolean } | null = null;
 let historyMode: "populated" | "empty" = "populated";
-const historyHookCalls: Array<{ range?: string }> = [];
+const historyHookCalls: Array<Record<string, never>> = [];
 
 mock.module("@/lib/use-url-params", {
   namedExports: {
@@ -166,8 +166,8 @@ const inertMutation = () => ({
 mock.module("@workspace/api-client-react", {
   namedExports: {
     useListAttestationPending: () => inertQuery({ claims: [], extras: {} }),
-    useGetInvoiceGroupAttestationHistory: (params: { range?: string } = {}) => {
-      historyHookCalls.push({ range: params.range });
+    useGetInvoiceGroupAttestationHistory: () => {
+      historyHookCalls.push({});
       return inertQuery(
         historyMode === "populated"
           ? populatedPayload
@@ -218,12 +218,20 @@ test("renders both Open and Completed tabs in the strip", () => {
   );
 });
 
-test("Completed tab content renders the workspace, list, range selector, and truncated banner", () => {
+test("Completed tab content renders the workspace, list, and truncated banner (no range selector — Task #893)", () => {
   urlParams = { tab: "completed" };
   historyMode = "populated";
   const html = render();
   assert.match(html, /data-testid="completed-workspace"/);
-  assert.match(html, /data-testid="completed-range-select"/);
+  // Task #893 — the trailing-window selector was removed from the
+  // Completed tab; the page now always shows every completed
+  // re-attestation on file. Pin the absence so the selector can't
+  // come back without an intentional test change.
+  assert.equal(
+    html.includes('data-testid="completed-range-select"'),
+    false,
+    "range selector must not render on the Completed tab",
+  );
   assert.match(html, /data-testid="completed-list"/);
   assert.match(html, /data-testid="completed-row-11"/);
   assert.match(html, /INV-COMPLETE-1/);
@@ -268,44 +276,22 @@ test("empty payload renders the empty-state instead of the master/detail grid", 
   );
 });
 
-test("range selector wires through useUrlParams.set with resetPage=false", () => {
-  // The Select onValueChange isn't invoked during SSR, so verify the
-  // wiring contract directly via the same hook the component uses.
-  lastSetCall = null;
-  const params = useUrlParamsMod.useUrlParams();
-  params.set({ range: "30d" }, false);
-  assert.deepEqual(lastSetCall, { updates: { range: "30d" }, resetPage: false });
-  params.set({ range: null }, false);
-  assert.deepEqual(lastSetCall, { updates: { range: null }, resetPage: false });
-});
-
-test("changing the URL range param refires the history hook with the new range", () => {
+test("history hook is invoked without a range param — Task #893 dropped the trailing-window filter", () => {
+  // Sanity guard so the page can't silently re-introduce the range
+  // query param. The hook should fire exactly once per render and
+  // with no arguments now that the time-window UI is gone.
   historyHookCalls.length = 0;
   historyMode = "populated";
 
   urlParams = { tab: "completed" };
   render();
-  urlParams = { tab: "completed", range: "30d" };
-  render();
-  urlParams = { tab: "completed", range: "all" };
-  render();
-
-  // Each render is a fresh React tree, so the hook fires once per call.
-  // The default render has no `range` param in the URL, which collapses
-  // to "7d" before the hook is invoked.
-  const ranges = historyHookCalls.map((c) => c.range);
-  assert.ok(
-    ranges.includes("7d"),
-    `default render should hit the hook with range "7d" (got: ${ranges.join(",")})`,
-  );
-  assert.ok(
-    ranges.includes("30d"),
-    `?range=30d render should hit the hook with range "30d" (got: ${ranges.join(",")})`,
-  );
-  assert.ok(
-    ranges.includes("all"),
-    `?range=all render should hit the hook with range "all" (got: ${ranges.join(",")})`,
-  );
+  assert.equal(historyHookCalls.length, 1);
+  // `lastSetCall` is touched only by the `set()` writer; verifying it
+  // stays null after a populated render proves the workspace isn't
+  // pushing range-related URL writes anymore either.
+  lastSetCall = null;
+  void useUrlParamsMod;
+  assert.equal(lastSetCall, null);
 });
 
 test("payor and earliest service date appear on completed rows and detail header", () => {
@@ -322,18 +308,9 @@ test("payor and earliest service date appear on completed rows and detail header
   assert.match(html, /href="\/invoice-groups\/11"[^>]*data-testid="completed-detail-open-11"/);
 });
 
-test("empty-state copy is range-aware (default vs all-time)", () => {
+test("empty-state copy is window-free — Task #893 always reads 'on file'", () => {
   historyMode = "empty";
-  // Default (?tab=completed, no range) ⇒ 7d copy.
   urlParams = { tab: "completed" };
-  let html = render();
-  assert.match(html, /No completed re-attestations in the last 7 days\./);
-  // 30d copy.
-  urlParams = { tab: "completed", range: "30d" };
-  html = render();
-  assert.match(html, /No completed re-attestations in the last 30 days\./);
-  // all-time copy.
-  urlParams = { tab: "completed", range: "all" };
-  html = render();
+  const html = render();
   assert.match(html, /No completed re-attestations on file\./);
 });

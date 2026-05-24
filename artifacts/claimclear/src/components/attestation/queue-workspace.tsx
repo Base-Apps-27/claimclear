@@ -167,10 +167,11 @@ export function QueueWorkspace() {
     return sortBuckets(aggregateByGroup(merged), sort);
   }, [pending.data, queued.data, sort]);
 
-  const totalPendingItems = useMemo(
-    () => groups.reduce((s, b) => s + b.pendingCount + b.queuedCount, 0),
-    [groups],
-  );
+  // Task #893 — the subhead under the Queue header used to read
+  // "{N} items pending" (raw leg count), which contradicted the
+  // group-based headline number directly above it. Switch to a
+  // groups-based label so the two read consistently.
+  const totalPendingGroups = groups.length;
 
   const [selectedKey, setSelectedKey] = useState<string | null>(
     groupParam || null,
@@ -295,7 +296,7 @@ export function QueueWorkspace() {
                 className="text-xs text-muted-foreground"
                 data-testid="queue-pending-total"
               >
-                {totalPendingItems} item{totalPendingItems === 1 ? "" : "s"}{" "}
+                {totalPendingGroups} group{totalPendingGroups === 1 ? "" : "s"}{" "}
                 pending
               </span>
               <ExportCsvControl

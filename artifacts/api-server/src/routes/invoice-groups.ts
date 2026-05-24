@@ -1610,14 +1610,18 @@ router.get("/invoice-groups/needs-classification", asyncHandler(async (req, res)
 }));
 
 // GET /invoice-groups/attestation-history — feeds the "Completed
-// re-attestations" tab on the Attestation Queue page. Returns groups
-// whose `reattest_completed_at` falls within the requested trailing
-// window (7d / 30d / all), sorted most-recent-first, with each group's
-// per-leg attestation outcomes pre-classified into one of four buckets
-// (`attested`, `mas_cancelled`, `queued`, `not_required`).
+// re-attestations" tab on the Attestation Queue page. Returns every
+// group whose `reattest_completed_at` is non-null, sorted
+// most-recent-first, with each group's per-leg attestation outcomes
+// pre-classified into one of four buckets (`attested`, `mas_cancelled`,
+// `queued`, `not_required`).
 //
-// Capped at 200 groups; `truncated=true` flags an over-cap window so
-// the UI can hint the operator to narrow the range. We sort + cap at
+// Task #893 — the trailing-window filter (7d / 30d / all) was dropped
+// so the tab badge always reflects every completed re-attestation on
+// file and an older completion never silently disappears from the
+// page. The legacy `range` query param is accepted for back-compat
+// but ignored. Capped at 200 groups; `truncated=true` flags an
+// over-cap result so the UI can hint the operator. We sort + cap at
 // the SQL layer so the leg fan-out only runs against the row set the
 // UI will actually render.
 const ATTESTATION_HISTORY_CAP = 200;
@@ -1633,19 +1637,10 @@ router.get("/invoice-groups/attestation-history", asyncHandler(async (req, res):
     return;
   }
 
-  const rawRange = (req.query.range ?? "7d") as string;
-  const range = rawRange === "30d" || rawRange === "all" ? rawRange : "7d";
-
-  const conditions: SQL[] = [
+  const where = and(
     isNotNull(invoiceGroupsTable.reattestCompletedAt),
     eq(invoiceGroupsTable.isTourSample, false),
-  ];
-  if (range !== "all") {
-    const days = range === "30d" ? 30 : 7;
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    conditions.push(gte(invoiceGroupsTable.reattestCompletedAt, cutoff));
-  }
-  const where = conditions.length === 1 ? conditions[0] : and(...conditions);
+  );
 
   // Pull cap+1 so we can detect "more rows than the cap" without a
   // separate COUNT(*) query.

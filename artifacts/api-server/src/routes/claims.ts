@@ -1865,6 +1865,15 @@ router.get("/attestation/counts", asyncHandler(async (_req, res): Promise<void> 
   // Mirror of the admit predicate in /claims/attestation-pending: count
   // both Approved-family verdict legs AND MAS-Eligible-routed legs.
   // See the longer comment on that route for the rationale.
+  //
+  // Task #893 — the Attestation Queue page now renders one row per
+  // invoice group (Task #430), so we also surface a `groups` count
+  // here: distinct `invoice_group_id` values across the same admit
+  // predicate. Legs with NULL `invoice_group_id` each count as their
+  // own bucket (matching the QueueWorkspace's `c:${id}` fallback key).
+  // The legacy per-state `pending`/`queued` leg counts are retained so
+  // the dashboard "Reattests pending" tile and its parity test keep
+  // working without change.
   const rows = await db
     .select({ state: claimsTable.attestationState, count: count() })
     .from(claimsTable)
@@ -1876,11 +1885,31 @@ router.get("/attestation/counts", asyncHandler(async (_req, res): Promise<void> 
       inArray(claimsTable.attestationState, ["pending", "queued"]),
     ))
     .groupBy(claimsTable.attestationState);
-  const out = { pending: 0, queued: 0 };
+  const out = { pending: 0, queued: 0, groups: 0 };
   for (const r of rows) {
     if (r.state === "pending") out.pending = r.count;
     else if (r.state === "queued") out.queued = r.count;
   }
+
+  const groupRows = await db
+    .select({
+      id: claimsTable.id,
+      invoiceGroupId: claimsTable.invoiceGroupId,
+    })
+    .from(claimsTable)
+    .where(and(
+      or(
+        inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+        eq(claimsTable.status, "MAS Eligible"),
+      ),
+      inArray(claimsTable.attestationState, ["pending", "queued"]),
+    ));
+  const seen = new Set<string>();
+  for (const r of groupRows) {
+    seen.add(r.invoiceGroupId != null ? `g:${r.invoiceGroupId}` : `c:${r.id}`);
+  }
+  out.groups = seen.size;
+
   res.json(out);
 }));
 

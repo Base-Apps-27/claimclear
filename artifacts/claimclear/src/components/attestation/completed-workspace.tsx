@@ -4,18 +4,10 @@ import {
 } from "@workspace/api-client-react";
 import type {
   GroupAttestationHistoryEntry,
-  GetInvoiceGroupAttestationHistoryParams,
 } from "@workspace/api-client-react";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { Section, TonePill } from "@/components/cohesion";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { ShieldCheck } from "lucide-react";
 import { useUrlParams } from "@/lib/use-url-params";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -27,18 +19,15 @@ import {
   earliestServiceDate,
 } from "./completed-detail-pane";
 
-type HistoryRange = NonNullable<GetInvoiceGroupAttestationHistoryParams["range"]>;
-const VALID_RANGES: readonly HistoryRange[] = ["7d", "30d", "all"];
-
 export function CompletedWorkspace() {
   const { get, set } = useUrlParams();
-  const rangeParam = get("range");
-  const range: HistoryRange = (VALID_RANGES as readonly string[]).includes(rangeParam)
-    ? (rangeParam as HistoryRange)
-    : "7d";
   const groupParam = get("group");
 
-  const history = useGetInvoiceGroupAttestationHistory({ range });
+  // Task #893 — the trailing time-window filter (7d / 30d / all) was
+  // dropped: the Completed tab now always shows every completed
+  // re-attestation on file so the tab badge matches what the operator
+  // sees and an older completion never silently disappears.
+  const history = useGetInvoiceGroupAttestationHistory();
   const groups = history.data?.groups ?? [];
   const truncated = history.data?.truncated ?? false;
 
@@ -69,39 +58,10 @@ export function CompletedWorkspace() {
 
   return (
     <div className="space-y-4" data-testid="completed-workspace">
-      <Section
-        title="Window"
-        action={
-          <Select
-            value={range}
-            onValueChange={(v) =>
-              set({ range: v === "7d" ? null : v }, false)
-            }
-          >
-            <SelectTrigger
-              id="completed-range"
-              className="w-[140px] h-8 text-xs"
-              data-testid="completed-range-select"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d" data-testid="completed-range-7d">
-                Last 7 days
-              </SelectItem>
-              <SelectItem value="30d" data-testid="completed-range-30d">
-                Last 30 days
-              </SelectItem>
-              <SelectItem value="all" data-testid="completed-range-all">
-                All time
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        }
-      >
+      <Section title="Completed re-attestations">
         <p className="text-sm text-muted-foreground">
-          Invoice groups whose MAS re-attestation has been confirmed in the
-          window above.
+          Every invoice group whose MAS re-attestation has been confirmed,
+          most-recent first.
         </p>
       </Section>
 
@@ -118,21 +78,10 @@ export function CompletedWorkspace() {
           <div className="rounded-md border border-border bg-card">
             <EmptyState
               icon={ShieldCheck}
-              title={
-                range === "all"
-                  ? "No completed re-attestations on file."
-                  : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`
-              }
-              description={
-                range === "all"
-                  ? undefined
-                  : "Try widening the range with the selector above."
-              }
+              title="No completed re-attestations on file."
             />
             <span data-testid="completed-empty" className="sr-only">
-              {range === "all"
-                ? "No completed re-attestations on file."
-                : `No completed re-attestations in the last ${range === "30d" ? "30 days" : "7 days"}.`}
+              No completed re-attestations on file.
             </span>
           </div>
         ) : (
@@ -176,7 +125,7 @@ function CompletedMasterDetail({
                 className="border-t px-4 py-2 text-xs text-muted-foreground"
                 data-testid="completed-truncated-banner"
               >
-                Showing the 200 most recent. Narrow the range to see fewer.
+                Showing the 200 most recent.
               </div>
             ) : null
           }

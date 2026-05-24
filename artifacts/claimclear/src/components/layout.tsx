@@ -11,6 +11,7 @@ import {
   getGetMacroPhaseRollupQueryKey,
 } from "@workspace/api-client-react";
 import { SessionCountdown } from "@/components/session-countdown";
+import { countDistinctAttestationGroups } from "@/lib/attestation-counts";
 import { useSystemEvents } from "@/hooks/use-system-events";
 import { useSessionMilestonesLifecycle, useSessionProcessedCount } from "@/hooks/use-session-milestones";
 import { useWelcomeBackWinsToast } from "@/hooks/use-welcome-back-toast";
@@ -173,16 +174,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       },
     },
   );
-  const distinctAttestGroups = (() => {
-    const seen = new Set<string>();
-    for (const list of [pendingList, queuedList]) {
-      for (const c of list?.claims ?? []) {
-        const key = c.invoiceGroupId != null ? `g:${c.invoiceGroupId}` : `c:${c.id}`;
-        seen.add(key);
-      }
-    }
-    return seen.size;
-  })();
+  // Shared helper with the Attestation Queue page (Task #893) so the
+  // sidebar badge and the page's Open header / tab badge / Queue
+  // section header are derived from one canonical group-counting
+  // routine and cannot drift.
+  const distinctAttestGroups = countDistinctAttestationGroups([
+    pendingList,
+    queuedList,
+  ]);
 
   // Live counter for the "Responses Awaiting Review" entry. Polls every
   // 60s — same cadence as attestation counts — and only when the user is

@@ -7,6 +7,7 @@ import {
 import { useUrlParams } from "@/lib/use-url-params";
 import { QueueWorkspace } from "@/components/attestation/queue-workspace";
 import { CompletedWorkspace } from "@/components/attestation/completed-workspace";
+import { countDistinctAttestationGroups } from "@/lib/attestation-counts";
 
 const VALID_TABS = ["open", "completed"] as const;
 type TabValue = (typeof VALID_TABS)[number];
@@ -18,21 +19,22 @@ export default function AttestationQueue() {
     ? (tabParam as TabValue)
     : "open";
 
-  const rangeParam = get("range");
-  const completedRange = (["7d", "30d", "all"] as const).includes(
-    rangeParam as "7d" | "30d" | "all",
-  )
-    ? (rangeParam as "7d" | "30d" | "all")
-    : "7d";
-
   const pending = useListAttestationPending({ state: "pending" });
   const queued = useListAttestationPending({ state: "queued" });
-  const history = useGetInvoiceGroupAttestationHistory({
-    range: completedRange,
-  });
+  const history = useGetInvoiceGroupAttestationHistory();
 
-  const openCount =
-    (pending.data?.claims?.length ?? 0) + (queued.data?.claims?.length ?? 0);
+  // Task #893 — every "open" counter on this page (header pill, Open
+  // tab badge, and the Queue section header inside QueueWorkspace)
+  // must agree, and must match the sidebar's Attestation Queue badge.
+  // The unit is "distinct invoice groups with at least one leg in
+  // pending or queued attestation state" — same key derivation the
+  // QueueWorkspace uses to bucket rows (`g:<id>` for grouped legs,
+  // `c:<claim-id>` for ungrouped fallback). Sharing the helper with
+  // layout.tsx keeps the badges in lockstep by construction.
+  const openCount = countDistinctAttestationGroups([
+    pending.data,
+    queued.data,
+  ]);
   const completedCount = history.data?.groups?.length ?? 0;
 
   return (
