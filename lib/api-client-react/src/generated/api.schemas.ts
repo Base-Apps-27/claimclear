@@ -34,6 +34,7 @@ export interface AuthUser {
   role: string;
   status: string;
   responsibleRoles: AuthUserResponsibleRolesItem[];
+  isPortalOnly: boolean;
 }
 
 export type MyClosuresListResponseCounts = {
@@ -202,6 +203,7 @@ export const AdminResponsibleRolesBodyResponsibleRolesItem = {
 
 export interface AdminResponsibleRolesBody {
   responsibleRoles: AdminResponsibleRolesBodyResponsibleRolesItem[];
+  isPortalOnly?: boolean;
 }
 
 export type AdminResponsibleRolesReadoutUsersItem = {
@@ -213,6 +215,7 @@ export type AdminResponsibleRolesReadoutUsersItem = {
   role: string;
   status: string;
   responsibleRoles: string[];
+  isPortalOnly: boolean;
 };
 
 export interface AdminResponsibleRolesReadout {

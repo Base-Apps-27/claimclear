@@ -28,6 +28,7 @@ interface UserRow {
   role: string;
   status: string;
   responsibleRoles: string[];
+  isPortalOnly: boolean;
 }
 
 export default function AdminResponsibleRolesPage() {
@@ -69,6 +70,29 @@ export default function AdminResponsibleRolesPage() {
     }
   };
 
+  // Task #889 round-3 — flip the explicit portal-only marker
+  // independently of role assignment. The PATCH endpoint accepts both
+  // fields; we send the existing responsibleRoles back unchanged so
+  // server-side validation passes.
+  const handlePortalOnly = async (user: UserRow, checked: boolean) => {
+    setPendingUserId(user.id);
+    try {
+      await setRoles.mutateAsync({
+        userId: user.id,
+        data: {
+          responsibleRoles: user.responsibleRoles as ClosureResponsibleRole[],
+          isPortalOnly: checked,
+        } as { responsibleRoles: ClosureResponsibleRole[]; isPortalOnly: boolean },
+      });
+      successToast({ title: "__VERB__", description: checked ? "Set to portal-only" : "Restored operator access" });
+      queryClient.invalidateQueries({ queryKey: getGetResponsibleRolesReadoutQueryKey() });
+    } catch {
+      toast({ title: "Failed to update portal-only", variant: "destructive" });
+    } finally {
+      setPendingUserId(null);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-5xl">
       <PageHeader
@@ -98,6 +122,7 @@ export default function AdminResponsibleRolesPage() {
                     {CLOSURE_RESPONSIBLE_ROLES.map((r) => (
                       <th key={r} className="px-2 py-2 font-medium text-center">{closureResponsibleRoleLabel(r)}</th>
                     ))}
+                    <th className="px-2 py-2 font-medium text-center" title="When on, this user sees only the My Closures portal — no operator nav.">Portal only</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -123,6 +148,15 @@ export default function AdminResponsibleRolesPage() {
                           </td>
                         );
                       })}
+                      <td className="px-2 py-2 text-center">
+                        <Checkbox
+                          checked={u.isPortalOnly}
+                          onCheckedChange={(v) => handlePortalOnly(u, v === true)}
+                          disabled={pendingUserId === u.id}
+                          aria-label={`Portal only for ${u.email}`}
+                          data-testid={`toggle-portal-only-${u.id}`}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

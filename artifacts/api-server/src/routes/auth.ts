@@ -114,7 +114,7 @@ router.get("/auth/user", asyncHandler(async (req: Request, res: Response) => {
   // Task #889 — read responsibleRoles fresh from DB so admin revocations
   // take effect on the next request, not the next login.
   const [row] = await db
-    .select({ responsibleRoles: usersTable.responsibleRoles })
+    .select({ responsibleRoles: usersTable.responsibleRoles, isPortalOnly: usersTable.isPortalOnly })
     .from(usersTable)
     .where(eq(usersTable.id, String(req.user.id)));
   res.json({
@@ -126,6 +126,7 @@ router.get("/auth/user", asyncHandler(async (req: Request, res: Response) => {
       role: req.user.role,
       status: req.user.status ?? "pending",
       responsibleRoles: getResponsibleRoles(row?.responsibleRoles),
+      isPortalOnly: !!row?.isPortalOnly,
     },
   });
 }));
@@ -167,7 +168,7 @@ router.get("/auth/session", asyncHandler(async (req: Request, res: Response) => 
     return;
   }
   const [row] = await db
-    .select({ responsibleRoles: usersTable.responsibleRoles })
+    .select({ responsibleRoles: usersTable.responsibleRoles, isPortalOnly: usersTable.isPortalOnly })
     .from(usersTable)
     .where(eq(usersTable.id, String(req.user.id)));
   res.json({
@@ -179,6 +180,7 @@ router.get("/auth/session", asyncHandler(async (req: Request, res: Response) => 
       role: req.user.role,
       status: req.user.status ?? "pending",
       responsibleRoles: getResponsibleRoles(row?.responsibleRoles),
+      isPortalOnly: !!row?.isPortalOnly,
     },
   });
 }));
@@ -263,19 +265,26 @@ router.patch("/admin/users/:userId/responsible-roles", requireAdmin, asyncHandle
     return;
   }
   const next = Array.from(new Set(incoming)) as ClosureResponsibleRole[];
+  // Task #889 round-3 — explicit portal-only marker, optional in body.
+  // Omitting leaves the existing value untouched so callers (UI
+  // checkbox vs API client) can update each field independently.
+  const portalOnlyRaw = body.isPortalOnly;
+  const portalOnlyProvided = typeof portalOnlyRaw === "boolean";
   const [existing] = await db
-    .select({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles })
+    .select({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles, isPortalOnly: usersTable.isPortalOnly })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
   if (!existing) {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  const updateSet: Record<string, unknown> = { responsibleRoles: next, updatedAt: new Date() };
+  if (portalOnlyProvided) updateSet.isPortalOnly = portalOnlyRaw;
   const [updated] = await db
     .update(usersTable)
-    .set({ responsibleRoles: next, updatedAt: new Date() })
+    .set(updateSet)
     .where(eq(usersTable.id, userId))
-    .returning({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles });
+    .returning({ id: usersTable.id, email: usersTable.email, responsibleRoles: usersTable.responsibleRoles, isPortalOnly: usersTable.isPortalOnly });
   const actor = req.user;
   await db.insert(auditLogsTable).values({
     action: "responsible_roles_changed",
@@ -292,6 +301,7 @@ router.patch("/admin/users/:userId/responsible-roles", requireAdmin, asyncHandle
     userId: updated.id,
     email: updated.email,
     responsibleRoles: getResponsibleRoles(updated.responsibleRoles),
+    isPortalOnly: !!updated.isPortalOnly,
   });
 }));
 
@@ -306,6 +316,7 @@ router.get("/admin/responsible-roles", requireAdmin, asyncHandler(async (_req: R
       role: usersTable.role,
       status: usersTable.status,
       responsibleRoles: usersTable.responsibleRoles,
+      isPortalOnly: usersTable.isPortalOnly,
     })
     .from(usersTable)
     .orderBy(asc(usersTable.email));
@@ -317,6 +328,7 @@ router.get("/admin/responsible-roles", requireAdmin, asyncHandler(async (_req: R
       role: u.role,
       status: u.status,
       responsibleRoles: getResponsibleRoles(u.responsibleRoles),
+      isPortalOnly: !!u.isPortalOnly,
     })),
   });
 }));
@@ -493,6 +505,12 @@ router.get("/callback", async (req: Request, res: Response) => {
       profileImageUrl: dbUser.profileImageUrl ?? null,
       role: dbUser.role,
       status: dbUser.status,
+      // Task #889 — these are re-read fresh from DB by /auth/user on
+      // every request, so the session copy is just a type-shape
+      // placeholder. Admin role changes still take effect on the next
+      // request, not at next login.
+      responsibleRoles: [],
+      isPortalOnly: false,
     },
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,

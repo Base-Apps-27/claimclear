@@ -23,4 +23,5 @@ export interface AuthUser {
   role: string;
   status: string;
   responsibleRoles: AuthUserResponsibleRolesItem[];
+  isPortalOnly: boolean;
 }

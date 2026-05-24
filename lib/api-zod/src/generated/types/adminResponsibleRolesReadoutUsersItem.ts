@@ -21,4 +21,5 @@ export type AdminResponsibleRolesReadoutUsersItem = {
   role: string;
   status: string;
   responsibleRoles: string[];
+  isPortalOnly: boolean;
 };

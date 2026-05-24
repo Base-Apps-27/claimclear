@@ -15,4 +15,5 @@ import type { AdminResponsibleRolesBodyResponsibleRolesItem } from "./adminRespo
 
 export interface AdminResponsibleRolesBody {
   responsibleRoles: AdminResponsibleRolesBodyResponsibleRolesItem[];
+  isPortalOnly?: boolean;
 }

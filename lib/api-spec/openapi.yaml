@@ -6652,12 +6652,18 @@ components:
               - contact_center_manager
               - contractor_relations_coordinator
               - it_coordinator_or_coo
+        # Task #889 round-3 — explicit portal-only marker. When true,
+        # the AppLayout hides all operator nav and renders only the
+        # My Closures portal entry. Independent of `role`.
+        isPortalOnly:
+          type: boolean
       required:
         - id
         - email
         - role
         - status
         - responsibleRoles
+        - isPortalOnly
 
     # Task #889 — Responsible-Party portal row. Reuses the WithdrawalRow
     # shape so the client can share a single renderer between
@@ -6752,6 +6758,10 @@ components:
               - contact_center_manager
               - contractor_relations_coordinator
               - it_coordinator_or_coo
+        # Task #889 round-3 — optional explicit portal-only marker.
+        # Omit to leave the existing value unchanged.
+        isPortalOnly:
+          type: boolean
       required: [responsibleRoles]
 
     AdminResponsibleRolesReadout:
@@ -6776,7 +6786,9 @@ components:
                 type: array
                 items:
                   type: string
-            required: [id, role, status, responsibleRoles]
+              isPortalOnly:
+                type: boolean
+            required: [id, role, status, responsibleRoles, isPortalOnly]
       required: [users]
 
     ClaimResponse:

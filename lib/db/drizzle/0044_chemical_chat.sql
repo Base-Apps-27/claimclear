@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "is_portal_only" boolean DEFAULT false NOT NULL;

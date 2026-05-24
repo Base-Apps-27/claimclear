@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export const sessionsTable = pgTable(
   "sessions",
@@ -25,6 +25,11 @@ export const usersTable = pgTable("users", {
   // of `role` so a COO can hold both operator access AND a responsible
   // role. Vocabulary lives in `@workspace/closure-responsibility`.
   responsibleRoles: jsonb("responsible_roles").$type<string[]>().notNull().default([]),
+  // Task #889 round-3 — explicit "portal-only" marker, set by admins
+  // at role-assignment time. When true, AppLayout hides all operator
+  // nav and shows only My Closures. Independent of `role` so users
+  // who hold a responsible role AND an operator tier keep dual access.
+  isPortalOnly: boolean("is_portal_only").notNull().default(false),
   tourVersionSeen: varchar("tour_version_seen"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -39,6 +39,7 @@ export const GetCurrentAuthUserResponse = zod.object({
           "it_coordinator_or_coo",
         ]),
       ),
+      isPortalOnly: zod.boolean(),
     }),
     zod.null(),
   ]),
@@ -80,6 +81,7 @@ export const GetAuthSessionResponse = zod.object({
         "it_coordinator_or_coo",
       ]),
     ),
+    isPortalOnly: zod.boolean(),
   }),
 });
 
@@ -37230,6 +37232,7 @@ export const SetUserResponsibleRolesBody = zod.object({
       "it_coordinator_or_coo",
     ]),
   ),
+  isPortalOnly: zod.boolean().optional(),
 });
 
 /**
@@ -37244,6 +37247,7 @@ export const GetResponsibleRolesReadoutResponse = zod.object({
       role: zod.string(),
       status: zod.string(),
       responsibleRoles: zod.array(zod.string()),
+      isPortalOnly: zod.boolean(),
     }),
   ),
 });

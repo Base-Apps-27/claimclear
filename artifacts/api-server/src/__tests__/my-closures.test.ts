@@ -39,12 +39,14 @@ before(async () => {
   // Seed two real users — loadCurrentRoles re-reads from DB each call.
   await db.insert(usersTable).values([
     {
-      id: userItCoo.id, email: userItCoo.email, displayName: userItCoo.displayName,
+      id: userItCoo.id, email: userItCoo.email,
+      firstName: "IT", lastName: "Coordinator",
       role: "user", status: "approved",
       responsibleRoles: ["it_coordinator_or_coo"],
     },
     {
-      id: userContact.id, email: userContact.email, displayName: userContact.displayName,
+      id: userContact.id, email: userContact.email,
+      firstName: "Contact", lastName: "Center",
       role: "user", status: "approved",
       responsibleRoles: ["contact_center_manager"],
     },
