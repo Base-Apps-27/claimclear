@@ -263,6 +263,13 @@ router.post("/my-closures/:kind/:id/address", asyncHandler(async (req: Request, 
       userEmail,
       userName,
       metadata: {
+        // Task #889 spec contract: every portal-side audit row carries
+        // role/note/scope so downstream consumers (digest, compliance
+        // export) don't need to re-derive provenance from the action
+        // string.
+        scope: "self_serve_portal",
+        role: row.closureResponsibility ? RESPONSIBILITY_TO_ROLE[row.closureResponsibility as ClosureResponsibility] ?? null : null,
+        note,
         source: "my_closures",
         closureResponsibility: row.closureResponsibility,
         previousReviewState: row.closureReviewState,
@@ -291,6 +298,9 @@ router.post("/my-closures/:kind/:id/address", asyncHandler(async (req: Request, 
       userEmail,
       userName,
       metadata: {
+        scope: "self_serve_portal",
+        role: row.closureResponsibility ? RESPONSIBILITY_TO_ROLE[row.closureResponsibility as ClosureResponsibility] ?? null : null,
+        note,
         source: "my_closures",
         closureResponsibility: row.closureResponsibility,
         previousReviewState: row.closureReviewState,
@@ -392,7 +402,13 @@ router.post("/my-closures/:kind/:id/reopen", asyncHandler(async (req: Request, r
       details: note,
       userEmail,
       userName,
-      metadata: { source: "my_closures", closureResponsibility: row.closureResponsibility },
+      metadata: {
+        scope: "self_serve_portal",
+        role: row.closureResponsibility ? RESPONSIBILITY_TO_ROLE[row.closureResponsibility as ClosureResponsibility] ?? null : null,
+        note,
+        source: "my_closures",
+        closureResponsibility: row.closureResponsibility,
+      },
     });
     broadcastClaimEvent({ type: "claim_edited", claimId: id, userName, userEmail, timestamp: now.toISOString() });
   } else {
@@ -411,7 +427,13 @@ router.post("/my-closures/:kind/:id/reopen", asyncHandler(async (req: Request, r
       details: note,
       userEmail,
       userName,
-      metadata: { source: "my_closures", closureResponsibility: row.closureResponsibility },
+      metadata: {
+        scope: "self_serve_portal",
+        role: row.closureResponsibility ? RESPONSIBILITY_TO_ROLE[row.closureResponsibility as ClosureResponsibility] ?? null : null,
+        note,
+        source: "my_closures",
+        closureResponsibility: row.closureResponsibility,
+      },
     });
     broadcastGroupEvent({ type: "group_edited", invoiceGroupId: id, userName, userEmail, timestamp: now.toISOString() });
   }

@@ -218,10 +218,17 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     // Task #889 spec: chip is scoped to internal responsibilities only
     // (Agent / Driver / System). external_payor and
     // no_one_process_limit are out of scope because there is no
-    // internal supervisor to follow through on those.
+    // internal supervisor to follow through on those. Additionally,
+    // "awaiting" must be strictly: not yet acknowledged AND not
+    // already addressed — enforced at the query level so the chip
+    // does not depend on the client `hideAddressed` toggle.
     const allowed = ["agent_mistake", "driver_mistake", "system_error"];
     claimWhere.push(inArray(claimsTable.closureResponsibility, allowed));
     groupWhere.push(inArray(invoiceGroupsTable.closureResponsibility, allowed));
+    claimWhere.push(sql`(${claimsTable.closureReviewState} IS NULL OR ${claimsTable.closureReviewState} = 'pending')`);
+    groupWhere.push(sql`(${invoiceGroupsTable.closureReviewState} IS NULL OR ${invoiceGroupsTable.closureReviewState} = 'pending')`);
+    claimWhere.push(isNull(claimsTable.closureAddressedAt));
+    groupWhere.push(isNull(invoiceGroupsTable.closureAddressedAt));
   }
 
   if (search) {

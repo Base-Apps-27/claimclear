@@ -39,6 +39,23 @@ import { useToast, successToast } from "@/hooks/use-toast";
 import { AcknowledgeDialog, type AcknowledgeMode } from "@/components/acknowledge-dialog";
 import { useActiveResponsibleRole } from "@/hooks/use-active-responsible-role";
 
+// Task #889 spec — every closed-at line is paired with a human "X days
+// ago" companion so the supervisor doesn't have to do date math. Kept
+// local (not pulled from date-fns) to avoid bundling a 50kB lib just
+// for one helper.
+function relativeAgo(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const days = Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "1 month ago";
+  return `${months} months ago`;
+}
+
 const REASON_TONE: Record<string, Tone> = {
   cannot_dispute: "amber",
   non_issue: "blue",
@@ -240,6 +257,44 @@ export default function MyClosuresPage() {
           const acknowledged = row.closureReviewState === "acknowledged_by_party";
           const closed = row.closureReviewState === "closed";
           const addressed = row.addressed;
+          const closedRel = relativeAgo(row.closedAt);
+          const ackRel = relativeAgo(row.closureAddressedAt);
+
+          // Task #889 spec: in the Outstanding/All tabs, rows that
+          // have already been acknowledged by THIS party collapse to a
+          // thin one-line summary so the supervisor's eye is drawn to
+          // the rows that still need work. The Addressed-90d tab
+          // shows them in this collapsed form too.
+          if (acknowledged && tab !== "outstanding") {
+            const ackAt = row.closureAddressedAt ? new Date(row.closureAddressedAt).getTime() : 0;
+            const withinWindow = ackAt > 0 && (Date.now() - ackAt) < SELF_REOPEN_WINDOW_MS;
+            return (
+              <Card key={`${row.kind}:${row.id}`} data-testid={`my-closure-row-${row.kind}-${row.id}`} className="border-blue-200 bg-blue-50/40">
+                <CardContent className="py-2.5 px-4 flex items-center gap-3 flex-wrap">
+                  <CheckCircle2 className="h-4 w-4 text-blue-700 shrink-0" />
+                  <span className="text-xs uppercase tracking-wide text-blue-800 font-semibold shrink-0">Addressed</span>
+                  <span className="text-sm font-medium truncate" title={row.identifier}>{row.identifier}</span>
+                  {row.clientNumber && (
+                    <span className="text-xs text-muted-foreground shrink-0">Member #{row.clientNumber}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {ackRel ?? formatDate(row.closureAddressedAt ?? row.closedAt ?? "")}
+                  </span>
+                  <span className="ml-auto flex items-center gap-2 shrink-0">
+                    <Button variant="ghost" size="sm" onClick={() => navigate(detailHref)} data-testid={`open-${row.kind}-${row.id}`}>
+                      Open <ExternalLink className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                    {withinWindow && (
+                      <Button size="sm" variant="outline" onClick={() => { setDialogError(null); setDialog({ row, mode: "reopen" }); }} data-testid={`reopen-${row.kind}-${row.id}`}>
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reopen
+                      </Button>
+                    )}
+                  </span>
+                </CardContent>
+              </Card>
+            );
+          }
+
           return (
             <Card key={`${row.kind}:${row.id}`} data-testid={`my-closure-row-${row.kind}-${row.id}`}>
               <CardContent className="py-4 px-4 flex gap-4 flex-wrap items-start">
@@ -265,8 +320,19 @@ export default function MyClosuresPage() {
                   </div>
                   <div className="font-semibold tracking-tight truncate" title={row.identifier}>{row.identifier}</div>
                   <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                    {row.amount && <span className="tabular-nums">{formatCurrency(row.amount)}</span>}
-                    {row.closedAt && <><span>·</span><span>Closed {formatDate(row.closedAt)}</span></>}
+                    {row.clientNumber && (
+                      <span data-testid={`member-${row.kind}-${row.id}`}>Member #{row.clientNumber}</span>
+                    )}
+                    {row.amount && <><span>·</span><span className="tabular-nums">{formatCurrency(row.amount)}</span></>}
+                    {row.closedAt && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          Closed {formatDate(row.closedAt)}
+                          {closedRel && <span className="text-muted-foreground/70"> ({closedRel})</span>}
+                        </span>
+                      </>
+                    )}
                     {row.errorTypeName && <><span>·</span><span>{row.errorTypeName}</span></>}
                   </div>
                   {/* Task #889 spec: narrative shown in full, not
@@ -275,6 +341,17 @@ export default function MyClosuresPage() {
                   {row.errorDetails && (
                     <p className="text-sm mt-2 whitespace-pre-wrap" data-testid={`narrative-${row.kind}-${row.id}`}>
                       {row.errorDetails}
+                    </p>
+                  )}
+                  {/* Task #889 spec: "Specifics" line surfaces the
+                      operator note (closureCommunicatedTo / closureNarrative
+                      flowed through to closureReviewNotes operator-side)
+                      so the supervisor sees exactly what was communicated
+                      out without opening the detail page. */}
+                  {row.closureCommunicatedTo && !acknowledged && (
+                    <p className="text-xs mt-2 text-muted-foreground" data-testid={`specifics-${row.kind}-${row.id}`}>
+                      <span className="font-semibold uppercase tracking-wide">Specifics:</span>{" "}
+                      <span className="whitespace-pre-wrap">{row.closureCommunicatedTo}</span>
                     </p>
                   )}
                   {row.closureReviewNotes && acknowledged && (

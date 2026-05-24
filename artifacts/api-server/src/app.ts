@@ -9,6 +9,7 @@ import { SESSION_COOKIE } from "./lib/auth";
 import router from "./routes";
 import { serveObjectEntity } from "./routes/storage";
 import { requireAuth } from "./middlewares/requireAuth";
+import { portalOnlyGuard } from "./middlewares/portalOnlyGuard";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -122,7 +123,7 @@ app.use(authMiddleware);
 // instead of falling through to the SPA fallback. Task #656.
 app.get("/objects/*path", requireAuth, serveObjectEntity);
 
-app.use("/api", router);
+app.use("/api", portalOnlyGuard, router);
 
 const clientDistPath = path.resolve(
   import.meta.dirname,
