@@ -19,6 +19,9 @@
     },
     {
       "path": "../../lib/leg-state"
+    },
+    {
+      "path": "../../lib/closure-responsibility"
     }
   ]
 }

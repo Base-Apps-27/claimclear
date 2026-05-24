@@ -26,6 +26,9 @@
     },
     {
       "path": "../../lib/vocab"
+    },
+    {
+      "path": "../../lib/closure-responsibility"
     }
   ]
 }

@@ -12,6 +12,7 @@ understanding readback / preview generation) instead.
  * OpenAPI spec version: 0.3.0
  */
 import type { ClosurePersonRef } from "./closurePersonRef";
+import type { ClosureResponsibility } from "./closureResponsibility";
 import type { EvidenceFileRef } from "./evidenceFileRef";
 import type { InvoiceGroupEligibility } from "./invoiceGroupEligibility";
 import type { InvoiceGroupResponseClosureReason } from "./invoiceGroupResponseClosureReason";
@@ -74,6 +75,8 @@ export interface InvoiceGroupResponse {
   closureCommunicatedTo?: string | null;
   /** @nullable */
   closureReviewState?: InvoiceGroupResponseClosureReviewState;
+  /** Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   closureAddressedAt?: string | null;
   /** @nullable */

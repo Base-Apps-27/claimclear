@@ -100,6 +100,7 @@
     "@uppy/dashboard": "^5.1.1",
     "@uppy/react": "^5.2.0",
     "@workspace/closure-options": "workspace:*",
+    "@workspace/closure-responsibility": "workspace:*",
     "@workspace/leg-state": "workspace:*",
     "@workspace/payor-denial-reasons": "workspace:*",
     "@workspace/vocab": "workspace:*",

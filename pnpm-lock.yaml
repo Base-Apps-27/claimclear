@@ -93,6 +93,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/closure-responsibility':
+        specifier: workspace:*
+        version: link:../../lib/closure-responsibility
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -226,6 +229,9 @@ importers:
       '@workspace/closure-options':
         specifier: workspace:*
         version: link:../../lib/closure-options
+      '@workspace/closure-responsibility':
+        specifier: workspace:*
+        version: link:../../lib/closure-responsibility
       '@workspace/leg-state':
         specifier: workspace:*
         version: link:../../lib/leg-state
@@ -928,6 +934,15 @@ importers:
 
   lib/closure-options: {}
 
+  lib/closure-responsibility:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
+
   lib/db:
     dependencies:
       '@workspace/leg-state':
@@ -1037,6 +1052,10 @@ importers:
         version: 19.2.14
 
   lib/vocab:
+    dependencies:
+      '@workspace/closure-responsibility':
+        specifier: workspace:*
+        version: link:../closure-responsibility
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

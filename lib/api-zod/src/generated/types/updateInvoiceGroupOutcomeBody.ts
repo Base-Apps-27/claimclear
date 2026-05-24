@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
 import type { ClosureReason } from "./closureReason";
+import type { ClosureResponsibility } from "./closureResponsibility";
 import type { TerminalCloseOverride } from "./terminalCloseOverride";
 
 /**
@@ -53,5 +54,7 @@ export interface UpdateInvoiceGroupOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  /** Task #888 — same contract as `UpdateClaimOutcomeBody.closureResponsibility`. */
+  closureResponsibility?: ClosureResponsibility | null;
   override?: TerminalCloseOverride | null;
 }

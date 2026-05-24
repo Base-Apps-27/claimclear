@@ -374,6 +374,25 @@ export const ListInvoiceGroupsResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureResponsibility: zod
+        .union([
+          zod
+            .enum([
+              "agent_mistake",
+              "driver_mistake",
+              "system_error",
+              "external_payor",
+              "no_one_process_limit",
+            ])
+            .describe(
+              'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+        ),
       closureAddressedAt: zod.string().nullish(),
       closureAddressedBy: zod.string().nullish(),
       closureAddressedByEmail: zod.string().nullish(),
@@ -1207,6 +1226,25 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
               zod.literal(null),
             ])
             .nullish(),
+          closureResponsibility: zod
+            .union([
+              zod
+                .enum([
+                  "agent_mistake",
+                  "driver_mistake",
+                  "system_error",
+                  "external_payor",
+                  "no_one_process_limit",
+                ])
+                .describe(
+                  'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+                ),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+            ),
           closureAddressedAt: zod.string().nullish(),
           closureAddressedBy: zod.string().nullish(),
           closureAddressedByEmail: zod.string().nullish(),
@@ -1802,6 +1840,25 @@ export const GetInvoiceGroupAttestationHistoryResponse = zod
                     zod.literal(null),
                   ])
                   .nullish(),
+                closureResponsibility: zod
+                  .union([
+                    zod
+                      .enum([
+                        "agent_mistake",
+                        "driver_mistake",
+                        "system_error",
+                        "external_payor",
+                        "no_one_process_limit",
+                      ])
+                      .describe(
+                        'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+                      ),
+                    zod.null(),
+                  ])
+                  .optional()
+                  .describe(
+                    "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+                  ),
                 closureAddressedAt: zod.string().nullish(),
                 closureAddressedBy: zod.string().nullish(),
                 closureAddressedByEmail: zod.string().nullish(),
@@ -2226,6 +2283,25 @@ export const GetInvoiceGroupResponse = zod
         zod.literal(null),
       ])
       .nullish(),
+    closureResponsibility: zod
+      .union([
+        zod
+          .enum([
+            "agent_mistake",
+            "driver_mistake",
+            "system_error",
+            "external_payor",
+            "no_one_process_limit",
+          ])
+          .describe(
+            'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+      ),
     closureAddressedAt: zod.string().nullish(),
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
@@ -2818,6 +2894,25 @@ export const GetInvoiceGroupResponse = zod
                 zod.literal(null),
               ])
               .nullish(),
+            closureResponsibility: zod
+              .union([
+                zod
+                  .enum([
+                    "agent_mistake",
+                    "driver_mistake",
+                    "system_error",
+                    "external_payor",
+                    "no_one_process_limit",
+                  ])
+                  .describe(
+                    'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+                  ),
+                zod.null(),
+              ])
+              .optional()
+              .describe(
+                "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+              ),
             closureAddressedAt: zod.string().nullish(),
             closureAddressedBy: zod.string().nullish(),
             closureAddressedByEmail: zod.string().nullish(),
@@ -3671,6 +3766,25 @@ export const UpdateInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -4246,6 +4360,25 @@ export const UpdateInvoiceGroupStatusResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -4781,6 +4914,25 @@ export const UpdateInvoiceGroupOutcomeBody = zod
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
     closureReviewNotes: zod.string().nullish(),
+    closureResponsibility: zod
+      .union([
+        zod
+          .enum([
+            "agent_mistake",
+            "driver_mistake",
+            "system_error",
+            "external_payor",
+            "no_one_process_limit",
+          ])
+          .describe(
+            'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Task #888 — same contract as `UpdateClaimOutcomeBody.closureResponsibility`.",
+      ),
     override: zod
       .object({
         reason: zod
@@ -4895,6 +5047,25 @@ export const UpdateInvoiceGroupOutcomeResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -5477,6 +5648,25 @@ export const MarkInvoiceGroupMasEligibleResponse = zod
         zod.literal(null),
       ])
       .nullish(),
+    closureResponsibility: zod
+      .union([
+        zod
+          .enum([
+            "agent_mistake",
+            "driver_mistake",
+            "system_error",
+            "external_payor",
+            "no_one_process_limit",
+          ])
+          .describe(
+            'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+      ),
     closureAddressedAt: zod.string().nullish(),
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
@@ -6064,6 +6254,25 @@ export const TriageInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -6638,6 +6847,25 @@ export const HoldInvoiceGroupResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -7208,6 +7436,25 @@ export const RemoveInvoiceGroupHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -8384,6 +8631,25 @@ export const RecordPayorDenialReasonResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -8978,6 +9244,25 @@ export const MarkAwaitingPayorAgainResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -9673,6 +9958,25 @@ export const GroupSopAdvanceResponse = zod
               zod.literal(null),
             ])
             .nullish(),
+          closureResponsibility: zod
+            .union([
+              zod
+                .enum([
+                  "agent_mistake",
+                  "driver_mistake",
+                  "system_error",
+                  "external_payor",
+                  "no_one_process_limit",
+                ])
+                .describe(
+                  'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+                ),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+            ),
           closureAddressedAt: zod.string().nullish(),
           closureAddressedBy: zod.string().nullish(),
           closureAddressedByEmail: zod.string().nullish(),
@@ -10217,6 +10521,25 @@ export const SetGroupContextResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -10803,6 +11126,25 @@ export const ConfirmUnderstandingReadbackResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -11386,6 +11728,25 @@ export const SaveInvoiceGroupDraftResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -11962,6 +12323,25 @@ export const RegenerateInvoiceGroupDraftResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -12535,6 +12915,25 @@ export const MarkInvoiceGroupDraftReviewedResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -13110,6 +13509,25 @@ export const StampPreviewGeneratedResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -13715,6 +14133,25 @@ export const CompleteGroupReattestResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -14325,6 +14762,25 @@ export const BulkQueueGroupReattestResponse = zod
           zod.literal(null),
         ])
         .nullish(),
+      closureResponsibility: zod
+        .union([
+          zod
+            .enum([
+              "agent_mistake",
+              "driver_mistake",
+              "system_error",
+              "external_payor",
+              "no_one_process_limit",
+            ])
+            .describe(
+              'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+        ),
       closureAddressedAt: zod.string().nullish(),
       closureAddressedBy: zod.string().nullish(),
       closureAddressedByEmail: zod.string().nullish(),
@@ -15568,6 +16024,25 @@ export const ListClaimsResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureResponsibility: zod
+        .union([
+          zod
+            .enum([
+              "agent_mistake",
+              "driver_mistake",
+              "system_error",
+              "external_payor",
+              "no_one_process_limit",
+            ])
+            .describe(
+              'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+        ),
       closureAddressedAt: zod.string().nullish(),
       closureAddressedBy: zod.string().nullish(),
       closureAddressedByEmail: zod.string().nullish(),
@@ -16038,6 +16513,25 @@ export const GetClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -16477,6 +16971,25 @@ export const UpdateClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -16917,6 +17430,25 @@ export const UpdateClaimStatusResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -17259,6 +17791,25 @@ export const UpdateClaimOutcomeBody = zod
     closureAddressedBy: zod.string().nullish(),
     closureAddressedByEmail: zod.string().nullish(),
     closureReviewNotes: zod.string().nullish(),
+    closureResponsibility: zod
+      .union([
+        zod
+          .enum([
+            "agent_mistake",
+            "driver_mistake",
+            "system_error",
+            "external_payor",
+            "no_one_process_limit",
+          ])
+          .describe(
+            'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Task #888 — canonical responsibility recorded by the slim closure modal. When present, the server derives `closureAccountabilityTags` and (when omitted) defaults `closureRootCause` to `unspecified`, so the older required-field guards (driver\/dispatcher lists, ≥80-char narrative, communicated-to, tag chips) are skipped.",
+      ),
     override: zod
       .object({
         reason: zod.string().min(updateClaimOutcomeBodyOverrideReasonMin),
@@ -17391,6 +17942,25 @@ export const UpdateClaimOutcomeResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -17799,6 +18369,25 @@ export const ListAttestationPendingResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureResponsibility: zod
+        .union([
+          zod
+            .enum([
+              "agent_mistake",
+              "driver_mistake",
+              "system_error",
+              "external_payor",
+              "no_one_process_limit",
+            ])
+            .describe(
+              'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+        ),
       closureAddressedAt: zod.string().nullish(),
       closureAddressedBy: zod.string().nullish(),
       closureAddressedByEmail: zod.string().nullish(),
@@ -18268,6 +18857,25 @@ export const AttestClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -18672,6 +19280,25 @@ export const QueueAttestationForClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -19076,6 +19703,25 @@ export const ConfirmQueuedAttestationResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -19680,6 +20326,25 @@ export const UpdateClaimEvidenceResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -20096,6 +20761,25 @@ export const PlaceLegOnHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -20495,6 +21179,25 @@ export const RemoveLegHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -20891,6 +21594,25 @@ export const ClearLegHoldResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -21295,6 +22017,25 @@ export const ClassifyLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -21702,6 +22443,25 @@ export const SopAdvanceLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -22186,6 +22946,25 @@ export const SopBackStepLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -22604,6 +23383,25 @@ export const SopJumpLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -23020,6 +23818,25 @@ export const SopRestartLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -23441,6 +24258,25 @@ export const ExcludeLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -23853,6 +24689,25 @@ export const IncludeLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -24274,6 +25129,25 @@ export const MarkLegDuplicateResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -24673,6 +25547,25 @@ export const UnmarkLegDuplicateResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -25073,6 +25966,25 @@ export const ReclassifyLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -25572,6 +26484,25 @@ export const SetLegContextResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -25985,6 +26916,25 @@ export const ConcludeLegResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -26392,6 +27342,25 @@ export const CompleteLegMasActionResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -26795,6 +27764,25 @@ export const TriageClaimResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -27201,6 +28189,25 @@ export const PostResponseActionResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -27643,6 +28650,25 @@ export const GenerateClaimEmailResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -31573,6 +32599,25 @@ export const GetDashboardSummaryResponse = zod.object({
           zod.literal(null),
         ])
         .nullish(),
+      closureResponsibility: zod
+        .union([
+          zod
+            .enum([
+              "agent_mistake",
+              "driver_mistake",
+              "system_error",
+              "external_payor",
+              "no_one_process_limit",
+            ])
+            .describe(
+              'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+            ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+        ),
       closureAddressedAt: zod.string().nullish(),
       closureAddressedBy: zod.string().nullish(),
       closureAddressedByEmail: zod.string().nullish(),
@@ -35112,6 +36157,25 @@ export const UpdateClaimClosureReviewResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -35510,6 +36574,25 @@ export const UpdateInvoiceGroupClosureReviewResponse = zod.object({
       zod.literal(null),
     ])
     .nullish(),
+  closureResponsibility: zod
+    .union([
+      zod
+        .enum([
+          "agent_mistake",
+          "driver_mistake",
+          "system_error",
+          "external_payor",
+          "no_one_process_limit",
+        ])
+        .describe(
+          'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows.",
+    ),
   closureAddressedAt: zod.string().nullish(),
   closureAddressedBy: zod.string().nullish(),
   closureAddressedByEmail: zod.string().nullish(),
@@ -36026,6 +37109,25 @@ export const ListWithdrawalsResponse = zod.object({
         closureRootCause: zod.string().nullish(),
         closureNarrative: zod.string().nullish(),
         closureAccountabilityTags: zod.array(zod.string()).nullish(),
+        closureResponsibility: zod
+          .union([
+            zod
+              .enum([
+                "agent_mistake",
+                "driver_mistake",
+                "system_error",
+                "external_payor",
+                "no_one_process_limit",
+              ])
+              .describe(
+                'Task #888 — five-value canonical responsibility recorded by the\nslim closure intake modal. Mirrors `@workspace\/closure-responsibility`.\nEach value maps to exactly one supervisor \"responsible role\":\nagent_mistake → Contact Center Manager,\ndriver_mistake → Contractor Relations Coordinator,\nsystem_error \/ external_payor \/ no_one_process_limit → IT Coordinator \/ COO.\n',
+              ),
+            zod.null(),
+          ])
+          .optional()
+          .describe(
+            "Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify.",
+          ),
         amount: zod.string().nullish(),
         closedAt: zod.string().nullish(),
         closedBy: zod

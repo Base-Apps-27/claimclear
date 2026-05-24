@@ -15,10 +15,16 @@ import {
   getListClaimEvidenceQueryKey,
   getListInvoiceGroupEvidenceQueryKey,
   getListWithdrawalsQueryKey,
-  type ClosureAccountabilityTag as ApiClosureAccountabilityTag,
   type ClosureReason as ApiClosureReason,
-  type ClosurePersonRef,
+  type ClosureResponsibility as ApiClosureResponsibility,
 } from "@workspace/api-client-react";
+import {
+  CLOSURE_RESPONSIBILITIES,
+  CLOSURE_RESPONSIBILITY_LABELS,
+  CLOSURE_RESPONSIBLE_ROLE_LABELS,
+  RESPONSIBILITY_TO_ROLE,
+  type ClosureResponsibility,
+} from "@workspace/closure-responsibility";
 import {
   Dialog,
   DialogContent,
@@ -36,18 +42,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast, successToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, X, Upload, Loader2 } from "lucide-react";
+import { X, Upload, Loader2 } from "lucide-react";
 import {
   CLOSURE_CATEGORIES,
-  CLOSURE_ACCOUNTABILITY_TAGS,
   CLOSURE_REASON_BANNER,
-  ROOT_CAUSES_BY_CATEGORY,
   assertNeverClosureReason,
-  type ClosureAccountabilityTag,
   type ClosureReasonKey,
 } from "./closure-options";
 
@@ -55,13 +57,10 @@ import {
  * Compile-time guarantee that the frontend `ClosureReasonKey` union stays in
  * lockstep with the codegen `ClosureReason` union — sourced from a single
  * shared OpenAPI component (`#/components/schemas/ClosureReason`) that is
- * `$ref`d by every request schema accepting a closure decision
- * (UpdateClaimOutcomeBody, UpdateInvoiceGroupOutcomeBody,
- * CreateClosureRequest). If the OpenAPI spec ever adds, removes, or renames
- * a closure reason, this assertion fails to compile and forces an explicit
- * reconciliation here rather than letting drift silently break runtime
- * behavior — and because every consumer references the same component, a
- * typo in the dialog can't quietly slip through a per-schema cast.
+ * `$ref`d by every request schema accepting a closure decision. If the
+ * OpenAPI spec ever adds, removes, or renames a closure reason, this
+ * assertion fails to compile and forces an explicit reconciliation here
+ * rather than letting drift silently break runtime behavior.
  */
 type _CodegenClosureReasonParity = ClosureReasonKey extends ApiClosureReason
   ? ApiClosureReason extends ClosureReasonKey
@@ -72,33 +71,39 @@ const _closureReasonParityCheck: _CodegenClosureReasonParity = true;
 void _closureReasonParityCheck;
 
 /**
- * Same compile-time guarantee for the accountability-tags union: the local
- * `ClosureAccountabilityTag` (from `closure-options`) and the codegen
- * `ClosureAccountabilityTag` (sourced from a single shared OpenAPI component
- * — see `lib/api-spec/openapi.yaml`) must agree exactly. If a tag is added
- * or removed in one place but not the other, this fails to compile instead
- * of being silently coerced through a cast at the submit site.
+ * Same compile-time guarantee for the new five-value
+ * `ClosureResponsibility` union: the local
+ * `@workspace/closure-responsibility` source of truth and the codegen
+ * `ClosureResponsibility` (sourced from the shared
+ * `#/components/schemas/ClosureResponsibility`) must agree exactly. Drift
+ * here would silently let the slim modal post a value the server's
+ * superRefine guard rejects, so we force a typecheck failure instead.
  */
-type _CodegenClosureAccountabilityTagParity =
-  ClosureAccountabilityTag extends ApiClosureAccountabilityTag
-    ? ApiClosureAccountabilityTag extends ClosureAccountabilityTag
+type _CodegenClosureResponsibilityParity =
+  ClosureResponsibility extends ApiClosureResponsibility
+    ? ApiClosureResponsibility extends ClosureResponsibility
       ? true
       : never
     : never;
-const _closureAccountabilityTagParityCheck: _CodegenClosureAccountabilityTagParity =
-  true;
-void _closureAccountabilityTagParityCheck;
+const _closureResponsibilityParityCheck: _CodegenClosureResponsibilityParity = true;
+void _closureResponsibilityParityCheck;
 
-const NARRATIVE_MIN = 150;
+// Task #888 — slim modal: lower the narrative floor (150 → 50) and trim
+// the category picker to the handful of buckets the slim flow actually
+// needs. The wider taxonomy still lives in `closure-options` for the
+// confirm dialogs and historical surfaces.
+const NARRATIVE_MIN = 50;
+const SLIM_CATEGORY_VALUES = new Set([
+  "gps_missing",
+  "gps_partial",
+  "signature_missing",
+  "member_unreachable",
+  "data_quirk",
+  "other",
+]);
 
 const NARRATIVE_PLACEHOLDER =
-  "Driver assigned 7:14a for 8:00a pickup; tracking didn't initiate until 7:52a at the midpoint of the route. Dispatcher assigned early; driver didn't start the app at pickup.";
-
-type PersonEntry = {
-  uid: string;
-  name: string;
-  id: string;
-};
+  "Briefly describe what happened so the responsible team has enough context to follow up.";
 
 type UploadedEvidence = {
   evidenceId: number;
@@ -128,82 +133,6 @@ export type ClosureIntakeDialogProps = {
   onSuccess?: () => void;
 };
 
-let nextEntryUid = 0;
-function newPersonEntry(): PersonEntry {
-  nextEntryUid += 1;
-  return { uid: `person-${nextEntryUid}`, name: "", id: "" };
-}
-
-function PersonList({
-  label,
-  entries,
-  onChange,
-  testIdPrefix,
-}: {
-  label: string;
-  entries: PersonEntry[];
-  onChange: (next: PersonEntry[]) => void;
-  testIdPrefix: string;
-}) {
-  return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
-      <Label className="text-xs font-semibold uppercase text-muted-foreground">{label}</Label>
-      <div className="space-y-2">
-        {entries.map((entry, idx) => (
-          <div key={entry.uid} className="flex items-end gap-2">
-            <div className="flex-1">
-              <Label className="text-[11px] text-muted-foreground">Name</Label>
-              <Input
-                value={entry.name}
-                onChange={(e) => {
-                  const next = entries.slice();
-                  next[idx] = { ...entry, name: e.target.value };
-                  onChange(next);
-                }}
-                placeholder="Full name"
-                data-testid={`${testIdPrefix}-${idx}-name`}
-              />
-            </div>
-            <div className="flex-1">
-              <Label className="text-[11px] text-muted-foreground">ID (if known)</Label>
-              <Input
-                value={entry.id}
-                onChange={(e) => {
-                  const next = entries.slice();
-                  next[idx] = { ...entry, id: e.target.value };
-                  onChange(next);
-                }}
-                placeholder="Optional"
-                data-testid={`${testIdPrefix}-${idx}-id`}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => onChange(entries.filter((_, i) => i !== idx))}
-              disabled={entries.length === 1}
-              aria-label={`Remove ${label.toLowerCase()} entry`}
-              data-testid={`${testIdPrefix}-${idx}-remove`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => onChange([...entries, newPersonEntry()])}
-        data-testid={`${testIdPrefix}-add`}
-      >
-        <Plus className="h-3.5 w-3.5" /> Add another
-      </Button>
-    </div>
-  );
-}
-
 export function ClosureIntakeDialog({
   open,
   onOpenChange,
@@ -219,14 +148,8 @@ export function ClosureIntakeDialog({
 
   const [category, setCategory] = useState<string>("");
   const [categoryOther, setCategoryOther] = useState("");
-  const [rootCause, setRootCause] = useState<string>("");
-  const [rootCauseOther, setRootCauseOther] = useState("");
   const [narrative, setNarrative] = useState("");
-  const [tags, setTags] = useState<ClosureAccountabilityTag[]>([]);
-  const [tagOther, setTagOther] = useState("");
-  const [drivers, setDrivers] = useState<PersonEntry[]>([newPersonEntry()]);
-  const [dispatchers, setDispatchers] = useState<PersonEntry[]>([newPersonEntry()]);
-  const [communicatedTo, setCommunicatedTo] = useState("");
+  const [responsibility, setResponsibility] = useState<ClosureResponsibility | "">("");
   const [uploads, setUploads] = useState<UploadedEvidence[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -253,8 +176,6 @@ export function ClosureIntakeDialog({
       enabled: open && !isClaim,
     },
   });
-  const validOutcomes: string[] =
-    (isClaim ? claimValidTransitions.data?.validOutcomes : groupValidTransitions.data?.validOutcomes) ?? [];
   const submitting =
     (isClaim ? updateClaimOutcome.isPending : updateGroupOutcome.isPending) || uploading;
 
@@ -263,54 +184,32 @@ export function ClosureIntakeDialog({
     if (!open) return;
     setCategory(prefill?.category ?? "");
     setCategoryOther("");
-    setRootCause(prefill?.rootCause ?? "");
-    setRootCauseOther("");
     setNarrative("");
-    setTags([]);
-    setTagOther("");
-    setDrivers([newPersonEntry()]);
-    setDispatchers([newPersonEntry()]);
-    setCommunicatedTo("");
+    setResponsibility("");
     setUploads([]);
     setSubmitError(null);
     setOverrideReason("");
   }, [open, reason, prefill?.category, prefill?.rootCause]);
 
-  const rootCauseOptions = useMemo(() => {
-    if (!category) return [];
-    return ROOT_CAUSES_BY_CATEGORY[category] ?? [];
-  }, [category]);
+  // Task #888 — trimmed picker for the slim modal. Keep the full
+  // taxonomy intact in @workspace/closure-options so historical surfaces
+  // and the Denied-by-Payor confirm dialog stay untouched; just filter
+  // it down to the buckets the slim flow actually offers.
+  const slimCategories = useMemo(
+    () => CLOSURE_CATEGORIES.filter((c) => SLIM_CATEGORY_VALUES.has(c.value)),
+    [],
+  );
 
   const narrativeLength = narrative.trim().length;
   const narrativeReady = narrativeLength >= NARRATIVE_MIN;
 
-  const tagsValid = tags.length > 0;
-  const driverEntriesValid =
-    !tags.includes("driver") || drivers.some((d) => d.name.trim().length > 0);
-  const dispatcherEntriesValid =
-    !tags.includes("dispatcher") || dispatchers.some((d) => d.name.trim().length > 0);
-  const tagOtherValid = !tags.includes("other") || tagOther.trim().length > 0;
-
   const categoryValid = !!category && (category !== "other" || categoryOther.trim().length > 0);
-  // When category is "Other", the standard root-cause taxonomy doesn't
-  // apply (each list is scoped per category), so we ask for a free-text
-  // root cause instead. Mirrors the existing `*-other` pattern: send
-  // closureRootCause: "other" + closureRootCauseOther: <text>. Backend
-  // requires a non-null root cause for these closure reasons, so the UI
-  // must collect one — previously this field was hidden, producing the
-  // unactionable HTTP 400 the operator hit on the response-review screen.
-  const rootCauseValid =
-    category === "other"
-      ? rootCauseOther.trim().length > 0
-      : !!rootCause && (rootCause !== "other" || rootCauseOther.trim().length > 0);
+  const responsibilityValid = !!responsibility;
 
   // Task #758 — server-driven override gating. Use the per-target
-  // `terminalLane` map returned by the valid-transitions endpoint
-  // ("normal" | "override"), computed via the same policy the writer
-  // uses, instead of re-implementing the policy on the client. The
-  // earlier `validOutcomes.length > 0` shortcut was wrong for
-  // empty-outcome statuses where the policy lane depends on whether
-  // the source is system-controlled.
+  // `terminalLane` map returned by the valid-transitions endpoint, the
+  // same policy the writer uses on the server, instead of re-implementing
+  // it on the client.
   // vocab-allow-next-line
   const targetOutcomeName: "Non-Issue" | "Denied" | "Withdrawn" =
     // vocab-allow-next-line
@@ -326,17 +225,14 @@ export function ClosureIntakeDialog({
   const canSubmit =
     !submitting &&
     categoryValid &&
-    rootCauseValid &&
     narrativeReady &&
-    tagsValid &&
-    driverEntriesValid &&
-    dispatcherEntriesValid &&
-    tagOtherValid &&
+    responsibilityValid &&
     overrideValid;
 
-  const toggleTag = (tag: ClosureAccountabilityTag) => {
-    setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
-  };
+  // Live preview of who the new responsibility column will route to.
+  // Drives the badge under the picker so the operator can see, before
+  // they submit, which supervisor inbox (Task #889) this closure lands in.
+  const routedRole = responsibility ? RESPONSIBILITY_TO_ROLE[responsibility] : null;
 
   const MAX_UPLOAD_SIZE = EMAIL_MESSAGE_MAX_BYTES;
   const ALLOWED_UPLOAD_TYPES = new Set([
@@ -409,14 +305,6 @@ export function ClosureIntakeDialog({
     setUploads((prev) => prev.filter((u) => u.evidenceId !== evidenceId));
   };
 
-  const personListToPayload = (entries: PersonEntry[]): ClosurePersonRef[] =>
-    entries
-      .filter((e) => e.name.trim().length > 0)
-      .map((e) => ({
-        name: e.name.trim(),
-        id: e.id.trim() ? e.id.trim() : null,
-      }));
-
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitError(null);
@@ -425,10 +313,10 @@ export function ClosureIntakeDialog({
     // before we run the actual closure mutation. Today this is used by
     // the Step 4 close-out path to promote per-leg verdict drafts to
     // operator_confirmed in the same operator gesture as closure. We
-    // run it here (inside handleSubmit) rather than at dialog-open
-    // time so a cancel-after-open never promotes anything. If it
-    // throws, the dialog stays open with the error and the closure
-    // mutation does not run.
+    // run it here (inside handleSubmit) rather than at dialog-open time
+    // so a cancel-after-open never promotes anything. If it throws, the
+    // dialog stays open with the error and the closure mutation does
+    // not run.
     if (beforeSubmit) {
       try {
         await beforeSubmit();
@@ -440,29 +328,14 @@ export function ClosureIntakeDialog({
       }
     }
 
-    const accountabilityTags: ApiClosureAccountabilityTag[] = tags;
     // Both PATCH bodies pull `closureReason` from the shared
-    // `ClosureReason` component schema, so a single typed value flows into
-    // either mutation — no per-schema `as` cast and no place for a typo to
-    // sneak in unnoticed (the `_CodegenClosureReasonParity` check above
-    // pins this union to the frontend `ClosureReasonKey`).
+    // `ClosureReason` component schema, so a single typed value flows
+    // into either mutation — no per-schema `as` cast and no place for a
+    // typo to sneak in unnoticed.
     const closureReason: ApiClosureReason = reason;
     const closureCategory = category;
     const closureCategoryOther = category === "other" ? categoryOther.trim() : null;
-    // When category is "Other" we don't have a per-category root-cause
-    // taxonomy, so we send the conventional "other" sentinel and let
-    // closureRootCauseOther carry the operator's free-text explanation.
-    // Otherwise the dropdown value flows through as-is, with the same
-    // "other"/Other-text pattern at the root-cause level.
-    const closureRootCause = category === "other" ? "other" : rootCause;
-    const closureRootCauseOther =
-      category === "other" || rootCause === "other" ? rootCauseOther.trim() : null;
-    const closureAccountabilityOther = tags.includes("other") ? tagOther.trim() : null;
-    const closureDrivers = tags.includes("driver") ? personListToPayload(drivers) : null;
-    const closureDispatchers = tags.includes("dispatcher")
-      ? personListToPayload(dispatchers)
-      : null;
-    const closureCommunicatedTo = communicatedTo.trim() ? communicatedTo.trim() : null;
+    const closureResponsibility = responsibility as ApiClosureResponsibility;
     // Task #758 — only attach the override block when the dialog
     // determined the closure sits outside the source-status's
     // validOutcomes envelope; otherwise the backend rejects it as
@@ -490,24 +363,19 @@ export function ClosureIntakeDialog({
     })();
 
     try {
+      const sharedBody = {
+        outcome,
+        closureReason,
+        closureCategory,
+        closureCategoryOther,
+        closureNarrative: narrative.trim(),
+        closureResponsibility,
+        ...overrideField,
+      };
       if (isClaim) {
         await updateClaimOutcome.mutateAsync({
           id: target.id,
-          data: {
-            outcome,
-            closureReason,
-            closureCategory,
-            closureCategoryOther,
-            closureRootCause,
-            closureRootCauseOther,
-            closureNarrative: narrative.trim(),
-            closureAccountabilityTags: accountabilityTags,
-            closureAccountabilityOther,
-            closureDrivers,
-            closureDispatchers,
-            closureCommunicatedTo,
-            ...overrideField,
-          },
+          data: sharedBody,
         });
         queryClient.invalidateQueries({ queryKey: getGetClaimQueryKey(target.id) });
         queryClient.invalidateQueries({
@@ -519,21 +387,7 @@ export function ClosureIntakeDialog({
       } else {
         await updateGroupOutcome.mutateAsync({
           id: target.id,
-          data: {
-            outcome,
-            closureReason,
-            closureCategory,
-            closureCategoryOther,
-            closureRootCause,
-            closureRootCauseOther,
-            closureNarrative: narrative.trim(),
-            closureAccountabilityTags: accountabilityTags,
-            closureAccountabilityOther,
-            closureDrivers,
-            closureDispatchers,
-            closureCommunicatedTo,
-            ...overrideField,
-          },
+          data: sharedBody,
         });
         queryClient.invalidateQueries({ queryKey: getGetInvoiceGroupQueryKey(target.id) });
         queryClient.invalidateQueries({
@@ -599,7 +453,7 @@ export function ClosureIntakeDialog({
                 <SelectValue placeholder="Pick the closest fit" />
               </SelectTrigger>
               <SelectContent>
-                {CLOSURE_CATEGORIES.map((cat) => (
+                {slimCategories.map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
                     {cat.label}
                   </SelectItem>
@@ -607,8 +461,8 @@ export function ClosureIntakeDialog({
               </SelectContent>
             </Select>
             {category === "other" && (
-              <Input
-                className="mt-2"
+              <input
+                className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={categoryOther}
                 onChange={(e) => setCategoryOther(e.target.value)}
                 placeholder="Describe the category"
@@ -616,52 +470,6 @@ export function ClosureIntakeDialog({
               />
             )}
           </div>
-
-          {category && category !== "other" && (
-            <div>
-              <Label className="text-xs">Root cause <span className="text-destructive">*</span></Label>
-              <Select value={rootCause} onValueChange={setRootCause}>
-                <SelectTrigger data-testid="closure-root-cause-select">
-                  <SelectValue placeholder="What actually caused this?" />
-                </SelectTrigger>
-                <SelectContent>
-                  {rootCauseOptions.map((rc) => (
-                    <SelectItem key={rc.value} value={rc.value}>
-                      {rc.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {rootCause === "other" && (
-                <Input
-                  className="mt-2"
-                  value={rootCauseOther}
-                  onChange={(e) => setRootCauseOther(e.target.value)}
-                  placeholder="Describe the root cause"
-                  data-testid="closure-root-cause-other-input"
-                />
-              )}
-            </div>
-          )}
-
-          {category === "other" && (
-            <div>
-              <Label className="text-xs">
-                Root cause <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                className="mt-1"
-                value={rootCauseOther}
-                onChange={(e) => setRootCauseOther(e.target.value)}
-                placeholder="Describe the root cause"
-                data-testid="closure-root-cause-other-input"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Since you picked "Other" as the category, describe the root cause
-                in your own words.
-              </p>
-            </div>
-          )}
 
           <div>
             <Label className="text-xs">
@@ -671,7 +479,7 @@ export function ClosureIntakeDialog({
               value={narrative}
               onChange={(e) => setNarrative(e.target.value)}
               placeholder={NARRATIVE_PLACEHOLDER}
-              rows={5}
+              rows={4}
               data-testid="closure-narrative"
             />
             <span
@@ -687,72 +495,54 @@ export function ClosureIntakeDialog({
 
           <div>
             <Label className="text-xs">
-              Who needs to hear about this? <span className="text-destructive">*</span>
+              Who's responsible for following up?{" "}
+              <span className="text-destructive">*</span>
             </Label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {CLOSURE_ACCOUNTABILITY_TAGS.map((tag) => {
-                const selected = tags.includes(tag.value);
+            <div
+              className="mt-1 grid gap-2"
+              role="radiogroup"
+              aria-label="Responsibility"
+              data-testid="closure-responsibility-group"
+            >
+              {CLOSURE_RESPONSIBILITIES.map((value) => {
+                const selected = responsibility === value;
                 return (
                   <button
-                    key={tag.value}
+                    key={value}
                     type="button"
-                    onClick={() => toggleTag(tag.value)}
-                    aria-pressed={selected}
-                    data-testid={`closure-tag-${tag.value}`}
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setResponsibility(value)}
                     className={cn(
-                      "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      "flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
                       selected
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-background text-foreground border-border hover:bg-muted",
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border bg-background hover:bg-muted",
                     )}
+                    data-testid={`closure-responsibility-${value}`}
                   >
-                    {tag.label}
+                    <span className="font-medium">
+                      {CLOSURE_RESPONSIBILITY_LABELS[value]}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      → {CLOSURE_RESPONSIBLE_ROLE_LABELS[RESPONSIBILITY_TO_ROLE[value]]}
+                    </span>
                   </button>
                 );
               })}
             </div>
-            {tags.includes("other") && (
-              <Input
-                className="mt-2"
-                value={tagOther}
-                onChange={(e) => setTagOther(e.target.value)}
-                placeholder="Who else?"
-                data-testid="closure-tag-other-input"
-              />
+            {routedRole && (
+              <p
+                className="mt-2 text-[11px] text-muted-foreground"
+                data-testid="closure-responsibility-route-badge"
+              >
+                Routes to{" "}
+                <span className="font-semibold text-foreground">
+                  {CLOSURE_RESPONSIBLE_ROLE_LABELS[routedRole]}
+                </span>
+                .
+              </p>
             )}
-          </div>
-
-          {tags.includes("driver") && (
-            <PersonList
-              label="Drivers involved"
-              entries={drivers}
-              onChange={setDrivers}
-              testIdPrefix="closure-driver"
-            />
-          )}
-
-          {tags.includes("dispatcher") && (
-            <PersonList
-              label="Dispatchers involved"
-              entries={dispatchers}
-              onChange={setDispatchers}
-              testIdPrefix="closure-dispatcher"
-            />
-          )}
-
-          <div>
-            <Label className="text-xs">Communicated to (optional)</Label>
-            <Input
-              className="mt-1"
-              value={communicatedTo}
-              onChange={(e) => setCommunicatedTo(e.target.value)}
-              placeholder="e.g. Driver Jane Doe (notified 4/30), dispatch lead Carlos"
-              data-testid="closure-communicated-to"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Who has already been told about this closure? Can be edited later from the Withdrawals
-              Review.
-            </p>
           </div>
 
           <div>

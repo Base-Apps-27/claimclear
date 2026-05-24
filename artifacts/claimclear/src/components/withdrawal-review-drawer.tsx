@@ -19,7 +19,12 @@ import { useToast, successToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
 // Pulled from @workspace/vocab so this drawer reads the same as
 // every other surface that mentions a closure reason.
-import { closureReasonLabel } from "@workspace/vocab";
+import {
+  closureReasonLabel,
+  closureResponsibilityLabel,
+  closureResponsibleRoleLabel,
+  roleForResponsibility,
+} from "@workspace/vocab";
 
 const REASON_TONE: Record<string, Tone> = {
   cannot_dispute: "amber",
@@ -182,17 +187,45 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
             </section>
           )}
 
-          {row.closureAccountabilityTags && row.closureAccountabilityTags.length > 0 && (
+          {row.closureResponsibility ? (
+            // Task #888 — slim-modal rows carry a canonical responsibility
+            // column. Render it as a single "<responsibility> → <role>"
+            // pair so the reviewer can see at a glance which supervisor
+            // owns the follow-up, instead of the old free-form tag chips.
             <section>
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                Accountability
+                Responsibility
               </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {row.closureAccountabilityTags.map((t) => (
-                  <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
-                ))}
-              </div>
+              <p className="text-sm">
+                <span className="font-medium">
+                  {closureResponsibilityLabel(row.closureResponsibility)}
+                </span>
+                {(() => {
+                  const role = roleForResponsibility(row.closureResponsibility);
+                  return role ? (
+                    <>
+                      {" "}
+                      <span className="text-muted-foreground">
+                        → {closureResponsibleRoleLabel(role)}
+                      </span>
+                    </>
+                  ) : null;
+                })()}
+              </p>
             </section>
+          ) : (
+            row.closureAccountabilityTags && row.closureAccountabilityTags.length > 0 && (
+              <section>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                  Accountability
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {row.closureAccountabilityTags.map((t) => (
+                    <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              </section>
+            )
           )}
 
           <section className="space-y-1.5">

@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/vocab",
+  "name": "@workspace/closure-responsibility",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,6 @@
   },
   "scripts": {
     "test": "node --import tsx --test src/__tests__/*.test.ts"
-  },
-  "dependencies": {
-    "@workspace/closure-responsibility": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

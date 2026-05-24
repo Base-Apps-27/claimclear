@@ -213,6 +213,10 @@ export function ClosureConfirmDialog({
       closureDrivers: null,
       closureDispatchers: null,
       closureCommunicatedTo: null,
+      // Task #888 — Denied-by-Payor is canonically the "external_payor"
+      // responsibility. Stamping it here keeps the new `closure_responsibility`
+      // column populated for every fresh closure, not just slim-modal rows.
+      closureResponsibility: "external_payor" as const,
       ...(requiresOverride ? { override: { reason: overrideTrimmed } } : {}),
     };
 

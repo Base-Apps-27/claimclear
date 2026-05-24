@@ -299,6 +299,53 @@ test("PATCH /claims/:id/outcome with structured Withdrawn closure persists every
   }
 });
 
+// Task #888 — slim closure modal posts only outcome+reason+responsibility+narrative.
+// The server must derive legacy accountability tags from the responsibility,
+// default closureRootCause='unspecified', persist the new column, and stamp
+// review state so the Withdrawals queue still picks it up.
+test("PATCH /claims/:id/outcome (slim modal) persists closureResponsibility and derives legacy tags", async () => {
+  const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
+  try {
+    const body = {
+      outcome: "Withdrawn",
+      closureReason: "cannot_dispute",
+      closureCategory: "gps_missing",
+      closureResponsibility: "driver_mistake",
+      closureNarrative:
+        "Driver no-showed and trip was unrecoverable; no portal evidence available to dispute.",
+    };
+    const res = await fetchJson<typeof claimsTable.$inferSelect>(
+      `/api/claims/${seed.id}/outcome`,
+      { method: "PATCH", body },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+    assert.equal((res.json as any).closureResponsibility, "driver_mistake",
+      "slim modal must persist the new closureResponsibility column verbatim");
+    assert.equal(res.json.closureRootCause, "unspecified",
+      "slim modal omits root cause — server must default to 'unspecified'");
+    assert.deepEqual(res.json.closureAccountabilityTags, ["driver"],
+      "server must derive legacy accountability tags from closureResponsibility (driver_mistake → ['driver'])");
+    assert.equal(res.json.closureReviewState, "pending",
+      "slim closures must still land in the Withdrawals Review queue");
+
+    const closureLogs = await db.select().from(auditLogsTable)
+      .where(eq(auditLogsTable.claimId, seed.id))
+      .orderBy(desc(auditLogsTable.timestamp));
+    const outcomeLog = closureLogs.find(
+      (l) => (l.action === "outcome_changed" || l.action === "status_and_outcome_changed")
+        && (l.metadata as any)?.closure,
+    );
+    assert.ok(outcomeLog, "slim closure must produce an outcome audit with a closure sub-object");
+    const meta = outcomeLog.metadata as any;
+    assert.equal(meta.closure.closureResponsibility, "driver_mistake",
+      "audit closure sub-object must echo the new closureResponsibility verbatim");
+    assert.equal(meta.closure.closureResponsibleRole, "contractor_relations_coordinator",
+      "audit closure sub-object must include the derived supervisor role (driver_mistake → contractor_relations_coordinator)");
+  } finally {
+    await cleanupClaim(seed.id);
+  }
+});
+
 test("PATCH /claims/:id/outcome rejects a Withdrawn/cannot_dispute closure when the narrative is too short", async () => {
   const seed = await createSeedClaim({ status: "Needs Review", errorTypeId: "et-x" });
   try {

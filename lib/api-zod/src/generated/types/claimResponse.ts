@@ -26,6 +26,7 @@ import type { ClaimResponseSopOutcome } from "./claimResponseSopOutcome";
 import type { ClaimResponseStatus } from "./claimResponseStatus";
 import type { ClaimVerdictResponse } from "./claimVerdictResponse";
 import type { ClosurePersonRef } from "./closurePersonRef";
+import type { ClosureResponsibility } from "./closureResponsibility";
 import type { EvidenceFileRef } from "./evidenceFileRef";
 
 export interface ClaimResponse {
@@ -85,6 +86,8 @@ export interface ClaimResponse {
   closureCommunicatedTo?: string | null;
   /** @nullable */
   closureReviewState?: ClaimResponseClosureReviewState;
+  /** Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   closureAddressedAt?: string | null;
   /** @nullable */

@@ -11,6 +11,7 @@ understanding readback / preview generation) instead.
 
  * OpenAPI spec version: 0.3.0
  */
+import type { ClosureResponsibility } from "./closureResponsibility";
 import type { WithdrawalRowClosureReason } from "./withdrawalRowClosureReason";
 import type { WithdrawalRowKind } from "./withdrawalRowKind";
 
@@ -38,6 +39,8 @@ export interface WithdrawalRow {
   closureNarrative?: string | null;
   /** @nullable */
   closureAccountabilityTags?: string[] | null;
+  /** Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   amount?: string | null;
   /** @nullable */

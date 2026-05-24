@@ -137,6 +137,9 @@ export const invoiceGroupsTable = pgTable("invoice_groups", {
   closureDrivers: jsonb("closure_drivers"),
   closureDispatchers: jsonb("closure_dispatchers"),
   closureCommunicatedTo: text("closure_communicated_to"),
+  // Task #888 — five-value canonical responsibility recorded by the
+  // slim closure intake modal. See claims.ts for the full comment.
+  closureResponsibility: text("closure_responsibility"),
   closureReviewState: text("closure_review_state"),
   closureAddressedAt: timestamp("closure_addressed_at", { withTimezone: true }),
   closureAddressedBy: text("closure_addressed_by"),

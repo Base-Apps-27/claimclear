@@ -707,6 +707,10 @@ export async function transitionGroupOutcome(opts: {
     updateData.closureDrivers = closure.closureDrivers;
     updateData.closureDispatchers = closure.closureDispatchers;
     updateData.closureCommunicatedTo = closure.closureCommunicatedTo;
+    // Task #888 — new canonical responsibility column. Always written
+    // when a NormalizedClosure flows through (null on legacy fat-modal
+    // payloads, non-null on slim-modal payloads).
+    updateData.closureResponsibility = closure.closureResponsibility;
     if (closure.closureAddressedAt !== null) updateData.closureAddressedAt = closure.closureAddressedAt;
     if (closure.closureAddressedBy !== null) updateData.closureAddressedBy = closure.closureAddressedBy;
     if (closure.closureAddressedByEmail !== null) updateData.closureAddressedByEmail = closure.closureAddressedByEmail;
@@ -961,6 +965,10 @@ export async function transitionGroupStatusAndOutcome(opts: {
     updateData.closureDrivers = closure.closureDrivers;
     updateData.closureDispatchers = closure.closureDispatchers;
     updateData.closureCommunicatedTo = closure.closureCommunicatedTo;
+    // Task #888 — new canonical responsibility column. Always written
+    // when a NormalizedClosure flows through (null on legacy fat-modal
+    // payloads, non-null on slim-modal payloads).
+    updateData.closureResponsibility = closure.closureResponsibility;
     if (closure.closureAddressedAt !== null) updateData.closureAddressedAt = closure.closureAddressedAt;
     if (closure.closureAddressedBy !== null) updateData.closureAddressedBy = closure.closureAddressedBy;
     if (closure.closureAddressedByEmail !== null) updateData.closureAddressedByEmail = closure.closureAddressedByEmail;
@@ -1054,6 +1062,7 @@ export async function transitionGroupStatusAndOutcome(opts: {
     closureChildFields.closureDrivers = closure.closureDrivers;
     closureChildFields.closureDispatchers = closure.closureDispatchers;
     closureChildFields.closureCommunicatedTo = closure.closureCommunicatedTo;
+    closureChildFields.closureResponsibility = closure.closureResponsibility;
     if (closure.closureAddressedAt !== null) closureChildFields.closureAddressedAt = closure.closureAddressedAt;
     if (closure.closureAddressedBy !== null) closureChildFields.closureAddressedBy = closure.closureAddressedBy;
     if (closure.closureAddressedByEmail !== null) closureChildFields.closureAddressedByEmail = closure.closureAddressedByEmail;

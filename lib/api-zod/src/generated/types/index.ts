@@ -141,6 +141,7 @@ export * from "./clearLegVerdictDraftResponse";
 export * from "./closureAccountabilityTag";
 export * from "./closurePersonRef";
 export * from "./closureReason";
+export * from "./closureResponsibility";
 export * from "./closureReviewBody";
 export * from "./closureReviewBodyClosureReviewState";
 export * from "./completeDryRunBody";

@@ -6570,6 +6570,11 @@ components:
         closureReviewState:
           type: ["string", "null"]
           enum: ["pending", "acknowledged", "needs_revisit", "resolved", null]
+        closureResponsibility:
+          oneOf:
+            - $ref: "#/components/schemas/ClosureResponsibility"
+            - type: "null"
+          description: "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows."
         closureAddressedAt:
           type: ["string", "null"]
         closureAddressedBy:
@@ -6855,6 +6860,11 @@ components:
         closureReviewState:
           type: ["string", "null"]
           enum: ["pending", "acknowledged", "needs_revisit", "resolved", null]
+        closureResponsibility:
+          oneOf:
+            - $ref: "#/components/schemas/ClosureResponsibility"
+            - type: "null"
+          description: "Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows."
         closureAddressedAt:
           type: ["string", "null"]
         closureAddressedBy:
@@ -7658,6 +7668,11 @@ components:
           type: ["string", "null"]
         closureReviewNotes:
           type: ["string", "null"]
+        closureResponsibility:
+          oneOf:
+            - $ref: "#/components/schemas/ClosureResponsibility"
+            - type: "null"
+          description: "Task #888 — canonical responsibility recorded by the slim closure modal. When present, the server derives `closureAccountabilityTags` and (when omitted) defaults `closureRootCause` to `unspecified`, so the older required-field guards (driver/dispatcher lists, ≥80-char narrative, communicated-to, tag chips) are skipped."
         override:
           $ref: "#/components/schemas/TerminalCloseOverride"
       required:
@@ -7729,6 +7744,11 @@ components:
           type: ["string", "null"]
         closureReviewNotes:
           type: ["string", "null"]
+        closureResponsibility:
+          oneOf:
+            - $ref: "#/components/schemas/ClosureResponsibility"
+            - type: "null"
+          description: "Task #888 — same contract as `UpdateClaimOutcomeBody.closureResponsibility`."
         override:
           $ref: "#/components/schemas/TerminalCloseOverride"
       required:
@@ -7775,6 +7795,22 @@ components:
         - denied_by_payor
         - cannot_dispute
         - non_issue
+
+    ClosureResponsibility:
+      type: string
+      description: |
+        Task #888 — five-value canonical responsibility recorded by the
+        slim closure intake modal. Mirrors `@workspace/closure-responsibility`.
+        Each value maps to exactly one supervisor "responsible role":
+        agent_mistake → Contact Center Manager,
+        driver_mistake → Contractor Relations Coordinator,
+        system_error / external_payor / no_one_process_limit → IT Coordinator / COO.
+      enum:
+        - agent_mistake
+        - driver_mistake
+        - system_error
+        - external_payor
+        - no_one_process_limit
 
     EvidenceFileRef:
       type: object
@@ -7893,6 +7929,11 @@ components:
           type: ["array", "null"]
           items:
             type: string
+        closureResponsibility:
+          oneOf:
+            - $ref: "#/components/schemas/ClosureResponsibility"
+            - type: "null"
+          description: "Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify."
         amount:
           type: ["string", "null"]
         closedAt:

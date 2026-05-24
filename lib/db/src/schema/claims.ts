@@ -203,6 +203,13 @@ export const claimsTable = pgTable("claims", {
   closureDrivers: jsonb("closure_drivers"),
   closureDispatchers: jsonb("closure_dispatchers"),
   closureCommunicatedTo: text("closure_communicated_to"),
+  // Task #888 — five-value canonical responsibility recorded by the
+  // slim closure intake modal. Pinned vocabulary lives in
+  // `@workspace/closure-responsibility`. Server-side derivation populates
+  // the legacy `closure_accountability_tags` jsonb column from this
+  // value so existing reporting surfaces keep working during the
+  // transition. Nullable for legacy rows; backfill in migration 0053.
+  closureResponsibility: text("closure_responsibility"),
   closureReviewState: text("closure_review_state"),
   closureAddressedAt: timestamp("closure_addressed_at", { withTimezone: true }),
   closureAddressedBy: text("closure_addressed_by"),

@@ -14,6 +14,7 @@ understanding readback / preview generation) instead.
 import type { ClosureAccountabilityTag } from "./closureAccountabilityTag";
 import type { ClosurePersonRef } from "./closurePersonRef";
 import type { ClosureReason } from "./closureReason";
+import type { ClosureResponsibility } from "./closureResponsibility";
 import type { TerminalCloseOverride } from "./terminalCloseOverride";
 
 /**
@@ -57,5 +58,7 @@ export interface UpdateClaimOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  /** Task #888 — canonical responsibility recorded by the slim closure modal. When present, the server derives `closureAccountabilityTags` and (when omitted) defaults `closureRootCause` to `unspecified`, so the older required-field guards (driver/dispatcher lists, ≥80-char narrative, communicated-to, tag chips) are skipped. */
+  closureResponsibility?: ClosureResponsibility | null;
   override?: TerminalCloseOverride | null;
 }

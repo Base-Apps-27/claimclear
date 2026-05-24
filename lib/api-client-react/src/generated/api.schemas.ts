@@ -238,6 +238,26 @@ export interface ClosurePersonRef {
 }
 
 /**
+ * Task #888 — five-value canonical responsibility recorded by the
+slim closure intake modal. Mirrors `@workspace/closure-responsibility`.
+Each value maps to exactly one supervisor "responsible role":
+agent_mistake → Contact Center Manager,
+driver_mistake → Contractor Relations Coordinator,
+system_error / external_payor / no_one_process_limit → IT Coordinator / COO.
+
+ */
+export type ClosureResponsibility =
+  (typeof ClosureResponsibility)[keyof typeof ClosureResponsibility];
+
+export const ClosureResponsibility = {
+  agent_mistake: "agent_mistake",
+  driver_mistake: "driver_mistake",
+  system_error: "system_error",
+  external_payor: "external_payor",
+  no_one_process_limit: "no_one_process_limit",
+} as const;
+
+/**
  * Single attachment row stored on a claim's, invoice group's, or
 portal submission's `evidenceFiles` JSONB column. The row points
 at an object-storage URL plus optional rendering metadata. The
@@ -336,6 +356,8 @@ export interface ClaimResponse {
   closureCommunicatedTo?: string | null;
   /** @nullable */
   closureReviewState?: ClaimResponseClosureReviewState;
+  /** Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   closureAddressedAt?: string | null;
   /** @nullable */
@@ -861,6 +883,8 @@ export interface InvoiceGroupResponse {
   closureCommunicatedTo?: string | null;
   /** @nullable */
   closureReviewState?: InvoiceGroupResponseClosureReviewState;
+  /** Task #888 — five-value canonical responsibility recorded by the slim closure modal. Null on legacy rows. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   closureAddressedAt?: string | null;
   /** @nullable */
@@ -1896,6 +1920,8 @@ export interface UpdateClaimOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  /** Task #888 — canonical responsibility recorded by the slim closure modal. When present, the server derives `closureAccountabilityTags` and (when omitted) defaults `closureRootCause` to `unspecified`, so the older required-field guards (driver/dispatcher lists, ≥80-char narrative, communicated-to, tag chips) are skipped. */
+  closureResponsibility?: ClosureResponsibility | null;
   override?: TerminalCloseOverride | null;
 }
 
@@ -1936,6 +1962,8 @@ export interface UpdateInvoiceGroupOutcomeBody {
   closureAddressedByEmail?: string | null;
   /** @nullable */
   closureReviewNotes?: string | null;
+  /** Task #888 — same contract as `UpdateClaimOutcomeBody.closureResponsibility`. */
+  closureResponsibility?: ClosureResponsibility | null;
   override?: TerminalCloseOverride | null;
 }
 
@@ -2042,6 +2070,8 @@ export interface WithdrawalRow {
   closureNarrative?: string | null;
   /** @nullable */
   closureAccountabilityTags?: string[] | null;
+  /** Task #888 — canonical responsibility recorded by the slim closure modal. Null on legacy rows that pre-date the column or that the backfill could not classify. */
+  closureResponsibility?: ClosureResponsibility | null;
   /** @nullable */
   amount?: string | null;
   /** @nullable */

@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { CLOSURE_REASONS, CLOSURE_ACCOUNTABILITY_TAGS, type ClosureReason } from "@workspace/db";
+import {
+  CLOSURE_RESPONSIBILITIES,
+  RESPONSIBILITY_TO_LEGACY_TAGS,
+  RESPONSIBILITY_TO_ROLE,
+  type ClosureResponsibility,
+  type ClosureResponsibleRole,
+} from "@workspace/closure-responsibility";
 
 const trimmed = (s: unknown) => (typeof s === "string" ? s.trim() : s);
 
@@ -9,8 +16,18 @@ const personRefSchema = z.object({
 });
 
 export const closureAccountabilityTagSchema = z.enum(CLOSURE_ACCOUNTABILITY_TAGS);
+export const closureResponsibilitySchema = z.enum(CLOSURE_RESPONSIBILITIES);
 
 const isoDateLike = z.union([z.string().min(1), z.date()]).optional().nullable();
+
+// Task #888 — the slim closure modal collects only a category, a short
+// narrative, and a five-value `closureResponsibility`. When responsibility
+// is present we skip the heavyweight required-field checks (driver /
+// dispatcher rosters, communicated-to, ≥80-char narrative, tag chips) and
+// require only a ≥ NARRATIVE_MIN narrative. Legacy callers that still send
+// the full payload continue to validate against the full guard set.
+const NARRATIVE_MIN_SLIM = 50;
+const NARRATIVE_MIN_LEGACY = 80;
 
 export const createClosureRequestSchema = z.object({
   outcome: z.enum(["Withdrawn", "Non-Issue", "Denied"]),
@@ -25,6 +42,7 @@ export const createClosureRequestSchema = z.object({
   closureDrivers: z.array(personRefSchema).optional().nullable(),
   closureDispatchers: z.array(personRefSchema).optional().nullable(),
   closureCommunicatedTo: z.string().trim().optional().nullable(),
+  closureResponsibility: closureResponsibilitySchema.optional().nullable(),
   closureAddressedAt: isoDateLike,
   closureAddressedBy: z.string().trim().optional().nullable(),
   closureAddressedByEmail: z.string().trim().optional().nullable(),
@@ -49,6 +67,26 @@ export const createClosureRequestSchema = z.object({
     return;
   }
 
+  // Slim-modal path (Task #888). Responsibility carries the categorical
+  // signal that the legacy tag/driver/dispatcher chips used to provide;
+  // we still require a category + a (shorter) narrative so the activity
+  // feed has something human-readable to render.
+  if (val.closureResponsibility) {
+    if (!val.closureCategory || val.closureCategory.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "closureCategory is required for this closure reason.", path: ["closureCategory"] });
+    } else if (val.closureCategory === "other" && !val.closureCategoryOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "closureCategoryOther is required when closureCategory is 'other'.", path: ["closureCategoryOther"] });
+    }
+    const narrative = (val.closureNarrative ?? "").trim();
+    if (narrative.length < NARRATIVE_MIN_SLIM) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `closureNarrative must be at least ${NARRATIVE_MIN_SLIM} characters.`, path: ["closureNarrative"] });
+    }
+    return;
+  }
+
+  // Legacy fat-modal path — preserved for the Denied-by-Payor confirm
+  // dialog and any in-flight test fixtures that still send the wider
+  // payload. New code should send closureResponsibility instead.
   if (!val.closureCategory || val.closureCategory.length === 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "closureCategory is required for this closure reason.", path: ["closureCategory"] });
   } else if (val.closureCategory === "other" && !val.closureCategoryOther?.trim()) {
@@ -62,8 +100,8 @@ export const createClosureRequestSchema = z.object({
   }
 
   const narrative = (val.closureNarrative ?? "").trim();
-  if (narrative.length < 80) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "closureNarrative must be at least 80 characters.", path: ["closureNarrative"] });
+  if (narrative.length < NARRATIVE_MIN_LEGACY) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `closureNarrative must be at least ${NARRATIVE_MIN_LEGACY} characters.`, path: ["closureNarrative"] });
   }
 
   const tags = val.closureAccountabilityTags ?? [];
@@ -108,6 +146,7 @@ export const CLOSURE_DETAIL_FIELDS = [
   "closureDrivers",
   "closureDispatchers",
   "closureCommunicatedTo",
+  "closureResponsibility",
   "closureAddressedAt",
   "closureAddressedBy",
   "closureAddressedByEmail",
@@ -127,6 +166,8 @@ export interface NormalizedClosure {
   closureDrivers: Array<{ name: string; id?: string | null }> | null;
   closureDispatchers: Array<{ name: string; id?: string | null }> | null;
   closureCommunicatedTo: string | null;
+  closureResponsibility: ClosureResponsibility | null;
+  closureResponsibleRole: ClosureResponsibleRole | null;
   closureAddressedAt: Date | null;
   closureAddressedBy: string | null;
   closureAddressedByEmail: string | null;
@@ -163,7 +204,24 @@ export function parseClosurePayload(raw: unknown): NormalizedClosure {
     throw new ClosureValidationError(`${path ? `${path}: ` : ""}${first.message}`, parsed.error.issues);
   }
   const v = parsed.data;
-  const tags = v.closureAccountabilityTags ?? null;
+  const responsibility = (v.closureResponsibility ?? null) as ClosureResponsibility | null;
+
+  // Server-side derivation: when the slim modal sends a responsibility
+  // but no legacy tag set, derive the one-tag legacy bucket from the
+  // responsibility so existing reporting surfaces keep working. Same idea
+  // for the cascading root-cause select — when the slim modal omits it,
+  // we anchor the column at "unspecified" so the NOT-NULL-ish guards
+  // downstream don't trip.
+  const tagsRaw = v.closureAccountabilityTags ?? null;
+  const derivedTags =
+    responsibility && (!tagsRaw || tagsRaw.length === 0)
+      ? RESPONSIBILITY_TO_LEGACY_TAGS[responsibility]
+      : tagsRaw;
+  const tags = derivedTags && derivedTags.length > 0 ? [...derivedTags] : null;
+
+  const rootCauseRaw = nullIfEmpty(v.closureRootCause);
+  const rootCause = responsibility && !rootCauseRaw ? "unspecified" : rootCauseRaw;
+
   const driversRaw = v.closureDrivers ?? null;
   const dispatchersRaw = v.closureDispatchers ?? null;
   const drivers = driversRaw
@@ -181,14 +239,16 @@ export function parseClosurePayload(raw: unknown): NormalizedClosure {
     closureReason: v.closureReason as ClosureReason,
     closureCategory: nullIfEmpty(v.closureCategory),
     closureCategoryOther: nullIfEmpty(v.closureCategoryOther),
-    closureRootCause: nullIfEmpty(v.closureRootCause),
+    closureRootCause: rootCause,
     closureRootCauseOther: nullIfEmpty(v.closureRootCauseOther),
     closureNarrative: v.closureNarrative ? v.closureNarrative.trim() : null,
-    closureAccountabilityTags: tags && tags.length > 0 ? [...tags] : null,
+    closureAccountabilityTags: tags,
     closureAccountabilityOther: nullIfEmpty(v.closureAccountabilityOther),
     closureDrivers: drivers && drivers.length > 0 ? drivers : null,
     closureDispatchers: dispatchers && dispatchers.length > 0 ? dispatchers : null,
     closureCommunicatedTo: nullIfEmpty(v.closureCommunicatedTo),
+    closureResponsibility: responsibility,
+    closureResponsibleRole: responsibility ? RESPONSIBILITY_TO_ROLE[responsibility] : null,
     closureAddressedAt: toDateOrNull(v.closureAddressedAt as string | Date | null | undefined),
     closureAddressedBy: nullIfEmpty(v.closureAddressedBy),
     closureAddressedByEmail: nullIfEmpty(v.closureAddressedByEmail),
@@ -233,6 +293,8 @@ export function closureAuditPayload(c: NormalizedClosure) {
     closureDrivers: c.closureDrivers,
     closureDispatchers: c.closureDispatchers,
     closureCommunicatedTo: c.closureCommunicatedTo,
+    closureResponsibility: c.closureResponsibility,
+    closureResponsibleRole: c.closureResponsibleRole,
     closureAddressedAt: c.closureAddressedAt ? c.closureAddressedAt.toISOString() : null,
     closureAddressedBy: c.closureAddressedBy,
     closureAddressedByEmail: c.closureAddressedByEmail,

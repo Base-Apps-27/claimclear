@@ -20,6 +20,23 @@ export * from "./invoice-phase";
 export * from "./claim-disposition";
 export * from "./forbidden-literals";
 export * from "./pii-headers";
+// Task #888 — closure-responsibility labels (Agent/Driver/System/External/None
+// → Contact Center Manager / Contractor Relations Coordinator / IT-COO).
+// Re-exported from the shared package so every surface that mentions the
+// new responsibility column reads from one source of truth.
+export {
+  CLOSURE_RESPONSIBILITIES,
+  CLOSURE_RESPONSIBLE_ROLES,
+  CLOSURE_RESPONSIBILITY_LABELS,
+  CLOSURE_RESPONSIBLE_ROLE_LABELS,
+  RESPONSIBILITY_TO_ROLE,
+  closureResponsibilityLabel,
+  closureResponsibleRoleLabel,
+  roleForResponsibility,
+  isClosureResponsibility,
+  type ClosureResponsibility,
+  type ClosureResponsibleRole,
+} from "@workspace/closure-responsibility";
 
 import type { GlossaryEntry, VocabDomain } from "./domains";
 import { CLAIM_STATUS } from "./claim-status";

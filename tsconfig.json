@@ -32,6 +32,9 @@
     },
     {
       "path": "./lib/invoice-state"
+    },
+    {
+      "path": "./lib/closure-responsibility"
     }
   ]
 }
