@@ -270,11 +270,21 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
               like an operator overwriting the row to "acknowledged"
               or "resolved". This keeps the drawer audit-coupled
               rather than purely state-coupled. */}
-          {row.closureAddressedByEmail && row.closureResponsibility && (
+          {/* Task #889 (round-5 fix) — the "Follow-through acknowledged"
+              banner must ONLY appear when the responsible party
+              themselves marked the row through /my-closures. The
+              operator-side bulk-address path also stamps
+              closureAddressedByEmail, so we cannot key off that alone
+              — it would mislabel operator actions as party
+              acknowledgements. The authoritative signal is the
+              dedicated closure_review_state value
+              `acknowledged_by_party`, which is only ever written by
+              the portal endpoint. */}
+          {row.closureReviewState === "acknowledged_by_party" && row.closureResponsibility && (
             ["agent_mistake","driver_mistake","system_error"].includes(row.closureResponsibility)
           ) && (
             <section className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1" data-testid="drawer-follow-through-section">
-              <div className="font-semibold">Follow-through acknowledged</div>
+              <div className="font-semibold">Follow-through acknowledged by responsible party</div>
               {/* Task #889 — include the responsible role next to the
                   person, so operators see WHO closed the loop in what
                   capacity (Sarah Wu — Contact Center Manager). */}
@@ -293,9 +303,15 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
             </section>
           )}
 
-          {(row.closureAddressedAt || row.closureAddressedBy) && row.addressed && (
+          {/* Task #889 (round-5 fix) — the "Addressed" (green) banner
+              represents the operator-side disposition. Suppress it
+              when the row's review state is the portal-side
+              acknowledgement so the two mechanisms don't double up
+              into a misleading "Addressed" label on a row that the
+              dispute team never actually closed out. */}
+          {(row.closureAddressedAt || row.closureAddressedBy) && row.addressed && row.closureReviewState !== "acknowledged_by_party" && (
             <section className="rounded-md bg-green-50 border border-green-200 p-3 text-xs text-green-900">
-              <div className="font-semibold mb-0.5">Addressed</div>
+              <div className="font-semibold mb-0.5">Marked addressed by dispute team</div>
               <div>
                 {row.closureAddressedBy ?? "—"}
                 {row.closureAddressedByEmail && <> ({row.closureAddressedByEmail})</>}
