@@ -215,8 +215,13 @@ async function fetchAllRows(query: Record<string, unknown>): Promise<WithdrawalR
     groupWhere.push(inArray(invoiceGroupsTable.closureResponsibility, responsibilities));
   }
   if (awaitingPartyOnly) {
-    claimWhere.push(isNotNull(claimsTable.closureResponsibility));
-    groupWhere.push(isNotNull(invoiceGroupsTable.closureResponsibility));
+    // Task #889 spec: chip is scoped to internal responsibilities only
+    // (Agent / Driver / System). external_payor and
+    // no_one_process_limit are out of scope because there is no
+    // internal supervisor to follow through on those.
+    const allowed = ["agent_mistake", "driver_mistake", "system_error"];
+    claimWhere.push(inArray(claimsTable.closureResponsibility, allowed));
+    groupWhere.push(inArray(invoiceGroupsTable.closureResponsibility, allowed));
   }
 
   if (search) {

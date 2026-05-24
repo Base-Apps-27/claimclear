@@ -363,12 +363,16 @@ router.post("/my-closures/:kind/:id/reopen", asyncHandler(async (req: Request, r
 
   const now = new Date();
   const userName = req.user?.displayName ?? null;
+  // Task #889 spec: reopen clears the same acknowledgement fields back
+  // to pending. The reopen note is captured on the audit row (below)
+  // rather than appended to closure_review_notes, so the per-row text
+  // doesn't grow indefinitely on repeated ack/reopen cycles.
   const update: Record<string, unknown> = {
     closureReviewState: "pending",
     closureAddressedAt: null,
     closureAddressedBy: null,
     closureAddressedByEmail: null,
-    closureReviewNotes: appendPortalNote(row.closureReviewNotes, `Reopened: ${note}`, userName, now),
+    closureReviewNotes: null,
     updatedAt: now,
   };
 

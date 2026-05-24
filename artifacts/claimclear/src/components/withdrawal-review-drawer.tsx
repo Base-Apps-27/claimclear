@@ -264,7 +264,15 @@ export function WithdrawalReviewDrawer({ row, onClose }: Props) {
               who acknowledged it, when, and the note they left. This
               keeps the operator from re-pinging the supervisor while
               the row is in flight. */}
-          {row.closureReviewState === "acknowledged_by_party" && (
+          {/* Task #889 — render from acknowledgement *evidence*
+              (addressedByEmail + a routable responsibility) so the
+              follow-through context survives later state transitions
+              like an operator overwriting the row to "acknowledged"
+              or "resolved". This keeps the drawer audit-coupled
+              rather than purely state-coupled. */}
+          {row.closureAddressedByEmail && row.closureResponsibility && (
+            ["agent_mistake","driver_mistake","system_error"].includes(row.closureResponsibility)
+          ) && (
             <section className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1" data-testid="drawer-follow-through-section">
               <div className="font-semibold">Follow-through acknowledged</div>
               {/* Task #889 — include the responsible role next to the

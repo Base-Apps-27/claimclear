@@ -230,6 +230,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const myClosuresItems: NavItem[] = responsibleRoles.length > 0
     ? [{ label: "My Closures", href: "/my-closures", icon: Inbox }]
     : [];
+  // Task #889 — portal-only isolation. A user who holds a
+  // responsible role but no operator role (i.e. role === "user", the
+  // default tier that otherwise grants operator UI) sees ONLY the
+  // portal nav: My Closures, plus Account. Admins and clerks always
+  // keep dual access — the spec calls out the COO/admin case
+  // explicitly as a legitimate dual-access user.
+  const isPortalOnly = responsibleRoles.length > 0 && !isAdmin && !isClerk;
 
   // Setup section — Import, Error Types, Settings — is admin/user
   // only. Clerks lose the whole section (the empty-array filter in
@@ -242,7 +249,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Settings", href: "/settings", icon: Settings },
       ];
 
-  const navSections: NavSection[] = [
+  const navSections: NavSection[] = isPortalOnly ? [
+    { label: "Today", items: myClosuresItems },
+  ] : [
     {
       label: "Today",
       items: [

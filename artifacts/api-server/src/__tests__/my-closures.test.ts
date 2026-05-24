@@ -8,7 +8,7 @@ import { test, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import { eq } from "drizzle-orm";
+import { eq, count } from "drizzle-orm";
 
 import myClosuresRouter from "../routes/my-closures";
 import {
@@ -159,6 +159,14 @@ test("cross-role 403: IT coordinator cannot address an agent_mistake claim", asy
     }).from(claimsTable).where(eq(claimsTable.id, id));
     assert.equal(after[0]?.st, "pending", "refused request must not mutate review state");
     assert.equal(after[0]?.at, null, "refused request must not stamp addressedAt");
+    // Task #889 refusal-path contract: NO audit row is written when
+    // the request is refused — otherwise audit log fills with noise
+    // and an operator can't distinguish real activity.
+    const [{ value: auditCount }] = await db
+      .select({ value: count() })
+      .from(auditLogsTable)
+      .where(eq(auditLogsTable.claimId, id));
+    assert.equal(Number(auditCount), 0, "refused cross-role request must not insert audit row");
   } finally {
     await cleanupClaim(id);
   }
@@ -217,6 +225,11 @@ test("note minimum: <10 chars returns 400, no mutation", async () => {
     const row = await db.select({ st: claimsTable.closureReviewState })
       .from(claimsTable).where(eq(claimsTable.id, id));
     assert.equal(row[0]?.st, "pending");
+    const [{ value: auditCount }] = await db
+      .select({ value: count() })
+      .from(auditLogsTable)
+      .where(eq(auditLogsTable.claimId, id));
+    assert.equal(Number(auditCount), 0, "validation-rejected request must not insert audit row");
   } finally {
     await cleanupClaim(id);
   }
@@ -237,6 +250,18 @@ test("reopen within 24h: original acknowledger may reopen", async () => {
     );
     assert.equal(reopen.status, 200, `expected 200, got ${reopen.status} (${JSON.stringify(reopen.json)})`);
     assert.equal(reopen.json.reviewState, "pending");
+    // Task #889 spec: reopen must clear acknowledgement fields back
+    // to a clean pending state — note included.
+    const [row] = await db.select({
+      st: claimsTable.closureReviewState,
+      notes: claimsTable.closureReviewNotes,
+      addressedAt: claimsTable.closureAddressedAt,
+      addressedByEmail: claimsTable.closureAddressedByEmail,
+    }).from(claimsTable).where(eq(claimsTable.id, id));
+    assert.equal(row?.st, "pending");
+    assert.equal(row?.notes, null, "reopen must clear closure_review_notes");
+    assert.equal(row?.addressedAt, null);
+    assert.equal(row?.addressedByEmail, null);
   } finally {
     await cleanupClaim(id);
   }
