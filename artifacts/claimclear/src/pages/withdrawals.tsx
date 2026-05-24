@@ -523,30 +523,42 @@ export default function WithdrawalsPage() {
               <DropdownMenuContent align="end" className="min-w-[260px]">
                 <DropdownMenuLabel>Party-safe CSV (no operator emails)</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {(CLOSURE_RESPONSIBLE_ROLES as readonly ClosureResponsibleRole[]).map((role) => {
+                {([
+                  ...(CLOSURE_RESPONSIBLE_ROLES as readonly ClosureResponsibleRole[]).map((r) => ({
+                    key: r as string,
+                    label: closureResponsibleRoleLabel(r),
+                    isExternalPayor: false,
+                  })),
+                  // Task #890 — External Payor (FYI). Not a true
+                  // responsible-role owner; it's exposed here so the
+                  // operator can hand off a payor-attributed file
+                  // separately. Always shown, never dimmed.
+                  { key: "external_payor", label: "External Payor (FYI)", isExternalPayor: true },
+                ]).map((opt) => {
                   const count = rows.filter((r) => {
                     if (!r.closureResponsibility) return false;
-                    return RESPONSIBILITY_TO_ROLE[r.closureResponsibility as ClosureResponsibility] === role;
+                    if (opt.isExternalPayor) return r.closureResponsibility === "external_payor";
+                    return RESPONSIBILITY_TO_ROLE[r.closureResponsibility as ClosureResponsibility] === opt.key
+                      && r.closureResponsibility !== "external_payor";
                   }).length;
                   const url = getExportWithdrawalsCsvByRoleUrl({
-                    role: role as typeof ExportWithdrawalsCsvByRoleRole[keyof typeof ExportWithdrawalsCsvByRoleRole],
+                    role: opt.key as typeof ExportWithdrawalsCsvByRoleRole[keyof typeof ExportWithdrawalsCsvByRoleRole],
                     search: search || undefined,
                     reason: reasons.length > 0 ? reasons.join(",") : undefined,
                     hideAddressed: hideAddressed ? "true" : "false",
                     closedFrom: closedFrom || undefined,
                     closedTo: closedTo || undefined,
                   } as Parameters<typeof getExportWithdrawalsCsvByRoleUrl>[0]);
-                  const isExternalPayor = false; // CLOSURE_RESPONSIBLE_ROLES doesn't include external_payor as a role — all three listed are real owners.
-                  const dim = count === 0 && !isExternalPayor;
+                  const dim = count === 0 && !opt.isExternalPayor;
                   return (
-                    <DropdownMenuItem key={role} asChild>
+                    <DropdownMenuItem key={opt.key} asChild>
                       <a
                         href={url}
                         download
-                        data-testid={`withdrawals-export-by-role-${role}`}
+                        data-testid={`withdrawals-export-by-role-${opt.key}`}
                         className={dim ? "opacity-50" : ""}
                       >
-                        {closureResponsibleRoleLabel(role)}
+                        {opt.label}
                         <span className="ml-auto tabular-nums text-muted-foreground text-xs">
                           ({count})
                         </span>

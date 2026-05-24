@@ -257,6 +257,23 @@ test("happy path: admin pulls IT-COO CSV → 200, header-only when no rows, exac
   assert.equal(written, 1, "success path must insert exactly one audit row");
 });
 
+test("external_payor scope: filename slug + admin allowed + portal user 403", async () => {
+  // Filename builder accepts external_payor as a 4th role-shaped value.
+  assert.equal(
+    buildByRoleFilename({ role: "external_payor", reasons: null, closedFrom: null, closedTo: null, today: "2026-05-24" }),
+    "closures-external-payor-all-alltime-to-2026-05-24.csv",
+  );
+  // Admin can request the FYI scope.
+  setActor(userAdmin as any);
+  const ok = await fetchRaw("/api/withdrawals/export-csv/by-role?role=external_payor");
+  assert.equal(ok.status, 200);
+  assert.match(String(ok.headers["content-disposition"] ?? ""), /closures-external-payor-/);
+  // Portal user (even with a real role) cannot — no one "holds" external_payor.
+  setActor(userItCoo as any);
+  const denied = await fetchRaw("/api/withdrawals/export-csv/by-role?role=external_payor");
+  assert.equal(denied.status, 403);
+});
+
 test("cross-filter + injection: narrative starting with '=' is escaped in the by-role CSV", async () => {
   setActor(userAdmin as any);
   const id = await seedClaim({

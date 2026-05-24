@@ -7251,6 +7251,7 @@ export const ExportWithdrawalsCsvByRoleRole = {
   contact_center_manager: "contact_center_manager",
   contractor_relations_coordinator: "contractor_relations_coordinator",
   it_coordinator_or_coo: "it_coordinator_or_coo",
+  external_payor: "external_payor",
 } as const;
 
 export type ExportWithdrawalsCsvByRoleHideAddressed =

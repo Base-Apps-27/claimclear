@@ -6602,7 +6602,7 @@ paths:
           description: The responsible role to scope the export to.
           schema:
             type: string
-            enum: [contact_center_manager, contractor_relations_coordinator, it_coordinator_or_coo]
+            enum: [contact_center_manager, contractor_relations_coordinator, it_coordinator_or_coo, external_payor]
         - name: search
           in: query
           schema:

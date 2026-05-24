@@ -37439,6 +37439,7 @@ export const ExportWithdrawalsCsvByRoleQueryParams = zod.object({
       "contact_center_manager",
       "contractor_relations_coordinator",
       "it_coordinator_or_coo",
+      "external_payor",
     ])
     .describe("The responsible role to scope the export to."),
   search: zod.coerce.string().optional(),

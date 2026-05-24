@@ -508,10 +508,17 @@ export function csvCell(val: unknown): string {
 
 // Task #890 — pure filename builder so the convention is unit-testable
 // and identical on both export surfaces. See `task-890.md` § D.
-export const ROLE_SLUG: Record<ClosureResponsibleRole, string> = {
+// Task #890 — the operator split-button also exposes an "External Payor
+// (FYI)" entry so closures explicitly marked `external_payor` (which
+// otherwise route to it_coordinator_or_coo for ownership) can be
+// extracted as their own file. It is exposed as a 4th role-shaped
+// enum value; the route special-cases it as a responsibility filter.
+export type ByRoleScope = ClosureResponsibleRole | "external_payor";
+export const ROLE_SLUG: Record<ByRoleScope, string> = {
   contact_center_manager: "contact-center-manager",
   contractor_relations_coordinator: "contractor-relations",
   it_coordinator_or_coo: "it-coordinator",
+  external_payor: "external-payor",
 };
 const REASON_SLUG: Record<string, string> = {
   cannot_dispute: "cannot-dispute",
@@ -519,7 +526,7 @@ const REASON_SLUG: Record<string, string> = {
   denied_by_payor: "denied-by-payor",
 };
 export function buildByRoleFilename(args: {
-  role: ClosureResponsibleRole;
+  role: ByRoleScope;
   reasons: string[] | null; // null/empty/all-three → "all"
   closedFrom: string | null;
   closedTo: string | null;
@@ -604,7 +611,7 @@ async function writeCsvExportAudit(
   scope: "operator" | "by_role",
   filters: Record<string, unknown>,
   rowCount: number,
-  role?: ClosureResponsibleRole,
+  role?: ByRoleScope,
 ): Promise<void> {
   await db.insert(auditLogsTable).values({
     action: "withdrawals_csv_exported",
@@ -632,9 +639,14 @@ function isOperatorTier(user: { role?: string | null; isPortalOnly?: boolean | n
   return false;
 }
 
+const BY_ROLE_SCOPES: readonly string[] = [
+  ...CLOSURE_RESPONSIBLE_ROLES,
+  "external_payor",
+];
+
 async function requireRoleOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   const requested = typeof req.query.role === "string" ? req.query.role : "";
-  if (!requested || !(CLOSURE_RESPONSIBLE_ROLES as readonly string[]).includes(requested)) {
+  if (!requested || !BY_ROLE_SCOPES.includes(requested)) {
     res.status(400).json({ error: "role query parameter is required" });
     return;
   }
@@ -645,6 +657,13 @@ async function requireRoleOrAdmin(req: Request, res: Response, next: NextFunctio
   }
   if (isOperatorTier(user)) {
     next();
+    return;
+  }
+  // external_payor is an operator-only FYI scope — portal users cannot
+  // request it (there is no "external payor responsibility holder" in
+  // the responsibleRoles set).
+  if (requested === "external_payor") {
+    res.status(403).json({ error: "You do not hold this responsible role" });
     return;
   }
   const [row] = await db
@@ -709,10 +728,13 @@ router.get("/withdrawals/export-csv", asyncHandler(async (req, res): Promise<voi
 // scoped by role, available both to operators (admin/user/clerk) and
 // to portal-only supervisors holding the requested role.
 router.get("/withdrawals/export-csv/by-role", asyncHandler(requireRoleOrAdmin), asyncHandler(async (req, res): Promise<void> => {
-  const role = req.query.role as ClosureResponsibleRole;
+  const role = req.query.role as ByRoleScope;
   // Pull the closure_responsibility values that route to this role
-  // (most map 1:1 but it_coordinator_or_coo covers three).
-  const responsibilities = CLOSURE_RESPONSIBILITIES.filter(r => RESPONSIBILITY_TO_ROLE[r] === role);
+  // (most map 1:1 but it_coordinator_or_coo covers three). For the
+  // external_payor FYI scope we filter by that responsibility alone.
+  const responsibilities = role === "external_payor"
+    ? (["external_payor"] as ClosureResponsibility[])
+    : CLOSURE_RESPONSIBILITIES.filter(r => RESPONSIBILITY_TO_ROLE[r] === role && r !== "external_payor");
 
   const closedFrom = typeof req.query.closedFrom === "string" && req.query.closedFrom ? req.query.closedFrom : null;
   const closedTo = typeof req.query.closedTo === "string" && req.query.closedTo ? req.query.closedTo : null;
