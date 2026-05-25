@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RecentGroupVisit = {
   id: number;
@@ -92,19 +92,52 @@ function notifySameTab(): void {
  */
 export type RailPhaseUpdate = { id: number; phase?: string | null };
 
+// How long the "just updated" cue stays on a rail row after its
+// cached phase changes (Task #882). Long enough to catch the eye on
+// a glance back at the sidebar, short enough that it's gone by the
+// time the operator decides to do anything with the row.
+const JUST_UPDATED_MS = 2000;
+
 export function useRecentGroupVisits(userId: string | undefined): {
   visits: RecentGroupVisit[];
   recordVisit: (entry: Omit<RecentGroupVisit, "visitedAt" | "pinned">) => void;
   togglePin: (id: number) => void;
   clearRecents: () => void;
-  applyPhaseUpdates: (updates: Iterable<RailPhaseUpdate>) => void;
+  applyPhaseUpdates: (
+    updates: Iterable<RailPhaseUpdate>,
+    options?: { cue?: boolean },
+  ) => void;
+  justUpdatedIds: ReadonlySet<number>;
 } {
   const key = storageKey(userId);
   const [visits, setVisits] = useState<RecentGroupVisit[]>(() => readFromStorage(key));
+  // Ids whose phase just changed via `applyPhaseUpdates` and are
+  // currently showing the "just updated" cue (Task #882). Kept out of
+  // localStorage on purpose — this is a per-tab, per-mount transient
+  // signal; rehydrating it across reloads would flash rows for stale
+  // changes the operator has long since seen.
+  const [justUpdatedIds, setJustUpdatedIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const cueTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  useEffect(() => {
+    return () => {
+      for (const t of cueTimersRef.current.values()) clearTimeout(t);
+      cueTimersRef.current.clear();
+    };
+  }, []);
 
   // Re-hydrate when the user changes (sign-out/sign-in in place).
+  // Also clear any in-flight "just updated" cues so transient highlight
+  // state from the previous user doesn't bleed across the switch
+  // (Task #882).
   useEffect(() => {
     setVisits(readFromStorage(key));
+    for (const t of cueTimersRef.current.values()) clearTimeout(t);
+    cueTimersRef.current.clear();
+    setJustUpdatedIds((prev) => (prev.size === 0 ? prev : new Set()));
   }, [key]);
 
   // Cross-tab + same-tab live updates.
@@ -165,27 +198,57 @@ export function useRecentGroupVisits(userId: string | undefined): {
   // already in the React Query cache to keep the pill honest — no
   // extra HTTP requests. Entries not in `updates` are left untouched.
   const applyPhaseUpdates = useCallback(
-    (updates: Iterable<RailPhaseUpdate>) => {
+    (updates: Iterable<RailPhaseUpdate>, options?: { cue?: boolean }) => {
       if (!key) return;
+      // Default to showing the "just updated" cue. Callers that are
+      // doing a one-time reconcile at mount/rehydration time (e.g.
+      // harvesting whatever already lives in the React Query cache
+      // when the sidebar first renders) pass `{ cue: false }` so the
+      // rail doesn't flash on initial mount or storage rehydration
+      // (Task #882).
+      const showCue = options?.cue !== false;
       const byId = new Map<number, string | null | undefined>();
       for (const u of updates) {
         if (u && typeof u.id === "number") byId.set(u.id, u.phase);
       }
       if (byId.size === 0) return;
       const current = readFromStorage(key);
-      let changed = false;
+      const changedIds: number[] = [];
       const next = current.map((v) => {
         if (!byId.has(v.id)) return v;
         const freshPhase = byId.get(v.id) ?? null;
         const currentPhase = v.phase ?? null;
         if (freshPhase === currentPhase) return v;
-        changed = true;
+        changedIds.push(v.id);
         return { ...v, phase: freshPhase };
       });
-      if (!changed) return;
+      if (changedIds.length === 0) return;
       writeToStorage(key, next);
       setVisits(next);
       notifySameTab();
+      if (!showCue) return;
+      // Mark the changed rows with the "just updated" cue and schedule
+      // each one's removal independently so back-to-back updates on
+      // different rows don't cut each other's cue short.
+      setJustUpdatedIds((prev) => {
+        const nextSet = new Set(prev);
+        for (const id of changedIds) nextSet.add(id);
+        return nextSet;
+      });
+      for (const id of changedIds) {
+        const existing = cueTimersRef.current.get(id);
+        if (existing) clearTimeout(existing);
+        const t = setTimeout(() => {
+          cueTimersRef.current.delete(id);
+          setJustUpdatedIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const ns = new Set(prev);
+            ns.delete(id);
+            return ns;
+          });
+        }, JUST_UPDATED_MS);
+        cueTimersRef.current.set(id, t);
+      }
     },
     [key],
   );
@@ -197,5 +260,12 @@ export function useRecentGroupVisits(userId: string | undefined): {
     notifySameTab();
   }, [key]);
 
-  return { visits, recordVisit, togglePin, clearRecents, applyPhaseUpdates };
+  return {
+    visits,
+    recordVisit,
+    togglePin,
+    clearRecents,
+    applyPhaseUpdates,
+    justUpdatedIds,
+  };
 }

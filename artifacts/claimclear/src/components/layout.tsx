@@ -46,6 +46,7 @@ import { HeaderSearch } from "@/components/header-search";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getDisplayTimezone, getDisplayTimezoneShort } from "@/lib/time";
 import { macroPhaseLabel } from "@/lib/lifecycle-phase";
+import { cn } from "@/lib/utils";
 import { useAdminTour } from "@/tour/admin-tour";
 import { HelpPopover } from "@/tour/help-popover";
 import { HelpCircle } from "lucide-react";
@@ -596,7 +597,7 @@ function FullBleedAwareMain({ children }: { children: React.ReactNode }) {
 // operator navigates between detail pages. Hidden until there's at
 // least one entry so first-time operators don't see an empty rail.
 function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
-  const { visits, togglePin, clearRecents, applyPhaseUpdates } =
+  const { visits, togglePin, clearRecents, applyPhaseUpdates, justUpdatedIds } =
     useRecentGroupVisits(userId);
   useRailPhaseReconciler(applyPhaseUpdates);
   if (visits.length === 0) return null;
@@ -629,7 +630,22 @@ function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
       <SidebarGroupContent>
         <SidebarMenu>
           {visits.map((v) => (
-            <SidebarMenuItem key={v.id}>
+            <SidebarMenuItem
+              key={v.id}
+              // Task #882 — brief, soft background flash on the row
+              // whenever `applyPhaseUpdates` actually changed this
+              // entry's cached phase. Catches the eye on a glance back
+              // at the sidebar without blocking the row's click target
+              // (`pointer-events-none` on the absolute overlay below)
+              // and auto-clears after ~2s via the hook's cue timers.
+              data-just-updated={justUpdatedIds.has(v.id) ? "true" : undefined}
+              className={cn(
+                "relative",
+                justUpdatedIds.has(v.id) &&
+                  "before:pointer-events-none before:absolute before:inset-0 before:rounded-md before:bg-sidebar-accent/60 before:animate-pulse",
+              )}
+              data-testid={`sidebar-recent-row-${v.id}`}
+            >
               <SidebarMenuButton
                 asChild
                 tooltip={`Invoice ${v.invoiceNumber}${v.clientNumber ? ` · ${v.clientNumber}` : ""}`}
@@ -697,13 +713,14 @@ function RecentlyViewedSection({ userId }: { userId: string | undefined }) {
 // existing `storage` event in `useRecentGroupVisits`.
 type RailReconcileFn = (
   updates: Iterable<{ id: number; phase?: string | null }>,
+  options?: { cue?: boolean },
 ) => void;
 
 function useRailPhaseReconciler(applyPhaseUpdates: RailReconcileFn) {
   const queryClient = useQueryClient();
   useEffect(() => {
     const cache = queryClient.getQueryCache();
-    const harvest = (query: Query) => {
+    const harvest = (query: Query, options?: { cue?: boolean }) => {
       const key = query.queryKey;
       if (!Array.isArray(key) || typeof key[0] !== "string") return;
       const path = key[0] as string;
@@ -724,7 +741,7 @@ function useRailPhaseReconciler(applyPhaseUpdates: RailReconcileFn) {
             }
           }
         }
-        if (updates.length > 0) applyPhaseUpdates(updates);
+        if (updates.length > 0) applyPhaseUpdates(updates, options);
       } else if (path.startsWith("/api/invoice-groups/")) {
         // Detail endpoint key is `["/api/invoice-groups/{id}"]` —
         // ignore nested sub-resources (history, threads, etc.) which
@@ -734,16 +751,21 @@ function useRailPhaseReconciler(applyPhaseUpdates: RailReconcileFn) {
         const idNum = Number(rest);
         if (!Number.isInteger(idNum)) return;
         const phase = (data as { phase?: unknown }).phase;
-        applyPhaseUpdates([
-          { id: idNum, phase: typeof phase === "string" ? phase : null },
-        ]);
+        applyPhaseUpdates(
+          [{ id: idNum, phase: typeof phase === "string" ? phase : null }],
+          options,
+        );
       }
     };
 
     // Reconcile against whatever is already in the cache when the
     // sidebar mounts (e.g. the operator navigated from the queue to
     // the dashboard — the list query already lives in the cache).
-    for (const q of cache.getAll()) harvest(q);
+    // Pass `cue: false` so this mount-time sync doesn't flash rows
+    // for changes the operator has likely already seen elsewhere
+    // (Task #882). Live updates from the cache subscription below
+    // still flash normally.
+    for (const q of cache.getAll()) harvest(q, { cue: false });
 
     const unsub = cache.subscribe((event) => {
       if (event.type === "updated" && event.action?.type === "success") {
