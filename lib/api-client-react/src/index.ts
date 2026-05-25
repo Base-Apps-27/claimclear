@@ -5,5 +5,6 @@ export {
   setAuthTokenGetter,
   setOnSessionExpired,
   ApiError,
+  customFetch,
 } from "./custom-fetch";
 export type { AuthTokenGetter } from "./custom-fetch";
