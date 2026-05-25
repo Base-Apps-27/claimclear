@@ -159,9 +159,21 @@ export async function refreshClaimDenormalizedCache(
     .orderBy(desc(claimVerdictTable.createdAt))
     .limit(1);
 
+  // When no terminal verdict row exists, preserve the leg's current
+  // `outcome` rather than forcing it back to "Pending". Several writers
+  // (notably `transitionClaimOutcome` / `transitionClaimSubStatusAndOutcome`
+  // and the PATCH /claims/:id/outcome fast path) set `claims.outcome`
+  // directly without emitting a `claim_verdict` row — the verdict table
+  // is the AI-vs-operator calibration ledger, not the canonical writer
+  // for the outcome cache. Defaulting to "Pending" here used to silently
+  // revert a queued-for-reattest Approved leg back to Pending the moment
+  // `applyAttestationAction` called this helper, which then dropped the
+  // leg from the queue list and counters (both filter on outcome ∈
+  // Approved family). Keeping the existing outcome is the conservative
+  // refresh contract: only overwrite when we have new data to write.
   const nextOutcome: ClaimOutcome = latestVerdict
     ? verdictOutcomeToClaimOutcome(latestVerdict.outcome)
-    : "Pending";
+    : leg.outcome;
 
   // Project status + disposition from the parent group + leg's own
   // per-leg state. Orphan legs keep their existing status/disposition
