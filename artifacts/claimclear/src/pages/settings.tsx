@@ -460,6 +460,14 @@ export default function Settings() {
                                   </Link>
                                 </Button>
                               </WrapTooltip>
+                              <WrapTooltip content="View this user's recent sign-ins (timestamp, IP, user agent).">
+                                <Button asChild size="sm" variant="outline" className="gap-1" data-testid={`button-signins-${u.id}`}>
+                                  <Link href={`/admin/users/sign-ins?userId=${encodeURIComponent(u.id)}`}>
+                                    <Shield className="h-3 w-3" />
+                                    Sign-ins
+                                  </Link>
+                                </Button>
+                              </WrapTooltip>
                               <WrapTooltip content="Download a CSV of this user's audit log entries.">
                                 <Button asChild size="sm" variant="outline" className="gap-1">
                                   <a href={getAdminExportAuditLogsCsvUrl({ userEmail: u.email })}>

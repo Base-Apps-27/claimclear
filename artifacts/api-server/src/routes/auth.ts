@@ -3,8 +3,8 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import {
   GetCurrentAuthUserResponse,
 } from "@workspace/api-zod";
-import { db, usersTable, notificationPreferencesTable, auditLogsTable } from "@workspace/db";
-import { eq, sql, count, asc } from "drizzle-orm";
+import { db, usersTable, notificationPreferencesTable, auditLogsTable, userLoginsTable } from "@workspace/db";
+import { eq, sql, count, asc, desc } from "drizzle-orm";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { getResponsibleRoles } from "../lib/role";
@@ -192,6 +192,47 @@ router.get("/auth/session-info", (req: Request, res: Response) => {
   }
   res.json(req.sessionTiming);
 });
+
+// Task #881 — per-user sign-in history. Admin-only. Returns the most
+// recent N rows (default 50, capped at 200) from `user_logins` for the
+// given user, plus the user's basic identity so the page can render a
+// title without a second roundtrip.
+router.get("/admin/users/:userId/sign-ins", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const limitRaw = parseInt(String(req.query.limit ?? "50"), 10);
+  const limit = Math.min(Math.max(isNaN(limitRaw) ? 50 : limitRaw, 1), 200);
+
+  const [user] = await db
+    .select({ id: usersTable.id, email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: userLoginsTable.id,
+      loggedInAt: userLoginsTable.loggedInAt,
+      ipAddress: userLoginsTable.ipAddress,
+      userAgent: userLoginsTable.userAgent,
+    })
+    .from(userLoginsTable)
+    .where(eq(userLoginsTable.userId, userId))
+    .orderBy(desc(userLoginsTable.loggedInAt))
+    .limit(limit);
+
+  res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+    },
+    limit,
+    items: rows,
+  });
+}));
 
 router.get("/admin/users", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
@@ -493,6 +534,26 @@ router.get("/callback", async (req: Request, res: Response) => {
   const dbUser = await upsertUser(
     claims as unknown as Record<string, unknown>,
   );
+
+  // Task #881 — append a row to the sign-in history so admins can audit
+  // every successful callback (timestamp, IP, user agent), not just the
+  // single most-recent value cached on `users.last_login_at`.
+  try {
+    const forwarded = req.headers["x-forwarded-for"];
+    const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(",")[0]?.trim())
+      || req.ip
+      || req.socket?.remoteAddress
+      || null;
+    const ua = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null;
+    await db.insert(userLoginsTable).values({
+      userId: dbUser.id,
+      ipAddress: ip ? ip.slice(0, 255) : null,
+      userAgent: ua,
+    });
+  } catch {
+    // Sign-in history is best-effort. A logging failure must never block
+    // the user from completing authentication.
+  }
 
   const displayName = [dbUser.firstName, dbUser.lastName]
     .filter(Boolean)

@@ -35303,6 +35303,36 @@ export const GetResponseStatsResponse = zod.object({
 });
 
 /**
+ * @summary List a user's recent sign-ins (admin only)
+ */
+export const AdminListUserSignInsParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const adminListUserSignInsQueryLimitDefault = 50;
+
+export const AdminListUserSignInsQueryParams = zod.object({
+  limit: zod.coerce.number().default(adminListUserSignInsQueryLimitDefault),
+});
+
+export const AdminListUserSignInsResponse = zod.object({
+  user: zod.object({
+    id: zod.string(),
+    email: zod.string().nullish(),
+    displayName: zod.string().nullish(),
+  }),
+  limit: zod.number(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      loggedInAt: zod.string(),
+      ipAddress: zod.string().nullish(),
+      userAgent: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary List audit log entries (admin only) with filtering and pagination
  */
 export const adminListAuditLogsQueryLimitDefault = 50;

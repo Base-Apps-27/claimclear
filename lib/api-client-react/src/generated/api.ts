@@ -27,8 +27,10 @@ import type {
   AdminAuditLogsResponse,
   AdminExportAuditLogsCsvParams,
   AdminListAuditLogsParams,
+  AdminListUserSignInsParams,
   AdminResponsibleRolesBody,
   AdminResponsibleRolesReadout,
+  AdminUserSignInsResponse,
   AiCalibrationResponse,
   AnalyzeSOPBody,
   AnthropicConversation,
@@ -16246,6 +16248,126 @@ export function useGetResponseStats<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetResponseStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List a user's recent sign-ins (admin only)
+ */
+export const getAdminListUserSignInsUrl = (
+  userId: string,
+  params?: AdminListUserSignInsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/users/${userId}/sign-ins?${stringifiedParams}`
+    : `/api/admin/users/${userId}/sign-ins`;
+};
+
+export const adminListUserSignIns = async (
+  userId: string,
+  params?: AdminListUserSignInsParams,
+  options?: RequestInit,
+): Promise<AdminUserSignInsResponse> => {
+  return customFetch<AdminUserSignInsResponse>(
+    getAdminListUserSignInsUrl(userId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getAdminListUserSignInsQueryKey = (
+  userId: string,
+  params?: AdminListUserSignInsParams,
+) => {
+  return [
+    `/api/admin/users/${userId}/sign-ins`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getAdminListUserSignInsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminListUserSignIns>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: string,
+  params?: AdminListUserSignInsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListUserSignIns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListUserSignInsQueryKey(userId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminListUserSignIns>>
+  > = ({ signal }) =>
+    adminListUserSignIns(userId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!userId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminListUserSignIns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminListUserSignInsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminListUserSignIns>>
+>;
+export type AdminListUserSignInsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List a user's recent sign-ins (admin only)
+ */
+
+export function useAdminListUserSignIns<
+  TData = Awaited<ReturnType<typeof adminListUserSignIns>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: string,
+  params?: AdminListUserSignInsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListUserSignIns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListUserSignInsQueryOptions(
+    userId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

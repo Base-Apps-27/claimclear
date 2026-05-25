@@ -5878,6 +5878,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResponseStats'
 
+  /admin/users/{userId}/sign-ins:
+    get:
+      operationId: adminListUserSignIns
+      tags: [admin]
+      summary: List a user's recent sign-ins (admin only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Recent sign-ins for the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserSignInsResponse"
+
   /admin/audit-logs:
     get:
       operationId: adminListAuditLogs
@@ -9397,6 +9421,46 @@ components:
         - details
         - timestamp
         - viaGroup
+
+    AdminUserSignInItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        loggedInAt:
+          type: string
+        ipAddress:
+          type: ["string", "null"]
+        userAgent:
+          type: ["string", "null"]
+      required:
+        - id
+        - loggedInAt
+
+    AdminUserSignInsResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: ["string", "null"]
+            displayName:
+              type: ["string", "null"]
+          required:
+            - id
+        limit:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserSignInItem"
+      required:
+        - user
+        - limit
+        - items
 
     AdminAuditLogItem:
       type: object

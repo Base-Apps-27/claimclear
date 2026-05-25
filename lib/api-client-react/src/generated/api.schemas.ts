@@ -3182,6 +3182,29 @@ export interface CreateNoteBody {
   type?: string;
 }
 
+export interface AdminUserSignInItem {
+  id: number;
+  loggedInAt: string;
+  /** @nullable */
+  ipAddress?: string | null;
+  /** @nullable */
+  userAgent?: string | null;
+}
+
+export type AdminUserSignInsResponseUser = {
+  id: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  displayName?: string | null;
+};
+
+export interface AdminUserSignInsResponse {
+  user: AdminUserSignInsResponseUser;
+  limit: number;
+  items: AdminUserSignInItem[];
+}
+
 export type AdminAuditLogItemCategory =
   (typeof AdminAuditLogItemCategory)[keyof typeof AdminAuditLogItemCategory];
 
@@ -7013,6 +7036,10 @@ compatibility with bots that have not been updated.
 export type RecordPortalResponse200 = {
   responseId?: number;
   claimId?: number;
+};
+
+export type AdminListUserSignInsParams = {
+  limit?: number;
 };
 
 export type AdminListAuditLogsParams = {
