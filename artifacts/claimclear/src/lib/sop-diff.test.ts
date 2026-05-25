@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   diffChars,
+  diffSopSettings,
   diffSopSnapshots,
   formatDiffSummary,
 } from "./sop-diff.ts";
@@ -64,6 +65,74 @@ test("diffSopSnapshots tolerates missing / null trees", () => {
 
   const empty = diffSopSnapshots(null, null);
   assert.deepEqual(empty.summary, { added: 0, removed: 0, edited: 0 });
+});
+
+test("diffSopSettings reports boolean flips with off/on values", () => {
+  const before = {
+    name: "Late delivery",
+    useDirectEmail: false,
+    tripOverriding: true,
+  };
+  const after = {
+    name: "Late delivery",
+    useDirectEmail: true,
+    tripOverriding: true,
+  };
+  const settings = diffSopSettings(before, after);
+  assert.equal(settings.length, 1);
+  const flag = settings[0];
+  assert.equal(flag.key, "useDirectEmail");
+  assert.equal(flag.kind, "boolean");
+  assert.equal(flag.before, "off");
+  assert.equal(flag.after, "on");
+  assert.equal(flag.beforeBool, false);
+  assert.equal(flag.afterBool, true);
+});
+
+test("diffSopSettings char-diffs scalar text fields and ignores unchanged", () => {
+  const before = {
+    name: "Late",
+    category: "Ops",
+    emailTemplate: "Hi {{name}},",
+    disputeInstructions: "Cite POD.",
+    useDirectEmail: false,
+  };
+  const after = {
+    name: "Late",
+    category: "Operations",
+    emailTemplate: "Hello {{name}},",
+    disputeInstructions: "Cite POD.",
+    useDirectEmail: false,
+  };
+  const settings = diffSopSettings(before, after);
+  const keys = settings.map((s) => s.key).sort();
+  assert.deepEqual(keys, ["category", "emailTemplate"]);
+  const cat = settings.find((s) => s.key === "category")!;
+  assert.equal(cat.kind, "text");
+  assert.ok(cat.segments.some((s) => s.op === "added"));
+});
+
+test("diffSopSnapshots populates settings alongside node diffs", () => {
+  const before = {
+    name: "Late",
+    useDirectEmail: false,
+    decisionTree: {
+      rootId: "n1",
+      nodes: [{ id: "n1", question: "Q1" }],
+    },
+  };
+  const after = {
+    name: "Late",
+    useDirectEmail: true,
+    decisionTree: {
+      rootId: "n1",
+      nodes: [{ id: "n1", question: "Q1 updated" }],
+    },
+  };
+  const diff = diffSopSnapshots(before, after);
+  assert.equal(diff.summary.edited, 1);
+  assert.equal(diff.settings.length, 1);
+  assert.equal(diff.settings[0].key, "useDirectEmail");
 });
 
 test("formatDiffSummary pluralizes the leading count", () => {

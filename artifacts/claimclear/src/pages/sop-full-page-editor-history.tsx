@@ -37,6 +37,7 @@ import {
   formatDiffSummary,
   type DiffSegment,
   type NodeDiff,
+  type SettingsFieldDiff,
 } from "@/lib/sop-diff";
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,43 @@ function DiffSegments({ segments }: { segments: ReadonlyArray<DiffSegment> }) {
         return <span key={i}>{s.text}</span>;
       })}
     </>
+  );
+}
+
+// Task #874 — render a single SOP setting change. Boolean flips get
+// a compact "off → on" pill pair; text/JSON fields reuse the existing
+// character-level diff styling so authors recognize them on sight.
+function SettingsFieldRow({ field }: { field: SettingsFieldDiff }) {
+  return (
+    <div
+      className="border border-amber-200 rounded-md p-2.5 bg-amber-50/40"
+      data-testid={`diff-setting-${field.key}`}
+    >
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        {field.label}
+      </div>
+      {field.kind === "boolean" ? (
+        <div className="text-xs flex items-center gap-1.5 flex-wrap">
+          <span
+            className="bg-red-100 text-red-800 line-through rounded-sm px-1.5 py-0.5"
+            data-testid="diff-removed"
+          >
+            {field.before}
+          </span>
+          <span className="text-muted-foreground">→</span>
+          <span
+            className="bg-green-100 text-green-800 rounded-sm px-1.5 py-0.5"
+            data-testid="diff-added"
+          >
+            {field.after}
+          </span>
+        </div>
+      ) : (
+        <div className="text-xs whitespace-pre-wrap break-words leading-snug font-mono">
+          <DiffSegments segments={field.segments} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -184,10 +222,10 @@ function VersionDiffView({
 
   const diff = useMemo(() => {
     if (!versionQ.data || !liveQ.data) return null;
-    const before =
-      (versionQ.data.snapshot as { decisionTree?: unknown } | null | undefined)
-        ?.decisionTree ?? null;
-    const after = liveQ.data.decisionTree ?? null;
+    // Task #874 — pass the full snapshot blob (not just .decisionTree)
+    // so the diff also covers scalar settings + boolean flags.
+    const before = versionQ.data.snapshot ?? null;
+    const after = liveQ.data ?? null;
     return diffSopSnapshots(before, after);
   }, [versionQ.data, liveQ.data]);
 
@@ -213,6 +251,7 @@ function VersionDiffView({
     : diff.nodes;
   const unchangedCount = diff.nodes.filter((n) => n.status === "unchanged")
     .length;
+  const settingsChanges = diff.settings;
 
   return (
     <div className="p-3 space-y-3" data-testid="history-version-diff">
@@ -241,6 +280,21 @@ function VersionDiffView({
             {unchangedCount > 0 ? ` (${unchangedCount})` : ""}
           </label>
         </div>
+      </div>
+      {settingsChanges.length > 0 ? (
+        <div className="space-y-1.5" data-testid="diff-settings-section">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Settings ({settingsChanges.length})
+          </div>
+          <div className="space-y-2">
+            {settingsChanges.map((f) => (
+              <SettingsFieldRow key={f.key} field={f} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        Decision tree
       </div>
       {visibleNodes.length === 0 ? (
         <div

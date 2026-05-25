@@ -143,12 +143,137 @@ export interface SopDiffSummary {
 export interface SopDiff {
   nodes: NodeDiff[];
   summary: SopDiffSummary;
+  // Task #874 — scalar / flag setting changes captured by the SOP
+  // snapshot but living outside the decision tree (name, category,
+  // email template, useDirectEmail flag, …). Empty when the inputs
+  // are bare decision trees rather than full snapshot blobs.
+  settings: SettingsFieldDiff[];
+}
+
+// Task #874 — a single SOP setting (scalar string or boolean flag)
+// that differs between two snapshots. Text fields carry character-
+// level segments so the UI can reuse the existing diff styling;
+// boolean flips carry the raw before/after values so the UI can
+// render them as "off → on" instead of a meaningless char diff.
+export type SettingsFieldKind = "text" | "boolean" | "json";
+
+export interface SettingsFieldDiff {
+  key: string;
+  label: string;
+  kind: SettingsFieldKind;
+  before: string;
+  after: string;
+  beforeBool?: boolean;
+  afterBool?: boolean;
+  segments: DiffSegment[];
 }
 
 function asTree(raw: unknown): DiffTreeShape {
   if (!raw || typeof raw !== "object") return { nodes: [] };
-  const t = raw as DiffTreeShape;
+  // Full snapshot blobs nest the tree under `decisionTree`; bare
+  // trees are passed in directly (tests + legacy callers).
+  const maybeSnap = raw as { decisionTree?: unknown };
+  const treeSrc =
+    maybeSnap.decisionTree && typeof maybeSnap.decisionTree === "object"
+      ? maybeSnap.decisionTree
+      : raw;
+  const t = treeSrc as DiffTreeShape;
   return { rootId: t.rootId, nodes: Array.isArray(t.nodes) ? t.nodes : [] };
+}
+
+// Task #874 — descriptor table for the scalar / flag fields a saved
+// SOP snapshot carries alongside its decision tree. Order here drives
+// the rendered order in the Settings section of the diff pane.
+const SETTINGS_FIELDS: ReadonlyArray<{
+  key: string;
+  label: string;
+  kind: SettingsFieldKind;
+}> = [
+  { key: "name", label: "Name", kind: "text" },
+  { key: "category", label: "Category", kind: "text" },
+  { key: "description", label: "Description", kind: "text" },
+  { key: "guidance", label: "Guidance", kind: "text" },
+  { key: "recommendedActions", label: "Recommended actions", kind: "text" },
+  { key: "emailTemplate", label: "Email template", kind: "text" },
+  { key: "disputeInstructions", label: "Dispute instructions", kind: "text" },
+  { key: "sourceSopText", label: "Source SOP text", kind: "text" },
+  {
+    key: "useGpsControlDeviation",
+    label: "Use GPS control deviation",
+    kind: "boolean",
+  },
+  { key: "useDirectEmail", label: "Use direct email", kind: "boolean" },
+  { key: "tripOverriding", label: "Trip overriding", kind: "boolean" },
+  { key: "evidenceRequirements", label: "Evidence requirements", kind: "json" },
+  {
+    key: "disputeReasonsLibrary",
+    label: "Dispute reasons library",
+    kind: "json",
+  },
+];
+
+function asRecord(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object") return {};
+  return raw as Record<string, unknown>;
+}
+
+function toText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  return String(v);
+}
+
+function toJsonText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+export function diffSopSettings(
+  beforeRaw: unknown,
+  afterRaw: unknown,
+): SettingsFieldDiff[] {
+  const before = asRecord(beforeRaw);
+  const after = asRecord(afterRaw);
+  const out: SettingsFieldDiff[] = [];
+  for (const f of SETTINGS_FIELDS) {
+    const bRaw = before[f.key];
+    const aRaw = after[f.key];
+    // Skip fields entirely absent from BOTH sides — keeps the diff
+    // pane focused on what the snapshot actually captured.
+    if (!(f.key in before) && !(f.key in after)) continue;
+    if (f.kind === "boolean") {
+      const bv = bRaw === true;
+      const av = aRaw === true;
+      if (bv === av) continue;
+      out.push({
+        key: f.key,
+        label: f.label,
+        kind: "boolean",
+        before: bv ? "on" : "off",
+        after: av ? "on" : "off",
+        beforeBool: bv,
+        afterBool: av,
+        segments: [],
+      });
+      continue;
+    }
+    const b = f.kind === "json" ? toJsonText(bRaw) : toText(bRaw);
+    const a = f.kind === "json" ? toJsonText(aRaw) : toText(aRaw);
+    if (b === a) continue;
+    out.push({
+      key: f.key,
+      label: f.label,
+      kind: f.kind,
+      before: b,
+      after: a,
+      segments: diffChars(b, a),
+    });
+  }
+  return out;
 }
 
 function nodeLabel(n: DiffTreeNodeShape | null): string {
@@ -277,7 +402,11 @@ export function diffSopSnapshots(beforeRaw: unknown, afterRaw: unknown): SopDiff
     return x.id.localeCompare(y.id);
   });
 
-  return { nodes, summary: { added, removed, edited } };
+  return {
+    nodes,
+    summary: { added, removed, edited },
+    settings: diffSopSettings(beforeRaw, afterRaw),
+  };
 }
 
 export function formatDiffSummary(s: SopDiffSummary): string {
