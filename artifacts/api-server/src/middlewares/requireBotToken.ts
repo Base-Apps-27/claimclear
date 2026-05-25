@@ -17,7 +17,11 @@ export function requireBotToken(req: Request, res: Response, next: NextFunction)
 export function requireAuthOrBot(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
     if (req.user?.status !== "approved") {
-      res.status(403).json({ error: "Access pending approval", status: req.user?.status ?? "pending" });
+      const status = req.user?.status ?? "pending";
+      const error = status === "paused"
+        ? "Your account was paused due to inactivity — contact an admin"
+        : "Access pending approval";
+      res.status(403).json({ error, status });
       return;
     }
     next();

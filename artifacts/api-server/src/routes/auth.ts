@@ -246,14 +246,28 @@ router.get("/admin/users", requireAdmin, asyncHandler(async (req: Request, res: 
     status: u.status,
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt,
+    // Task #880 — surface auto-pause timestamp so the Settings UI can
+    // label paused users with "Paused for inactivity (3 days ago)"
+    // rather than a generic Denied/Paused badge.
+    pausedAt: u.pausedAt,
   })));
 }));
 
 router.patch("/admin/users/:userId/approve", requireAdmin, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.params.userId as string;
+  const now = new Date();
   const [user] = await db
     .update(usersTable)
-    .set({ status: "approved", updatedAt: new Date() })
+    // Task #880 — re-approving clears the dormant-pause stamp AND
+    // bumps lastLoginAt to "now" so the sweep (which keys off
+    // lastLoginAt < cutoff) doesn't immediately re-pause this user
+    // on the next nightly run before they've had a chance to sign in.
+    .set({
+      status: "approved",
+      pausedAt: null,
+      lastLoginAt: now,
+      updatedAt: now,
+    })
     .where(eq(usersTable.id, userId))
     .returning();
   if (!user) {

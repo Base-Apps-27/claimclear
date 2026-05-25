@@ -32,6 +32,16 @@ import type { CanonicalSummary, CanonicalReviewCount } from "./data";
 import type { PortalAttentionBundle } from "./portal-attention";
 import type { YesterdayActivity, NeedsYouToday } from "../brief-personalization";
 
+// Task #880 — recently-paused accounts surfaced in the admin brief so
+// admins notice the nightly dormant-account sweep at the same place
+// they already check pipeline health.
+export interface RecentlyPausedAccount {
+  id: string;
+  email: string | null;
+  pausedAt: string;
+  lastLoginAt: string | null;
+}
+
 const APP_BASE_URL = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
 
 function absUrl(href: string | null | undefined): string {
@@ -245,11 +255,44 @@ function renderRecoveryBlock(summary: CanonicalSummary): string {
 
 // ─── Admin variant ─────────────────────────────────────────────────────
 
+function renderRecentlyPausedBlock(paused: RecentlyPausedAccount[]): string {
+  if (paused.length === 0) return "";
+  const rows = paused.slice(0, 10).map((p) => {
+    const pausedLabel = new Date(p.pausedAt).toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const lastLoginLabel = p.lastLoginAt
+      ? new Date(p.lastLoginAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })
+      : "never";
+    return {
+      cells: [
+        escapeHtml(p.email ?? p.id),
+        escapeHtml(lastLoginLabel),
+        escapeHtml(pausedLabel),
+      ],
+    };
+  });
+  return `<div style="margin:24px 0;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+    <h2 style="font-size:14px;color:#92400e;margin:0 0 6px;text-transform:uppercase;letter-spacing:.05em;">
+      Accounts paused for inactivity (${paused.length})
+    </h2>
+    <p style="margin:0 0 10px;color:#78350f;font-size:12px;">
+      The nightly dormant-account sweep paused these accounts overnight. Re-approve from Settings → User Management if access is still needed.
+    </p>
+    ${simpleTable(["User", "Last sign-in", "Paused at"], rows)}
+  </div>`;
+}
+
 export function renderAdminDailyBody(
   summary: CanonicalSummary,
   yesterday: YesterdayActivity,
   attention: PortalAttentionBundle,
   reviewCount: CanonicalReviewCount | null = null,
+  recentlyPaused: RecentlyPausedAccount[] = [],
 ): string {
   const actionable = actionableExpiring(summary);
   const urgentCount = actionable.filter((g) => g.isUrgent).length;
@@ -309,6 +352,7 @@ export function renderAdminDailyBody(
     ${renderRecoveryBlock(summary)}
     ${renderYesterdayRow(yesterday)}
     ${renderAttentionBlock(attention)}
+    ${renderRecentlyPausedBlock(recentlyPaused)}
     ${filingSection}
     ${tomorrowSection}
   `;

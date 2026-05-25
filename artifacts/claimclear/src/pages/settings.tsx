@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download, ArrowUpDown } from "lucide-react";
+import { Mail, Settings as SettingsIcon, Users, CheckCircle, XCircle, Shield, FileText, Globe, Activity, Download, ArrowUpDown, Clock as ClockIcon } from "lucide-react";
 import { formatRelative } from "@/lib/time";
 import { Skeleton, SkeletonSwap } from "@/components/ui/skeleton";
 import { useState, useEffect, useCallback } from "react";
@@ -27,6 +27,9 @@ interface ManagedUser {
   status: string;
   createdAt: string;
   lastLoginAt: string | null;
+  // Task #880 — set by the nightly dormant-account sweep; null for
+  // users denied/approved manually.
+  pausedAt?: string | null;
 }
 
 const DORMANT_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
@@ -112,6 +115,11 @@ export default function Settings() {
   const [directEmailCc, setDirectEmailCc] = useState("");
   const [directEmailSaved, setDirectEmailSaved] = useState(false);
   const [directEmailLoaded, setDirectEmailLoaded] = useState(false);
+  // Task #880 — nightly dormant-account sweep settings.
+  const [dormantEnabled, setDormantEnabled] = useState(true);
+  const [dormantDays, setDormantDays] = useState("60");
+  const [dormantSaved, setDormantSaved] = useState(false);
+  const [dormantLoaded, setDormantLoaded] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -139,6 +147,32 @@ export default function Settings() {
       setDirectEmailLoaded(true);
     }
   }, [appSettings, directEmailLoaded]);
+
+  useEffect(() => {
+    if (appSettings && !dormantLoaded) {
+      const rawEnabled = appSettings.dormant_auto_pause_enabled;
+      setDormantEnabled(rawEnabled == null ? true : rawEnabled !== "false");
+      const rawDays = appSettings.dormant_auto_pause_days;
+      setDormantDays(rawDays && /^\d+$/.test(rawDays) ? rawDays : "60");
+      setDormantLoaded(true);
+    }
+  }, [appSettings, dormantLoaded]);
+
+  const handleSaveDormant = async () => {
+    const parsed = parseInt(dormantDays, 10);
+    const clamped = Number.isFinite(parsed)
+      ? Math.min(365, Math.max(7, parsed))
+      : 60;
+    if (String(clamped) !== dormantDays) setDormantDays(String(clamped));
+    await updateAppSettings.mutateAsync({
+      data: {
+        dormant_auto_pause_enabled: dormantEnabled ? "true" : "false",
+        dormant_auto_pause_days: String(clamped),
+      },
+    });
+    setDormantSaved(true);
+    setTimeout(() => setDormantSaved(false), 3000);
+  };
 
   const handleSaveDirectEmail = async () => {
     await updateAppSettings.mutateAsync({
@@ -240,6 +274,10 @@ export default function Settings() {
 
   const pendingUsers = users.filter(u => u.status === "pending");
   const deniedUsers = users.filter(u => u.status === "denied");
+  // Task #880 — auto-paused dormant accounts surface as their own
+  // bucket so admins can tell at a glance which Denied rows were the
+  // result of a manual revoke vs the nightly sweep.
+  const pausedUsers = users.filter(u => u.status === "paused");
   const approvedUsers = users
     .filter(u => u.status === "approved")
     .slice()
@@ -521,6 +559,43 @@ export default function Settings() {
                   </div>
                 )}
 
+                {pausedUsers.length > 0 && (
+                  <div className="space-y-3">
+                    <Separator />
+                    <h4 className="text-sm font-semibold text-amber-700 dark:text-amber-400">Paused for Inactivity</h4>
+                    {pausedUsers.map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-3 border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={u.profileImageUrl || undefined} />
+                            <AvatarFallback>{getUserDisplayName(u).charAt(0).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-medium">{getUserDisplayName(u)}</p>
+                            <p className="text-xs text-muted-foreground">{u.email}</p>
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              Auto-paused {u.pausedAt ? formatRelative(u.pausedAt) : "for inactivity"}
+                              {u.lastLoginAt ? ` · last sign-in ${formatRelative(u.lastLoginAt)}` : " · never signed in"}
+                            </p>
+                          </div>
+                        </div>
+                        <WrapTooltip content="Restore access for this auto-paused user. Their last-login timestamp resets so the sweep will not immediately re-pause them.">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleApprove(u.id)}
+                            disabled={actionLoading === u.id}
+                            className="gap-1"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                            Re-approve
+                          </Button>
+                        </WrapTooltip>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {deniedUsers.length > 0 && (
                   <div className="space-y-3">
                     <Separator />
@@ -618,6 +693,59 @@ export default function Settings() {
                 {updateAppSettings.isPending ? "Saving..." : "Save Portal Settings"}
               </Button>
               {portalSettingsSaved && (
+                <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClockIcon className="h-5 w-5" />
+              Dormant Account Auto-Pause
+              <InfoTooltip content="Nightly sweep that pauses approved accounts after a long stretch of inactivity. Paused users see a 'contact an admin' message at sign-in and can be re-approved from the user list above." />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Approved accounts whose last sign-in is older than the threshold are automatically
+              moved to <strong>Paused</strong> by the nightly sweep (runs at 2&nbsp;AM&nbsp;ET).
+              Re-approve a paused user from the user list to restore access.
+            </p>
+            <div className="flex items-center gap-3">
+              <Switch
+                id="dormant-enabled"
+                checked={dormantEnabled}
+                onCheckedChange={setDormantEnabled}
+              />
+              <Label htmlFor="dormant-enabled" className="cursor-pointer">
+                Enable nightly dormant-account sweep
+              </Label>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dormant-days">Inactivity threshold (days)</Label>
+              <Input
+                id="dormant-days"
+                type="number"
+                min={7}
+                max={365}
+                value={dormantDays}
+                onChange={e => setDormantDays(e.target.value.replace(/[^\d]/g, ""))}
+                className="w-32"
+                disabled={!dormantEnabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                Default is 60 days. Allowed range is 7–365 days.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleSaveDormant} disabled={updateAppSettings.isPending}>
+                {updateAppSettings.isPending ? "Saving..." : "Save Auto-Pause Settings"}
+              </Button>
+              {dormantSaved && (
                 <span className="text-sm text-green-600 dark:text-green-400">Saved successfully</span>
               )}
             </div>

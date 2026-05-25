@@ -32,6 +32,12 @@ export const usersTable = pgTable("users", {
   isPortalOnly: boolean("is_portal_only").notNull().default(false),
   tourVersionSeen: varchar("tour_version_seen"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  // Task #880 — stamped by the nightly dormant-account sweep when an
+  // approved user is auto-paused for inactivity. Cleared when an admin
+  // re-approves. The presence/absence of this column is what the daily
+  // brief and Settings UI key off when surfacing "Paused for inactivity"
+  // rather than a manual deny.
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

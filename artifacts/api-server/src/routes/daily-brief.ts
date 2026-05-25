@@ -66,6 +66,7 @@ import {
   renderAdminDailyBody,
   renderOperatorDailyBody,
 } from "../lib/daily-brief/daily-body";
+import { getRecentlyPausedUsers } from "../lib/dormant-account-sweep";
 import { renderWeeklyExecBody } from "../lib/daily-brief/weekly-body";
 
 const router: IRouter = Router();
@@ -283,7 +284,7 @@ router.post(
       const yesterdayStart = new Date(todayStart);
       yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-      const [summary, yesterday, attention, reviewCount] = await Promise.all([
+      const [summary, yesterday, attention, reviewCount, recentlyPausedRaw] = await Promise.all([
         safeFetchCanonicalSummary(degradationNotes),
         getYesterdayActivity(yesterdayStart, todayStart).catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);
@@ -292,7 +293,22 @@ router.post(
         }),
         safeGatherPortalAttention(degradationNotes),
         safeFetchCanonicalReviewCount(degradationNotes),
+        // Task #880 — surface accounts paused by the overnight
+        // dormant-account sweep so admins notice them on the same
+        // morning the pause takes effect. 26h window to absorb minor
+        // schedule jitter between the 2 AM sweep and the 7 AM brief.
+        getRecentlyPausedUsers(26 * 60 * 60 * 1000).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          degradationNotes.push({ source: "recently_paused", message: msg.slice(0, 240) });
+          return [] as Awaited<ReturnType<typeof getRecentlyPausedUsers>>;
+        }),
       ]);
+      const recentlyPaused = recentlyPausedRaw.map((r) => ({
+        id: r.id,
+        email: r.email,
+        pausedAt: r.pausedAt.toISOString(),
+        lastLoginAt: r.lastLoginAt ? r.lastLoginAt.toISOString() : null,
+      }));
 
       const { connected: outlookAvailable, healthy: outlookHealthy, error: outlookError } =
         await outlookHealth();
@@ -319,7 +335,7 @@ router.post(
           dateLabel: dateLabel(now),
           variantLabel: "Daily ops brief",
           bodyHtml: summary
-            ? renderAdminDailyBody(summary, yesterday, attention, reviewCount)
+            ? renderAdminDailyBody(summary, yesterday, attention, reviewCount, recentlyPaused)
             : `<p style="color:#a4262c;">Dashboard summary unavailable — see degradation notes.</p>`,
           outlookHealthy,
           outlookError,
@@ -463,7 +479,7 @@ router.post(
             dateLabel: dateLabel(now),
             variantLabel: "Daily ops brief",
             bodyHtml: summary
-              ? renderAdminDailyBody(summary, yesterday, attention, reviewCount)
+              ? renderAdminDailyBody(summary, yesterday, attention, reviewCount, recentlyPaused)
               : `<p style="color:#a4262c;">Dashboard summary unavailable — see degradation notes.</p>`,
             outlookHealthy,
             outlookError,

@@ -26,8 +26,10 @@ import {
   URGENT_SNAPSHOT,
   EXPIRED_SWEEP,
   REMOVALS_PURGE,
+  DORMANT_ACCOUNT_SWEEP,
 } from "./lib/cron-schedule";
 import { purgeExpiredRemovals } from "./lib/removals-purge";
+import { sweepDormantAccounts } from "./lib/dormant-account-sweep";
 import { recheckPreviousRunBounces } from "./routes/daily-brief";
 import { snapshotUrgentCounts } from "./lib/urgent-snapshot";
 import { sweepExpiredGroups } from "./lib/expired-sweep";
@@ -475,6 +477,36 @@ cron.schedule(EXPIRED_SWEEP.cron, async () => {
     };
   });
 }, { timezone: EXPIRED_SWEEP.tz });
+
+// Task #880 — nightly dormant-account sweep (2 AM ET). Flips approved
+// users whose last_login_at is past the configured threshold (default
+// 60d, configurable in Settings) to status="paused" and writes one
+// `account_auto_paused` audit row per user. The daily brief picks up
+// the freshly paused rows and surfaces them to admins at 7 AM.
+cron.schedule(DORMANT_ACCOUNT_SWEEP.cron, async () => {
+  await recordCronRun(DORMANT_ACCOUNT_SWEEP.name, async () => {
+    const result = await sweepDormantAccounts({
+      actorUserName: "Dormant account sweep cron",
+    });
+    if (!result.enabled) {
+      return {
+        message: "Dormant account sweep disabled in app settings — no action",
+        metadata: { enabled: false, thresholdDays: result.thresholdDays },
+      };
+    }
+    return {
+      message: result.paused === 0
+        ? `No dormant accounts to pause (threshold ${result.thresholdDays}d)`
+        : `Paused ${result.paused} dormant account${result.paused === 1 ? "" : "s"} (threshold ${result.thresholdDays}d)`,
+      metadata: {
+        enabled: true,
+        thresholdDays: result.thresholdDays,
+        paused: result.paused,
+        sample: result.sample,
+      },
+    };
+  });
+}, { timezone: DORMANT_ACCOUNT_SWEEP.tz });
 
 // Task #838 — daily purge of expired soft-deletes. Hard-deletes
 // claims/groups whose only remaining undo signal is past the

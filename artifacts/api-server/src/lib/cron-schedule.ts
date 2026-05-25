@@ -132,6 +132,17 @@ export const EXPIRED_SWEEP: CronJobSchedule = {
   tz: "America/New_York",
 };
 
+// Task #880 — nightly dormant-account sweep. Fires at 2 AM ET so it
+// runs after the Expired sweep (1 AM) and before the daily brief
+// (7 AM), giving the brief a fresh "paused overnight" section to
+// surface to admins. Threshold lives in app_settings
+// (`dormant_auto_pause_days`, default 60).
+export const DORMANT_ACCOUNT_SWEEP: CronJobSchedule = {
+  name: "dormant_account_sweep",
+  cron: "0 2 * * *",
+  tz: "America/New_York",
+};
+
 export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   PORTAL_BATCH_SWEEPER,
   DAILY_BRIEF,
@@ -144,6 +155,7 @@ export const KNOWN_CRON_JOBS: CronJobSchedule[] = [
   STUCK_SUBMISSION_RESET,
   URGENT_SNAPSHOT,
   EXPIRED_SWEEP,
+  DORMANT_ACCOUNT_SWEEP,
 ];
 
 // Default grace window between a scheduled sweep firing and the moment we

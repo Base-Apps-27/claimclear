@@ -376,6 +376,36 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (user.status === "paused") {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Clock className="h-8 w-8 text-amber-600" />
+              </div>
+            </div>
+            <CardTitle className="text-xl">Account Paused</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Your account was paused due to inactivity — contact an admin to restore access.
+            </p>
+            <div className="text-sm text-muted-foreground bg-muted rounded-md p-3 w-full">
+              <div className="flex justify-between"><span>Account</span><span className="font-medium">{user.email}</span></div>
+              <div className="flex justify-between mt-1"><span>Status</span><span className="font-medium text-amber-600">Paused</span></div>
+            </div>
+            <Button variant="outline" onClick={() => logout()} className="w-full gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (user.status === "denied") {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-background">

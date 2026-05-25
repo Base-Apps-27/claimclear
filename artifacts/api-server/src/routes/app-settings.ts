@@ -15,6 +15,12 @@ const allowedKeys = [
   "portal_default_gps_breadcrumbs",
   "direct_email_recipient",
   "direct_email_cc",
+  // Task #880 — nightly dormant-account sweep configuration. Both
+  // keys are plain strings; the sweep treats `dormant_auto_pause_enabled`
+  // as truthy unless the literal "false", and parses
+  // `dormant_auto_pause_days` as an integer clamped to [7, 365].
+  "dormant_auto_pause_enabled",
+  "dormant_auto_pause_days",
 ] as const;
 type AllowedKey = typeof allowedKeys[number];
 
