@@ -1033,7 +1033,7 @@ test("POST /invoice-groups/:id/preview-generated succeeds after readback + resol
 
 // --- /invoice-groups/:id/reattest/complete (the trigger gate) ----------
 
-test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs to attestation pending", async () => {
+test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs to attestation completed", async () => {
   const errType = await createSeedErrorType();
   const group = await createSeedGroup({ status: "Needs Review" });
   // Mark the group as needing reattest (would normally be set by the
@@ -1071,8 +1071,76 @@ test("POST /invoice-groups/:id/reattest/complete graduates Approved verdict legs
     assert.ok(res.json.reattestCompletedAt);
 
     const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(post.attestationState, "pending",
-      "after reattest/complete, Approved verdict legs must graduate to attestation=pending");
+    // 2026-05-26 update: the survivor cleanup at the bottom of
+    // /reattest/complete now drains any pending/queued leg the
+    // attestation queue would admit (mirror of the
+    // /claims/attestation-pending admit predicate). So an Approved
+    // verdict leg that the Task #561 engagement gate promotes
+    // not_required → pending earlier in the same transaction lands
+    // at `completed` by the time the call returns. The user-visible
+    // contract: clicking "Re-attested in MAS" both engages AND
+    // completes attestation in one click (incident 2026-05-26,
+    // invoices 1881682210 / 1877954550).
+    assert.equal(post.attestationState, "completed",
+      "after reattest/complete, Approved verdict legs must land at attestation=completed (auto-drained by survivor cleanup)");
+    // Sanity: the engagement gate still fires — there must be an
+    // attestation_engaged audit row recording the not_required → pending
+    // promotion, even though the survivor cleanup immediately follows it.
+    const engaged = await db
+      .select()
+      .from(auditLogsTable)
+      .where(and(
+        eq(auditLogsTable.claimId, claim.id),
+        eq(auditLogsTable.action, "attestation_engaged"),
+      ));
+    assert.ok(engaged.length > 0,
+      "Task #561 engagement gate must still fire before the survivor cleanup auto-completes the leg");
+  } finally {
+    await cleanupGroup(group.id);
+    await cleanupErrorType(errType.id);
+  }
+});
+
+test("POST /invoice-groups/:id/reattest/complete auto-completes Approved+pending legs that were stranded by status='Resolved' cascade", async () => {
+  // Regression for incident 2026-05-26 (invoices 1881682210 /
+  // 1877954550). Pre-fix: the survivor cleanup only matched legs at
+  // `status='MAS Eligible'`. An Approved leg whose status had already
+  // been cascaded to 'Resolved' (or which never passed through
+  // 'MAS Eligible' at all) with attestation_state='pending' was left
+  // in the queue after group reattest completed. The wizard then
+  // re-rendered the "Re-attested in MAS" button and the next click
+  // 409'd because the group was already Resolved.
+  const errType = await createSeedErrorType();
+  const group = await createSeedGroup({ status: "Needs Review" });
+  await db.update(invoiceGroupsTable).set({ reattestRequired: true, phase: "awaiting_reattestation" })
+    .where(eq(invoiceGroupsTable.id, group.id));
+  const claim = await createSeedClaim({
+    invoiceGroupId: group.id,
+    errorTypeId: String(errType.id),
+    errorTypeName: errType.name,
+    sopOutcome: "dispute",
+    status: "Needs Review",
+    outcome: "Approved",
+  });
+  // Force the exact stranded shape: leg already at attestation_state=pending
+  // AND legacy status already cascaded to 'Resolved' (so the engagement
+  // gate's `attestation_state==='not_required'` guard would skip it, and
+  // the pre-fix cleanup's `status='MAS Eligible'` predicate would skip
+  // it too — leaving it forever stranded in the queue).
+  await db.update(claimsTable).set({
+    attestationState: "pending",
+    status: "Resolved",
+  }).where(eq(claimsTable.id, claim.id));
+  try {
+    const res = await fetchJson(`/api/invoice-groups/${group.id}/reattest/complete`, {
+      method: "POST", body: { masReference: "MAS-REGRESSION" },
+    });
+    assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
+
+    const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
+    assert.equal(post.attestationState, "completed",
+      "stranded Approved+pending leg must be drained by the survivor cleanup");
+    assert.ok(post.attestedAt, "drained leg must have attested_at stamped");
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);

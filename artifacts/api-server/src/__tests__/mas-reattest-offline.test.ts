@@ -445,8 +445,15 @@ test("Task #561: /reattest/complete is the only path that engages attestation_st
     assert.equal(res.status, 200, `expected 200, got ${res.status} (${JSON.stringify(res.json)})`);
 
     const [post] = await db.select().from(claimsTable).where(eq(claimsTable.id, claim.id));
-    assert.equal(post.attestationState, "pending",
-      "Post-/reattest/complete: gate opens and engagement runs, leg lands at pending");
+    // 2026-05-26 update (incident on invoices 1881682210 /
+    // 1877954550): the survivor cleanup at the bottom of
+    // /reattest/complete now drains pending/queued legs the
+    // attestation queue would admit. The Task #561 engagement gate
+    // still fires (asserted via the audit row above), but the leg's
+    // terminal attestation_state after the call is `completed`, not
+    // `pending` — one click = engage + complete.
+    assert.equal(post.attestationState, "completed",
+      "Post-/reattest/complete: gate opens, engagement runs, and survivor cleanup drains the leg to completed");
   } finally {
     await cleanupGroup(group.id);
     await cleanupErrorType(errType.id);

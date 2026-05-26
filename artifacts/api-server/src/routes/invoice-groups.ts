@@ -4797,7 +4797,8 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
         }
       }
 
-      // Survivor-leg cleanup (2026-05-12 incident, group #422 et al.).
+      // Survivor-leg cleanup (2026-05-12 incident, group #422 et al.;
+      // widened 2026-05-26 for invoices 1881682210 / 1877954550).
       //
       // `transitionGroupStatusAndOutcome` cascades legacy status from
       // group → child only for legs with `errorTypeId IS NOT NULL`
@@ -4805,28 +4806,43 @@ router.post("/invoice-groups/:id/reattest/complete", asyncHandler(async (req, re
       // skips non-issue / no-error survivor legs, but it also leaves
       // them stranded: when the group closes, a survivor that came in
       // as `status=MAS Eligible, attestation_state=queued` (queued
-      // upstream by the MAS-Eligible cascade) keeps both fields. The
-      // attestation-pending queue endpoint admits any leg with
-      // `status='MAS Eligible' AND attestation_state IN
-      // ('pending','queued')`, so the survivor sticks in the queue
-      // forever, the wizard renders the "Re-attested in MAS" button
-      // for it, and every click 409s because the group is already
-      // closed (prod scan 2026-05-12 found 9 such legs across 8
-      // groups).
+      // upstream by the MAS-Eligible cascade) keeps both fields.
       //
-      // Heal forward: any leg under this group still in
-      // (status=MAS Eligible) AND attestationState in (pending,queued)
-      // at this point is a survivor whose group just closed. Flip
-      // status → Resolved, attestation_state → completed, and stamp
-      // attested_{at,by} so the leg drops out of the queue and the
-      // disposition cache lands in `attested`.
+      // The attestation-pending queue endpoint admits TWO families
+      // (see /claims/attestation-pending):
+      //   (1) outcome IN (Approved, Partially Approved), OR
+      //   (2) status = 'MAS Eligible'
+      // …both with attestation_state IN (pending, queued).
+      //
+      // The original cleanup only matched branch (2), so an Approved
+      // leg whose legacy status had already been cascaded to
+      // 'Resolved' by the disputed-children cascade (or that never
+      // passed through 'MAS Eligible' at all) was left at
+      // attestation_state='pending'. The leg stayed in the queue, the
+      // wizard re-rendered the "Re-attested in MAS" button on the next
+      // page paint, and the next click 409'd because the group was
+      // already Resolved. The Attestation Queue counter never
+      // decremented either, because it shares the same admit
+      // predicate. Reported as user incident 2026-05-26 against
+      // invoices 1881682210 and 1877954550.
+      //
+      // Heal forward: any leg under this group whose attestation_state
+      // is still pending/queued AND that the queue would otherwise
+      // admit is, by definition, a survivor the operator just
+      // re-attested in MAS. Flip status → Resolved,
+      // attestation_state → completed, and stamp attested_{at,by} so
+      // the leg drops out of the queue and the disposition cache
+      // lands in `attested`.
       const stranded = await tx
         .select()
         .from(claimsTable)
         .where(and(
           eq(claimsTable.invoiceGroupId, id),
-          eq(claimsTable.status, "MAS Eligible"),
           inArray(claimsTable.attestationState, ["pending", "queued"]),
+          or(
+            inArray(claimsTable.outcome, ["Approved", "Partially Approved"]),
+            eq(claimsTable.status, "MAS Eligible"),
+          ),
         ));
       for (const leg of stranded) {
         await tx.update(claimsTable).set({
