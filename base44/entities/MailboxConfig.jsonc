@@ -1,0 +1,33 @@
+{
+  "name": "MailboxConfig",
+  "type": "object",
+  "properties": {
+    "email_address": {
+      "type": "string",
+      "description": "Shared mailbox email address"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Sender display name"
+    },
+    "payor_email": {
+      "type": "string",
+      "description": "Default payor/recipient email address"
+    },
+    "payor_name": {
+      "type": "string",
+      "description": "Payor organization name"
+    },
+    "reply_check_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "string",
+      "description": "Internal notes about this config"
+    }
+  },
+  "required": [
+    "email_address"
+  ]
+}

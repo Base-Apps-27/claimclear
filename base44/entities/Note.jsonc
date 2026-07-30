@@ -1,0 +1,41 @@
+{
+  "name": "Note",
+  "type": "object",
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "description": "Reference to Claim"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "email_sent",
+        "reply_parsed",
+        "status_change",
+        "outcome_recorded"
+      ],
+      "default": "manual"
+    },
+    "content": {
+      "type": "string",
+      "description": "Note content / email body excerpt"
+    },
+    "author": {
+      "type": "string",
+      "description": "Who created this note"
+    },
+    "email_subject": {
+      "type": "string",
+      "description": "Email subject if applicable"
+    },
+    "extracted_invoice_numbers": {
+      "type": "string",
+      "description": "Invoice numbers extracted from this note/email"
+    }
+  },
+  "required": [
+    "claim_id",
+    "content"
+  ]
+}
