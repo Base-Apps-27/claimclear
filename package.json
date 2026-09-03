@@ -21,7 +21,11 @@
     }
   },
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "@base44/sdk": "^0.8.46",
+    "@base44/vite-plugin": "^1.0.34"
   }
 }
